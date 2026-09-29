@@ -160,17 +160,52 @@ function a11yAudit(rootSel) {
     SR.settings.set('access.colorblind', 'none'); out.cbOff = !root.hasAttribute('data-cb');
     SR.settings.set('access.textScale', 1.5); out.scale = tok('--ui-scale');
     SR.settings.set('access.textScale', 1);
+    // SR.settings.reset() (settings:changed with key '*') re-applies every root class.
+    SR.settings.set('access.highContrast', true); SR.settings.set('access.colorblind', 'tritan'); SR.settings.set('access.textScale', 1.25);
+    SR.settings.reset();
+    out.reset = { hc: root.classList.contains('hc'), cb: root.getAttribute('data-cb'), scale: tok('--ui-scale') };
+    SR.settings.set('access.reducedMotion', 'off');      // what the sheet runs with
+    SR.settings.set('access.typewriterCps', 0);
     return out;
   });
   T.ok(modes.hcOn && /3px/.test(modes.line) && modes.hcOff, 'High contrast adds html.hc (3 px lines) and removes it', modes);
   T.ok(modes.rmOn && modes.rmOff, 'Reduced motion adds and removes html.rm');
   T.ok(modes.cb === 'deutan' && modes.money1 !== modes.money0 && modes.cbOff, 'a colour-blind table remaps --money and switches back');
   T.eq(modes.scale, '1.5', 'the text size setting drives --ui-scale');
+  T.eq(modes.reset, { hc: false, cb: null, scale: '1' }, 'resetting the settings (key \'*\') re-applies the root classes');
   await t.eval(() => window.SR.settings.set('access.highContrast', true));
   await fullShot(t, 'gallery-hc.png');
   await t.eval(() => { window.SR.settings.set('access.highContrast', false); window.SR.settings.set('access.colorblind', 'protan'); });
   await fullShot(t, 'gallery-protan.png');
   await t.eval(() => window.SR.settings.set('access.colorblind', 'none'));
+
+  // ------------------------------------------------------------ the city HUD's modes
+  T.section('the city HUD: badges, minimal, compact');
+  const hudModes = await t.eval(() => {
+    const SR = window.SR, hud = SR.ui.hud, el = hud.el(), out = {};
+    const shown = (sel) => getComputedStyle(el.querySelector(sel)).display !== 'none';
+    const badges = () => Array.from(el.querySelectorAll('[data-id="hud-badges"] .badge')).map((b) => b.textContent.toLowerCase());
+    const heat0 = SR.state.stats.heat;
+    SR.state.stats.heat = 60; SR.events.emit('heat:changed', { from: heat0, to: 60 }); hud.flush();
+    out.wanted = badges();
+    SR.state.stats.heat = heat0; SR.events.emit('heat:changed', { from: 60, to: heat0 }); hud.flush();
+    out.calm = badges();
+    hud.minimal(true); hud.flush();
+    out.minimal = { right: shown('.hud-right'), stats: shown('.hud-stats'), hp: shown('[data-id="hud-hp"]'), clock: shown('[data-id="hud-clock"]') };
+    SR.events.emit('money:changed', { cash: SR.state.money.cash, bank: SR.state.money.bank, delta: 0 }); hud.flush();
+    out.afterChange = shown('.hud-right');
+    hud.compact(true); hud.minimal(true); hud.flush();     // minimal() again: no recent change keeps it full
+    out.compact = { minimal: el.classList.contains('is-minimal'), cash: shown('[data-id="hud-cash"]'), stats: shown('.hud-stats') };
+    hud.compact(false); hud.minimal(false); hud.flush();
+    out.back = shown('.hud-stats') && shown('.hud-right');
+    return out;
+  });
+  T.ok(hudModes.wanted.some((b) => /wanted/.test(b)) && !hudModes.calm.some((b) => /wanted/.test(b)) && hudModes.calm.some((b) => /tipsy/.test(b)),
+    'status badges follow the state (Wanted at Heat ≥ 50, Tipsy ×n with Buzz)', hudModes);
+  T.ok(!hudModes.minimal.right && !hudModes.minimal.stats && hudModes.minimal.hp && hudModes.minimal.clock && hudModes.afterChange,
+    'minimal HUD: only HP and the ClockRing, then the full HUD after a change', hudModes.minimal);
+  T.ok(!hudModes.compact.minimal && hudModes.compact.cash && !hudModes.compact.stats && hudModes.back,
+    'the compact building strip is never minimal and keeps its cash; the full HUD comes back', hudModes.compact);
 
   // ------------------------------------------------------------ focus visible + a11y
   T.section('focus is always visible');
@@ -231,6 +266,10 @@ function a11yAudit(rootSel) {
   await P.keyboard.press('Enter');
   const tf = await counts();
   T.ok(tf['text-submit'] === 1 && tf.textValue === 'Bo 2', 'TextField: typing then Enter submits', tf);
+  await P.keyboard.press('Escape');
+  T.eq([await active(), await P.evaluate(() => window.SR.input.typing())], ['g-name-paste', false], 'TextField: Esc leaves typing mode (focus on its Paste button), so the next Esc is Back');
+  await P.click('[data-id="g-seg2-a"]');
+  T.eq([await active(), await P.evaluate(() => document.querySelector('[data-id="g-seg2"]').value)], ['g-seg2', 'a'], 'Segmented: a click selects and focus stays on the Segmented');
   await focus('g-slider'); await P.keyboard.press('ArrowRight');
   T.eq(await P.evaluate(() => document.querySelector('[data-id="g-slider"]').getAttribute('aria-valuenow')), '0.8', 'Slider: → steps up');
   await focus('g-toggle'); await P.keyboard.press('Enter');
@@ -291,6 +330,9 @@ function a11yAudit(rootSel) {
   for (let i = 0; i < 5; i++) await P.click('[data-id="live-toast"]');
   const lane = await P.evaluate(() => ({ n: document.querySelectorAll('.toast-lane .toast:not(.is-leaving)').length, aria: document.getElementById('aria').getAttribute('data-last'), list: window.SR.ui.toast.list().length }));
   T.ok(lane.n === 3 && lane.list === 3 && /Fries/.test(lane.aria), 'the toast lane keeps 3 and reads the newest out', lane);
+  await P.waitForTimeout(80);          // the toasts' own announcement goes out first
+  const joined = await P.evaluate(() => new Promise((res) => { window.SR.ui.dom.announce('Saved'); window.SR.ui.dom.announce('+2 INTELLIGENCE!'); setTimeout(() => res(document.getElementById('aria').textContent), 80); }));
+  T.eq(joined, 'Saved. +2 INTELLIGENCE!', 'messages raised together reach #aria together (none is dropped)');
   await P.click('[data-id="live-stamp"]'); await P.click('[data-id="live-stamp"]');
   const st1 = await P.evaluate(() => ({ busy: window.SR.ui.stamp.busy(), cur: window.SR.ui.stamp.current(), n: document.querySelectorAll('.ui-layer--stamp .stamp').length }));
   T.ok(st1.busy && st1.cur === '+2 INTELLIGENCE!' && st1.n === 1, 'stamps queue and never overlap', st1);

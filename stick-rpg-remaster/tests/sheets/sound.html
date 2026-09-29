@@ -1,0 +1,154 @@
+<!doctype html>
+<!-- tests/sheets/sound.html — owner: W1-S. The sound test (BUILD_PLAN §3.9; ARCHITECTURE §18): plays every
+     registered song (with its variants), stinger, sfx recipe and ambience bed; bus volumes, mono,
+     ducking, cross-fades, the spatial listener, a voice stress button, live engine stats and
+     captions; and an offline contact sheet: every sfx and song rendered through
+     SR.audio.renderOffline and drawn as a waveform with the objective checks (peak, RMS, largest
+     sample jump, NaN / denormals, start and end silence, the loop seam, the leitmotif).
+     Opens from disk. Loads js/boot/*, js/core/*, the caption strings (en-ui.js) and js/audio/**,
+     and boots with SR.boot({ scene: false }). The first click or key press unlocks the audio.
+     window.soundSheet exposes the helpers tests/e2e/audio.test.cjs uses. Query: ?render (draw the
+     offline contact sheet at once). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paper Sky · sound test</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../../css/tokens.css">
+<link rel="stylesheet" href="../../css/base.css">
+<link rel="stylesheet" href="../../css/components.css">
+<style>
+  html, body { margin: 0; min-height: 100%; background: var(--paper-1); color: var(--ink-900); }
+  body { overflow: auto; font: 14px var(--font-ui, system-ui, sans-serif); }
+  #app { position: fixed; left: -3000px; top: 0; width: 1280px; height: 720px; visibility: hidden; }
+  #stage, #world, #fx, #ui { position: absolute; left: 0; top: 0; width: 1280px; height: 720px; }
+  #aria { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .sheet { display: grid; grid-template-columns: 420px minmax(0, 1fr); gap: 16px; padding: 16px; box-sizing: border-box; }
+  .scroll { overflow: auto; max-width: 100%; }
+  .panel { background: var(--paper-0); border: 2px solid var(--ink-900); border-radius: 10px; padding: 12px; box-shadow: var(--e-1); }
+  .panel h2 { font: 700 16px var(--font-display, system-ui); margin: 0 0 8px; }
+  .panel h3 { font: 600 13px var(--font-ui, system-ui); margin: 10px 0 4px; color: var(--ink-700); text-transform: uppercase; letter-spacing: 0.04em; }
+  .row { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 2px 0; }
+  .sb { font: 600 12px var(--font-ui, system-ui); padding: 3px 7px; border: 1.5px solid var(--ink-900); border-radius: 6px;
+        background: var(--paper-0); color: var(--ink-900); cursor: pointer; }
+  .sb:hover { background: var(--paper-2); }
+  .sb.on { background: var(--primary-600); color: var(--primary-ink, var(--paper-0)); }
+  .sb.loop { border-style: dashed; }
+  label.sl { display: grid; grid-template-columns: 80px 1fr 40px; gap: 6px; align-items: center; font-size: 12px; }
+  pre { font: 12px ui-monospace, Menlo, monospace; margin: 0; white-space: pre-wrap; }
+  .state { font: 700 13px var(--font-ui, system-ui); padding: 4px 8px; border-radius: 6px; background: var(--paper-2); display: inline-block; }
+  .state.running { background: var(--money-100, var(--paper-2)); }
+  canvas.contact { display: block; background: var(--paper-0); border: 1px solid var(--ink-300); }
+  .caps { max-height: 90px; overflow: auto; }
+  .col { display: flex; flex-direction: column; gap: 12px; }
+</style>
+</head>
+<body>
+  <div id="app">
+    <div id="stage">
+      <canvas id="world"></canvas>
+      <canvas id="fx"></canvas>
+      <div id="ui"></div>
+      <div id="aria" role="status" aria-live="polite"></div>
+    </div>
+  </div>
+
+  <div class="sheet">
+    <div class="col">
+      <div class="panel" data-id="sound-status">
+        <h2>Sound test (W1-S)</h2>
+        <div class="row"><span class="state" data-id="audio-state">locked</span>
+          <button class="sb" data-id="unlock">Start audio</button>
+          <button class="sb" data-id="stop-all">Stop all</button></div>
+        <pre data-id="stats"></pre>
+      </div>
+      <div class="panel">
+        <h2>Songs</h2>
+        <div data-id="songs"></div>
+        <div class="row">fade <input data-id="fade" type="number" min="0" max="8" step="0.1" value="1.2" style="width:56px"> s
+          <button class="sb" data-id="duck">Duck 6 dB, 1 s</button>
+          <button class="sb" data-id="duck-hold">Hold duck</button>
+          <button class="sb" data-id="duck-release">Release (duck 0)</button></div>
+        <h3>Stingers</h3>
+        <div class="row" data-id="stingers"></div>
+      </div>
+      <div class="panel">
+        <h2>Mix</h2>
+        <div data-id="volumes"></div>
+        <label class="row"><input type="checkbox" data-id="mono"> Mono (audio.mono)</label>
+        <h3>Spatial (listener at 0, 0)</h3>
+        <div class="row">
+          <button class="sb" data-id="horn-left">horn at x -500</button>
+          <button class="sb" data-id="horn-mid">horn at x 0</button>
+          <button class="sb" data-id="horn-right">horn at x +500</button>
+          <button class="sb" data-id="horn-far">horn at 1,000 u (culled)</button>
+        </div>
+        <h3>Stress</h3>
+        <div class="row"><button class="sb" data-id="stress">Fire 200 sfx at once</button><span data-id="stress-out"></span></div>
+        <h3>Captions</h3>
+        <pre class="caps" data-id="captions"></pre>
+      </div>
+      <div class="panel">
+        <h2>Ambience</h2>
+        <div data-id="beds"></div>
+        <div class="row">clock <select data-id="clock"><option value="">game</option><option value="480">08:00</option><option value="900">15:00</option><option value="1320">22:00</option></select></div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="panel">
+        <h2>Sound effects</h2>
+        <div data-id="sfx"></div>
+      </div>
+      <div class="panel">
+        <h2>Offline contact sheet</h2>
+        <div class="row"><button class="sb" data-id="render">Render every sfx and song</button><span data-id="render-out"></span></div>
+        <div class="scroll"><canvas class="contact" data-id="contact" width="1128" height="40"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../../js/boot/namespace.js"></script>
+  <script src="../../js/boot/util.js"></script>
+  <script src="../../js/boot/events.js"></script>
+  <script src="../../js/core/rng.js"></script>
+  <script src="../../js/core/loop.js"></script>
+  <script src="../../js/core/stage.js"></script>
+  <script src="../../js/core/quality.js"></script>
+  <script src="../../js/core/input.js"></script>
+  <script src="../../js/core/scenes.js"></script>
+  <script src="../../js/core/save.js"></script>
+  <script src="../../js/core/settings.js"></script>
+  <script src="../../js/core/text.js"></script>
+  <script src="../../js/core/debug.js"></script>
+  <script src="../../js/data/text/en-ui.js"></script>
+  <script src="../../js/audio/engine.js"></script>
+  <script src="../../js/audio/synth.js"></script>
+  <script src="../../js/audio/sfx.js"></script>
+  <script src="../../js/audio/music.js"></script>
+  <script src="../../js/audio/ambience.js"></script>
+  <script src="../../js/audio/songs/paper_sky.js"></script>
+  <script src="../../js/audio/songs/crossroads_strut.js"></script>
+  <script src="../../js/audio/songs/home_sweet_paper.js"></script>
+  <script src="../../js/audio/songs/streetlights.js"></script>
+  <script src="../../js/audio/songs/fry_day.js"></script>
+  <script src="../../js/audio/songs/funky_aisle.js"></script>
+  <script src="../../js/audio/songs/pawnbroker_blues.js"></script>
+  <script src="../../js/audio/songs/showroom_smooth.js"></script>
+  <script src="../../js/audio/songs/compound_interest.js"></script>
+  <script src="../../js/audio/songs/please_hold.js"></script>
+  <script src="../../js/audio/songs/campus_canon.js"></script>
+  <script src="../../js/audio/songs/last_call_shuffle.js"></script>
+  <script src="../../js/audio/songs/high_roller_lounge.js"></script>
+  <script src="../../js/audio/songs/brawl_hall.js"></script>
+  <script src="../../js/audio/songs/tick_tock_trouble.js"></script>
+  <script src="../../js/audio/songs/midnight_express.js"></script>
+  <script src="../../js/audio/songs/hail_to_the_stick.js"></script>
+  <script src="../../js/audio/songs/doing_time.js"></script>
+  <script src="../../js/audio/songs/waiting_room.js"></script>
+  <script src="../../js/audio/songs/morning_edition.js"></script>
+  <script src="../../js/audio/songs/final_edition.js"></script>
+  <script src="../../js/audio/songs/stingers.js"></script>
+  <script src="sound-sheet.js"></script>
+</body>
+</html>

@@ -111,6 +111,11 @@ const TUNING_PATHS = [
   'weather.states', 'weather.chain.clear', 'weather.day1', 'weather.forecastAccuracy', 'weather.storm',
   'calendar.mon', 'calendar.events.casinoNight.day', 'calendar.events.stockScare.day',
   'news.minWeight', 'news.weights.promoted', 'news.stockMove',
+  // read by the review fixes (rain tips, the Friday bonus, the Heat Wave, the catalogue car, Speed
+  // Reader, the nap)
+  'jobs.hustle.rainTips', 'jobs.weeklyBonus.weekday', 'calendar.events.heatWave.weather', 'items.sportscar.price',
+  'training.study.min', 'training.study.speedReaderMin', 'training.paper.min', 'training.paper.speedReaderMin',
+  'training.nap.hpPct',
 ];
 
 /** @returns {string[]} the TUNING_PATHS missing from SR.tuning (a key renamed or dropped by tuning.js). */

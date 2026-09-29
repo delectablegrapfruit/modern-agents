@@ -11,6 +11,8 @@
 
   var C = {
     x: 0, y: 0, vx: 0, vy: 0,
+    /** The centre at the start of the last step (the renderer interpolates px → x by alpha). */
+    px: 0, py: 0,
     /** The focus the spring follows (the dead-zone anchor). */
     fx: 0, fy: 0,
     /** Current zoom (eased) and the chosen level index (0..2). */
@@ -38,13 +40,16 @@
     return z[Math.min(z.length - 1, lvl)];
   }
 
+  var WANT = { x: 0, y: 0, look: false };   // desired()'s result, reused every step
+  function want(x, y, look) { WANT.x = x; WANT.y = y; WANT.look = look; return WANT; }
+
   /** The point the camera wants: an override, the Fold Rescue's focus, or the player plus look-ahead. */
   function desired() {
-    if (C.target) return { x: C.target.x, y: C.target.y, look: false };
+    if (C.target) return want(C.target.x, C.target.y, false);
     var f = SR.world.fall;
-    if (f && f.active && f.active() && f.focus) { var q = f.focus(); return { x: q.x, y: q.y, look: false }; }
+    if (f && f.active && f.active() && f.focus) { var q = f.focus(); return want(q.x, q.y, false); }
     var p = SR.world.player;
-    return p ? { x: p.x, y: p.y, look: true } : { x: C.x, y: C.y, look: false };
+    return p ? want(p.x, p.y, true) : want(C.x, C.y, false);
   }
 
   /** Resets the camera onto a point (boot, new game). */
@@ -54,6 +59,7 @@
     C.vx = C.vy = 0;
     C.zoom = levelZoom();
     clampCentre();
+    C.px = C.x; C.py = C.y;
   };
 
   /** Jumps to the desired point with no spring (placing the player, loading a game). */
@@ -62,11 +68,13 @@
     C.x = C.fx = d.x; C.y = C.fy = d.y; C.vx = C.vy = 0;
     C.zoom = levelZoom();
     clampCentre();
+    C.px = C.x; C.py = C.y;
   };
 
   /** Advances the spring by dt seconds. */
   C.update = function (dt) {
     var c = cfg(), d = desired(), tx = d.x, ty = d.y;
+    C.px = C.x; C.py = C.y;
     if (d.look) {
       var p = SR.world.player, lx = p.vx * c.camLook, ly = p.vy * c.camLook, l = Math.sqrt(lx * lx + ly * ly);
       if (l > c.camLookMax) { lx *= c.camLookMax / l; ly *= c.camLookMax / l; }

@@ -4,9 +4,11 @@
 // Robbery flow (the store: W2-Food's data; the bank: W2-Money's): the row runs the named fn
 // 'crime.rob' (args 'store' | 'bank'), which checks robPrecheck, applies the start (ammo rand(5..9),
 // karma, Heat, the clock to 24:00, the bank's weekly limit and its 14-day memory) and returns
-// Result.open for the `holdup` skin with holdupParams (D computed BEFORE this robbery's Heat); the
-// building then runs '<id>:resolve' with the Duel result, whose 'crime.robResolve' pays the loot on
-// two successes or jails you on two failures (the bank also confiscates the gun and ammo).
+// Result.open for the `holdup` skin with holdupParams (D computed BEFORE this robbery's Heat) and
+// marks the robbery in progress (state.crime.open = { target, day }); the building then runs
+// '<id>:resolve' with the Duel result, whose 'crime.robResolve' (refused unless a robbery is in
+// progress today) pays the loot on two successes or jails you on two failures (the bank also
+// confiscates the gun and ammo).
 // Heat at arrest includes the robbery's own Heat (it is added at the start, win or lose).
 //
 // Jail (GDD §4.10 "Arrest flow"): jail(s, reason, ctx) sets state.jail and runs the arrest night at
@@ -147,9 +149,23 @@
       s.records.robberies = (s.records.robberies || 0) + 1;
     }
     params.ammoUsed = used;
-    res.sfx.push('holdup');
+    // The robbery in progress (docs/requests/W1-C.md item 1): the named resolve fn requires it, so
+    // a stray or repeated '<id>:resolve' can never pay loot for a robbery that was not started.
+    s.crime.open = { target: target, day: s.clock.day };
     res.open = { minigame: 'holdup', skin: 'holdup', params: params, resolve: ctx && ctx.id ? ctx.id + ':resolve' : null };
     return res;
+  }
+
+  /**
+   * The named fn 'crime.robResolve': resolves today's robbery in progress (state.crime.open, set by
+   * rob) and closes it; its target wins over the data's argument. Refused when none is open.
+   * @returns {object} a partial Result
+   */
+  function robResolveOpen(s, target, beats, ctx) {
+    var open = s.crime && s.crime.open;
+    if (!open || open.day !== s.clock.day) return { ok: false, reason: 'reason.notNow', vars: {} };
+    s.crime.open = null;
+    return robResolve(s, open.target || target, beats, ctx);
   }
 
   /** @returns {number} the successes of a Duel result or a beats array. */
@@ -178,7 +194,7 @@
       SR.rules.effects.credit(s, 'cash', loot, 'loot');
       res.stamps.push({ key: 'stamp.crime.' + target, vars: { n: loot, money: money(loot) } });
       res.toasts.push({ key: 'toast.crime.' + target + 'Win', vars: { n: loot, money: money(loot) }, kind: 'reward' });
-      res.sfx.push('cash');
+      res.sfx.push('coin');   // ART_AUDIO §13.5 Money
       res.log.push({ kind: target === 'bank' ? 'bankRobbery' : 'storeRobbery', vars: { outcome: 'win', n: loot } });
       res.events.push({ name: 'rob', payload: { target: target, outcome: 'win', loot: loot } });
       return res;
@@ -223,7 +239,7 @@
   function jailNight(s, ctx) {
     var N = SR.rules.night;
     if (!N || typeof N.run !== 'function') {
-      SR.util.warnOnce('crime.night', 'SR.rules.crime: SR.rules.night is not loaded; the jail night is skipped');
+      SR.util.warnOnce('rules.crime:night', 'SR.rules.crime: SR.rules.night is not loaded; the jail night is skipped');
       return null;
     }
     records(s);
@@ -256,7 +272,7 @@
     res.jailed = { reason: reason, days: days };
     res.events.push({ name: 'jail', payload: { reason: reason, days: days } });
     res.stamps.push({ key: 'stamp.crime.jailed', vars: { days: days } });
-    res.sfx.push('jail');
+    res.sfx.push('siren');  // ART_AUDIO §13.5 World: the two-tone siren
     logNow(s, 'jailed', { reason: reason, days: days });
     var rep = jailNight(s, ctx);
     if (rep) res.report = rep;
@@ -310,8 +326,7 @@
         }
       }
     }
-    s.jail.served = (s.jail.served || 0) + 1;
-    var report = jailNight(s, ctx);
+    var report = jailNight(s, ctx);   // the jail night counts daysLeft down and served up (night step 10)
     if (report) res.report = report;
     res.released = false;
     if (s.jail && s.jail.daysLeft <= 0) {
@@ -458,12 +473,47 @@
     return jail(s, 'questioning', ctx);
   }
 
+  /**
+   * McHolland's "Pass a tip" (B-27 civic.mchollandTip, P1 `police`): an informant, not Wicked, once
+   * a week: Heat × 0.5 (floor). Its 30 minutes are the Precinct row's cost.
+   * @returns {object} a partial Result
+   */
+  function mchollandTip(s) {
+    var M = SR.tuning.civic.mchollandTip, m = s.npc.mcholland || {};
+    if (!feat('police')) return no('reason.featureOff');
+    if (m.stage !== 'informant' || s.stats.karma <= SR.tuning.karma.tiers.wicked) return no('reason.notNow');
+    if ((s.weekly.mchollandTip || 0) >= M.weekly) return no('reason.weeklyLimit');
+    s.weekly.mchollandTip = (s.weekly.mchollandTip || 0) + 1;
+    s.stats.heat = Math.floor(s.stats.heat * M.heatMult);
+    var res = partial();
+    res.toasts.push({ key: 'toast.crime.tip', vars: { heat: s.stats.heat }, kind: 'info' });
+    return res;
+  }
+
+  /**
+   * McHolland's bribe (B-27 civic.mchollandBribe, P1 `police`): $2,000 in cash at karma < 0; no Heat
+   * gains for 7 days (npc.mcholland.bribedUntil, inclusive: today and the next 6).
+   * @returns {object} a partial Result
+   */
+  function mchollandBribe(s) {
+    var M = SR.tuning.civic.mchollandBribe;
+    if (!feat('police')) return no('reason.featureOff');
+    if (s.stats.karma >= M.karmaBelow) return no('reason.karmaHigh', { max: M.karmaBelow - 1, have: s.stats.karma });
+    if (s.money.cash < M.cash) return no('reason.needCash', { n: M.cash, money: money(M.cash) });
+    s.money.cash -= M.cash;
+    var m = s.npc.mcholland || (s.npc.mcholland = { stage: 'none', bribedUntil: 0 });
+    m.bribedUntil = s.clock.day + M.days - 1;
+    var res = partial();
+    res.toasts.push({ key: 'toast.crime.mchollandBribed', vars: { day: m.bribedUntil }, kind: 'info' });
+    return res;
+  }
+
   // --------------------------------------------------------------------------------------------
   // Named fns for the building data (CONTRACT §8.5)
 
   SR.def.fn('crime.canRob', function (s, params, ctx, target) { return robPrecheck(s, target || params.target); });
   SR.def.fn('crime.rob', function (s, params, ctx, target) { return rob(s, target || params.target, ctx); });
-  SR.def.fn('crime.robResolve', function (s, params, ctx, target) { return robResolve(s, target || params.target, params, ctx); });
+  SR.def.fn('crime.robResolve', function (s, params, ctx, target) { return robResolveOpen(s, target || params.target, params, ctx); });
   SR.def.fn('crime.jail', function (s, params, ctx, reason) { return jail(s, reason || params.reason || 'police', ctx); });
   SR.def.fn('crime.jailDay', function (s, params, ctx, choice) { return jailDay(s, choice || params.choice, ctx); });
   SR.def.fn('crime.canBail', function (s) { return canBail(s); });
@@ -474,6 +524,8 @@
   SR.def.fn('crime.policeBribe', function (s) { return policeBribe(s); });
   SR.def.fn('crime.policeRun', function (s, params, ctx) { return policeRun(s, params.caught !== false, ctx); });
   SR.def.fn('crime.interrogation', function (s, params, ctx) { return interrogation(s, params, ctx); });
+  SR.def.fn('crime.mchollandTip', function (s) { return mchollandTip(s); });
+  SR.def.fn('crime.mchollandBribe', function (s) { return mchollandBribe(s); });
 
   SR.rules.crime = {
     JAIL_CHOICES: JAIL_CHOICES.slice(),
@@ -500,5 +552,7 @@
     policeBribe: policeBribe,
     policeRun: policeRun,
     interrogation: interrogation,
+    mchollandTip: mchollandTip,
+    mchollandBribe: mchollandBribe,
   };
 })();

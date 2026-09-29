@@ -177,16 +177,27 @@
   }
 
   var ariaTimer = null;
-  /** Speaks text through the #aria live region (UI.md §8). */
+  var ariaQueue = [];
+  /**
+   * Speaks text through the #aria live region (UI.md §8). Messages raised together (a toast, a
+   * stamp and the Result summary of one action) are joined into one announcement instead of the
+   * last one replacing the others.
+   */
   function announce(text) {
     if (typeof document === 'undefined' || !text) return;
     var el = document.getElementById('aria');
     if (!el) return;
+    text = String(text);
+    if (ariaQueue.indexOf(text) < 0) ariaQueue.push(text);
     // Clear then set on the next task so a repeated message is announced again.
     el.textContent = '';
     if (ariaTimer) clearTimeout(ariaTimer);
-    ariaTimer = setTimeout(function () { el.textContent = String(text); ariaTimer = null; }, 30);
-    el.setAttribute('data-last', String(text));
+    ariaTimer = setTimeout(function () {
+      el.textContent = ariaQueue.join('. ');
+      ariaQueue = [];
+      ariaTimer = null;
+    }, 30);
+    el.setAttribute('data-last', text);
   }
 
   /** Plays a UI sound if the audio module and the recipe exist. @returns {object|null} the handle */
@@ -316,12 +327,16 @@
 
   SR.onBoot(50, function () {
     if (typeof document === 'undefined') return;
+    // Follow the system's Reduced Motion even when the setting is 'on' / 'off' at boot and is
+    // switched to 'system' later.
+    if (!rmQuery && window.matchMedia) rmQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     applySettings();
     applyDevice();
     applyCompact();
     SR.events.on('settings:changed', function (p) {
       var key = p && p.key ? String(p.key) : '';
-      if (!key || key.indexOf('access') === 0) applySettings();
+      // '*' is SR.settings.reset() of every key (CONTRACT D35).
+      if (!key || key === '*' || key === 'access' || key.indexOf('access.') === 0) applySettings();
     });
     SR.events.on('input:device', function (p) { applyDevice(p && p.device); });
     SR.events.on('stage:resized', function (p) { applyCompact(p && p.compact); });

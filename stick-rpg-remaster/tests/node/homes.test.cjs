@@ -145,4 +145,43 @@ T.section('net-worth values');
   T.eq(M.pieces(s).map((p) => p.id + ':' + p.active), ['pod:false', 'satellite:false'], 'pieces with their state (the satellite needs the TV)');
 }
 
+T.section('the P0 satellite, removed pieces, the catalogue\'s sports car (review fixes)');
+{
+  const tv = H.state(SR, { money: { cash: 10000 }, furniture: { owned: { tv: 1 } } });
+  T.ok(M.buyFurniture(tv, 'satellite').ok, 'P0: the satellite is sold next to the TV');
+  const rf = H.features(SR, { homesPlus: true });
+  const t1 = H.state(SR, { money: { cash: 10000 }, furniture: { owned: { tv: 1 } } });
+  T.eq(M.buyFurniture(t1, 'satellite').reason, 'reason.unavailable', 'with `homesPlus` the SkyDish upgrade replaces it (GDD §4.15 note)');
+  rf();
+  const t2 = H.state(SR, { money: { cash: 10000 }, furniture: { owned: { tv: 2 } } });
+  T.eq(M.buyFurniture(t2, 'satellite').reason, 'reason.owned', 'never next to a TV already upgraded to the SkyDish');
+
+  // A piece that leaves (a seizure, a donation) frees its slots for what was in storage.
+  const st = H.state(SR, { furniture: { owned: { bed: 1, tv: 1, pc: 1, books: 1 }, storage: ['books'] } });
+  M.removePiece(st, 'tv');
+  T.eq([st.furniture.storage, M.has(st, 'books')], [[], 1], 'a stored piece comes back out when a slot frees up');
+  const st2 = H.state(SR, { furniture: { owned: { bed: 1, tv: 1, pc: 1, books: 1 }, storage: ['books'] } });
+  M.removePiece(st2, 'books');
+  T.eq([Object.keys(st2.furniture.owned).sort(), st2.furniture.storage], [['bed', 'pc', 'tv'], []], 'removing a stored piece changes nothing else');
+
+  const car = H.state(SR, { money: { cash: 70000 } });
+  T.eq(M.buyCar(car).reason, 'reason.featureOff', 'the catalogue is P1');
+  const rc = H.features(SR, { homesPlus: true });
+  const nw0 = SR.rules.endgame.netWorth(car);
+  const b = M.buyCar(car);
+  const lot = SR.tuning.world.homeLots.sports, sp = car.player.cars.sports;
+  T.eq([b.ok, b.price, car.money.cash], [true, 60000, 10000], '$60,000, no delivery markup (B-06, B-28a except)');
+  T.eq([sp.owned, sp.bought, sp.x, sp.y], [true, true, (lot[0] + lot[2]) / 2, (lot[1] + lot[3]) / 2], 'delivered to its home lot, bought: true');
+  T.eq(SR.rules.endgame.netWorth(car), nw0 - 60000 + 30000, 'net worth counts a bought sports car at $30,000 (B-18)');
+  T.eq(b.events[0], { name: 'buy', payload: { item: 'sportscar', n: 1, where: 'catalogue', price: 60000 } }, 'the `buy` rule event');
+  T.eq(M.buyCar(car).reason, 'reason.owned', 'one car');
+  T.eq(M.buyCar(H.state(SR, { player: { cars: { sports: { owned: true } } }, money: { cash: 1e6 } })).reason, 'reason.owned', 'not after the day-365 gift');
+  T.eq(M.buyCar(H.state(SR, { money: { cash: 59999, bank: 1e6 } })).reason, 'reason.needCash', 'paid in cash');
+  const g = H.state(SR, { money: { cash: 70000 }, stats: { karma: 60 } });
+  const rk = H.features(SR, { karmaTiers: true });
+  T.eq(SR.reg.fn['homes.buyCar'](g, {}, {}).price, 54000, 'named fn homes.buyCar; the Good-tier discount applies (B-28a catalogue.*)');
+  rk();
+  rc();
+}
+
 T.done();

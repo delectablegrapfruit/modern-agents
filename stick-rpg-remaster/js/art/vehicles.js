@@ -11,12 +11,15 @@
 //   x, y  ground centre in world units (the caller's ctx is in world units)
 //   opts  t (seconds: wheel spin, police lights), brake (brake lights on), lights (headlamp lenses lit),
 //         flashReduction (steady police lights; default: the access.flashReduction setting),
-//         driver ({ karma, look } or true: the driver shows through the glass / in the open car),
+//         driver ({ karma, look, player } or true: the driver's head and shoulders show through the
+//         windshield or the nearest side window, or sit in the open car; a driver with a look is an
+//         NPC unless player: true, one without a look is the player in their own look),
 //         shadow (default true), alpha, scale, z (height off the ground: the plane), bank (plane roll,
 //         radians), pilot (plane: default true), carry (plane: the player hangs below)
 // lamps(type, dir) → { head: [[dx, dy], ...], tail: [[dx, dy], ...] } screen offsets of the lamps
 //   for the emissive pass (ART_AUDIO §3).
-// size(type) → { L, W, H }. TYPES: the type names. dirFromAngle(a) → 0-7.
+// size(type) → { L, W, H }. TYPES: the type names. dirFromAngle(a) → 0-7. lightPhase(t) → 0 | 1: which
+//   half of the police light bar is lit at t (they swap every 0.5 s; steady with Flash Reduction).
 (function () {
   'use strict';
   var SR = window.SR;
@@ -165,6 +168,18 @@
     return false;
   }
 
+  // Glass quads recorded while a car with a driver is drawn (screen corners, 8 numbers each) and
+  // their rank: 3 windshield, 2 the front side pane, 1 the rear side pane, 0 the rear window.
+  var GQ = new Float64Array(8 * 12), GR = new Int8Array(12), gqN = 0;
+  function pane(ctx, f, u0, v0, u1, v1, fill, rank, o) {
+    decal(ctx, f, u0, v0, u1, v1, fill, 1);
+    if (!o.driver || gqN >= 12) return;
+    var b = gqN * 8;
+    GQ[b] = T0[0]; GQ[b + 1] = T0[1]; GQ[b + 2] = T1[0]; GQ[b + 3] = T1[1];
+    GQ[b + 4] = T2[0]; GQ[b + 5] = T2[1]; GQ[b + 6] = T3[0]; GQ[b + 7] = T3[1];
+    GR[gqN++] = rank;
+  }
+
   // ---- the car ---------------------------------------------------------------------------------------
   function drawCar(ctx, type, a, x, y, o) {
     var M = model(type), s = M.spec;
@@ -184,7 +199,7 @@
       ctx.fillStyle = color('shadow'); ctx.fill();
     }
 
-    var glassFaces = [];
+    gqN = 0;
     for (var si = 0; si < M.solids.length; si++) {
       var sol = M.solids[si];
       transform(sol, x, y, ca, sa);
@@ -197,15 +212,15 @@
         if (cabin && (f.role === 'front' || f.role === 'back') && !s.box && !s.bus) fill = base;
         ctx.fillStyle = fill; ctx.fill();
         ctx.lineWidth = 1.5; ctx.strokeStyle = color('inkLine'); ctx.stroke();
-        decorate(ctx, s, f, cabin, t, o, glassFaces);
+        decorate(ctx, s, f, cabin, t, o);
       }
     }
     if (s.open) openTop(ctx, s, x, y, ca, sa, o);
-    if (o.driver && !s.open && glassFaces.length) driverThroughGlass(ctx, s, x, y, ca, sa, o, glassFaces);
+    if (o.driver && !s.open && gqN) driverThroughGlass(ctx, a, o);
   }
 
   // Decals per face: glass, lamps, wheels, stripes, doors, signs.
-  function decorate(ctx, s, f, cabin, t, o, glassFaces) {
+  function decorate(ctx, s, f, cabin, t, o) {
     var glass = color('car.glass');
     if (cabin) {
       if (f.role === 'top') {
@@ -219,18 +234,16 @@
           for (var w = 0; w < 9; w++) decal(ctx, f, 0.06 + w * 0.1, 0.45, 0.13 + w * 0.1, 0.85, glass, 1);
           decal(ctx, f, 0.0, 0.2, 1.0, 0.32, color(s.stripe), 0);
         } else if (f.role === 'front') {
-          decal(ctx, f, 0.12, 0.4, 0.88, 0.9, glass, 1); glassFaces.push(f);
+          pane(ctx, f, 0.12, 0.4, 0.88, 0.9, glass, 3, o);
         }
         return;
       }
-      // windows: side glass with a pillar, windshield and rear window inset
+      // windows: side glass with a pillar (the face runs rear → front), windshield and rear window
       if (f.role === 'left' || f.role === 'right') {
-        decal(ctx, f, 0.08, 0.14, 0.46, 0.86, glass, 1);
-        decal(ctx, f, 0.54, 0.14, 0.92, 0.86, glass, 1);
-        glassFaces.push(f);
+        pane(ctx, f, 0.08, 0.14, 0.46, 0.86, glass, 1, o);
+        pane(ctx, f, 0.54, 0.14, 0.92, 0.86, glass, 2, o);
       } else {
-        decal(ctx, f, 0.1, 0.12, 0.9, 0.86, f.role === 'front' ? glass : color('car.glassDark'), 1);
-        glassFaces.push(f);
+        pane(ctx, f, 0.1, 0.12, 0.9, 0.86, f.role === 'front' ? glass : color('car.glassDark'), f.role === 'front' ? 3 : 0, o);
       }
       return;
     }
@@ -260,9 +273,12 @@
     }
   }
 
+  // Red and blue swap twice a second (each lit 0.5 s): at most 2 flashes a second, under the 3 a
+  // second photosensitivity limit, and the phase W1-G's cached car sprites bake (t 0.01 / 0.51).
+  function lightPhase(t) { return Math.floor((t || 0) * 2) % 2; }
   function lightBar(ctx, f, t, o) {
     var steady = flashReduced(o);
-    var phase = steady ? -1 : Math.floor((t || 0) * 4) % 2; // 2 Hz alternation
+    var phase = steady ? -1 : lightPhase(t);
     decal(ctx, f, 0.42, 0.12, 0.58, 0.5, phase === 1 ? tone('light.policeRed', -1) : color('light.policeRed'), 1);
     decal(ctx, f, 0.42, 0.5, 0.58, 0.88, phase === 0 ? tone('light.policeBlue', -1) : color('light.policeBlue'), 1);
   }
@@ -278,7 +294,7 @@
     ctx.fillStyle = color('car.seat'); ctx.fill(); ctx.lineWidth = 1.2; ctx.strokeStyle = color('inkLine'); ctx.stroke();
     if (o.driver) {
       var d = sp(-hl * 0.12, -s.W * 0.14, seatZ);
-      drawDriver(ctx, d[0], d[1], o, 0.7);
+      drawDriver(ctx, d[0], d[1], o, 0.7, Math.atan2(sa, ca));
     }
     // windshield: a slanted glass strip across the cockpit front
     var w = [sp(hl * 0.18, -s.W * 0.4, z), sp(hl * 0.18, s.W * 0.4, z), sp(hl * 0.08, s.W * 0.36, z + 12), sp(hl * 0.08, -s.W * 0.36, z + 12)];
@@ -286,27 +302,63 @@
     ctx.fillStyle = SR.art.draw.alpha(color('car.glass'), 0.7); ctx.fill(); ctx.lineWidth = 1.2; ctx.strokeStyle = color('inkLine'); ctx.stroke();
   }
 
-  function drawDriver(ctx, x, y, o, k) {
-    var d = o.driver === true ? {} : o.driver;
-    if (SR.art.stick) {
-      SR.art.stick.draw(ctx, 'drive', { x: x, y: y, anchor: 'hip', upper: true, shadow: false, facing: 'down',
-        player: d.player !== false, karma: d.karma, look: d.look, scale: k, t: o.t || 0 });
-    }
+  var DRV = { x: 0, y: 0, anchor: 'hip', upper: true, shadow: false, facing: 'down', player: true, karma: undefined,
+    look: undefined, scale: 1, t: 0 };
+  /** The driver's stick options: a driver with a look is an NPC unless it says player: true. */
+  function driverOpts(o, x, y, k, facing) {
+    var d = o.driver === true ? EMPTY : o.driver;
+    DRV.x = x; DRV.y = y; DRV.scale = k; DRV.t = o.t || 0; DRV.facing = facing || 'down';
+    DRV.player = d.player !== undefined ? !!d.player : d.look === undefined;
+    DRV.karma = d.karma; DRV.look = d.look;
+    return DRV;
+  }
+  /** The driver faces the way the car drives: toward us (south-ish), away (north-ish) or in profile. */
+  function facingFor(a) {
+    var dir = ((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8;
+    return dir >= 1 && dir <= 3 ? 'down' : dir >= 5 ? 'up' : dir === 0 ? 'right' : 'left';
+  }
+  function drawDriver(ctx, x, y, o, k, a) {
+    if (SR.art.stick) SR.art.stick.draw(ctx, 'drive', driverOpts(o, x, y, k, facingFor(a)));
   }
 
-  function driverThroughGlass(ctx, s, x, y, ca, sa, o, faces) {
+  // The driver of a closed car: head and shoulders centred in the best glass pane (the windshield,
+  // else the front side pane, else the rear ones), clipped to the glass and tinted by it. A pane too
+  // thin for a head (a windshield seen edge-on) is skipped.
+  function driverThroughGlass(ctx, a, o) {
+    var best = -1, bestScore = 0, bw = 0, bh = 0, i;
+    for (i = 0; i < gqN; i++) {
+      var b = i * 8;
+      var w = Math.hypot((GQ[b + 2] + GQ[b + 4] - GQ[b] - GQ[b + 6]) / 2, (GQ[b + 3] + GQ[b + 5] - GQ[b + 1] - GQ[b + 7]) / 2);
+      var h = Math.hypot((GQ[b + 6] + GQ[b + 4] - GQ[b] - GQ[b + 2]) / 2, (GQ[b + 7] + GQ[b + 5] - GQ[b + 1] - GQ[b + 3]) / 2);
+      var md = Math.min(w, h);
+      var score = md * (1 + 0.4 * GR[i]);
+      if (md >= 3 && score > bestScore) { best = i; bestScore = score; bw = w; bh = h; }
+    }
+    if (best < 0 || !SR.art.stick) return;
+    var c = best * 8;
+    var cx = (GQ[c] + GQ[c + 2] + GQ[c + 4] + GQ[c + 6]) / 4, cy = (GQ[c + 1] + GQ[c + 3] + GQ[c + 5] + GQ[c + 7]) / 4;
+    var k = Math.max(0.2, Math.min(0.62, 0.34 * Math.min(bw, bh) / 8));
+    var opts = driverOpts(o, 0, 0, k, facingFor(a));
+    var head = SR.art.stick.joints('drive', opts).head;   // the head's offset from the hip
+    opts.x = cx - head[0]; opts.y = cy + bh * 0.08 - head[1];
     ctx.save();
+    panesPath(ctx);
+    ctx.clip();
+    SR.art.stick.draw(ctx, 'drive', opts);
+    // the glass over the driver (the path is rebuilt: the stick's own paths replaced it)
+    panesPath(ctx);
+    ctx.globalAlpha *= 0.28;
+    ctx.fillStyle = color('car.glass');
+    ctx.fill();
+    ctx.restore();
+  }
+  function panesPath(ctx) {
     ctx.beginPath();
-    for (var i = 0; i < faces.length; i++) {
-      var id = faces[i].idx;
-      ctx.moveTo(P[id[0] * 2], P[id[0] * 2 + 1]);
-      for (var j = 1; j < 4; j++) ctx.lineTo(P[id[j] * 2], P[id[j] * 2 + 1]);
+    for (var i = 0; i < gqN; i++) {
+      var q = i * 8;
+      ctx.moveTo(GQ[q], GQ[q + 1]); ctx.lineTo(GQ[q + 2], GQ[q + 3]); ctx.lineTo(GQ[q + 4], GQ[q + 5]); ctx.lineTo(GQ[q + 6], GQ[q + 7]);
       ctx.closePath();
     }
-    ctx.clip();
-    var lx = s.L * -0.02, ly = -s.W * 0.18, lz = s.body[1] - 2;
-    drawDriver(ctx, x + lx * ca - ly * sa, y + lx * sa + ly * ca - 0.5 * lz, o, 0.62);
-    ctx.restore();
   }
 
   // ---- the Fold Rescue plane (ART_AUDIO §12: a folded-paper plane, 90 u span, Pilot Ori aboard) -----
@@ -400,5 +452,5 @@
     return { L: s.L, W: s.W, H: s.cabin ? s.cabin[5] : s.body[1] };
   }
 
-  SR.art.vehicles = { draw: draw, lamps: lamps, size: size, dirFromAngle: dirFromAngle, TYPES: TYPES };
+  SR.art.vehicles = { draw: draw, lamps: lamps, size: size, dirFromAngle: dirFromAngle, lightPhase: lightPhase, TYPES: TYPES };
 })();

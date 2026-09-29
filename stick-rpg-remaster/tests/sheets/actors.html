@@ -4,7 +4,9 @@
      every named person's look (city, side view, portraits 32 / 56 / 96 / 176), the fight ladder, the
      pedestrian looks, every accessory, the 8 vehicle types plus the Fold Rescue plane in 8
      directions, and the performance measurement of BUILD_PLAN §3.6 (one city character ≤ 0.08 ms,
-     one portrait ≤ 0.5 ms, scaled by a local calibration factor). Opens from disk. -->
+     one portrait ≤ 0.5 ms, scaled by the calibration factor of tests/perf/calibrate.js, ARCHITECTURE
+     §17; the city character is also timed at the reference machine's 1920 × 1080 scale, for the
+     record). Opens from disk. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -51,6 +53,7 @@
   <script src="../../js/art/logo.js"></script>
   <script src="../../js/art/bible.js"></script>
   <script src="../../js/art/interiors/kit.js"></script>
+  <script src="../perf/calibrate.js"></script>
   <script src="art-sheet.js"></script>
   <script>
   (function () {
@@ -78,24 +81,25 @@
       S.draw(cg, n, { view: 'side', x: x + 262, y: y + 112, scale: 0.4, t: t, player: true, karma: 30, mood: n === 'hurt' ? 'hurt' : n === 'cheer' || n === 'win' ? 'happy' : 'neutral' });
     });
 
-    // 2. the walk cycle (0.5 s at 280 u/s) and the fight moves over time
+    // 2. the walk cycle (0.5 s at 280 u/s) and the fight moves over time (each one-shot clip in 6 steps)
     A.section('Walk cycle and fight moves over time');
-    var wc = A.canvas(document.body, 1280, 250, 'sheet-cycles');
-    A.paper(wc, 1280, 250);
+    var FIGHT = ['punch', 'kick', 'fireball', 'inkbeam', 'hurt'];
+    var wc = A.canvas(document.body, 1280, 200 + FIGHT.length * 96, 'sheet-cycles');
+    A.paper(wc, 1280, 200 + FIGHT.length * 96);
     for (var k = 0; k < 8; k++) {
       var tt = k * 0.0625;
       S.draw(wc, 'walk', { x: 40 + k * 44, y: 80, facing: 'right', t: tt, player: true, karma: 0 });
       S.draw(wc, 'walk', { x: 40 + k * 44, y: 150, facing: 'down', t: tt, look: 'harold' });
       S.draw(wc, 'walk', { view: 'side', x: 420 + k * 60, y: 110, scale: 0.4, t: tt, look: 'lou' });
     }
-    ['punch', 'kick', 'fireball', 'inkbeam', 'hurt'].forEach(function (m, r) {
+    FIGHT.forEach(function (m, r) {
+      var y = 290 + r * 96, d = S.clips[m].dur;
+      A.label(wc, m + ' · 0 … ' + d + ' s', 8, y - 70, { size: 11, color: 'ui.ink-900', weight: 700 });
       for (var q = 0; q < 6; q++) {
-        var d = S.clips[m].dur;
-        S.draw(wc, m, { view: 'side', x: 920 + q * 58 - (r % 2) * 0, y: 200 + (r - 2) * 0, scale: 0.3, t: d * q / 5, player: true, karma: -60, alpha: r === 0 ? 1 : 0 });
+        S.draw(wc, m, { view: 'side', x: 150 + q * 100, y: y, scale: 0.34, t: d * q / 5, player: true, karma: -60 });
+        S.draw(wc, m, { view: 'side', x: 760 + q * 86, y: y, scale: 0.3, t: d * q / 5, look: 'fighter.4', facing: 'left' });
       }
     });
-    for (var q2 = 0; q2 < 6; q2++) S.draw(wc, 'punch', { view: 'side', x: 920 + q2 * 58, y: 110, scale: 0.34, t: S.clips.punch.dur * q2 / 5, player: true, karma: -60 });
-    for (var q3 = 0; q3 < 6; q3++) S.draw(wc, 'kick', { view: 'side', x: 920 + q3 * 58, y: 235, scale: 0.34, t: S.clips.kick.dur * q3 / 5, look: 'fighter.4', facing: 'left' });
 
     // 3. karma bands: every band on each side (the player's head; the side-view torso too)
     A.section('Karma bands (B-04c): good 0-9, evil 0-9');
@@ -164,7 +168,7 @@
     });
 
     // 7. vehicles: 8 types + the plane, 8 directions
-    A.section('Vehicles × 8 directions (0 east … 2 south … 4 west … 6 north)');
+    A.section('Vehicles × 8 directions (0 east … 2 south … 4 west … 6 north) · drivers: you in the junker and the sports car, NPCs in the taxi and the police car');
     var types = ['compact', 'sedan', 'taxi', 'van', 'police', 'junker', 'sports', 'skybus', 'plane'];
     var vc = A.canvas(document.body, 1280, types.length * 128, 'sheet-vehicles');
     A.paper(vc, 1280, types.length * 128);
@@ -173,7 +177,8 @@
       for (var d = 0; d < 8; d++) {
         var sc = ty === 'skybus' ? 0.26 : 0.72;
         SR.art.vehicles.draw(vc, ty, d, 150 + d * 142, r * 128 + 76, { scale: sc, t: 0.3 + d * 0.13, lights: d % 2 === 0, brake: d % 3 === 0,
-          driver: ty === 'sports' || ty === 'junker' ? { karma: 40 } : undefined, flashReduction: false, z: ty === 'plane' ? 20 : 0, carry: ty === 'plane' && d === 2 });
+          driver: ty === 'sports' || ty === 'junker' ? { karma: 40 } : ty === 'taxi' ? { look: 3 } : ty === 'police' ? { look: 'officer' } : undefined,
+          flashReduction: false, z: ty === 'plane' ? 20 : 0, carry: ty === 'plane' && d === 2 });
       }
     });
 
@@ -196,8 +201,19 @@
     var port = A.timeIt(function (n) {
       for (var i = 0; i < n; i++) { g.save(); g.translate((i * 97) % 1180, (i * 61) % 620); SR.art.portraits.draw(g, who[i % who.length], 96, 'neutral'); g.restore(); }
     }, 100, 9, g);
+    // For the record: the same crowd at the reference machine's stage scale (1920 × 1080: 1.5 device
+    // px per unit), where the rasterisation costs more.
+    var big = document.createElement('canvas'); big.width = 1920; big.height = 1080;
+    var bg = big.getContext('2d'); bg.scale(1.5, 1.5);
+    var city1080 = A.timeIt(function (n) {
+      for (var i = 0; i < n; i++) {
+        o.x = 20 + (i * 37) % 1240; o.y = 60 + (i * 53) % 640; o.t = i * 0.013; o.facing = FACINGS[i & 3];
+        var lk = looksCycle[i % looksCycle.length]; o.look = lk === 'player' ? undefined : lk; o.player = lk === 'player';
+        S.draw(bg, 'walk', o);
+      }
+    }, 200, 9, bg);
     var budget = { city: 0.08 * cal.factor, portrait: 0.5 * cal.factor };
-    A.state.perf = { cityMs: city, portraitMs: port, calibration: cal, budget: budget, ok: city <= budget.city && port <= budget.portrait };
+    A.state.perf = { cityMs: city, portraitMs: port, city1080Ms: city1080, calibration: cal, budget: budget, ok: city <= budget.city && port <= budget.portrait };
     pre.textContent = JSON.stringify(A.state.perf, null, 2);
     A.state.ready = true;
   })();

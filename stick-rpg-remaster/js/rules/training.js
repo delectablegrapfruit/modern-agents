@@ -40,6 +40,32 @@
     classTrack: classTrack,
 
     /**
+     * A source's gain before the degree bonus and Winded (B-03 `gain`); Study follows the Public
+     * Library Act (GDD §4.17: +3 INT) through W1-C's named fn decree.studyGain when it is loaded.
+     * @returns {number}
+     */
+    gain: function (s, id) {
+      var row = T()[id], fn = SR.reg.fn['decree.studyGain'];
+      if (id === 'study' && typeof fn === 'function') return Number(fn(s, {}, {})) || row.gain;
+      return row.gain;
+    },
+
+    /**
+     * A source's minutes (B-03 `min`): Speed Reader (P1 `perks`) makes Study 90 min and the paper
+     * 0 min.
+     * @returns {number}
+     */
+    minutes: function (s, id) {
+      var row = T()[id];
+      if (!row) return 0;
+      if (row.speedReaderMin !== undefined && SR.features.perks && SR.rules.perks.has(s, 'speedReader')) return row.speedReaderMin;
+      return row.min;
+    },
+
+    /** @returns {number} the HP a nap restores (B-03 `nap`: 15 % of HP max, floor; P1 `homesPlus`). */
+    napHp: function (s) { return Math.floor(T().nap.hpPct * s.stats.hpMax); },
+
+    /**
      * Whether a source can be used now: its daily limit (TV 2 a channel, Market Watch 1, the online
      * course 1, the paper 1, chess 3, seminars 2 across tracks), its weekly one (Open Mic) and, for a
      * seminar, seminarOk.
@@ -68,7 +94,7 @@
       var row = T()[id], track = id === 'seminar' ? (opts && opts.track) || 'biz' : classTrack(id);
       var stat = id === 'seminar' ? tracks()[track] : row.stat;
       var from = s.stats[stat];
-      var n = SR.rules.stats.add(s, stat, row.gain, 'train');
+      var n = SR.rules.stats.add(s, stat, training.gain(s, id), 'train');
       var out = { ok: true, stat: stat, n: n, karma: 0, deltas: [{ kind: 'stat', key: stat, n: n, from: from, to: s.stats[stat] }],
         events: [{ name: 'train', payload: { id: id, stat: stat, n: n } }] };
       countToday(s, id);
@@ -147,4 +173,9 @@
   SR.def.fn('training.seminarOk', function (s, params, ctx, track) { return training.seminarOk(s, track || params.track); });
   SR.def.fn('training.canGraduate', function (s, params, ctx, track) { return training.canGraduate(s, track || params.track); });
   SR.def.fn('training.graduate', function (s, params, ctx, track) { return res(training.graduate(s, track || params.track)); });
+  // Costs and amounts by name (a cost field or an effect argument cannot pass an argument):
+  // cost: { min: 'training.studyMin' } / 'training.paperMin' (Speed Reader), ['heal', 'training.napHp'].
+  SR.def.fn('training.studyMin', function (s) { return training.minutes(s, 'study'); });
+  SR.def.fn('training.paperMin', function (s) { return training.minutes(s, 'paper'); });
+  SR.def.fn('training.napHp', function (s) { return training.napHp(s); });
 })();

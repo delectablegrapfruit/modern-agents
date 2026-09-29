@@ -307,40 +307,69 @@
    * @param {number} y centre
    * @param {{size: number, color: string, scale: number, angle: number, alpha: number}=} o
    */
+  // The stamp is inked on its own layer, so the grain mask knocks specks out of the ink only and never
+  // punches holes through what lies under the stamp.
+  var stampLayer = null;
+  function layerCanvas(w, h) {
+    if (!stampLayer) {
+      if (typeof document !== 'undefined' && document.createElement) stampLayer = document.createElement('canvas');
+      else if (typeof OffscreenCanvas === 'function') stampLayer = new OffscreenCanvas(1, 1);
+      else return null;
+    }
+    if (stampLayer.width < w) stampLayer.width = w;
+    if (stampLayer.height < h) stampLayer.height = h;
+    return stampLayer;
+  }
+  function stampInk(g, s, w, h, size, c) {
+    g.strokeStyle = c;
+    g.lineWidth = Math.max(2, size * 0.07);
+    roundRect(g, -w / 2, -h / 2, w, h, size * 0.22);
+    g.stroke();
+    g.lineWidth = Math.max(1, size * 0.03);
+    roundRect(g, -w / 2 + size * 0.12, -h / 2 + size * 0.12, w - size * 0.24, h - size * 0.24, size * 0.14);
+    g.stroke();
+    g.fillStyle = c;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(s, 0, size * 0.04);
+  }
   function stamp(ctx, str, x, y, o) {
     o = o || {};
     var size = o.size || 64;
     var c = color(o.color || 'fx.stampInk');
+    var s = String(str).toUpperCase();
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(o.angle === undefined ? -8 * Math.PI / 180 : o.angle);
     if (o.scale) ctx.scale(o.scale, o.scale);
     if (o.alpha !== undefined) ctx.globalAlpha *= o.alpha;
     ctx.font = font(size, 900, 'display');
-    var s = String(str).toUpperCase();
     var w = ctx.measureText(s).width + size * 0.7;
     var h = size * 1.3;
-    ctx.strokeStyle = c;
-    ctx.lineWidth = Math.max(2, size * 0.07);
-    roundRect(ctx, -w / 2, -h / 2, w, h, size * 0.22);
-    ctx.stroke();
-    ctx.lineWidth = Math.max(1, size * 0.03);
-    roundRect(ctx, -w / 2 + size * 0.12, -h / 2 + size * 0.12, w - size * 0.24, h - size * 0.24, size * 0.14);
-    ctx.stroke();
-    ctx.fillStyle = c;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(s, 0, size * 0.04);
+    var pad = Math.max(2, size * 0.07) + 2;
+    // device pixels per stamp unit (the layer is drawn back 1:1, so the edges stay crisp)
+    var tr = ctx.getTransform ? ctx.getTransform() : null;
+    var dev = tr ? Math.max(0.25, Math.sqrt(tr.a * tr.a + tr.b * tr.b)) : 1;
+    var lw = Math.ceil((w + pad * 2) * dev), lh = Math.ceil((h + pad * 2) * dev);
+    var layer = SR.art.paper && SR.art.paper.pattern ? layerCanvas(lw, lh) : null;
+    var g = layer ? layer.getContext('2d') : null;
+    if (!g) { stampInk(ctx, s, w, h, size, c); ctx.restore(); return; }
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.globalCompositeOperation = 'source-over';
+    g.globalAlpha = 1;
+    g.clearRect(0, 0, lw, lh);
+    g.setTransform(dev, 0, 0, dev, lw / 2, lh / 2);
+    g.font = ctx.font;
+    stampInk(g, s, w, h, size, c);
     // The grain mask: knock specks out of the ink so it reads as a rubber stamp.
-    if (SR.art.paper && SR.art.paper.grain) {
-      var g = SR.art.paper.grain();
-      if (g) {
-        ctx.globalCompositeOperation = 'destination-out';
-        ctx.globalAlpha = 0.35;
-        var pat = SR.art.paper.pattern(ctx, 'speck');
-        if (pat) { ctx.fillStyle = pat; ctx.fillRect(-w / 2 - 4, -h / 2 - 4, w + 8, h + 8); }
-      }
+    var pat = SR.art.paper.pattern(g, 'speck');
+    if (pat) {
+      g.globalCompositeOperation = 'destination-out';
+      g.globalAlpha = 0.35;
+      g.fillStyle = pat;
+      g.fillRect(-w / 2 - pad, -h / 2 - pad, w + pad * 2, h + pad * 2);
     }
+    ctx.drawImage(layer, 0, 0, lw, lh, -lw / dev / 2, -lh / dev / 2, lw / dev, lh / dev);
     ctx.restore();
   }
 

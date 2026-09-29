@@ -50,15 +50,21 @@
   }
 
   var descSeq = 0;
-  function describe(el, text) {
+  /**
+   * Sets el's accessible description (a visually hidden span named by aria-describedby). host:
+   * where the span lives (default el); an ActionRow keeps it beside its button so the button's
+   * own text (SR.debug.ui) is not doubled by it.
+   */
+  function describe(el, text, host) {
+    host = host || el;
     var id = el.getAttribute('data-desc-id');
-    var node = id ? el.querySelector('[data-desc="' + id + '"]') : null;
+    var node = id ? host.querySelector('[data-desc="' + id + '"]') : null;
     if (!text) { if (node) node.textContent = ''; return; }
     if (!node) {
       id = 'd' + (++descSeq);
       el.setAttribute('data-desc-id', id);
       node = h('span', { class: 'vh', 'data-desc': id, id: 'desc-' + id });
-      el.appendChild(node);
+      host.appendChild(node);
       el.setAttribute('aria-describedby', 'desc-' + id);
     }
     node.textContent = text;
@@ -68,8 +74,9 @@
   /**
    * @param {{id: string, label: string, vars: object, icon: string, variant: string, size: string,
    *   disabled: boolean, reason: string, onClick: function, loading: boolean, iconOnly: boolean,
-   *   hint: string, nav: boolean, autofocus: boolean, cls: string}} o
-   *   variant: 'primary' | 'secondary' | 'danger' | 'ghost'; hint: an input action shown as a KeyHint
+   *   hint: string, hotkey: (number|string), nav: boolean, autofocus: boolean, cls: string}} o
+   *   variant: 'primary' | 'secondary' | 'danger' | 'ghost'; hint: an input action shown as a KeyHint;
+   *   hotkey: a digit badge before the label (dialog choices 1-4; hidden on touch)
    * @returns {HTMLButtonElement}
    */
   function button(o) {
@@ -83,6 +90,7 @@
         st.disabled ? 'is-disabled' : '', st.loading ? 'is-loading' : '', st.cls || ''].filter(Boolean).join(' ');
       D().clear(el);
       var label = t(st.label, st.vars);
+      if (st.hotkey !== undefined && st.hotkey !== null && !st.iconOnly) el.appendChild(h('span', { class: 'btn-key', 'aria-hidden': 'true' }, String(st.hotkey)));
       if (st.hint && !st.iconOnly) el.appendChild(keyHint({ action: st.hint, context: st.hintContext }));
       if (st.icon) el.appendChild(D().icon(st.icon, st.iconOnly ? 24 : 20, 'btn-ico'));
       if (st.loading) el.appendChild(h('span', { class: 'btn-spin', 'aria-hidden': 'true' }));
@@ -275,16 +283,19 @@
       if (st.disabled && st.reason) desc.push(t(st.reason, st.reasonVars));
       else (st.gains || []).forEach(function (c) { desc.push(c.textContent); });
       (st.costs || []).forEach(function (c) { desc.push(c.textContent); });
-      describe(main, desc.join(', '));
+      describe(main, desc.join(', '), el);
       // Extras: variants and Hustle live outside the main button (no nested interactive content).
+      // They are rebuilt on every update; focus inside them moves to the rebuilt control.
       var extras = el.querySelector('.arow-extras');
+      var had = extras && extras.contains(document.activeElement) ? document.activeElement.getAttribute('data-id') : null;
       if (extras) extras.parentNode.removeChild(extras);
+      extras = null;
       seg = null; hustle = null;
       if (st.variants || st.hustle) {
         extras = h('div', { class: 'arow-extras' });
         if (st.variants) {
           seg = segmented({ id: 'row-' + st.id + '-variant', options: st.variants, value: st.variant, size: 's', nav: false,
-            label: label, onChange: function (v) { st.variant = v; if (st.onVariant) st.onVariant(v); } });
+            focusHost: main, label: label, onChange: function (v) { st.variant = v; if (st.onVariant) st.onVariant(v); } });
           extras.appendChild(seg);
         }
         if (st.hustle) {
@@ -293,6 +304,10 @@
           extras.appendChild(hustle);
         }
         el.appendChild(extras);
+      }
+      if (had) {
+        var again = extras && extras.querySelector('[data-id="' + had + '"]');
+        SR.ui.focus.focus(again && again.hasAttribute('data-nav') ? again : main);
       }
     }
     el.appendChild(main);
@@ -329,7 +344,8 @@
   /**
    * A SpeechBubble (UI.md §2.3): typewriter at access.typewriterCps (60), any key completes,
    * gibberish voice blips. @param {{text: string, vars: object, id: string, typewriter: boolean,
-   * cps: number, voice: number, tail: string}} o voice: blip pitch factor (1 = neutral)
+   * cps: number, voice: (number|string), tail: string}} o voice: a voice recipe name ('blip_low',
+   * a person's `voice`) or the pitch factor of the generic 'blip' (1 = neutral)
    * @returns {HTMLElement} el.complete(), el.done(), el.update({ text })
    */
   function speech(o) {
@@ -338,7 +354,7 @@
     var ghostText = h('span', { class: 'speech-ghost', 'aria-hidden': 'true' });   // reserves the final size
     var full = h('span', { class: 'vh' });
     var el = h('div', { class: 'speech speech--' + st.tail, 'data-id': st.id || null, role: 'note' }, ghostText, shown, full);
-    var text = '', pos = 0, raf = 0, t0 = 0, lastBlip = 0;
+    var text = '', pos = 0, raf = 0, t0 = 0, lastBlip = 0, attached = false;
     function stop() { if (raf) cancelAnimationFrame(raf); raf = 0; }
     function speed() {
       // access.typewriterCps: 30 / 60 / 120 characters per second, or 0 = instant (UI.md §8).
@@ -348,6 +364,8 @@
     }
     function tick() {
       raf = 0;
+      if (el.isConnected) attached = true;
+      else if (attached) return;       // the bubble left the page: stop typing (and blipping)
       var cps = speed();
       var n = Math.min(text.length, Math.floor((D().now() - t0) * cps / 1000));
       if (n !== pos) {
@@ -355,7 +373,9 @@
         shown.textContent = text.slice(0, pos);
         if (pos - lastBlip >= 3 && /\w/.test(text.charAt(pos - 1))) {
           lastBlip = pos;
-          D().sfx('blip', { pitch: (st.voice || 1) * (0.9 + SR.rng.fx.float() * 0.2), gain: 0.5 });
+          var v = st.voice;
+          if (typeof v === 'string' && SR.reg.sfx && SR.reg.sfx[v]) D().sfx(v, { gain: 0.5 });
+          else D().sfx('blip', { pitch: (typeof v === 'number' ? v : 1) * (0.9 + SR.rng.fx.float() * 0.2), gain: 0.5 });
         }
       }
       if (pos < text.length) raf = requestAnimationFrame(tick);
@@ -687,8 +707,9 @@
   /**
    * A Segmented control, 2-4 options, 32 tall (UI.md §2.3): arrows move the selection.
    * @param {{id: string, options: {id: string, label: string, disabled: boolean}[], value: string,
-   *   onChange: function, size: string, nav: boolean, label: string}} o nav false: not a focus
-   *   stop of its own (inside an ActionRow the row drives it)
+   *   onChange: function, size: string, nav: boolean, label: string, focusHost: HTMLElement}} o
+   *   nav false: not a focus stop of its own (inside an ActionRow the row drives it); focusHost:
+   *   the element that takes focus when an option of a nav-less Segmented is clicked
    * @returns {HTMLElement} el.step(d), el.value
    */
   function segmented(o) {
@@ -703,8 +724,14 @@
         var b = h('button', { type: 'button', role: 'radio', tabindex: '-1', class: ['seg-opt', sel ? 'is-selected' : ''],
           'aria-checked': sel ? 'true' : 'false', 'data-id': (st.id ? st.id + '-' : 'seg-') + op.id,
           'aria-disabled': op.disabled ? 'true' : null }, t(op.label));
+        // A click must not leave focus on an option that the re-render removes: keep it where it
+        // was (mousedown) and hand it to the control that owns the choice (the Segmented, or the
+        // ActionRow that drives a nav-less one).
+        b.addEventListener('mousedown', function (ev) { ev.preventDefault(); });
         b.addEventListener('click', function (ev) {
           ev.stopPropagation();
+          if (st.nav) SR.ui.focus.focus(el);
+          else if (st.focusHost) SR.ui.focus.focus(st.focusHost);
           if (op.disabled) { D().refuse(b); return; }
           set(op.id);
         });
@@ -878,9 +905,17 @@
       }
       if (a === 'back') {
         if (st.onCancel) st.onCancel();
-        input.blur();
+        // Leave typing mode (the text-entry rule of ARCHITECTURE §11) by moving focus to the next
+        // control that is not a text field (the Paste button, else the next one in the scope),
+        // so the next Esc / B reaches the screen's Back. Refocusing the input would trap Esc.
         var s = SR.ui.focus.current();
-        if (s) SR.ui.focus.focus(input);   // stay on the field, now leaving typing mode
+        var list = s ? SR.ui.focus.navigables(s.root) : [];
+        var i = list.indexOf(input), next = null;
+        for (var k = 1; k < list.length && !next; k++) {
+          var c = list[(i + k + list.length) % list.length];
+          if (!SR.ui.focus.isTextTarget(c)) next = c;
+        }
+        if (next) SR.ui.focus.focus(next); else input.blur();
         return true;
       }
       return false;
@@ -1230,7 +1265,8 @@
       }, BLINK_MIN_MS + SR.rng.fx.float() * (BLINK_MAX_MS - BLINK_MIN_MS));
     }
     function render() {
-      el.setAttribute('aria-label', st.label ? t(st.label) : t('ui.aria.portrait', { name: st.person || '' }));
+      var who = st.person && SR.reg.person && SR.reg.person[st.person];   // a named NPC's name, else the id
+      el.setAttribute('aria-label', st.label ? t(st.label) : t('ui.aria.portrait', { name: who && who.name ? t(who.name) : st.person || '' }));
       el.setAttribute('data-person', st.person || '');
       draw(false);
     }
@@ -1475,6 +1511,6 @@
   SR.onBoot(50, function () {
     if (typeof document === 'undefined') return;
     SR.events.on('input:device', function () { keyHint.refreshAll(); });
-    SR.events.on('settings:changed', function (p) { if (p && /^controls/.test(String(p.key || ''))) keyHint.refreshAll(); });
+    SR.events.on('settings:changed', function (p) { if (p && /^(controls|\*$)/.test(String(p.key || ''))) keyHint.refreshAll(); });
   });
 })();

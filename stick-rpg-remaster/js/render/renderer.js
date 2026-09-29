@@ -250,6 +250,17 @@
     return best;
   }
 
+  /** @returns {*} the SR.tuning value at a dotted path ('world.door.tag'), or fallback while it is missing. */
+  function tune(path, fallback) {
+    var v = SR.tuning;
+    var parts = path.split('.');
+    for (var i = 0; i < parts.length; i++) {
+      if (v === null || v === undefined || typeof v !== 'object') return fallback;
+      v = v[parts[i]];
+    }
+    return v === undefined || v === null ? fallback : v;
+  }
+
   /** @returns {string} SR.text(key, vars) when the key exists, else fallback (no missing-key warning). */
   function text(key, vars, fallback) {
     if (SR.text && typeof SR.text.has === 'function' && SR.text.has(key)) return SR.text(key, vars);
@@ -777,7 +788,7 @@
       pal: pal, palHas: palHas, resolve: resolve, chan: chan, hex: hex, solid: solid, alphaOf: alphaOf, mix: mix, mul: mul,
       luma: luma, tone: tone, grey: grey, clamp: clamp, hash01: hash01, ihash: ihash, now: now, setting: setting,
       reducedMotion: reducedMotion, flashReduction: flashReduction, quality: quality, compact: compact,
-      zoomLevels: zoomLevels, bakeZoom: bakeZoom, text: text, model: getModel, rectOf: rectOf, num: num,
+      zoomLevels: zoomLevels, bakeZoom: bakeZoom, text: text, tune: tune, model: getModel, rectOf: rectOf, num: num,
       worldTransform: worldTransform, stageTransform: stageTransform, count: count, tick: tick,
     },
   });

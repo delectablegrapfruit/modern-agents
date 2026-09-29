@@ -111,6 +111,31 @@ async function setup(opts) {
   T.eq((await state()).cash, s2.cash, 'and nothing ran');
   await ev(() => window.SR.ui.hud.flush());
   T.eq(await ev(() => document.querySelector('#ui [data-id="hud-cash"]').textContent), '$' + s2.cash, 'the compact HUD shows the new cash');
+  // R re-runs the card's last action only when that action is repeatable (ARCHITECTURE §11): after
+  // a non-repeatable run it refuses instead of reaching back to an older repeatable one.
+  await set({ money: { cash: 100 }, stats: { hp: 10, heat: 0 } });
+  await P.keyboard.press('Digit2');
+  await focusRow('testshop.rob');
+  await P.keyboard.press('Enter');
+  await t.clickUI('confirm-row-yes');
+  const robbed = await ev(() => ({ last: window.SR.ui.card.debug().last, heat: window.SR.state.stats.heat }));
+  T.ok(robbed.last === 'testshop.rob' && robbed.heat > 0, 'a confirmed non-repeatable row runs and becomes the last action', robbed);
+  s0 = await state();
+  await ev(() => { window.__sfx.length = 0; });
+  await P.keyboard.press('KeyR');
+  T.ok((await state()).cash === s0.cash && (await ev(() => window.__sfx.indexOf('error') >= 0)), 'R after it refuses (error sound) and does not re-run the older Fries');
+  await set({ stats: { heat: 0, karma: 0 } });
+  // The HUD ghost follows the focused row's new preview after a run (UI.md §1.1). (The pointer
+  // goes to the diorama first: hovering a row ghosts that row.)
+  await P.mouse.move(40, 700);
+  await set({ money: { cash: 100 }, stats: { hp: 200 } });
+  await focusRow('testshop.fries');
+  const gh0 = await ev(() => ({ hp: document.querySelector('#ui [data-id="hud-hp"] .meter-ghost').style.width, cash: document.querySelector('#ui [data-id="hud-cash-ghost"]').textContent }));
+  await P.keyboard.press('Enter');
+  const gh1 = await ev(() => ({ hp: document.querySelector('#ui [data-id="hud-hp"] .meter-ghost').style.width, cash: document.querySelector('#ui [data-id="hud-cash-ghost"]').textContent,
+    enabled: window.SR.ui.card.rows().find((r) => r.id === 'testshop.fries').enabled }));
+  T.ok(parseFloat(gh0.hp) > 0 && gh0.cash === '-$12', 'focusing Fries ghosts +HP and -$12 on the HUD', gh0);
+  T.ok(!gh1.enabled && parseFloat(gh1.hp) === 0 && gh1.cash === '', 'after the run fills HP the row refuses and the stale ghost is gone', gh1);
 
   // ------------------------------------------------------------ hold-to-repeat
   T.section('hold confirm repeats a repeatable row every repeatHoldMs until refused');
@@ -156,16 +181,17 @@ async function setup(opts) {
   T.eq(await ev(() => window.SR.ui.card.screens()), [], 'Esc closes the sub-screen (back one crumb)');
   T.eq(await active(), 'row-testshop.badRepeat2', 'focus returns to the row that opened it');
   // A stat gain ≥ 2 stamps once; during the hold its stamps are coalesced and do not stop it.
-  await ev(() => { window.SR.debug.fast(false); window.SR.ui.stamp.clear(); });
+  await ev(() => { window.SR.debug.fast(false); window.SR.ui.stamp.clear(); window.__sfx.length = 0; });
   await set({ stats: { int: 7, hp: 200 } });   // not Winded (HP ≥ 25 %), so +2 a run
   await focusRow('testshop.study');
   await P.keyboard.down('Enter');
-  const st1 = await ev(() => ({ int: window.SR.state.stats.int, stamp: window.SR.ui.stamp.current() }));
+  const st1 = await ev(() => ({ int: window.SR.state.stats.int, stamp: window.SR.ui.stamp.current(), sfx: window.__sfx.slice() }));
   await step(every);
   await step(every);
   const st2 = await ev(() => ({ int: window.SR.state.stats.int, stamps: document.querySelectorAll('#ui .ui-layer--stamp .stamp:not(.is-leaving)').length, busyOther: window.SR.ui.stamp.busy({ ignoreStat: true }) }));
   await P.keyboard.up('Enter');
   T.ok(st1.int === 9 && /INTELLIGENCE/.test(st1.stamp || ''), 'the first run stamps "+2 INTELLIGENCE!"', st1);
+  T.ok(st1.sfx.indexOf('stamp') >= 0 || !(await ev(() => !!window.SR.reg.sfx.stamp)), 'the stamp thuds (W1-S\'s `stamp` recipe)', st1.sfx);
   T.ok(st2.int === 13 && st2.stamps <= 1 && !st2.busyOther, 'the repeat goes on through the stat stamp; no stamp per repeat', st2);
   await ev(() => { window.SR.ui.stamp.clear(); window.SR.debug.fast(true); });
   // Holding the pad's A repeats too.
@@ -178,6 +204,20 @@ async function setup(opts) {
   T.eq((await state()).cash, s0.cash - 24, 'holding A runs it and repeats it after ' + holdMs + ' ms');
   await step(every * 2);
   T.eq((await state()).cash, s0.cash - 24, 'releasing A stops the repeat');
+  // A Hustle button keeps its focus when the rows refresh (they rebuild the row's extras).
+  await ev(() => window.SR.debug.feature('hustles', true));
+  await ev(() => window.SR.ui.card.refresh());
+  await ev(() => window.SR.ui.focus.focus(document.querySelector('#ui [data-id="row-testshop.badRepeat3-hustle"]')));
+  await ev(() => window.SR.ui.card.refresh());
+  T.eq(await active(), 'row-testshop.badRepeat3-hustle', 'the Hustle button keeps focus through a refresh');
+  await ev(() => window.SR.debug.feature('hustles', false));
+  await ev(() => window.SR.ui.card.refresh());
+  T.eq(await active(), 'row-testshop.badRepeat3', 'and focus falls back to its row when the button goes away');
+  // Clicking a variant keeps focus on its row (the option under the pointer is rebuilt).
+  await P.click('#ui [data-id="row-testshop.work-variant-overtime"]');
+  T.eq([await active(), await ev(() => window.SR.ui.card.rows().find((r) => r.id === 'testshop.work').variant)], ['row-testshop.work', 'overtime'],
+    'a click on a variant selects it and focus lands on its row');
+  await P.click('#ui [data-id="row-testshop.work-variant-full"]');
 
   // ------------------------------------------------------------ gamepad navigation
   T.section('a mocked gamepad drives the card');
@@ -198,21 +238,33 @@ async function setup(opts) {
   // ------------------------------------------------------------ sub-screens
   T.section('the sub-screen host');
   await set({ money: { cash: 100, bank: 0 } });
+  // The bank gets a registered interior (W1-A's kit): the scene draws it instead of its placeholder.
+  await ev(() => window.SR.def.interior('testbank', { wall: { type: 'panels', color: 'int.default.wall' }, floor: { type: 'planks' },
+    window: { x: 60, y: 90, w: 220, h: 140 }, props: [{ type: 'counter', x: 120, y: 470, w: 520 }],
+    owner: { id: 'penny', x: 360, y: 430 }, you: { x: 250, y: 560 } }));
   await ev(() => { window.__ev.length = 0; window.W1D.log.length = 0; window.SR.ui.card.open('testbank', { screen: 'test.form' }); });
   await step(1);
+  T.ok(await ev(() => window.SR.ui.building.info().interior), 'a registered interior replaces the placeholder diorama (SR.art.interior)');
   T.eq(await t.scenes(), ['building'], 'card.open(\'testbank\', { screen }) from another building …');
   T.eq(await ev(() => [window.SR.ui.card.current(), window.SR.ui.card.screens()]), ['testbank', ['test.form']], '… lands on the bank with the sub-screen open');
   const moved = await ev(() => window.__ev.slice());
   T.ok(moved.some((e) => e.n === 'door:exited' && e.p.id === 'testshop' && typeof e.p.spentMin === 'number') &&
        moved.some((e) => e.n === 'door:entered' && e.p.id === 'testbank'), 'door:exited (with spentMin) then door:entered', moved.filter((e) => e.n !== 'action:done'));
   T.eq(await ev(() => window.W1D.log.slice()), ['mount test.form'], 'the sub-screen mounted');
+  T.eq(await active(), 'test-amount-plus', 'focus starts on its first enabled control that is not a text field (− starts disabled)');
   T.eq(await ev(() => Array.from(document.querySelectorAll('#ui [data-id="breadcrumb"] .crumb, #ui [data-id="breadcrumb"] .crumb-sep')).map((e) => e.textContent.trim()).join(' ')), '‹Test Bank › Ledger', 'the Breadcrumb reads "Test Bank › Ledger"');
   T.ok(await ev(() => document.querySelector('#ui [data-id="card-rows"]').hidden), 'the rows are replaced by the sub-screen');
   await t.shot(path.join(SHOTS, 'card-sub.png'));
+  await ev(() => window.SR.debug.fast(false));      // fast mode skips the flying chips
   await t.clickUI('test-tip');
-  const sub1 = await ev(() => ({ refreshes: Number(document.querySelector('#ui [data-subscreen="test.form"]').getAttribute('data-refreshes')), text: document.querySelector('#ui [data-id="test-balance"]').textContent, s: { cash: window.SR.state.money.cash, bank: window.SR.state.money.bank } }));
+  const sub1 = await ev(() => ({ refreshes: Number(document.querySelector('#ui [data-subscreen="test.form"]').getAttribute('data-refreshes')), text: document.querySelector('#ui [data-id="test-balance"]').textContent, s: { cash: window.SR.state.money.cash, bank: window.SR.state.money.bank },
+    fly: document.querySelectorAll('#ui .ui-layer--fly .chip--fly').length, scene: window.SR.ui.building.info(), last: window.SR.ui.card.debug().last }));
+  await ev(() => window.SR.debug.fast(true));
   T.ok(sub1.s.cash === 90 && sub1.s.bank === 10, 'ctx.act commits through SR.act (−$10 cash, +$10 bank)', sub1);
   T.ok(sub1.refreshes === 1 && /Bank \$10/.test(sub1.text), 'the host refreshes the sub-screen once after ctx.act', sub1);
+  T.ok(sub1.fly >= 2 && sub1.scene.ownerPose === 'happy' && sub1.scene.floats >= 1,
+    'and plays the row feedback: chips fly to the HUD, the proprietor reacts, float texts rise', sub1);
+  T.eq(sub1.last, 'testbank.tip', 'a sub-screen commit is the card\'s last action (R will not reach past it)');
   await t.clickUI('test-open-child');
   T.eq(await ev(() => window.SR.ui.card.screens()), ['test.form', 'test.child'], 'ctx.push opens a child');
   T.eq(await ev(() => Array.from(document.querySelectorAll('#ui [data-id="breadcrumb"] .crumb, #ui [data-id="breadcrumb"] .crumb-sep')).map((e) => e.textContent.trim()).join(' ')), '‹Test Bank › Ledger › Receipt', 'the Breadcrumb grows');
@@ -242,6 +294,48 @@ async function setup(opts) {
   T.ok(/read-only/.test(await ev(() => window.W1D.roError || '')), 'ctx.state is a read-only view (a write throws)');
   T.eq(await ev(() => window.SR.state.money.cash), 90, 'and the state is unchanged by the attempt');
   await P.keyboard.press('Escape');
+  // Door params reach a row's sub-screen; the row's own screenParams win over them.
+  await ev(() => {
+    const SR = window.SR;
+    SR.def.text({ 'act.testbank.receipt': 'Ask for a receipt' });
+    SR.def.action('testbank.receipt', { building: 'testbank', group: 'services', order: 30, icon: 'info', label: 'act.testbank.receipt', p: 0,
+      screen: 'test.child', screenParams: { note: 'row' } });
+    window.W1D.log.length = 0;
+    SR.ui.card.open('testbank', { params: { note: 'door', mode: 'test' } });
+  });
+  await step(1);
+  await focusRow('testbank.receipt');
+  await P.keyboard.press('Enter');
+  T.eq(await ev(() => window.W1D.log.slice()), ['mount test.child row'], 'a row\'s screenParams override the door params of the same name');
+  await P.keyboard.press('Escape');
+
+  // ------------------------------------------------------------ the dialog sheet over a building
+  T.section('the dialog sheet (UI.md §5.7)');
+  const openDlg = (o) => ev((o) => { window.__dlg = 'pending'; window.SR.ui.dialog.open(o).then((r) => { window.__dlg = r; }); }, o);
+  await openDlg({ name: 'Officer Pat', text: 'Hold it right there.', choices: [{ id: 'talk', label: 'ui.ok' }, { id: 'run', label: 'ui.no' }] });
+  T.eq(await ev(() => Array.from(document.querySelectorAll('#ui .dlg .btn-key')).map((k) => k.textContent)), ['1', '2'], 'each choice shows its hotkey digit (UI.md §5.7)');
+  await ev(() => { window.__sfx.length = 0; });
+  await P.keyboard.press('Escape');
+  T.eq([await t.scenes(), await ev(() => window.__dlg), await ev(() => window.__sfx.indexOf('error') >= 0)], [['building', 'dialog'], 'pending', true],
+    'Esc does nothing (an error cue) when the dialog offers no Leave: a stop cannot be escaped');
+  await P.keyboard.press('Digit2');
+  await P.waitForTimeout(20);
+  T.eq(await ev(() => window.__dlg), { choice: 'run' }, 'hotkey 2 picks the second choice');
+  await ev(() => window.SR.debug.fast(false));      // let the line type
+  await openDlg({ name: 'Harold', text: 'The sky ate my hat once. Still waiting for it to come back down.',
+    choices: [{ id: 'give', label: 'ui.ok' }, { id: 'leave', label: 'ui.leave' }] });
+  await P.waitForTimeout(60);
+  await P.keyboard.press('Enter');
+  await P.waitForTimeout(30);
+  const typed = await ev(() => {
+    const sp = document.querySelector('#ui [data-id="dialog-text"]');
+    return { r: window.__dlg, shown: sp ? sp.querySelector('.speech-text').textContent.length : -1, full: sp ? sp.querySelector('.speech-ghost').textContent.length : -2 };
+  });
+  T.ok(typed.r === 'pending' && typed.shown === typed.full, 'Enter while the line types completes it and commits nothing', typed);
+  await P.keyboard.press('Enter');
+  await P.waitForTimeout(20);
+  T.eq(await ev(() => window.__dlg), { choice: 'give' }, 'the next Enter picks the focused choice');
+  await ev(() => window.SR.debug.fast(true));
 
   // ------------------------------------------------------------ leaving
   T.section('leaving');
@@ -297,6 +391,20 @@ async function setup(opts) {
   await qev(() => window.W1D.step(42));
   const lp3 = await qev(() => window.SR.state.money.cash);
   T.ok(lp1 === c0 - 8 && lp2 === c0 - 16 && lp3 === lp2, 'a long-press runs at 500 ms, repeats while held, stops on release (no extra tap)', [c0, lp1, lp2, lp3]);
+  // A long-press whose finger then drags away (the browser takes the pan: pointercancel, no click)
+  // must not swallow the next tap on that row.
+  c0 = await qev(() => window.SR.state.money.cash);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: px, y: py }] });
+  await Q.waitForTimeout(650);
+  for (let i = 1; i <= 8; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: px, y: py - i * 15 }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await Q.waitForTimeout(100);
+  await qev(() => window.W1D.step(2));
+  const lp4 = await qev(() => window.SR.state.money.cash);
+  await qev(() => { const b = document.querySelector('#ui [data-id="card-body"]'); b.scrollTop = 0; });
+  await Q.tap('#ui [data-id="row-testshop.shake"]');
+  const lp5 = await qev(() => window.SR.state.money.cash);
+  T.ok(lp4 === c0 - 8 && lp5 === lp4 - 8, 'after a long-press that dragged off, the next tap on the row runs it', [c0, lp4, lp5]);
   // Drag-scroll the long card body.
   const body = await Q.locator('#ui [data-id="card-body"]').boundingBox();
   const sc0 = await qev(() => { const b = document.querySelector('#ui [data-id="card-body"]'); return { top: b.scrollTop, room: b.scrollHeight - b.clientHeight }; });

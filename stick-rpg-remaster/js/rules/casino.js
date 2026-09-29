@@ -23,7 +23,7 @@
   var SR = window.SR;
   // Built-ins held locally: in Node's vm contexts (the tests and the balance simulator) every global
   // lookup costs ~150 ns, and these functions run millions of times there.
-  var M = Math, isArray = Array.isArray;
+  var Mth = Math, isArray = Array.isArray;
 
   var SYMBOLS = ['dollar', 'seven', 'bar', 'bell', 'cherry', 'blank'];
   var LINES = ['dollar3', 'seven3', 'bar3', 'bell3', 'cherry3', 'cherry2', 'cherry1'];
@@ -42,6 +42,8 @@
   function partial() { return SR.rules.effects.partial(); }
   function money(n) { return SR.text.money(n); }
   function decree(s, id) { return ((s.election && s.election.decrees) || []).indexOf(id) >= 0; }
+  /** @returns {boolean} today is a Saturday (B-14d: VIP points ×2), by the B-01 weekday names. */
+  function saturday(s) { return SR.rules.time.weekday(s) === SR.rules.time.dayIndex('sat'); }
 
   // ============================================================================================
   // Slots (B-14a)
@@ -129,7 +131,7 @@
    * 2^32 × (hi - lo + 1))), taken from next() directly: the shuffle runs 311 of them per shoe.
    */
   function below(rng, n) {
-    return typeof rng.next === 'function' ? M.floor((rng.next() / 4294967296) * n) : rng.int(0, n - 1);
+    return typeof rng.next === 'function' ? Mth.floor((rng.next() / 4294967296) * n) : rng.int(0, n - 1);
   }
 
   function shuffleInPlace(a, rng) {
@@ -149,7 +151,7 @@
     var cards = new Array(decks * 52);
     for (var i = 0; i < cards.length; i++) cards[i] = i % 52;
     shuffleInPlace(cards, rng || SR.rng.rules);
-    return { decks: decks, cards: cards, pos: 0, cut: M.floor(cards.length * BJ().penetration), running: 0, hole: -1 };
+    return { decks: decks, cards: cards, pos: 0, cut: Mth.floor(cards.length * BJ().penetration), running: 0, hole: -1 };
   }
 
   /** Reshuffles a shoe in place (the running count starts again). */
@@ -314,8 +316,8 @@
    */
   function settle(r) {
     var nat = BJ().natural;
-    if (r.dealerBJ) return r.playerBJ ? 0 : -r.bet;
-    if (r.playerBJ) return nat * r.bet;
+    if (r.dealerBJ) return (r.net = r.playerBJ ? 0 : -r.bet);
+    if (r.playerBJ) return (r.net = nat * r.bet);
     var d = total(r.dealer), net = 0;
     r.hands.forEach(function (h) {
       var t = total(h.cards);
@@ -330,7 +332,7 @@
   /** @returns {number} the dealer up card's value 2..11 (ace 11) from a card or a rank. */
   function upValue(up) {
     var v = typeof up === 'number' && up >= 0 && up < 52 ? cval(up) : up;
-    return v === 1 ? 11 : M.min(10, v);
+    return v === 1 ? 11 : Mth.min(10, v);
   }
 
   // Basic strategy, 6 decks, S17, no double after split (B-14b). Rows: dealer 2..11 (11 = ace).
@@ -426,8 +428,8 @@
     var from = c.suspicion || 0, to = from, backed = false;
     if (feat('nightlife')) {
       if (bet >= S.spreadBetMult * BJ().minimum && trueCount >= S.spreadTrueCount) to += S.spread * (perk(s, 'cardSharp') ? S.cardSharp : 1);
-      else if (bet === c.lastBet) to = M.max(0, to + S.flat);
-      to = M.round(to * 1000) / 1000;
+      else if (bet === c.lastBet) to = Mth.max(0, to + S.flat);
+      to = Mth.round(to * 1000) / 1000;
       var limit = s.stats.cha >= K.cha ? K.atHighCha : K.at;
       if (to >= limit) {
         c.barredUntil = s.clock.day + K.days;
@@ -466,8 +468,12 @@
     return L;
   }
 
-  /** @returns {number} a pocket from 0..36, '00' or 37. */
-  function pocketOf(v) { return v === '00' ? DOUBLE_ZERO : M.floor(Number(v)); }
+  /** @returns {number} a pocket from 0..36, '00' or 37; NaN for anything else (never a legal bet). */
+  function pocketOf(v) {
+    if (v === '00') return DOUBLE_ZERO;
+    var n = typeof v === 'number' || (typeof v === 'string' && v.trim() !== '') ? Number(v) : NaN;
+    return Mth.floor(n) === n && n >= 0 && n <= DOUBLE_ZERO ? n : NaN;
+  }
 
   /** @returns {boolean} the pocket is red (B-14c's red set). */
   function isRed(p) { return p >= 1 && p <= 36 && C().roulette.red.indexOf(p) >= 0; }
@@ -497,7 +503,7 @@
     for (p = 1; p <= 36; p++) {
       var ok = false;
       switch (t) {
-        case 'dozen': ok = M.ceil(p / 12) === bet.n; break;
+        case 'dozen': ok = Mth.ceil(p / 12) === bet.n; break;
         case 'column': ok = ((p - 1) % 3) + 1 === bet.n; break;
         case 'red': ok = isRed(p); break;
         case 'black': ok = !isRed(p); break;
@@ -524,7 +530,7 @@
   function rouletteSettle(bets, pocket) {
     var P = C().roulette.pays, out = { net: 0, wagered: 0, returned: 0, wins: [], invalid: [] };
     (bets || []).forEach(function (b, i) {
-      var amt = M.max(0, M.floor(Number(b.amount) || 0)), cov = covers(b);
+      var amt = Mth.max(0, Mth.floor(Number(b.amount) || 0)), cov = covers(b);
       if (!cov || !amt) { out.invalid.push(i); return; }
       out.wagered += amt;
       if (cov.indexOf(pocket) >= 0) {
@@ -567,7 +573,7 @@
 
   /** @returns {number} the points of a dart landing at (dx, dy) from the centre (the ring radii). */
   function dartsScore(dx, dy) {
-    var r = M.sqrt(dx * dx + dy * dy), rings = C().darts.rings;
+    var r = Mth.sqrt(dx * dx + dy * dy), rings = C().darts.rings;
     for (var i = 0; i < rings.length; i++) if (r <= rings[i].r) return rings[i].pts;
     return 0;
   }
@@ -580,7 +586,7 @@
    */
   function dartsAmp(s, opts) {
     var W = C().darts.wobble, buzz = feat('nightlife') ? (s.stats.buzz || 0) : 0;
-    var a = W.A * (1 + W.perBuzz * buzz) * (1 - M.min(s.stats.int, W.intCap) / W.intDiv);
+    var a = W.A * (1 + W.perBuzz * buzz) * (1 - Mth.min(s.stats.int, W.intCap) / W.intDiv);
     return opts && opts.assist ? a * W.assist : a;
   }
 
@@ -590,15 +596,15 @@
    */
   function dartsParams(s, opts, rng) {
     rng = rng || SR.rng.rules;
-    var W = C().darts.wobble, TAU = 2 * M.PI;
+    var W = C().darts.wobble, TAU = 2 * Mth.PI;
     var p = { A: dartsAmp(s, opts), fx: W.fx, fy: W.fy, phx: rng.float(0, TAU), phy: rng.float(0, TAU), darts: C().darts.perGame };
     return Object.assign(p, opts && opts.target ? { target: opts.target } : {});
   }
 
   /** @returns {{x: number, y: number}} the crosshair's offset at t seconds of play (the Lissajous wobble). */
   function wobble(t, p) {
-    var TAU = 2 * M.PI;
-    return { x: p.A * M.sin(TAU * p.fx * t + p.phx), y: p.A * M.sin(TAU * p.fy * t + p.phy) };
+    var TAU = 2 * Mth.PI;
+    return { x: p.A * Mth.sin(TAU * p.fx * t + p.phx), y: p.A * Mth.sin(TAU * p.fy * t + p.phy) };
   }
 
   /**
@@ -633,9 +639,9 @@
     var next = tier === 'none' ? { tier: 'silver', points: V.silver.points } : tier === 'silver' ? { tier: 'gold', points: V.gold.points } : null;
     var gold = tier === 'gold', silver = tier !== 'none';
     return {
-      on: on, points: pts, tier: tier, next: next, progress: next ? M.min(1, pts / next.points) : 1,
-      drinksLeft: silver ? M.max(0, V.silver.drinks - (s.daily.vipDrinks || 0)) : 0,
-      saturday: SR.rules.time.weekday(s) === 5,
+      on: on, points: pts, tier: tier, next: next, progress: next ? Mth.min(1, pts / next.points) : 1,
+      drinksLeft: silver ? Mth.max(0, V.silver.drinks - (s.daily.vipDrinks || 0)) : 0,
+      saturday: saturday(s),
       slotBets: C().slots.bets.concat(silver ? [C().slots.vipBet] : []),
       bjBets: [BJ().bets[0], BJ().bets[1] * (gold ? BJ().vipGoldMult : 1)],
       rouletteLimit: gold ? C().roulette.vipLimit : C().roulette.limit,
@@ -682,16 +688,16 @@
    */
   function applyRound(s, game, bet, net, facts) {
     var res = partial(), c = s.casino, K = C().karma;
-    net = M.round(net);
+    net = Mth.round(net);
     if (net > 0) SR.rules.effects.credit(s, 'cash', net, 'win');
-    else if (net < 0) s.money.cash = M.max(0, s.money.cash + net);
+    else if (net < 0) s.money.cash = Mth.max(0, s.money.cash + net);
     if (game !== 'darts' && game !== 'scratch' && (s.daily.gambleKarma || 0) < K.dailyMax) {
       SR.rules.stats.karma(s, K.gamble);
       s.daily.gambleKarma = (s.daily.gambleKarma || 0) + 1;
     }
     if (feat('nightlife') && game !== 'scratch' && game !== 'darts') {
-      var mult = SR.rules.time.weekday(s) === 5 ? C().vip.saturdayMult : 1;
-      c.points = M.round(((c.points || 0) + bet / C().vip.pointPerDollars * mult) * 100) / 100;
+      var mult = saturday(s) ? C().vip.saturdayMult : 1;
+      c.points = Mth.round(((c.points || 0) + bet / C().vip.pointPerDollars * mult) * 100) / 100;
     }
     if (game !== 'scratch' && game !== 'darts') {
       var before = c.winToday || 0;
@@ -712,7 +718,7 @@
    * @returns {object} a partial Result; the `gamble` payload carries reels, line and mult
    */
   function slotsRound(s, bet, ctx) {
-    bet = M.floor(Number(bet) || 0);
+    bet = Mth.floor(Number(bet) || 0);
     if (vip(s).slotBets.indexOf(bet) < 0) return { ok: false, reason: 'reason.unavailable', vars: { n: bet } };
     var sh = short(s, bet);
     if (sh) return sh;
@@ -725,20 +731,24 @@
 
   /**
    * One finished blackjack hand on the state (the named fn 'casino.bjHand'): params { bet, net,
-   * trueCount, shoe } (the engine plays the round with the functions above on a copy of the state's
-   * shoe) or { round, shoe, trueCount } (the net is settled here). Applies the round, the day's hand
-   * count, the pit boss (P1) and keeps the shoe in state.casino.shoe.
+   * wagered?, trueCount, shoe } (the engine plays the round with the functions above on a copy of
+   * the state's shoe; `wagered` is the round's total stake with doubles and splits, bj.wagered) or
+   * { round, shoe, trueCount } (the net and the stake are settled here). Applies the round, the
+   * day's hand count, the pit boss (P1) and keeps the shoe in state.casino.shoe.
    * @returns {object} a partial Result
    */
   function bjRound(s, p) {
     p = p || {};
     var gate = canPlay(s, 'blackjack');
     if (!gate.ok) return { ok: false, reason: gate.reason, vars: gate.vars };
-    var bet = M.floor(Number(p.bet !== undefined ? p.bet : p.round && p.round.bet) || 0);
+    var bet = Mth.floor(Number(p.bet !== undefined ? p.bet : p.round && p.round.bet) || 0);
     var lim = vip(s).bjBets;
     if (bet < lim[0] || bet > lim[1]) return { ok: false, reason: 'reason.unavailable', vars: { n: bet } };
     var net = p.round ? settle(p.round) : Number(p.net) || 0;
-    var staked = p.round ? wagered(p.round) : M.max(bet, -net);
+    // The stake (VIP points, the gamble payload, the cash it needed): a played round's own, else the
+    // engine's `wagered` (a double or a split stakes up to 2 × the bet), else the bet or the loss.
+    var told = Mth.floor(Number(p.wagered) || 0);
+    var staked = p.round ? wagered(p.round) : Mth.max(bet, -net, told >= bet && told <= 2 * bet ? told : 0);
     var sh = short(s, staked);
     if (sh) return sh;
     s.daily.bjHands = (s.daily.bjHands || 0) + 1;
@@ -760,7 +770,7 @@
     if (!isArray(bets) || !bets.length) return { ok: false, reason: 'reason.unavailable', vars: {} };
     var total = 0;
     for (var i = 0; i < bets.length; i++) {
-      var amt = M.floor(Number(bets[i].amount) || 0);
+      var amt = Mth.floor(Number(bets[i].amount) || 0);
       if (amt <= 0 || !covers(bets[i])) return { ok: false, reason: 'reason.unavailable', vars: { i: i } };
       total += amt;
     }
@@ -817,7 +827,7 @@
     var M = C().darts.match, gate = canPlay(s, 'darts');
     if (!gate.ok) return { ok: false, reason: gate.reason, vars: gate.vars };
     if (!M[tier] || !M[tier].target) return { ok: false, reason: 'reason.unavailable', vars: {} };
-    stake = M.floor(Number(stake) || 0);
+    stake = Mth.floor(Number(stake) || 0);
     if (stake < M.stake[0] || stake > M.stake[1]) return { ok: false, reason: 'reason.unavailable', vars: { n: stake } };
     var sh = short(s, stake);
     if (sh) return sh;
@@ -831,14 +841,17 @@
   }
 
   /**
-   * Resolves a darts match with the engine's { score } (the tier and stake from the result or from
-   * state.casino.match): score ≥ target pays stake × pays (the stake was taken at the start).
+   * Resolves today's darts match (state.casino.match, set by matchStart) with the engine's
+   * { score }: score ≥ target pays stake × pays (the stake was taken at the start). The tier and the
+   * stake are the ones paid for, never the result's echo; without a match in progress the resolve
+   * is refused, so a stray or repeated resolve pays nothing.
    * @returns {object} a partial Result
    */
   function dartsMatch(s, r, ctx) {
     r = r || {};
-    var M = C().darts.match, m = s.casino.match || {};
-    var tier = r.tier || m.tier, stake = typeof r.stake === 'number' ? r.stake : m.stake;
+    var M = C().darts.match, m = s.casino.match;
+    if (!m || m.day !== s.clock.day) return { ok: false, reason: 'reason.notNow', vars: {} };
+    var tier = m.tier, stake = m.stake;
     if (!M[tier] || !(stake > 0)) return { ok: false, reason: 'reason.notNow', vars: {} };
     var won = (Number(r.score) || 0) >= M[tier].target;
     var back = won ? stake * M[tier].pays : 0;
@@ -879,9 +892,9 @@
    * params { game, net, rounds, wagered }; karma once per round (the daily cap still holds).
    */
   SR.def.fn('casino.settle', function (s, params) {
-    var game = params.game || 'slots', rounds = M.max(0, M.floor(Number(params.rounds) || 0));
+    var game = params.game || 'slots', rounds = Mth.max(0, Mth.floor(Number(params.rounds) || 0));
     if (!params.apply) return {};
-    var res = applyRound(s, game, M.max(0, Number(params.wagered) || 0), Number(params.net) || 0, { rounds: rounds });
+    var res = applyRound(s, game, Mth.max(0, Number(params.wagered) || 0), Number(params.net) || 0, { rounds: rounds });
     for (var i = 1; i < rounds && (s.daily.gambleKarma || 0) < C().karma.dailyMax; i++) {
       SR.rules.stats.karma(s, C().karma.gamble);
       s.daily.gambleKarma = (s.daily.gambleKarma || 0) + 1;

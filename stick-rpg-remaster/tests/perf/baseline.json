@@ -1,0 +1,8 @@
+{
+  "v": 1,
+  "note": "Recorded by the lead at a wave integration with node tests/perf/perf.cjs --record; the relative gate compares p95 update and render (ms, per frame of 12 steps) on the same machine fingerprint. Empty until the first recording.",
+  "fingerprint": null,
+  "recorded": null,
+  "calibration": null,
+  "configs": {}
+}

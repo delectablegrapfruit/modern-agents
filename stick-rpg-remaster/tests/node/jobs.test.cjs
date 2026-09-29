@@ -151,8 +151,50 @@ T.section('the weekly bonus, credit, titles, skins, the takeover');
   const t = H.state(SR, { clock: { day: 25 }, money: { cash: 0 }, job: { ranks: { nli: 'ceo' }, ceoSinceDay: 10 } });
   T.eq([J.takeover(t, 1.2), t.money.cash, J.takeoverDue(t)], [{ won: true, bonus: 20000 }, 20000, false], 'm ≥ 1.2 pays $20,000, once');
   T.eq(J.takeover(H.state(SR, {}), 1.19).won, false, 'a loss pays nothing');
+  const tf = H.state(SR, { clock: { day: 25 }, money: { cash: 0 }, job: { ranks: { nli: 'ceo' }, ceoSinceDay: 10 } });
+  T.eq(SR.reg.fn['jobs.takeoverDue'](tf, {}, {}).ok, true, 'named fn jobs.takeoverDue (condition)');
+  T.eq([SR.reg.fn['jobs.takeover'](tf, { m: 1.25 }, {}).won, tf.money.cash], [true, 20000], 'named fn jobs.takeover reads the Boardroom\'s params.m');
+  T.eq(SR.reg.fn['jobs.takeover'](tf, { m: 1.25 }, {}).reason, 'reason.notNow', '… once');
   rh();
   T.eq(due(24), false, 'no takeover while `hustles` is off');
+}
+
+T.section('Overtime on a Heat Wave day (review fix)');
+{
+  const rf = H.features(SR, { hustles: true });
+  const s = H.state(SR, { clock: { min: 840 }, stats: { hp: 14 }, job: { lastFullEnd: 840 } });
+  T.eq(J.canWork(s, 'mcsticks', 'overtime').ok, true, 'HP 14 > 10 on a normal day');
+  T.eq(J.canWork(s, 'mcsticks', 'overtime', { hpScale: 1.5 }), { ok: false, reason: 'reason.tooHurt', vars: { n: 15 } },
+    'the Heat Wave\'s ×1.5 (ceil) raises the "Too hurt" line to 15, as the pipeline scales the cost');
+  s.stats.hp = 16;
+  T.eq(SR.reg.fn['jobs.canWork'](s, { variant: 'overtime' }, { hpScale: 1.5 }, 'mcsticks').ok, true, 'the named fn reads the pipeline\'s ctx');
+  rf();
+}
+
+T.section('rain tips on Order Up (B-05 hustle.rainTips; review fix)');
+{
+  const rf = H.features(SR, { weather: true });
+  const cook = (weather, m, opts, patch) => {
+    const s = H.state(SR, Object.assign({ money: { cash: 0 }, world: { weather: weather } }, patch || {}));
+    const r = J.work(s, patch && patch.job ? 'nli' : 'mcsticks', 'full', m, opts);
+    return [r.pay, s.job.rating];
+  };
+  T.eq(cook('rain', 1.0, { hustle: true })[0], Math.round(42 * 1.2), 'a played Order Up in the rain: m × 1.2 (42 → 50)');
+  T.eq(cook('rain', 1.2, { hustle: true })[0], Math.round(42 * 1.3), '… capped at 1.3');
+  T.eq(cook('clear', 1.0, { hustle: true })[0], 42, 'no tips without rain');
+  T.eq(cook('rain', undefined, { hustle: true })[0], 42, 'Auto stays exactly 1.0');
+  T.eq(cook('rain', 1.0)[0], 42, 'only a played hustle gets tips');
+  T.eq(cook('rain', 1.0, { hustle: true }, { job: { ranks: { nli: 'janitor' } } })[0], 60, 'not on Sort It (NLI)');
+  const rh = H.features(SR, { hustles: true });
+  T.eq(cook('rain', 1.0, { hustle: true })[1], 1, 'the rating follows the hustle\'s own m, not the tips');
+  rh();
+  const s = H.state(SR, { money: { cash: 0 }, world: { weather: 'rain' } });
+  SR.reg.fn['jobs.work'](s, { track: 'mcsticks', m: 1.0 }, {});
+  const a = H.state(SR, { money: { cash: 0 }, world: { weather: 'rain' } });
+  SR.reg.fn['jobs.work'](a, { track: 'mcsticks', m: 1.0, auto: true }, {});
+  T.eq([s.money.cash, a.money.cash], [50, 42], 'the named fn: a hustle result gets the tips, an Auto result (auto: true) does not');
+  rf();
+  T.eq(cook('rain', 1.0, { hustle: true })[0], 42, 'no rain tips while `weather` is off');
 }
 
 T.section('a shift through the action pipeline (SR.rules.act)');

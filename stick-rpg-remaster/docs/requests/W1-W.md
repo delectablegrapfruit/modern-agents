@@ -3,7 +3,7 @@
 Each request names the file, the exact change, why, and the workaround used meanwhile
 (BUILD_PLAN §1.3).
 
-## 1. `js/data/tuning.js` (W1-R; W2-RulesE in wave 2) and BALANCE B-15: six world numbers
+## 1. `js/data/tuning.js` (W1-R; W2-RulesE in wave 2) and BALANCE B-15: seven world numbers
 
 - **File:** `js/data/tuning.js`, table `world` (and the B-15 table in `docs/BALANCE.md`, lead).
 - **Change:** add these keys to `SR.tuning.world` (the design names the values, B-15 does not):
@@ -11,7 +11,8 @@ Each request names the file, the exact change, why, and the workaround used mean
   ```js
   skateAccel: 0.25,        // GDD §3.8: skateboard and Pro Deck reach top speed in 0.25 s
   carRange: 64,            // GDD §3.8: C / Y enters or leaves your car within 64 u of it
-  carRadius: 26,           // the static world's circle for a 96 × 52 car (half its width)
+  carRadius: 26,           // GDD §3.8: a car is 96 × 52; its collision capsule has half its width...
+  carLength: 96,           // ...and its length along the heading
   driveZoomEase: 0.6,      // GDD §3.7: driving eases the zoom one level out over 0.6 s
   teeterAssistMs: 300,     // UI §8: Assist's longer teeter grace
   navCacheSec: 1,          // ARCHITECTURE §8.2: nav paths are cached for 1 s
@@ -44,11 +45,12 @@ Each request names the file, the exact change, why, and the workaround used mean
 
 ## 4. `js/data/decrees.js` (W1-C): the Guard Rails decree id
 
-- **Change:** none if the decree *Guard Rails for All* is registered as `guard_rails`; otherwise
-  tell W1-W (or W2-City) its id.
+- **Change:** none. W1-C registered *Guard Rails for All* as `guardRails` (camelCase, against
+  CONTRACT §3.1's `snake_case` for content ids); if W2-RulesC renames it to `guard_rails`, nothing
+  breaks.
 - **Why:** `SR.world.safeEdges()` (collisions make every edge bounce, no falls) is on while
   `access.safeEdges` is set **or** `state.election.decrees` contains the decree (GDD §3.9, §4.17).
-- **Meanwhile:** the world checks `guard_rails` and `guardRails`.
+- **Meanwhile:** the world checks both `guardRails` and `guard_rails`.
 
 ## 5. `tools/validate.cjs` (W1-Q): references the worldmap and the world actions make
 
@@ -67,11 +69,17 @@ Each request names the file, the exact change, why, and the workaround used mean
     inspects named fns, it should exempt the causes `fall`, `carHit` and `carCrash`.
 - **Why:** BUILD_PLAN §1.6 (the validator passes on the package's files).
 - **Meanwhile:** nothing; the world data follows ARCHITECTURE §8.1's example.
+- **Status (review):** the landed `tools/validate.cjs --wave 1` reports 0 errors on the world files;
+  the `park.*` actions and the `exterior.detail` ids are stub-era warnings until W3-Park and
+  W2-Exterior land.
 
 ## 6. `docs/CONTRACT.md` §15 and ARCHITECTURE §8 (lead): the world's additive public names
 
 - **Change:** record these names (additive; the frozen ones of §15 are implemented as written):
-  - `SR.world`: `ready`, `time`, `cfg` (the B-15 numbers), `build()`, `start(s)` (the player from
+  - `SR.world`: `ready`, `time`, `cfg` (the B-15 numbers), `entities(kind)` (`'car'`, `'ped'`,
+    `'person'`, `'police'`: the live entity array of `traffic`, `pedestrians`, `streetnpcs`, `police`
+    under the names the renderer reads: `cars` / `peds` / `people` / `officers`, or `list`),
+    `build()`, `start(s)` (the player from
     `state.player`, in the car named by `driving`), `place(spec, s)` and `spawnPoint(spec, s)`
     (`'newGame'`, `'afterJail'`, `'afterHospital'`, a door id, `'homeDoor'`, `[x, y]`), `homeDoor(s)`,
     `teleport(x, y)`, `sync(s)` (positions → `state.player`, once a second and on scene changes),
@@ -84,24 +92,33 @@ Each request names the file, the exact change, why, and the workaround used mean
     `surfaceAt` (`asphalt`, `sidewalk`, `path`, `plaza`, `lawn`, `hole`, `sky`), `zebraAt`,
     `nearestEdge`, `nearEdge(x, y, m, railed)`, `solidAt`, `solidsNear`, `solidDist`, `project`,
     `projected(id)`, `projectedRects()`, `util`.
-  - `SR.world.nav`: `reachable(x, y)`, `nearest(x, y, minInside)`, `lineClear`, `segmentInside`,
-    `cellAt`, `center`, `connected`, `walk`, `stats`.
+  - `SR.world.collide`: `dynamic` (the per-step dynamic hash of ARCHITECTURE §8.2, rebuilt at the
+    start of every `SR.world.update` from `entities()`: `near(x, y, r, kinds?, out?)`, `add(e, kind)`,
+    `rebuild()`, `clear()`, `count`); `move(body, dx, dy)` also takes `body.len` and `body.a` (a car's
+    96 × 52 capsule along its heading).
+  - `SR.world.nav`: `reachable(x, y)`, `nearest(x, y, minInside)`, `lineClear`, `gridClear`,
+    `segmentInside`, `cellAt`, `center`, `connected`, `walk`, `stats`.
   - `SR.world.player`: `walkTo(x, y)` (click-to-walk; a click on a building routes to its door),
     `toggleCar()`, `board(car)`, `park(x, y, a)`, `carNear()`, `knock(sec)` (the car-hit knockdown),
-    `hopAside(entity)`, `cancelRoute()`, `topSpeed()`, `hasBoard()`; fields `car`, `a`, `v`, `route`,
-    `surface`, `lastSafe` besides ARCHITECTURE §8.2's.
+    `hopAside(entity)`, `cancelRoute()`, `topSpeed()`, `hasBoard()`, `doorAt(x, y)` (the door a click
+    means: a porch or trigger, else the frontmost building hit); fields `car`, `a`, `v`, `route`,
+    `surface`, `lastSafe`, and `px`, `py` (the position at the start of the last step: the renderer
+    interpolates by alpha) besides ARCHITECTURE §8.2's.
   - `SR.world.doors`: `prompt` (`{ kind: 'enter'|'park', door, name, verb }`), `tags`, `last`,
-    `enter(id, via)`, `exit(id?)`, `interact()`, `parkAndEnter(id)`, `tagFor(id)`, `doorHomes(id)`,
+    `enter(id, via)`, `exit(id?)`, `interact()`, `parkAndEnter(id)`, `kerbHeading(door, a)`, `tagFor(id)`, `doorHomes(id)`,
     `disarmNear(x, y)`, `go(resolution)` (the scene change: `SR.scenes.go('building', { id, params },
     { transition: 'doorZoom' })`).
   - `SR.world.fall`: `phase` (`none`, `teeter`, `drop`, `catch`, `land`), `t`, `x`, `y`, `to`, `car`,
     `saved` (the last teeter save: "Phew"), `last`, `active()`, `skip()`, `focus()`.
-  - `SR.world.camera`: `x`, `y`, `zoom`, `level`, `target`, `snap`, `setLevel`, `zoomIn`, `zoomOut`,
-    `cycle`, `view()`, `toScreen(x, y, z)`, `toWorld(sx, sy)`, `bounds()`.
+  - `SR.world.camera`: `x`, `y`, `px`, `py` (the centre at the start of the last step), `zoom`,
+    `level`, `target`, `snap`, `setLevel`, `zoomIn`, `zoomOut`, `cycle`, `view()`,
+    `toScreen(x, y, z)`, `toWorld(sx, sy)`, `bounds()`.
   - **People hop aside:** a module that owns walkers (`SR.world.pedestrians`, `streetnpcs`,
-    `police`) exposes them as `list` (an array of `{ x, y, visible?, state, bark, hopT }`); the
-    player's car moves any within reach 24 u aside (`state: 'hop'`, `hopT: 0.6`, `bark:
-    'toast.world.hey'`) and never hurts them.
+    `police`) exposes them as an array (`peds` / `people` / `officers`, or `list`; see `entities`) of
+    `{ x, y, visible?, active?, state, bark, hopT }`; the player's car moves any within reach of
+    its body 24 u aside (`state: 'hop'`, `hopT: 0.6`, `bark: 'toast.world.hey'`) and never hurts them.
+  - **Driving into a door:** like walking, the car enters (parks and enters on foot) only while it
+    moves within 45° of the way in, so driving along a sidewalk past a door never enters it.
   - **worldmap fields beyond §8.1's example:** `pockets`, `jogLoop`, `links` (lawn walkways joining
     the jog loop and Margin Path to the sidewalk graph), `features` (fountain, plinth, pond, skate
     bowl, duck spot, chess tables, Harold's bench, busker spot, the Bite, the Dog-Ear), `spots`
@@ -117,12 +134,18 @@ Each request names the file, the exact change, why, and the workaround used mean
 - **W2-City (city scene):** on `enter`, `SR.world.start(SR.state)` for a new or loaded game, or
   `SR.world.doors.exit()` when coming back from a building; call `SR.world.update(SR.STEP)` each
   step and forward presses with `SR.world.onAction(action)`; click / tap to walk is
-  `SR.world.player.walkTo(p.x, p.y)` with `p = SR.world.camera.toWorld(SR.stage.toLogical(cx, cy))`;
-  the ContextPrompt and door tags come from `SR.world.doors.prompt` and `.tags`; "Phew" is
+  `SR.world.player.walkTo(p.x, p.y)` with `q = SR.stage.toLogical(cx, cy)`, `p =
+  SR.world.camera.toWorld(q.x, q.y)`; the ContextPrompt and door tags come from
+  `SR.world.doors.prompt` and `.tags` (the prompt stays the same object while it names the same
+  door, so a new object means a new prompt to announce; the tags array is reused); "Phew" is
   `SR.world.fall.saved`; the Fold Rescue plays from `SR.world.fall.phase / t / x / y / to`;
   traffic calls `SR.world.player.knock()` and `SR.act('world.carHit')` on a hit and
-  `SR.act('world.carCrash')` on a crash.
+  `SR.act('world.carCrash')` on a crash; traffic and pedestrians can query
+  `SR.world.collide.dynamic.near(x, y, r, kinds)` (rebuilt each step from their own arrays) and move
+  walkers with `SR.world.collide.move` (allocation-free apart from its result).
 - **W2-Transit:** after jail `SR.world.place('afterJail')`; after the hospital
   `SR.world.place('afterHospital')` (outside the lived-in home's door).
-- **W1-G:** `SR.world.camera.x / y / zoom` and `toScreen`; projected rects, porches and signature
-  rects for the `projected` overlay; `SR.world.nav` and `geometry.solids` for the `grid` overlay.
+- **W1-G:** `SR.world.camera.x / y / zoom` and `toScreen`; `px` / `py` on the camera and the player
+  for the alpha interpolation `js/render/renderer.js` and `actors.js` already do; projected rects,
+  porches and signature rects for the `projected` overlay; `SR.world.nav` and `geometry.solids` for
+  the `grid` overlay.

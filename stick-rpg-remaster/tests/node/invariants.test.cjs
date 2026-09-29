@@ -436,4 +436,237 @@ T.section('the frozen SR.world names (CONTRACT §15), headless');
   SR.state = null;
 }
 
+// ------------------------------------------------------------------------------------------------
+T.section('doors: stale routes, driving past, knockdown, click targets, kerb headings');
+{
+  const W = SR.world, P = W.player, D = W.doors, F = W.fall;
+  const STEP = 1 / 60;
+  const go = D.go;
+  D.go = () => {};
+  const fresh = () => { const s = SR.rules.state.create({ seed: 5 }); SR.state = s; W.start(s); D.reset(); F.reset(); return s; };
+  const step = (n, inp) => { for (let i = 0; i < n; i++) W.update(STEP, inp || { x: 0, y: 0, skate: false }); };
+
+  // A click on the door you just left routes into its (disarmed) trigger and ends there. Walking
+  // away and later past that door along the sidewalk must not enter it (the old route is gone).
+  fresh();
+  D.exit('mcsticks');
+  P.walkTo(1800, 2100);
+  step(120);
+  const arrived = D.entered.length === 0 && U.inRect(P.x, P.y, G.doorById.mcsticks.trigger);
+  step(60, { x: 0, y: -1 });
+  const cancelled = P.route === null;
+  D.entered.length = 0;
+  step(90, { x: 0, y: 1 });
+  T.ok(arrived && cancelled && D.entered.length === 0, 'a route that ended in a disarmed trigger is dropped by movement input; walking past later enters nothing', D.entered);
+
+  // Driving along the pavement hugging a building never enters its door; driving at it does.
+  const drive = (x, y, a, inp, frames) => {
+    const s = fresh(), c = s.player.cars.junker;
+    c.owned = true; c.x = x; c.y = y; c.a = a;
+    P.place(x, y, 180); P.board('junker', true);
+    step(frames, inp);
+    return D.entered.map((e) => e.id + '/' + e.via);
+  };
+  const past = [];
+  G.doors.filter((d) => d.face === 'E' || d.face === 'W').forEach((d) => {
+    const lane = d.x + d.out[0] * 30;
+    [1, -1].forEach((dir) => {
+      const got = drive(lane, d.y - dir * 200, dir > 0 ? Math.PI / 2 : -Math.PI / 2, { x: 0, y: dir }, 150);
+      if (got.length) past.push(d.id + ':' + got.join());
+    });
+  });
+  T.eq(past, [], 'driving along a sidewalk through an east / west door\'s trigger enters none');
+  T.eq(drive(2330, 2050, Math.PI, { x: -1, y: 0 }, 240), ['mcsticks/park'], 'driving at a door into its trigger parks and enters');
+
+  // Knocked down inside a trigger with the input aimed at the door: no dwell until you can move.
+  fresh();
+  P.place(2150, 2050, 270);
+  D.reset();
+  P.knock();
+  step(40, { x: -1, y: 0 });
+  const during = D.entered.length;
+  step(60, { x: -1, y: 0 });
+  T.ok(during === 0 && D.entered.length === 1 && D.entered[0].id === 'mcsticks', 'a knockdown in a trigger enters nothing; aiming in afterwards does');
+
+  // A click where one building's drawn roof overlaps another's footprint picks the one in front.
+  T.eq([P.doorAt(1800, 2310).id, P.doorAt(1800, 2100).id, P.doorAt(2140, 2050).id], ['bar', 'mcsticks', 'mcsticks'],
+    'click targets: the frontmost building (Sticky\'s roof over McSticks\' south strip), the footprint, the trigger');
+
+  // Park and enter lines the car up with the strip the kerb lies on (Edgeview's kerb is on Edgeview Walk).
+  const heads = G.doors.map((d) => {
+    const st = map.streets.find((q) => q.kind !== 'sidewalk' && U.inRect(d.kerb[0], d.kerb[1], q.rect));
+    const along = st.rect[2] - st.rect[0] >= st.rect[3] - st.rect[1] ? 0 : Math.PI / 2;
+    const h = D.kerbHeading(d, 0.3);
+    return Math.abs(Math.sin(h - along)) < 1e-9 ? null : d.id;
+  }).filter(Boolean);
+  T.eq(heads, [], 'a car parked at a kerb lies along its street, path or plaza');
+  D.go = go;
+  SR.state = null;
+}
+
+// ------------------------------------------------------------------------------------------------
+T.section('render interpolation, saves during a fall, the dynamic hash');
+{
+  const W = SR.world, P = W.player, F = W.fall, Cam = W.camera;
+  const s = SR.rules.state.create({ seed: 6 });
+  SR.state = s;
+  W.start(s);
+  T.ok(P.px === P.x && P.py === P.y && Cam.px === Cam.x && Cam.py === Cam.y, 'placing the player and snapping the camera leave nothing to interpolate');
+  const x0 = P.x, y0 = P.y, cx0 = Cam.x;
+  W.update(1 / 60, { x: 1, y: 0, skate: false });
+  T.ok(P.px === x0 && P.py === y0 && P.x > x0 && Cam.px === cx0, 'each step keeps the previous position in px / py (player and camera)');
+
+  // Mid-fall the player is over the sky; the state keeps a point on the sheet.
+  P.place(700, 500, 180);
+  let k = 0;
+  while (F.phase !== 'catch' && k++ < 200) W.update(1 / 60, { x: -0.7, y: -0.7, skate: false });
+  W.sync();
+  T.ok(F.phase === 'catch' && !G.onGround(P.x, P.y) && G.onGround(s.player.x, s.player.y), 'a save during the Fold Rescue never stores a point in the sky', [s.player.x, s.player.y]);
+  for (let i = 0; i < 120; i++) W.update(1 / 60, { x: 0, y: 0, skate: false });
+  T.ok(!F.active() && s.player.x === Math.round(P.x) && s.player.y === Math.round(P.y), 'after landing the state follows the player again');
+
+  // The per-step dynamic hash over the modules' entity arrays (under the renderer's names too).
+  const had = { pedestrians: W.pedestrians, streetnpcs: W.streetnpcs, traffic: W.traffic };
+  const peds = [{ id: 'a', x: 1000, y: 1000 }, { id: 'b', x: 1300, y: 1000 }, { id: 'c', x: 1010, y: 1010, visible: false }];
+  W.pedestrians = { peds, update() {} };
+  W.streetnpcs = { people: [{ id: 'harold', x: 1020, y: 990 }], update() {} };
+  W.traffic = { cars: [{ id: 'car1', x: 990, y: 1005 }], update() {} };
+  W.update(1 / 60, { x: 0, y: 0, skate: false });
+  const dyn = W.collide.dynamic;
+  const near = dyn.near(1000, 1000, 40).map((e) => e.id).sort();
+  const people = dyn.near(1000, 1000, 40, ['ped', 'person']).map((e) => e.id).sort();
+  T.eq([dyn.count, near, people, dyn.near(1300, 1000, 5).map((e) => e.id)], [4, ['a', 'car1', 'harold'], ['a', 'harold'], ['b']],
+    'collide.dynamic: rebuilt each step from SR.world.entities (hidden ones skipped), queried by radius and kind');
+  T.eq([W.entities('ped').length, W.entities('person').length, W.entities('car').length, W.entities('nope').length], [3, 1, 1, 0], 'SR.world.entities reads peds / people / cars (and list)');
+  Object.assign(W, had);
+  SR.state = null;
+}
+
+// ------------------------------------------------------------------------------------------------
+T.section('cars are 96 × 52 against the static world (GDD §3.8)');
+{
+  const W = SR.world, P = W.player, cfg = W.cfg, STEP = 1 / 60;
+  T.eq([cfg.carLength, cfg.carRadius * 2], [96, 52], 'the car body: 96 long, 52 wide');
+  // The closest any solid comes to the car's axis (its capsule of radius 26).
+  const clearance = () => {
+    const h = cfg.carLength / 2 - cfg.carRadius;
+    let d = Infinity;
+    for (let k = -4; k <= 4; k++) {
+      const x = P.x + Math.cos(P.a) * h * k / 4, y = P.y + Math.sin(P.a) * h * k / 4;
+      G.solidsNear(x, y, 40).forEach((s) => { d = Math.min(d, G.solidDist(s, x, y).d); });
+    }
+    return d;
+  };
+  const drive = (x, y, a, inp, frames) => {
+    const s = SR.rules.state.create({ seed: 9 }), c = s.player.cars.junker;
+    SR.state = s; W.start(s);
+    c.owned = true; c.x = x; c.y = y; c.a = a;
+    P.place(x, y, 180); P.board('junker', true);
+    let worst = Infinity;
+    for (let i = 0; i < frames; i++) { W.update(STEP, typeof inp === 'function' ? inp(i) : inp); worst = Math.min(worst, clearance()); }
+    return worst;
+  };
+  const headOn = drive(3100, 1320, -Math.PI / 2, { x: 0, y: -1 }, 120);
+  T.ok(Math.abs(P.y - 48 - 1232) < 0.5 && headOn >= cfg.carRadius - 0.5, 'driving nose-first into the bank\'s south face stops the bumper at the wall (centre ' + P.y.toFixed(1) + ')');
+  const turn = drive(727, 1100, 0, (i) => (i < 60 ? { x: 0, y: -1 } : { x: 1, y: 0 }), 180);
+  T.ok(turn >= cfg.carRadius - 0.5, 'turning against the apartment\'s wall pushes the car out: its body never sinks in (' + turn.toFixed(1) + ' u clear)');
+  const fwd = drive(1484, 1100, -Math.PI / 2, (i) => (i < 150 ? { x: 0, y: -1 } : { x: -1, y: 0 }), 300);
+  T.ok(fwd >= cfg.carRadius - 0.5 && P.y < 700, 'up Castle Drive (128 u wide) and turning onto the forecourt: no overlap, no jam');
+  SR.state = null;
+}
+
+// ------------------------------------------------------------------------------------------------
+T.section('the Fold Rescue sequence (GDD §3.9, B-15 fall)');
+{
+  const W = SR.world, P = W.player, F = W.fall, Cam = W.camera, STEP = 1 / 60;
+  const s = SR.rules.state.create({ seed: 8 });
+  SR.state = s;
+  W.start(s);
+  // Walk off the Dog-Ear crease and record the phases frame by frame.
+  P.place(700, 500, 180);
+  const phases = [];
+  let camHeld = true, k = 0;
+  while (!F.active() && k++ < 120) W.update(STEP, { x: -0.7, y: -0.7, skate: false });
+  const edge = { x: F.x, y: F.y };
+  for (let i = 0; i < 150 && F.active(); i++) {
+    W.update(STEP, { x: 0, y: 0, skate: false });
+    if (!phases.length || phases[phases.length - 1][0] !== F.phase) phases.push([F.phase, i]);
+    if (F.phase === 'drop' && Math.hypot(Cam.fx - edge.x, Cam.fy - edge.y) > 1e-6) camHeld = false;
+  }
+  const at = (ph) => (phases.find((q) => q[0] === ph) || [null, -1])[1];
+  const dropF = at('drop'), catchF = at('catch'), landF = at('land'), endF = at('none');
+  T.eq([catchF - dropF, landF - catchF, endF - landF].map((f) => Math.round(f / 60 * 100) / 100), [0.55, 0.5, 0.45],
+    'drop 0.55 s, catch 0.5 s, land 0.45 s (1.5 s in all)', phases);
+  T.ok(camHeld, 'the camera holds on the edge while the player drops');
+  T.ok(G.onGround(P.x, P.y) && G.edgeDistance(P.x, P.y) >= 64 && N.reachable(P.x, P.y).ok && s.records.falls === 1, 'the plane sets you down on a safe, reachable node ≥ 64 u inside');
+  // Skipping: any action is refused before 0.5 s of the sequence and ends it after.
+  P.place(700, 500, 180);
+  k = 0;
+  while (F.phase !== 'drop' && k++ < 120) W.update(STEP, { x: -0.7, y: -0.7, skate: false });
+  for (let i = 0; i < 20; i++) W.update(STEP, { x: 0, y: 0, skate: false });
+  const early = W.onAction('interact') && F.active();
+  for (let i = 0; i < 12; i++) W.update(STEP, { x: 0, y: 0, skate: false });
+  const late = W.onAction('interact') && !F.active();
+  T.ok(early && late && s.records.falls === 2, 'a key does not skip before 0.5 s of the sequence (it is consumed) and skips to the landing after');
+  // Assist doubles the teeter grace (UI §8: 300 ms).
+  const hadSettings = SR.settings;   // Node loads no settings module: a test fake (D27)
+  let assist = false;
+  SR.settings = { get: (key) => (key === 'access.assist' ? assist : undefined) };
+  const grace = [];
+  [false, true].forEach((on) => {
+    assist = on;
+    P.place(700, 500, 180);
+    k = 0;
+    while (!F.active() && k++ < 120) W.update(STEP, { x: -0.7, y: -0.7, skate: false });
+    grace.push(F.grace);
+    F.reset();
+  });
+  SR.settings = hadSettings;
+  T.eq(grace, [0.15, 0.3], 'teeter grace 150 ms, 300 ms with Assist');
+  // A car driven off the sheet: the driver is rescued on foot and the car is fished out (towed).
+  const c = s.player.cars.junker;
+  c.owned = true; c.x = 2398; c.y = 760; c.a = -Math.PI / 2;
+  P.place(2398, 760, 0); P.board('junker', true);
+  k = 0;
+  while (!F.active() && k++ < 120) W.update(STEP, { x: 0, y: -1, skate: false });
+  for (let i = 0; i < 150 && F.active(); i++) W.update(STEP, { x: 0, y: 0, skate: false });
+  T.ok(!P.car && P.mode === 'walk' && c.towed === true && s.player.driving === null && G.onGround(P.x, P.y) && F.last.car === 'junker',
+    'a car off Main Street\'s north end: you land on foot, the car is towed (world.carFished)');
+  SR.state = null;
+}
+
+// ------------------------------------------------------------------------------------------------
+T.section('nav: exact grid line of sight, routing time');
+{
+  // A segment that clips a blocked cell's corner by less than a sample step is not clear.
+  let blocked = -1;
+  for (let i = 0; i < N.walk.length && blocked < 0; i++) {
+    const cx = i % N.cols, cy = Math.floor(i / N.cols);
+    if (!N.walk[i] && N.connected((cy) * N.cols + cx - 1) && N.connected((cy - 1) * N.cols + cx) && N.connected((cy - 1) * N.cols + cx - 1) &&
+      N.connected((cy + 1) * N.cols + cx - 1) && N.connected((cy - 1) * N.cols + cx + 1)) blocked = i;
+  }
+  const bx = (blocked % N.cols) * 32, by = Math.floor(blocked / N.cols) * 32;
+  // From left of the blocked cell's top-left corner, down-right, cutting 3 u into the cell's corner.
+  T.ok(blocked >= 0 && !N.gridClear(bx - 40, by - 37, bx + 6, by + 9) && N.gridClear(bx - 40, by - 45, bx - 2, by - 7),
+    'grid line of sight is exact: a 3 u cut through a blocked cell\'s corner is refused, a miss is clear');
+  const pts = [[720, 460], [4125, 4372], [1060, 3810], [4180, 890], [3672, 3190], [600, 2400], [998, 1096], [4300, 2600], [520, 3900], [2500, 4050]];
+  const times = [];
+  let missing = 0;
+  for (let rep = 0; rep < 2; rep++) {
+    for (const a of pts) {
+      for (const b of pts) {
+        if (a === b) continue;
+        N.tick(2);   // past the 1 s cache
+        const t0 = process.hrtime.bigint();
+        const p = N.path({ x: a[0], y: a[1] }, { x: b[0], y: b[1] });
+        if (rep) times.push(Number(process.hrtime.bigint() - t0) / 1e6);
+        if (!p) missing++;
+      }
+    }
+  }
+  times.sort((p, q) => p - q);
+  const med = times[times.length >> 1];
+  T.ok(missing === 0 && med <= 2, 'cross-map routes between the scraps, spawn and corners: all found, median ' + med.toFixed(2) + ' ms (budget 2 ms), max ' + times[times.length - 1].toFixed(2) + ' ms');
+}
+
 T.done();

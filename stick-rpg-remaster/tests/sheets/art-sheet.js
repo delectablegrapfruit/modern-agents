@@ -1,7 +1,8 @@
 // tests/sheets/art-sheet.js — owner: W1-A. Shared helpers for the W1-A contact sheets (art, icons,
 // actors, kit): test-only text fakes for keys other packages will carry (CONTRACT D27: installed after
-// the scripts load and before SR.boot), a HiDPI canvas maker, cell labels, the local CPU calibration
-// and the sheet's readiness flag window.__sheet that tests/e2e/art.test.cjs waits for.
+// the scripts load and before SR.boot), a HiDPI canvas maker, cell labels, the CPU calibration
+// (tests/perf/calibrate.js when the sheet loads it) and the sheet's readiness flag window.__sheet that
+// tests/e2e/art.test.cjs waits for.
 (function () {
   'use strict';
   var SR = window.SR;
@@ -70,12 +71,17 @@
     ctx.fillRect(0, 0, w, h);
   }
 
-  // A fixed JS workload standing in for tests/perf/calibrate.js (W1-Q) until the lead wires it in:
-  // REF_MS is its estimated time on the reference machine (ARCHITECTURE §17: an i5-1135G7 class
-  // laptop); budgets scale by measured / REF_MS, clamped 0.5-4. Estimate: 59 ms on a 2.1 GHz Xeon
-  // container core, about 1.7× slower single-threaded than the reference → 35 ms.
+  // The calibration of ARCHITECTURE §17: tests/perf/calibrate.js (W1-Q, loaded by the actors sheet as
+  // window.SRCalibrate) times its fixed workload; CPU budgets scale by measured / reference, clamped
+  // 0.5-4. Without it (a checkout that lacks the file) a local stand-in runs: its REF_MS is an
+  // estimate of the stand-in's time on the reference machine (an i5-1135G7 class laptop).
   var REF_MS = 35;
   function calibrate() {
+    var C = window.SRCalibrate;
+    if (C && typeof C.run === 'function') {
+      var r = C.run();
+      return { ms: r.ms, ref: r.reference, factor: r.factor, source: 'tests/perf/calibrate.js' };
+    }
     var best = Infinity;
     for (var run = 0; run < 5; run++) {
       var t0 = performance.now();
@@ -91,7 +97,7 @@
       if (acc === 42) state.notes.push('');
     }
     var factor = Math.max(0.5, Math.min(4, best / REF_MS));
-    return { ms: best, ref: REF_MS, factor: factor };
+    return { ms: best, ref: REF_MS, factor: factor, source: 'stand-in' };
   }
 
   /**

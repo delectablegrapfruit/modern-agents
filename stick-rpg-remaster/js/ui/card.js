@@ -78,7 +78,7 @@
    * building's brand colour; title (h3), owner Portrait 56, SpeechBubble; a body that scrolls after
    * 8 rows; a footer with Leave and a mini readout. Enters sliding 24 px from the right (350 ms).
    * @param {{id: string, title: string, brand: string, portrait: string, greeting: string,
-   *   greetingVars: object, voice: number, onLeave: function, readout: string}} o brand: a CSS
+   *   greetingVars: object, voice: (number|string), onLeave: function, readout: string}} o brand: a CSS
    *   colour from SR.art.palette (a palette key's value) or a token var()
    * @returns {HTMLElement} el.body, el.setGreeting(text, vars), el.setReadout(text), el.leave (button)
    */
@@ -173,7 +173,7 @@
     if (!res.ok) {
       var reason = res.reason ? t(res.reason, res.vars) : t('ui.refused');
       D().refuse(origin && origin.main ? origin.main : origin, reason);
-      SR.ui.toast({ text: reason, kind: 'warning', id: 'toast-refused' });
+      SR.ui.toast({ key: res.reason || 'ui.refused', vars: res.vars, kind: 'warning', id: 'toast-refused' });
       return res;
     }
     if (opts.flash !== false && origin && typeof origin.flash === 'function') origin.flash();
@@ -183,18 +183,17 @@
     // plus a stat stamp derived from the deltas when the rules raised none. During a hold-repeat
     // only the first stat stamp shows (a repeat stops at stamps, GDD §4.4; stat stamps would stop
     // every training repeat after one run, so they are coalesced instead: docs/requests/W1-D.md).
-    var seen = {};
+    var seen = {};      // stat keys the rules already stamped (whatever their wording)
     (res.stamps || []).forEach(function (x) {
       var m = /^stamp\.stats\.(\w+)$/.exec(x.key || '');
-      var text = t(x.key, x.vars);
-      seen[text] = true;
+      if (m) seen[m[1]] = true;
       if (m && opts.repeat) return;
-      SR.ui.stamp({ text: text, kind: x.kind || (m ? statStampKind(m[1]) : 'primary'), stat: !!m });
+      SR.ui.stamp({ text: t(x.key, x.vars), kind: x.kind || (m ? statStampKind(m[1]) : 'primary'), stat: !!m });
     });
     (res.deltas || []).forEach(function (d) {
-      if (d && d.kind === 'stat' && d.n >= STAT_STAMP_MIN && SR.ui.STATS.indexOf(d.key) >= 0) {
-        var text = t('ui.stamp.stat', { n: d.n, stat: t('ui.statLong.' + d.key) });
-        if (!seen[text] && !opts.repeat) { seen[text] = true; SR.ui.stamp({ text: text, kind: statStampKind(d.key), stat: true }); }
+      if (d && d.kind === 'stat' && d.n >= STAT_STAMP_MIN && SR.ui.STATS.indexOf(d.key) >= 0 && !seen[d.key]) {
+        seen[d.key] = true;
+        if (!opts.repeat) SR.ui.stamp({ text: t('ui.stamp.stat', { n: d.n, stat: t('ui.statLong.' + d.key) }), kind: statStampKind(d.key), stat: true });
       }
     });
     var played = false;
@@ -215,8 +214,10 @@
    * ctx.act.
    * @param {HTMLElement} root
    * @param {{onClose: function, onOpen: function, building: string, host: string, rootLabel: string,
-   *   feedback: function, focusScope: boolean}} opts host: 'card' | 'pocket'; rootLabel: the first
-   *   crumb (Back); focusScope: push a focus scope of its own (default true unless host is 'card')
+   *   feedback: function, onResult: function, focusScope: boolean}} opts host: 'card' | 'pocket';
+   *   rootLabel: the first crumb (Back); feedback(result, originEl): replaces the default feedback;
+   *   onResult(result, actionId): after each ctx.act; focusScope: push a focus scope of its own
+   *   (default true unless host is 'card')
    * @returns {{push: function, pop: function, replace: function, close: function, refresh: function,
    *   back: function, onAction: function, top: function, depth: function, destroy: function}}
    */
@@ -265,7 +266,12 @@
           inAct++;
           var res;
           try { res = act(id, p); } finally { inAct--; }
-          (opts.feedback || feedback)(res, null);
+          // The control that committed (the focused one inside the sub-screen) is where the
+          // chips fly from (UI.md §4.3), as they do from a row.
+          var a = document.activeElement;
+          var origin = entry.el && a && entry.el.contains(a) ? a : entry.el;
+          (opts.feedback || feedback)(res, origin);
+          if (opts.onResult) { try { opts.onResult(res, id); } catch (e) { console.error(e); } }
           if (res && res.ok && res.open) runMinigame(res.open, function () { host.refresh(); });
           host.refresh();
           return res;
@@ -307,7 +313,15 @@
       body.scrollTop = 0;
       var tp = top();
       if (tp && tp.el) {
-        var first = SR.ui.focus.navigables(tp.el)[0] || SR.ui.focus.navigables(el)[0];
+        // The sub-screen's [data-autofocus] control (Button { autofocus }), else its first enabled
+        // control that is not a text field (a pad in a text field only has A and B), else the first
+        // control, else the Breadcrumb.
+        var list = SR.ui.focus.navigables(tp.el);
+        var first = tp.el.querySelector('[data-autofocus][data-nav]');
+        if (!first || list.indexOf(first) < 0) {
+          first = list.filter(function (n) { return n.getAttribute('aria-disabled') !== 'true' && !SR.ui.focus.isTextTarget(n); })[0];
+        }
+        first = first || list[0] || SR.ui.focus.navigables(el)[0];
         if (first) SR.ui.focus.focus(first);
       }
     }
@@ -441,7 +455,7 @@
   }
 
   // ------------------------------------------------------------------ the building card controller
-  var C = null;   // { id, def, sceneParams, root, el, rowsEl, rows, sub, scope, hold, last, pointerDown, hooks, unsubs }
+  var C = null;   // { id, def, sceneParams, root, el, rowsEl, rows, sub, scope, hold, last, pointerDown, hooks, unsubs, opener, ghostId }
 
   function buildingDef(id) {
     return (SR.reg.building && SR.reg.building[id]) || { id: id, name: 'place.' + id };
@@ -524,8 +538,15 @@
       repeatable: isRepeatable(def),
       onRun: function () { press(rowById(def.id) || r, 'click'); },
       onRefuse: function () { if (C) C.hold = null; },
-      onFocus: function () { var cur = rowById(def.id); SR.ui.hud.ghost(cur ? cur.preview : null); },
-      onBlur: function () { SR.ui.hud.ghost(null); },
+      onFocus: function () { var cur = rowById(def.id); if (C) C.ghostId = cur ? def.id : null; SR.ui.hud.ghost(cur ? cur.preview : null); },
+      onBlur: function () {
+        // Blur, or the pointer leaving a hovered row: the ghost goes back to the focused row, if any.
+        if (!C) return;
+        var fid = focusedRowId();
+        var fr = fid && fid !== def.id ? rowById(fid) : null;
+        C.ghostId = fr ? fr.id : null;
+        SR.ui.hud.ghost(fr ? fr.preview : null);
+      },
     };
   }
 
@@ -587,6 +608,13 @@
         if (same) SR.ui.focus.focus(same.el.main);
       }
     }
+    // The HUD ghost follows the focused (or hovered) row's new preview: after a run it may be
+    // capped, or refused (no ghost), and a row that went away takes its ghost with it (UI.md §1.1).
+    if (C.ghostId) {
+      var g = rowById(C.ghostId);
+      if (!g) C.ghostId = null;
+      SR.ui.hud.ghost(g && !C.sub.depth() ? g.preview : null);
+    }
     updateReadout();
   }
 
@@ -602,6 +630,8 @@
     function cancel() { if (timer) { clearTimeout(timer); timer = 0; } if (C) C.pointerDown = false; }
     main.addEventListener('pointerdown', function (e) {
       if (e.button !== undefined && e.button !== 0) return;
+      // A long-press that ended off the row (no click followed) must not swallow the next tap.
+      rowEl._suppressClick = false;
       var r = rowById(id);
       if (!C || !r || !isRepeatable(r.def)) return;
       C.pointerDown = true;
@@ -637,7 +667,9 @@
     }
     if (def.screen) {
       C.opener = def.id;
-      C.sub.push(def.screen, assign({}, def.screenParams, C.sceneParams.params));
+      // The door's params (a home door's { homeId, mode }) reach the sub-screen; the row's own
+      // screenParams are more specific and win.
+      C.sub.push(def.screen, assign({}, C.sceneParams.params, def.screenParams));
       return 'pending';
     }
     if (!opts.repeat) {
@@ -645,7 +677,7 @@
       var cash = pv.cost && pv.cost.cash;
       var ask = def.confirm ? { text: def.confirm } : spendOver > 0 && cash >= spendOver ? { text: 'ui.confirmSpend', vars: { money: SR.text.money(cash) } } : null;
       if (ask) {
-        SR.ui.confirm({ id: 'confirm-row', title: t(def.label || 'act.' + def.id), text: ask.text, vars: assign({}, pv.vars, ask.vars) })
+        SR.ui.confirm({ id: 'confirm-row', title: def.label || 'act.' + def.id, text: ask.text, vars: assign({}, pv.vars, ask.vars) })
           .then(function (yes) { if (yes && C) commit(r, params); });
         return 'pending';
       }
@@ -657,7 +689,9 @@
     var res = act(r.def.id, params);
     if (C && C.hooks.onResult) { try { C.hooks.onResult(res, r.def); } catch (e) { console.error(e); } }
     feedback(res, r.el, { silent: r.def.silent, flash: false, repeat: !!repeat });
-    if (res && res.ok && isRepeatable(r.def) && C) C.last = { id: r.def.id, variant: r.variant };
+    // R re-runs the card's last action only if that action is repeatable (ARCHITECTURE §11), so
+    // a non-repeatable run (a crime, a confirm) replaces the last action instead of being skipped.
+    if (res && res.ok && C) C.last = { id: r.def.id, variant: r.variant };
     if (res && res.ok && res.open) runMinigame(res.open);
     if (C) {
       refreshRows(true);
@@ -851,16 +885,22 @@
     var id = sceneParams.id;
     var def = buildingDef(id);
     C = { id: id, def: def, sceneParams: { id: id, params: sceneParams.params || {} }, root: root, rows: [], variants: {},
-      hold: null, last: null, pointerDown: false, hooks: hooks || {}, unsubs: [], opener: null };
+      hold: null, last: null, pointerDown: false, hooks: hooks || {}, unsubs: [], opener: null, ghostId: null };
     var greet = pickGreeting(def, C.sceneParams.params);
+    var owner = def.owner && SR.reg.person && SR.reg.person[def.owner];
     C.el = card({ id: 'card', title: def.name || 'place.' + id, brand: brandColour(def), portrait: def.portrait || def.owner || null,
-      greeting: greet && greet.key, greetingVars: greet && greet.vars, onLeave: leave });
+      greeting: greet && greet.key, greetingVars: greet && greet.vars, voice: owner && owner.voice, onLeave: leave });
     C.rowsEl = D().h('div', { class: 'bcard-rows', 'data-id': 'card-rows' });
     C.el.body.appendChild(C.rowsEl);
     root.appendChild(C.el);
     C.sub = createSubhost(C.el.body, {
       host: 'card', building: id, rootLabel: def.name || 'place.' + id,
-      onOpen: function () { C.rowsEl.hidden = true; C.hold = null; SR.ui.hud.ghost(null); },
+      onResult: function (res, actionId) {
+        if (!C || !res || !res.ok) return;
+        C.last = { id: actionId };      // a sub-screen commit is the card's last action (R refuses it)
+        if (C.hooks.onResult) C.hooks.onResult(res, SR.reg.action[actionId] || { id: actionId });
+      },
+      onOpen: function () { C.rowsEl.hidden = true; C.hold = null; C.ghostId = null; SR.ui.hud.ghost(null); },
       onClose: function () {
         if (!C) return;
         C.rowsEl.hidden = false;

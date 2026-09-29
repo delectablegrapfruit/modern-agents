@@ -663,7 +663,7 @@
 .dlg-name { color: var(--ink-900); }
 .dlg-choices { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
 .dlg-choice { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
-.dlg-key {
+.btn-key {
   display: inline-grid;
   place-items: center;
   min-width: 20px;
@@ -675,8 +675,8 @@
   font-size: var(--t12);
   font-weight: 700;
 }
-.btn--secondary .dlg-key, .btn.is-disabled .dlg-key { background: var(--ink-900); color: var(--paper-0); }
-[data-device="touch"] .dlg-key { display: none; }
+.btn--secondary .btn-key, .btn--ghost .btn-key, .btn.is-disabled .btn-key { background: var(--ink-900); color: var(--paper-0); }
+[data-device="touch"] .btn-key { display: none; }
 .dlg-chips { display: inline-flex; flex-wrap: wrap; gap: 4px; }
 .dlg-chips:empty { display: none; }
 .dlg-reason { color: var(--danger-ink); font-weight: 600; }

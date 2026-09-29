@@ -266,4 +266,78 @@ T.section('the tip at step 10, the end of the game, the report');
   T.eq(h.history.nw.length, 1, 'day 148 = 120 + 28 is');
 }
 
+T.section('weather at night: the Heat Wave, storms, weather alerts (review fixes)');
+{
+  const rf = H.features(SR, { weather: true, calendar: true });
+  // A Heat Wave drawn on Sunday night for the Monday just begun, after step 8 rolled a rainy Monday.
+  const C = SR.rules.calendar, roll = C.rollCityEvent;
+  C.rollCityEvent = function (s) { s.world.cityEvent = { id: 'heatWave', day: s.clock.day }; return s.world.cityEvent; };
+  const s = H.state(SR, { clock: { day: 7 }, world: { weather: 'rain', tomorrow: 'rain', todayHadRain: true } });
+  N.run(s, H.ctx(SR, 3), {});
+  C.rollCityEvent = roll;
+  T.eq([s.clock.day, s.world.weather, s.world.todayHadRain], [8, 'clear', false], 'a Heat Wave Monday is Clear and no rainy day');
+  const facts = [], restore = H.spy(SR.rules.stocks, 'tick', facts, (a) => 'rain:' + a[1].rain);
+  N.run(s, H.ctx(SR, 3), {});
+  restore();
+  T.eq(facts, ['rain:false'], 'so PPR takes no rain shock that market night');
+
+  // Storms: logged on the day they happen (the new day), and a weather alert that morning.
+  let st = null;
+  for (let seed = 1; seed < 400 && !st; seed++) {
+    const t = H.state(SR, { clock: { day: 2 }, world: { tomorrow: 'rain' } }, { seed: seed });
+    N.run(t, H.ctx(SR, seed), {});
+    if (C.storm(t)) st = t;
+  }
+  T.ok(!!st, 'a stormy morning was found');
+  T.eq([st.log.today.map((e) => e.kind), st.log.yesterday.some((e) => e.kind === 'storm')], [['storm'], false],
+    'a storm goes into the new day\'s log, not the ended day\'s');
+  T.eq(st.msgs.map((m) => m.key + ':' + m.from), ['vm.skywatch.storm:skywatch'], 'the storm\'s weather alert');
+  const alerts = ['clear', 'cloudy', 'rain', 'fog', 'windy'].map((w) => {
+    let t = null;
+    for (let seed = 1; seed < 400; seed++) {
+      t = H.state(SR, { clock: { day: 2 }, world: { tomorrow: w } }, { seed: seed });
+      N.run(t, H.ctx(SR, seed), {});
+      if (!C.storm(t)) break;
+    }
+    return w + ':' + (t.msgs.map((m) => m.key).join(',') || '-');
+  });
+  T.eq(alerts, ['clear:-', 'cloudy:-', 'rain:-', 'fog:vm.skywatch.fog', 'windy:vm.skywatch.windy'], 'weather alerts on windy and foggy days only (GDD §4.7 step 11)');
+  rf();
+  const p0 = H.state(SR, { clock: { day: 2 }, world: { tomorrow: 'windy' } });
+  N.run(p0, H.ctx(SR, 1), {});
+  T.eq([p0.world.weather, p0.msgs.length], ['clear', 0], 'no alerts while `weather` is off (always Clear)');
+}
+
+T.section('the campaign morning and the night\'s clock (review fixes)');
+{
+  const log = [], saved = SR.rules.election, arcs = SR.rules.arcs;
+  SR.rules.election = {
+    nominationCheck: function () { log.push('nomination'); return {}; },
+    campaignMorning: function (s) { log.push('campaign:' + s.election.campaignDay); return { lines: [{ section: 'election', icon: 'campaign', key: 'toast.election.event.parade', vars: {}, weight: 35 }] }; },
+  };
+  const c = H.state(SR, { election: { status: 'campaign', campaignDay: 2, poll: 50 } });
+  const rc = N.run(c, H.ctx(SR, 4), {});
+  T.eq(log, ['nomination', 'campaign:3'], 'a campaign day\'s morning rolls its campaign event (W1-C campaignMorning)');
+  T.ok(rc.lines.some((l) => l.key === 'toast.election.event.parade'), '… and its report line');
+  log.length = 0;
+  N.run(H.state(SR, {}), H.ctx(SR, 4), {});
+  T.eq(log, ['nomination'], 'not outside a campaign');
+  SR.rules.election = saved;
+  let now = null;
+  SR.rules.arcs = { onEvent: function (s, ev, ctx) { now = [ctx.now, s.clock.min]; return []; } };
+  N.run(H.state(SR, { clock: { min: 1380 }, items: { alarm: 1 } }), H.ctx(SR, 4), {});
+  SR.rules.arcs = arcs;
+  T.eq(now, [240, 240], 'arc effects at step 10 see the new morning\'s clock');
+  // With W1-C's real election rules and `civicPlus`, campaign events do happen.
+  const rf = H.features(SR, { civicPlus: true });
+  let events = 0;
+  for (let seed = 1; seed <= 40; seed++) {
+    const e = H.state(SR, { election: { status: 'campaign', campaignDay: 2, poll: 50, path: 'president' } }, { seed: seed });
+    const re = N.run(e, H.ctx(SR, seed), {});
+    if (re.lines.some((l) => /^toast\.election\.event\./.test(l.key))) events++;
+  }
+  rf();
+  T.ok(events >= 6 && events <= 26, 'about 40 % of campaign mornings bring an event (real election rules)', events);
+}
+
 T.done();

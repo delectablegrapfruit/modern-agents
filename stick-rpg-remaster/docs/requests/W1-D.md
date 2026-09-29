@@ -18,9 +18,11 @@ W1-D by other packages were applied in W1-D's files (listed at the end).
     `layer(name)`, `announce(text)` (#aria), `sfx(name, opts)` (guarded), `haptic(ms)`,
     `icon(name, size)` (an `<img>` from `SR.art.iconURL`, or a placeholder square), `now()`,
     `frame(el)`, `logicalRect(el)`, `refuse(el, reason)` (error sound + 120 ms shake + #aria),
-    `applySettings()`, `invalidateTokens()`.
+    `applySettings()`, `invalidateTokens()`. `announce` joins the messages raised in the same moment
+    (a toast, a stamp and a Result summary) into one #aria update instead of keeping only the last.
   - Components (`js/ui/components.js`) besides the frozen list: `iconButton`, `swipe(target, onLeft,
-    onRight)`, `STATS`, `chip.gains(preview)`, `chip.costs(preview, { state, def })`,
+    onRight)`, `STATS`, `button({ hotkey })` (a digit badge before the label; dialog choices),
+    `segmented({ focusHost })`, `chip.gains(preview)`, `chip.costs(preview, { state, def })`,
     `chip.fromDelta(delta)`, `chip.text(opts)`, `karmaMedallion.band(k)`, `karmaMedallion.tier(k)`,
     `keyHint.glyph(code)`, `keyHint.refreshAll()`, `tooltip(target, content)` → detach,
     `tooltip.hide()`.
@@ -43,15 +45,20 @@ W1-D by other packages were applied in W1-D's files (listed at the end).
     (UI.md §4.3 for any host), `rows()` and `debug()` (`SR.debug.ui()` calls it), `current()`,
     `screens()`, `repeating()`, `stopRepeat()`, `leave()`, and the scene hooks `mount(root,
     sceneParams, hooks)`, `unmount()`, `onAction(action, ev)`, `update(dt)`.
-  - `SR.ui.subhost.create(root, { onClose, onOpen, building, host, rootLabel, feedback, focusScope })`
-    → `{ push(id, params) → Promise<popResult>, pop(result), replace, close, refresh, back() →
-    handled, onAction(action, ev) → consumed, top(), depth(), ids(), destroy(), el }`. `ctx` adds
-    `refresh()`; `ctx.state` is a read-only Proxy view (a write throws a TypeError).
+  - `SR.ui.subhost.create(root, { onClose, onOpen, building, host, rootLabel, feedback, onResult,
+    focusScope })` → `{ push(id, params) → Promise<popResult>, pop(result), replace, close, refresh,
+    back() → handled, onAction(action, ev) → consumed, top(), depth(), ids(), destroy(), el }`.
+    `feedback(result, originEl)` replaces the default feedback (chips fly from the control that
+    committed); `onResult(result, actionId)` runs after each `ctx.act` (the card uses it for the
+    proprietor's react pose, float texts and the card's last action). `ctx` adds `refresh()`;
+    `ctx.state` is a read-only Proxy view (a write throws a TypeError).
   - `SR.ui.dialog.open(opts)` (`{ id, person, portrait, name, text, vars, mood, voice, cancel,
     choices: [{ id, label, vars, action, params, chips, chance, disabled, reason, variant, number:
     { min, max, step, label, value, money, quick } }] }`): `action` is previewed for the choice's
     chips and enabled state, the caller runs it; `cancel` names the choice Esc returns (default
-    `'leave'` when offered; `false`: Esc does nothing). Also `dialog.refresh()`, `dialog.isOpen()`.
+    `'leave'` when offered, else Esc does nothing with an error cue, so a police stop cannot be
+    escaped; `false`: Esc does nothing). While the line still types, Enter / Space / A only
+    complete it (a hotkey 1-4 still picks its choice). Also `dialog.refresh()`, `dialog.isOpen()`.
   - `SR.ui.building.info()` (tests: `{ id, interior, floats, ownerPose }`).
 - **Why:** wave-2 packages (Pocket, Front, Home, Money, Street ...) build every screen from these;
   they need written names. CONTRACT §15 lists only the component names.
@@ -116,6 +123,12 @@ W1-D by other packages were applied in W1-D's files (listed at the end).
 
 ## 6. `js/art/interiors/kit.js` (W1-A): what the building scene passes to an interior
 
+**Status (W1-D review):** W1-A's kit has landed with `SR.art.interior(id, params)` and documents the
+`actors` argument (it accepts the poses below and more); only the ARCHITECTURE §9.2 wording is left
+for the lead. The building scene draws a registered interior through it (tested in
+`tests/e2e/card.test.cjs` with a test interior) and keeps its own placeholder diorama, which draws
+the proprietor and you, for buildings whose interior is not registered yet.
+
 - **File:** `js/art/interiors/kit.js` (W1-A) and ARCHITECTURE §9.2 (lead).
 - **Change:** accept `SR.art.interior(id, doorParams)` (the scene passes the door resolver's params,
   e.g. `{ homeId, mode }`, so the home interior can draw the tier and mode), and document the
@@ -137,6 +150,8 @@ W1-D by other packages were applied in W1-D's files (listed at the end).
   Greetings: a named fn `greet.<buildingId>` (`SR.def.fn`, pure, `(s, params, ctx)` → `{ key, vars }`
   or a key) chooses the greeting "by first visit, time, karma, weather, job" (UI.md §5.6); without
   it the card picks one of `building.greetings[]` (text keys), else `greet.<id>` if registered.
+  A row with `screen` passes the door params to its sub-screen; the row's own `screenParams` win
+  over a door param of the same name.
 - **Why:** so W2-Home and the other building owners write data the card already understands.
 - **Meanwhile:** implemented in `js/ui/card.js` (`cardActions`, `pickGreeting`).
 

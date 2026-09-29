@@ -323,7 +323,8 @@
     var p = A && A.playerPos ? A.playerPos() : null;
     var assist = L().setting('access.safeEdges', false);
     if (p && !assist && !L().reducedMotion()) {
-      var warn = v.weather === 'fog' ? EDGE_WARN_FOG : EDGE_WARN;
+      var ew = L().tune('world.edgeWarn', null);
+      var warn = v.weather === 'fog' ? (ew && ew.fog) || EDGE_WARN_FOG : (ew && ew.dist) || EDGE_WARN;
       var e = nearestEdge(p.x, p.y);
       if (e && e.d < warn) {
         var k = 1 - e.d / warn;

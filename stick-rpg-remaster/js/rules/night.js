@@ -24,6 +24,9 @@
   var MOVERS_SHOWN = 3;
   // The day-365 phone call and sports car (orig), in any mode.
   var ANNIVERSARY = 365;
+  // The weathers that get a morning weather alert (GDD §4.7 step 11, §3.12: gusts at the edges,
+  // fog banks over them); a storm (15 % of rain days) gets one too.
+  var WEATHER_ALERTS = ['windy', 'fog'];
 
   function weekdayOf(day) { return SR.rules.time.weekdayOf(day); }
   function decreeActive(s, id) { return ((s.election && s.election.decrees) || []).indexOf(id) >= 0; }
@@ -108,7 +111,7 @@
           { ticker: m.ticker, pct: SR.text.num(Math.abs(m.pct), 1), price: SR.text.money(m.to, { cents: true }) }, Math.abs(m.pct));
       });
     res.splits.forEach(function (sp) {
-      line(R, 'markets', 'info', 'report.split', { ticker: sp.ticker, price: SR.text.money(sp.to, { cents: true }), n: sp.paid, money: $(sp.paid) }, 50);
+      line(R, 'markets', 'info', 'report.split', { ticker: sp.ticker, price: SR.text.money(sp.to, { cents: true }), n: sp.leftover, money: $(sp.paid) }, 50);
     });
     if (res.tip && res.tip.seen) {
       line(R, 'markets', 'info', res.tip.truthful ? 'report.tipRight' : 'report.tipWrong',
@@ -171,7 +174,7 @@
 
   /** 4. Weekly: the NLI bonus on Friday night. */
   steps[4] = function weekly(s, ctx, R, f) {
-    if (f.weekday !== 4) return;
+    if (f.weekday !== SR.tuning.jobs.weeklyBonus.weekday) return;
     var b = SR.rules.jobs.weeklyBonus(s);
     if (b) line(R, 'money', 'star', 'report.weeklyBonus', { n: b.amount, money: $(b.amount), pct: Math.round(b.pct * 100), lien: b.toLien }, 40);
   };
@@ -241,9 +244,8 @@
     s.clock.day += 1;
     R.day = s.clock.day;
     R.weekday = weekdayOf(R.day);
-    var w = SR.rules.calendar.rollWeather(s, ctx.rng);
+    SR.rules.calendar.rollWeather(s, ctx.rng);
     s.world.todayHadRain = s.world.weather === 'rain';
-    if (w.storm) SR.rules.log.add(s, 'storm', {});
     var wake = TT.wake;
     if (R.kind === 'sleep') {
       if (f.alarm) wake -= TT.alarmMinus;
@@ -257,6 +259,7 @@
     }
     s.clock.wake = Math.max(0, wake);
     s.clock.min = s.clock.wake;
+    ctx.now = s.clock.min;   // the night's own context: later steps (arc effects) see the new morning
     R.events.push({ name: 'night', payload: { day: R.day, weekday: R.weekday, kind: R.kind } });
   };
 
@@ -319,9 +322,14 @@
       var keep = SR.tuning.crime.bank.D.recentDays;
       s.crime.bankRobDays = s.crime.bankRobDays.filter(function (d) { return s.clock.day - d < keep; });
     }
-    if (f.weekday === 6 && SR.features.calendar) {
+    if (f.weekday === SR.rules.time.dayIndex('sun') && SR.features.calendar) {
       var e = SR.rules.calendar.rollCityEvent(s, ctx.rng);
-      if (e && e.id === 'heatWave' && e.day === s.clock.day && SR.features.weather) s.world.weather = 'clear';
+      // A Heat Wave drawn for the Monday just begun forces its weather (step 8 rolled it already),
+      // and a rainy morning it replaces is no rainy day (PPR's quirk reads todayHadRain).
+      if (e && e.id === 'heatWave' && e.day === s.clock.day && SR.features.weather) {
+        s.world.weather = SR.tuning.calendar.events.heatWave.weather;
+        s.world.todayHadRain = s.world.weather === 'rain';
+      }
     }
     if (SR.features.stockTips && SR.rules.time.isMarketDay(s.clock.day)) SR.rules.stocks.drawTip(s, ctx.rng);
     else s.tip = null;
@@ -334,9 +342,17 @@
     }
   };
 
-  /** 11. Messages: the queued voicemails (loan warnings, default) and the day-365 call and car. */
+  /**
+   * 11. Messages: the queued voicemails (loan warnings, default), the weather alert (P1 `weather`:
+   * a windy, foggy or stormy day; today's weather only, which the report shows anyway, so it gives
+   * nothing of the forecast away) and the day-365 call and car.
+   */
   steps[11] = function messages(s, ctx, R, f) {
     f.msgs.forEach(function (m) { SR.rules.effects.addMsg(s, m.key, m.vars); });
+    if (SR.features.weather) {
+      var alert = SR.rules.calendar.storm(s) ? 'storm' : WEATHER_ALERTS.indexOf(s.world.weather) >= 0 ? s.world.weather : null;
+      if (alert) SR.rules.effects.addMsg(s, 'vm.skywatch.' + alert, {});
+    }
     if (s.clock.day === ANNIVERSARY) {
       var car = s.player.cars.sports, lot = SR.tuning.world.homeLots.sports;
       car.owned = true;
@@ -349,13 +365,16 @@
   };
 
   /**
-   * 12. Morning: nomination check, office morning, achievements, history, the "today" lines, the
-   * headline. Perk offers simply stay pending; the autosave (Hardcore: the ironman slot) is written by
-   * the report scene through SR.save, outside the pure rules.
+   * 12. Morning: nomination check, a campaign day's event, office morning, achievements, history,
+   * the "today" lines, the headline. Perk offers simply stay pending; the autosave (Hardcore: the
+   * ironman slot) is written by the report scene through SR.save, outside the pure rules.
    */
   steps[12] = function morning(s, ctx, R) {
     var E = SR.rules.election;
     if (E && typeof E.nominationCheck === 'function') absorb(s, R, E.nominationCheck(s));
+    // A campaign day's morning: the campaign event (P1 `civicPlus`, B-17 eventChance; W1-C draws
+    // nothing while the flag is off).
+    if (E && s.election && s.election.status === 'campaign' && typeof E.campaignMorning === 'function') absorb(s, R, E.campaignMorning(s, ctx.rng));
     if (E && s.job.office && typeof E.officeMorning === 'function') absorb(s, R, E.officeMorning(s, ctx.rng));
     if (SR.features.achievements && SR.rules.achievements && typeof SR.rules.achievements.evaluate === 'function') {
       var ids = SR.rules.achievements.evaluate(s, { name: 'night', payload: { day: s.clock.day, kind: R.kind } }, null);
@@ -369,6 +388,9 @@
     }
     R.weather = { today: s.world.weather };
     var storm = SR.rules.calendar.storm(s);
+    // The storm belongs to the new day's log (after step 9's roll, and after a Heat Wave has had its
+    // say at step 10), so tomorrow's paper can mention it (B-29 `storm`).
+    if (storm) SR.rules.log.add(s, 'storm', {});
     line(R, 'weather', storm ? 'storm' : s.world.weather, storm ? 'report.weather.storm' : 'report.weather.' + s.world.weather, {}, 10);
     var cal = SR.rules.calendar.today(s);
     cal.bonuses.forEach(function (b) { line(R, 'today', 'star', 'report.today.' + b, {}, 20); });

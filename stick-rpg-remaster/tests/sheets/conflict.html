@@ -1,0 +1,171 @@
+<!doctype html>
+<!-- tests/sheets/conflict.html — owner: W1-C. Contact sheet for the conflict and chance data: the
+     fight roster of js/data/fighters.js (each regular's look in the side view and a portrait, with
+     its rung, HP range, power and quirk from SR.rules.fight), the six Sky Bus cities of
+     js/data/cities.js (their palette keys resolved, the silhouette kind, the text), the decrees of
+     js/data/decrees.js as desk cards, and a Quick-fight Auto log. Loads only the scripts it shows
+     plus js/boot/* and js/core/*; opens from disk. Captured by the W1-C screenshot script into
+     shots/W1-C/. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paper Sky · conflict sheet</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../../css/tokens.css">
+<style>
+  body { margin: 16px; background: var(--paper-1); color: var(--ink-900); font: 13px system-ui, sans-serif; max-width: 1248px; }
+  .grid > * { min-width: 0; }
+  h1 { font: 900 22px "Arial Black", system-ui, sans-serif; margin: 0 0 8px; }
+  h2 { font: 800 13px system-ui, sans-serif; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-500); margin: 18px 0 6px; }
+  canvas { display: block; }
+  .grid { display: grid; gap: 8px; }
+  .fighters { grid-template-columns: repeat(6, 1fr); }
+  .cities { grid-template-columns: repeat(3, 1fr); }
+  .decrees { grid-template-columns: repeat(4, 1fr); }
+  .card { background: var(--paper-0); border: 1px solid var(--paper-3); border-radius: 8px; padding: 8px; }
+  .card b { display: block; font: 800 13px system-ui, sans-serif; }
+  .meta { color: var(--ink-500); font-size: 11px; margin-top: 2px; }
+  .desc { font-size: 12px; margin-top: 4px; }
+  .sw { display: flex; gap: 3px; margin: 6px 0; }
+  .sw span { flex: 1; height: 22px; border: 1px solid var(--line); border-radius: 3px; }
+  .badge { display: inline-block; font: 700 10px system-ui, sans-serif; text-transform: uppercase; letter-spacing: .06em;
+    padding: 1px 6px; border-radius: 8px; background: var(--paper-2); color: var(--ink-700); margin-right: 4px; }
+  pre { font-size: 11px; background: var(--paper-0); border: 1px solid var(--paper-3); padding: 8px; margin: 0; white-space: pre-wrap; }
+  #app { display: none; }
+</style>
+</head>
+<body>
+  <h1>Conflict sheet · W1-C</h1>
+  <div id="app"><div id="stage"><canvas id="world"></canvas><canvas id="fx"></canvas><div id="ui"></div><div id="aria" role="status" aria-live="polite"></div></div></div>
+
+  <script src="../../js/boot/namespace.js"></script>
+  <script src="../../js/boot/util.js"></script>
+  <script src="../../js/boot/events.js"></script>
+  <script src="../../js/core/rng.js"></script>
+  <script src="../../js/core/loop.js"></script>
+  <script src="../../js/core/stage.js"></script>
+  <script src="../../js/core/quality.js"></script>
+  <script src="../../js/core/input.js"></script>
+  <script src="../../js/core/scenes.js"></script>
+  <script src="../../js/core/save.js"></script>
+  <script src="../../js/core/settings.js"></script>
+  <script src="../../js/core/text.js"></script>
+  <script src="../../js/core/debug.js"></script>
+  <script src="../../js/rules/state.js"></script>
+  <script src="../../js/rules/check.js"></script>
+  <script src="../../js/rules/conditions.js"></script>
+  <script src="../../js/rules/effects.js"></script>
+  <script src="../../js/rules/stats.js"></script>
+  <script src="../../js/rules/perks.js"></script>
+  <script src="../../js/rules/time.js"></script>
+  <script src="../../js/rules/fight.js"></script>
+  <script src="../../js/data/tuning.js"></script>
+  <script src="../../js/data/features.js"></script>
+  <script src="../../js/data/fighters.js"></script>
+  <script src="../../js/data/cities.js"></script>
+  <script src="../../js/data/decrees.js"></script>
+  <script src="../../js/data/text/en-conflict.js"></script>
+  <script src="../../js/art/palette.js"></script>
+  <script src="../../js/art/paper.js"></script>
+  <script src="../../js/art/draw.js"></script>
+  <script src="../../js/art/stick.js"></script>
+  <script src="../../js/art/portraits.js"></script>
+  <script src="../../js/art/icons.js"></script>
+  <script>
+  (function () {
+    'use strict';
+    var SR = window.SR;
+    var sheet = window.__sheet = { ready: false, errors: [] };
+    window.addEventListener('error', function (e) { sheet.errors.push(String(e.message)); });
+    SR.boot({ scene: false });
+    var D = SR.art.draw, S = SR.art.stick, F = SR.rules.fight, T = SR.text;
+
+    function el(tag, cls, parent, text) {
+      var e = document.createElement(tag);
+      if (cls) e.className = cls;
+      if (text !== undefined) e.textContent = text;
+      (parent || document.body).appendChild(e);
+      return e;
+    }
+    function section(title) { el('h2', null, document.body, title); return el('div', 'grid'); }
+    function canvas(parent, w, h) {
+      var c = document.createElement('canvas'), dpr = window.devicePixelRatio || 1;
+      c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+      c.style.width = w + 'px'; c.style.height = h + 'px';
+      parent.appendChild(c);
+      var g = c.getContext('2d');
+      g.scale(dpr, dpr);
+      return g;
+    }
+
+    // 1. The fight roster (GDD §6.3): rung, HP range, P, quirk; the look from the fighter's data.
+    var grid = section('Fight roster · Sticky’s ladder 1-12, the Underground Ring, Red’s goons');
+    grid.classList.add('fighters');
+    var s = SR.rules.state.create({ seed: 1, stats: { str: 100, int: 7, cha: 7 } });
+    SR.registry.entries('fighter').forEach(function (e) {
+      var d = e.def, card = el('div', 'card', grid);
+      var g = canvas(card, 176, 120);
+      g.fillStyle = D.color('ui.paper-2');
+      g.fillRect(0, 0, 176, 120);
+      S.draw(g, 'guard', { view: 'side', x: 124, y: 112, scale: 0.36, look: e.id, facing: 'left' });
+      g.save(); g.translate(8, 8); SR.art.portraits.draw(g, e.id, 56, 'angry', { bg: 'ui.paper-0' }); g.restore();
+      el('b', null, card, T(d.name));
+      var info;
+      if (d.ladder) {
+        var lo = F.opponent(s, 'bar', d.n, { int: function (a) { return a; } }), hi = F.opponent(s, 'bar', d.n, { int: function (a, b) { return b; } });
+        info = 'rung ' + d.n + ' · HP ' + lo.hp + '-' + hi.hp + ' · P ' + lo.P;
+      } else if (d.ring) {
+        var o = F.opponent(s, 'ring', d.order);
+        info = 'ring bout ' + d.order + ' at STR 100 · HP ' + o.hp + ' · P ' + o.P;
+      } else {
+        info = 'goons · rung ' + SR.tuning.fight.goons.n;
+      }
+      el('div', 'meta', card, info + ' · ' + d.accessory + (d.p ? ' · P1 ' + d.feature : ''));
+      if (d.quirkText) el('div', 'desc', card, T(d.quirkText));
+    });
+
+    // 2. The six cities (B-12a): palette keys, silhouette, text, the tuning row.
+    var cg = section('Sky Bus cities · palette keys city.<id>.*, silhouettes, B-12a');
+    cg.classList.add('cities');
+    SR.registry.entries('city').sort(function (a, b) { return a.def.order - b.def.order; }).forEach(function (e) {
+      var d = e.def, row = SR.tuning.bus.cities[e.id], card = el('div', 'card', cg);
+      el('b', null, card, T(d.name));
+      var sw = el('div', 'sw', card);
+      Object.keys(d.art.colours).forEach(function (k) {
+        var x = el('span', null, sw);
+        x.style.background = D.color(d.art.colours[k]);
+        x.title = d.art.colours[k];
+      });
+      el('div', 'meta', card, d.art.silhouette + ' · ticket $' + row.ticket + ' · mugging range ' + row.mug + ' · wants ' + row.wants +
+        ' · bust ' + (row.bust === 'gte' ? '≥' : '>'));
+      el('div', 'desc', card, T(d.blurb));
+      el('div', 'desc', card, T(d.wants));
+    });
+
+    // 3. The decrees (GDD §4.17) as the Mayor's desk shows them.
+    var dg = section('Decrees · P1 civicPlus');
+    dg.classList.add('decrees');
+    SR.registry.entries('decree').forEach(function (e) {
+      var d = e.def, card = el('div', 'card', dg);
+      var g = canvas(card, 28, 28);
+      SR.art.icon(g, d.icon, 0, 0, 28);
+      el('b', null, card, T(d.name) + (d.names ? ' / ' + T(d.names.dictator) : ''));
+      var m = el('div', 'meta', card);
+      el('span', 'badge', m, d.path);
+      if (d.once) el('span', 'badge', m, 'once');
+      el('div', 'desc', card, T(d.desc));
+    });
+
+    // 4. A Quick-fight Auto log (real rolls, a fixed seed): STR 100 against rung 12.
+    el('h2', null, document.body, 'Quick fight (Auto) · STR 100 vs ' + T(SR.reg.fighter.old_man_knuckles.name) + ' · seed 7');
+    var rng = SR.rng.create(7), f = F.create(s, 'bar', 12, rng), r = F.autoPlay(s, f, rng);
+    el('pre', null, document.body, f.log.slice(0, 18).map(function (x) {
+      return (x.who === 'me' ? 'you   ' : 'enemy ') + x.move + (x.miss ? ' misses' : ' ' + x.dmg) + (x.crit ? ' (crit)' : '');
+    }).join('\n') + '\n… ' + r.outcome.toUpperCase() + ' in ' + r.turns + ' turns, HP left ' + r.hpLeft);
+
+    sheet.ready = true;
+  })();
+  </script>
+</body>
+</html>

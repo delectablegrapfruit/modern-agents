@@ -19,12 +19,14 @@
   function modal(o) {
     o = o || {};
     var h = D().h;
-    var titleId = 'mt-' + (o.id || 'modal');
+    // Named by aria-label, not aria-labelledby: DOM ids are for the stage layers only (ARCHITECTURE
+    // §21), and a confirm opened over another confirm would repeat the same id.
+    var title = D().t(o.title, o.vars);
     var el = h('div', { class: ['modal', 'paper', o.large ? 'modal--large' : ''], role: 'dialog', 'aria-modal': 'true',
-      'aria-labelledby': titleId, 'data-id': o.id || 'modal' });
+      'aria-label': title, 'data-id': o.id || 'modal' });
     var head = h('div', { class: 'modal-head' },
       o.icon ? D().icon(o.icon, 32, 'modal-ico') : null,
-      h('h2', { class: 'modal-title t-h3', id: titleId }, D().t(o.title, o.vars)));
+      h('h2', { class: 'modal-title t-h3' }, title));
     el.appendChild(head);
     var body = h('div', { class: 'modal-body scroll-y' });
     if (o.text) body.appendChild(h('p', { class: 'modal-text' }, D().t(o.text, o.vars)));

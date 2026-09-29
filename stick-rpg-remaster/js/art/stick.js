@@ -14,14 +14,17 @@
 // r 28, limbs 7 u; the player's torso takes the karma colour).
 //
 // draw(ctx, pose, opts) — pose: a pose array, a pose name (poses.*) or a clip name (evaluated at
-// opts.t). opts (every field optional; pass one reused object in hot loops):
+// opts.t). A name that is both (sit, drive, knocked, sleep, guard, punch, kick, fireball, inkbeam,
+// hurt, win, lose) plays the clip when opts.t is given and is the still pose otherwise.
+// opts (every field optional; pass one reused object in hot loops):
 //   x, y       ground contact point (between the feet), or the hips with anchor: 'hip'
 //   view       'city' | 'side' (default 'city')
 //   facing     'down' | 'up' | 'left' | 'right' (default 'down' in the city, 'right' in side view)
 //   scale      extra scale (the painter passes zoom here only if it draws in screen units)
 //   look       a person id ('harold', 'mel', 'fighter.7', a data/fighters.js id, 'player'), a
 //              pedestrian number (pedLook), or a look object { head, child, acc: ['beanie', ...],
-//              col: { beanie: 'acc.red' } }
+//              col: { beanie: 'acc.red' } }; with player: true and no look, the player's own look
+//              (SR.state.player.look: the accessory chosen in the New Game wizard)
 //   player     true: karma-coloured head (and side-view torso), the white under-stroke in the city
 //   karma      the player's karma (default: SR.state.stats.karma)
 //   head, torso, limb   colour overrides (palette keys or colours)
@@ -353,7 +356,9 @@
       quad(ctx, hx, y - r * 0.12, hx + d * r * len, y - r * 0.02, hx + d * r * len, y + r * 0.14, hx, y + r * 0.12);
       fs(ctx, c, m.dl);
     } else if ((f === 'down') !== !!back) {
-      ellipse(ctx, hx, hy - r * 0.3, r * 1.0, r * 0.28);
+      // Seen from the front the peak sits on the brow (y -0.52r .. -0.2r), clear of the eyes, so a
+      // cap never hides the face's mood (the eyes span -0.2r .. +0.04r).
+      ellipse(ctx, hx, hy - r * 0.36, r * 1.0, r * 0.16);
       fs(ctx, c, m.dl);
     }
   }
@@ -369,9 +374,10 @@
     } },
     beanie: { layer: 'head', col: 'acc.crimson', draw: function (ctx, J, m, f, c) {
       var hx = J[0], hy = J[1], r = m.head;
-      dome(ctx, hx, hy - r * 0.05, r, 1.08, 0.05); fs(ctx, c, m.dl);
-      ctx.beginPath(); ctx.rect(hx - r * 1.08, hy - r * 0.32, r * 2.16, r * 0.34); fs(ctx, SR.art.draw.tone(c, -1), m.dl);
-      circle(ctx, hx, hy - r * 1.18, r * 0.2); fs(ctx, c, m.dl);
+      // pulled down to the brow: the rolled band ends at -0.22r, just above the eyes
+      dome(ctx, hx, hy - r * 0.2, r, 1.06, 0.12); fs(ctx, c, m.dl);
+      ctx.beginPath(); ctx.rect(hx - r * 1.08, hy - r * 0.5, r * 2.16, r * 0.28); fs(ctx, SR.art.draw.tone(c, -1), m.dl);
+      circle(ctx, hx, hy - r * 1.3, r * 0.2); fs(ctx, c, m.dl);
     } },
     tophat: { layer: 'head', col: 'acc.black', draw: function (ctx, J, m, f, c) {
       var hx = J[0], hy = J[1], r = m.head;
@@ -381,8 +387,8 @@
     } },
     hardhat: { layer: 'head', col: 'acc.yellow', draw: function (ctx, J, m, f, c) {
       var hx = J[0], hy = J[1], r = m.head;
-      ellipse(ctx, hx + dirOf(f) * r * 0.2, hy - r * 0.32, r * 1.3, r * 0.26); fs(ctx, c, m.dl);
-      dome(ctx, hx, hy - r * 0.3, r, 1.0, 0); fs(ctx, c, m.dl);
+      ellipse(ctx, hx + dirOf(f) * r * 0.2, hy - r * 0.38, r * 1.3, r * 0.18); fs(ctx, c, m.dl);
+      dome(ctx, hx, hy - r * 0.36, r, 1.0, 0); fs(ctx, c, m.dl);
     } },
     visor: { layer: 'head', col: 'acc.green', draw: function (ctx, J, m, f, c) {
       var hx = J[0], hy = J[1], r = m.head;
@@ -807,20 +813,27 @@
       if (!o) { o = normalize(v); if (objCache) objCache.set(v, o); }
       return o;
     }
+    if (v === 'player') return playerLook();
+    var raw = normCache.get(v);   // the common case: an id seen before, no string work
+    if (raw) return raw;
     var id = String(v);
     var low = id.toLowerCase();
     if (Object.prototype.hasOwnProperty.call(LOOK_ALIAS, low)) id = LOOK_ALIAS[low]; else id = low;
     if (id === 'player') return playerLook();
     var hit = normCache.get(id);
-    if (hit) return hit;
+    if (hit) { normCache.set(v, hit); return hit; }
     var def = looks[id] || fighterLook(id);
-    if (!def && depth < 3) {
+    var out;
+    if (!def) {
       // data/people.js (W2-Street) may give a person a look object or another person's look id.
       var pd = SR.reg && SR.reg.person && SR.reg.person[id];
-      if (pd && pd.look && pd.look !== id) return look(pd.look, (depth || 0) + 1);
+      if (pd && pd.look && pd.look !== id && depth < 3) out = look(pd.look, depth + 1);
+      else SR.util.warnOnce('look:' + id, 'SR.art.stick: unknown person "' + v + '" (drawn with the plain look)');
     }
-    var out = normalize(def || { head: 'npc.stone', acc: [] });
-    if (def) normCache.set(id, out);
+    // Cached either way (an unknown id too), so a frame never re-normalises a look.
+    if (!out) out = normalize(def || { head: 'npc.stone', acc: [] });
+    normCache.set(id, out);
+    if (v !== id) normCache.set(v, out);
     return out;
   }
 
@@ -925,13 +938,28 @@
    * @param {number[]|string} pose a pose array, a pose name or a clip name (at opts.t)
    * @param {object=} o options
    */
+  /**
+   * A pose array for draw() / joints(): a name that is both a pose and a clip plays the clip when a
+   * time is given (a fight move over time) and is the still pose otherwise (the art bible's poses).
+   */
+  function resolvePose(pose, o) {
+    if (typeof pose === 'string') {
+      if (o.t !== undefined && o.t !== null && clips[pose]) return clip(pose, o.t);
+      return poses[pose] || clip(pose, o.t || 0);
+    }
+    return pose || poses.stand;
+  }
+  /** The look for opts: the given one, else the player's own look for the player, else the plain one. */
+  function lookOf(o) {
+    return look(o.look !== undefined && o.look !== null ? o.look : o.player ? 'player' : undefined);
+  }
+
   function draw(ctx, pose, o) {
     o = o || EMPTY;
-    if (typeof pose === 'string') pose = poses[pose] || clip(pose, o.t || 0);
-    else if (!pose) pose = poses.stand;
+    pose = resolvePose(pose, o);
     var view = o.view === 'side' ? 'side' : 'city';
     var facing = o.facing || (view === 'side' ? 'right' : 'down');
-    var L = look(o.look);
+    var L = lookOf(o);
     var player = o.player || L.player;
     var child = o.child !== undefined ? o.child : L.child;
     var m = metrics(view, child);
@@ -1019,11 +1047,11 @@
    */
   function joints(pose, o) {
     o = o || EMPTY;
-    if (typeof pose === 'string') pose = poses[pose] || clip(pose, o.t || 0);
+    pose = resolvePose(pose, o);
     var view = o.view === 'side' ? 'side' : 'city';
-    var L = look(o.look);
+    var L = lookOf(o);
     var m = metrics(view, o.child !== undefined ? o.child : L.child);
-    solve(pose || poses.stand, m, o.facing || (view === 'side' ? 'right' : 'down'), o.anchor === 'hip', o.rot || 0, !!o.upper, o.splay);
+    solve(pose, m, o.facing || (view === 'side' ? 'right' : 'down'), o.anchor === 'hip', o.rot || 0, !!o.upper, o.splay);
     var sc = o.scale || 1, x = o.x || 0, y = o.y || 0;
     function pt(i) { return [x + J[i * 2] * sc, y + J[i * 2 + 1] * sc]; }
     return { head: pt(0), neck: pt(1), handL: pt(6), handR: pt(7), footL: pt(12), footR: pt(13), hip: pt(14), shoulder: pt(15), r: m.head * sc };

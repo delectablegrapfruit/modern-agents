@@ -73,4 +73,27 @@ T.section('named fns');
   T.eq(SR.reg.fn['training.can'](H.state(SR, { daily: { tv: { tvNews: 2 } } }), {}, {}, 'tvNews').reason, 'reason.dailyLimit', 'training.can is a condition');
 }
 
+T.section('the Public Library Act, Speed Reader, the nap (review fixes)');
+{
+  const lib = H.state(SR, { stats: { int: 10 }, election: { decrees: ['publicLibrary'] } });
+  T.eq([R.apply(lib, 'study').n, lib.stats.int], [3, 13], 'Study gives +3 INT under the Public Library Act (GDD §4.17, via decree.studyGain)');
+  T.eq(R.apply(H.state(SR, { stats: { int: 10 } }), 'study').n, 2, '… and +2 otherwise');
+  T.eq(R.apply(H.state(SR, { stats: { int: 10 }, election: { decrees: ['publicLibrary'] } }), 'classBiz').n, 4, 'the decree touches Study only');
+  const sr = H.state(SR, { perks: { owned: ['speedReader'], pending: [] } });
+  T.eq([SR.reg.fn['training.studyMin'](sr, {}, {}), SR.reg.fn['training.paperMin'](sr, {}, {})], [120, 30], 'Speed Reader does nothing while `perks` is off');
+  const rf = H.features(SR, { perks: true });
+  T.eq([SR.reg.fn['training.studyMin'](sr, {}, {}), SR.reg.fn['training.paperMin'](sr, {}, {})], [90, 0], 'Speed Reader: Study 90 min, the paper 0 min (B-03)');
+  T.eq(SR.reg.fn['training.studyMin'](H.state(SR, {}), {}, {}), 120, '… only with the perk');
+  rf();
+  T.eq(SR.reg.fn['training.napHp'](H.state(SR, { stats: { str: 85, hpMax: 100 } }), {}, {}), 15, 'a nap restores 15 % of HP max (B-03 nap)');
+  T.eq(SR.reg.fn['training.napHp'](H.state(SR, {}), {}, {}), 3, '… floored (22 → 3)');
+  // As a cost and an effect argument through the pipeline (the way wave-2 data names them).
+  SR.def.action('test.study', { building: 'uofs', group: 'train', p: 0, cost: { min: 'training.studyMin' }, effects: [['fn', 'training.apply', 'study']] });
+  SR.def.action('test.nap', { building: 'home', group: 'special', p: 0, cost: { min: 120 }, effects: [['heal', 'training.napHp']] });
+  const a = H.state(SR, { clock: { min: 480 }, stats: { hp: 1 } });
+  SR.rules.act.run(a, 'test.study', {}, H.ctx(SR, 1));
+  SR.rules.act.run(a, 'test.nap', {}, H.ctx(SR, 1));
+  T.eq([a.clock.min, a.stats.hp], [480 + 120 + 120, 1 + 3], 'through the action pipeline: the cost fn and the heal amount');
+}
+
 T.done();

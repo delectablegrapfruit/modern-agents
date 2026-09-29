@@ -30,15 +30,18 @@
      *      entry, then the hospital night (the day advances, HP = 50 % of HP max, wake 12:00).
      * @param {string} cause 'fall' | 'carHit' | 'carCrash' | 'fight' | 'mugger' | 'goons' | 'other'
      * @param {object=} ctx { rng, now, source }
-     * @returns {{outcome: string, cause: string, bill: number, writtenOff: number, report: (object|null), events: object[]}}
+     * @returns {{outcome: string, cause: string, bill: number, writtenOff: number, report: (object|null),
+     *   events: object[], toasts: object[]}} `toasts` carries Second Wind's toast (ARCHITECTURE §6.7:
+     *   "a toast; nothing else happens"); docs/requests/W1-E.md R3 asks act.js to merge it
      */
     down: function (s, cause, ctx) {
       ctx = ctx || { rng: SR.rng.rules, now: s.clock.min, source: 'sim' };
-      var d = { outcome: null, cause: cause || 'other', bill: 0, writtenOff: 0, report: null, events: [] };
+      var d = { outcome: null, cause: cause || 'other', bill: 0, writtenOff: 0, report: null, events: [], toasts: [] };
       if (SR.features.perks && SR.rules.perks.has(s, 'secondWind') && !(s.daily.secondWind > 0)) {
         s.stats.hp = T().secondWind.hp;
         s.daily.secondWind = 1;
         d.outcome = 'secondWind';
+        d.toasts.push({ key: 'toast.health.secondWind', vars: {}, kind: 'warning' });
       } else if (s.mode.difficulty === 'hardcore') {
         s.stats.hp = 0;
         d.outcome = 'death';

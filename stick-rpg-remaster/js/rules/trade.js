@@ -3,7 +3,8 @@
 // demand, reputation, haggling and the vest in muggings (P1 `tours`).
 //
 // Smuggling (the named fn 'trade.smuggle', params.city or args city): canBoard('smuggle') (00:00
-// only, the ticket), the ticket (price target ticket.<city>), the clock to 24:00, then trip(), which
+// only, the ticket), the ticket (price target ticket.<city>; not taken twice when the row's cost is
+// the named fn 'trade.ticket'), the clock to 24:00, then trip(), which
 // resolves the original's handler in its order (GDD §4.11):
 //   1 nothing to sell → wasted · 2 no gun → mugged · 3 no ammo → mugged · 4 STR < 100 + rand(0..range)
 //   → mugged · 5 no phone → no buyers · 6 carrying more than 50 - floor(Heat/5) of either commodity
@@ -177,9 +178,10 @@
    * 'tour' (P1 `tours`) at 06:00-10:00 with CHA ≥ 150, karma ≥ 0, a phone, a job of Executive or
    * better or the Theatre degree, one tour per city per week, and the ticket.
    * @param {string} kind 'smuggle' | 'tour'
+   * @param {{paid: boolean}=} opts paid: the ticket was already taken (the row's cost), skip its check
    * @returns {{ok: boolean, reason: (string|null), vars: (object|null)}}
    */
-  function canBoard(s, kind, id) {
+  function canBoard(s, kind, id, opts) {
     if (!row(id)) return no('reason.unknown', { id: id });
     if (kind === 'tour') {
       if (!feat('tours')) return no('reason.featureOff');
@@ -197,15 +199,23 @@
       return no('reason.notNow', { time: SR.rules.time.fmt(SR.tuning.time.redEyeDeparts) });
     }
     var t = ticket(s, id);
-    if (s.money.cash < t) return no('reason.needCash', { n: t, money: money(t) });
+    if (!(opts && opts.paid) && s.money.cash < t) return no('reason.needCash', { n: t, money: money(t) });
     return yes();
   }
 
-  /** Pays the ticket, takes the day (the clock to 24:00) and marks the city visited. */
-  function board(s, id) {
+  /** @returns {boolean} the action's own cost already took the ticket (`cost: { cash: 'trade.ticket' }`). */
+  function paidBy(ctx) { return !!(ctx && ctx.cost && ctx.cost.cash > 0); }
+
+  /**
+   * Pays the ticket (unless the row's cost did), takes the day (the clock to 24:00) and marks the
+   * city visited. @returns {number} the ticket
+   */
+  function board(s, id, paid) {
     var t = ticket(s, id);
-    s.money.cash -= t;
-    if (s.records) s.records.spent = (s.records.spent || 0) + t;
+    if (!paid) {
+      s.money.cash -= t;
+      if (s.records) s.records.spent = (s.records.spent || 0) + t;
+    }
     SR.rules.time.setTo(s, SR.tuning.time.tripEndsAt);
     var tr = trade(s), v = tr.visited || (tr.visited = {});
     v[id] = true;
@@ -307,9 +317,9 @@
    *   jailed, report), and `trip` (the Trip); an offer waits in state.trade.offer
    */
   function smuggle(s, id, ctx) {
-    var c = canBoard(s, 'smuggle', id);
+    var c = canBoard(s, 'smuggle', id, { paid: paidBy(ctx) });
     if (!c.ok) return { ok: false, reason: c.reason, vars: c.vars };
-    board(s, id);
+    board(s, id, paidBy(ctx));
     var tr = trip(s, id, ctx), res = partial();
     res.trip = tr;
     if (tr.outcome === 'offer') return res;
@@ -350,6 +360,8 @@
     var K = B().take, V = B().buyerVoicemail, rng = rng0(ctx), res = partial();
     var total = bonus ? Math.round(tr.total * bonus) : tr.total;
     var key = GOODS[tr.want], units = Math.min(tr.units, s.items[key] || 0);
+    // A trip handed in again after its goods are gone (an explicit, already-taken Trip) sells nothing.
+    if (units <= 0) return { ok: false, reason: 'reason.notNow', vars: {} };
     if (units < tr.units) total = Math.round(total * units / tr.units);
     s.items[key] = (s.items[key] || 0) - units;
     SR.rules.effects.credit(s, 'cash', total, 'deal');
@@ -443,10 +455,10 @@
    * @returns {object} a partial Result
    */
   function tourStart(s, id, ctx) {
-    var c = canBoard(s, 'tour', id);
+    var c = canBoard(s, 'tour', id, { paid: paidBy(ctx) });
     if (!c.ok) return { ok: false, reason: c.reason, vars: c.vars };
     var params = tourParams(s, id);
-    board(s, id);
+    board(s, id, paidBy(ctx));
     trade(s).offer = { kind: 'tour', city: id, day: s.clock.day, outcome: 'offer' };
     var res = partial();
     res.open = { minigame: 'tourhook', skin: 'tourhook', params: params, resolve: ctx && ctx.id ? ctx.id + ':resolve' : null };
@@ -462,7 +474,7 @@
    * @returns {object} a partial Result with the `trip` event (outcome 'toured')
    */
   function tour(s, id, hook, ctx) {
-    var t = trade(s), wait = t.offer && t.offer.kind === 'tour' ? t.offer : null;
+    var t = trade(s), wait = pending(s, null, 'tour');
     id = id || (wait && wait.city);
     if (!row(id)) return { ok: false, reason: 'reason.notNow', vars: {} };
     var r = row(id), rng = rng0(ctx), res = partial(), K = B().tour;
@@ -484,7 +496,7 @@
     var tw = t.tourWeek || (t.tourWeek = {});
     tw[id] = SR.rules.time.week(s);
     t.tours = (t.tours || 0) + 1;
-    if (wait) t.offer = null;
+    if (wait && wait.city === id) t.offer = null;
     tr.cash = fee;
     tr.hook = won;
     story(tr, tr.mugged ? 'trip.tour.mugged' : 'trip.toured', { n: fee, money: money(fee) });
@@ -506,7 +518,13 @@
   SR.def.fn('trade.haggle', function (s, params, ctx) { return haggle(s, null, ctx); });
   SR.def.fn('trade.walk', function (s) { return walk(s, null); });
   SR.def.fn('trade.tourStart', function (s, params, ctx, id) { return tourStart(s, cityOf(params, id), ctx); });
-  SR.def.fn('trade.tour', function (s, params, ctx, id) { return tour(s, id || null, params, ctx); });
+  // The tour's resolve pays only the tour booked today (state.trade.offer, set by tourStart), once:
+  // a stray or repeated resolve, or one naming another city, is refused.
+  SR.def.fn('trade.tour', function (s, params, ctx, id) {
+    var wait = pending(s, null, 'tour');
+    if (!wait || (id && id !== wait.city)) return { ok: false, reason: 'reason.notNow', vars: {} };
+    return tour(s, wait.city, params, ctx);
+  });
   SR.def.fn('trade.demand', function (s) { rollDemand(s); return {}; });
 
   SR.rules.trade = {

@@ -66,7 +66,7 @@
     N.walk = new Uint8Array(n);
     N.comp = new Int32Array(n);
     N.edge = new Float32Array(n);
-    gScore = new Float32Array(n);
+    gScore = new Float64Array(n);
     parent = new Int32Array(n);
     mark = new Uint32Array(n);
     closed = new Uint32Array(n);
@@ -191,10 +191,10 @@
   // --- A* -------------------------------------------------------------------------------------------
   // Binary heap of cell indices keyed by f, in typed arrays (lazy deletion: stale entries are
   // skipped when popped because their cell is already closed).
-  var hIdx = new Int32Array(1024), hF = new Float32Array(1024), hLen = 0;
+  var hIdx = new Int32Array(1024), hF = new Float64Array(1024), hLen = 0;
   function hpush(i, f) {
     if (hLen === hIdx.length) {
-      var ni = new Int32Array(hLen * 2), nf = new Float32Array(hLen * 2);
+      var ni = new Int32Array(hLen * 2), nf = new Float64Array(hLen * 2);
       ni.set(hIdx); nf.set(hF); hIdx = ni; hF = nf;
     }
     var k = hLen++;
@@ -285,17 +285,37 @@
   }
   N.lineClear = lineClear;
 
-  /** Grid test: every point of the segment (every 8 u) lies in a cell connected to the start. */
-  function gridClear(ax, ay, bx, by) {
-    var len = Math.hypot(bx - ax, by - ay), n = Math.max(1, Math.ceil(len / 8));
-    for (var i = 0; i <= n; i++) {
-      var cx = Math.floor((ax + (bx - ax) * i / n) / N.cell), cy = Math.floor((ay + (by - ay) * i / n) / N.cell);
-      if (cx < 0 || cy < 0 || cx >= N.cols || cy >= N.rows) return false;
-      var k = cy * N.cols + cx;
-      if (N.walk[k] !== 1 || N.comp[k] !== N.startComp) return false;
-    }
-    return true;
+  function cellOk(cx, cy) {
+    if (cx < 0 || cy < 0 || cx >= N.cols || cy >= N.rows) return false;
+    var k = cy * N.cols + cx;
+    return N.walk[k] === 1 && N.comp[k] === N.startComp;
   }
+
+  /**
+   * Grid test: every cell the segment crosses is connected to the start (a cell walk, Amanatides-Woo;
+   * where it passes exactly through a cell corner, both side cells must be clear: no corner cutting).
+   */
+  function gridClear(ax, ay, bx, by) {
+    var cs = N.cell, cx = Math.floor(ax / cs), cy = Math.floor(ay / cs), ex = Math.floor(bx / cs), ey = Math.floor(by / cs);
+    var dx = bx - ax, dy = by - ay;
+    var sx = dx > 0 ? 1 : dx < 0 ? -1 : 0, sy = dy > 0 ? 1 : dy < 0 ? -1 : 0;
+    var tx = sx ? ((sx > 0 ? (cx + 1) * cs : cx * cs) - ax) / dx : Infinity;
+    var ty = sy ? ((sy > 0 ? (cy + 1) * cs : cy * cs) - ay) / dy : Infinity;
+    var ddx = sx ? cs / Math.abs(dx) : Infinity, ddy = sy ? cs / Math.abs(dy) : Infinity;
+    var steps = Math.abs(ex - cx) + Math.abs(ey - cy);
+    if (!cellOk(cx, cy)) return false;
+    for (var i = 0; i < steps && (cx !== ex || cy !== ey); i++) {
+      if (tx < ty - 1e-9) { cx += sx; tx += ddx; }
+      else if (ty < tx - 1e-9) { cy += sy; ty += ddy; }
+      else {
+        if (!cellOk(cx + sx, cy) || !cellOk(cx, cy + sy)) return false;
+        cx += sx; cy += sy; tx += ddx; ty += ddy; i++;
+      }
+      if (!cellOk(cx, cy)) return false;
+    }
+    return cellOk(ex, ey);
+  }
+  N.gridClear = gridClear;
 
   /**
    * A walking route from `from` to `to` (click-to-walk, GDD §3.8).
@@ -346,10 +366,13 @@
   };
 
   /** Advances the cache clock (called by SR.world.update). */
+  var pruned = 0;
   N.tick = function (dt) {
     clock += dt;
-    if (clock > 5) {
-      Object.keys(cache).forEach(function (k) { if (clock - cache[k].t > N.cacheSec) delete cache[k]; });
+    // Expired routes are dropped once a second (not every step: no per-step garbage).
+    if (clock - pruned >= 1) {
+      pruned = clock;
+      for (var k in cache) if (clock - cache[k].t > N.cacheSec) delete cache[k];
     }
   };
 

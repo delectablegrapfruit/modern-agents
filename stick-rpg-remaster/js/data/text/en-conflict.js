@@ -138,6 +138,8 @@
     'toast.crime.talkFailed': 'He does not buy it',
     'toast.crime.bribed': 'A {money} donation to the Policemen\'s Ball. Heat drops',
     'toast.crime.escaped': 'Lost them. Cardio pays off',
+    'toast.crime.tip': 'McHolland pockets the tip. Your Heat drops to {heat}',
+    'toast.crime.mchollandBribed': 'McHolland forgets your face until day {day}',
     'toast.crime.interrogationWin': 'McHolland closes his notebook. "We\'ll talk again."',
     'stamp.crime.store': 'CLEAN GETAWAY',
     'stamp.crime.bank': 'BIG SCORE',
@@ -190,7 +192,8 @@
     'toast.fight.tab': 'Your share of the damages: {money}',
     'toast.fight.run': 'You leave at speed. Nobody claps',
     'toast.fight.purse': 'Ring bout {k} won. Purse: {money}',
-    'toast.fight.goons': 'Both goons down. Tell Red the debt is settled',
+    'toast.fight.goons': 'One of Red\'s goons folds like cheap paper',
+    'toast.fight.goonsLose': 'Red\'s goons leave you flat on the pavement',
     'stamp.fight.champion': "CHAMPION OF STICKY'S",
 
     // ---------------------------------------------------------------------------------------------

@@ -7,8 +7,8 @@
   'use strict';
   var SR = window.SR;
 
-  var DOOR_TAG = 160;          // a plain name tag from 96 to 160 u (GDD §3.6, B-15 door.prompt)
-  var DOOR_PROMPT = 96;        // the interact range: the tag carries the key hint
+  var DOOR_TAG = 160;          // a plain name tag from 96 to 160 u (GDD §3.6; tuning.world.door.tag wins)
+  var DOOR_PROMPT = 96;        // the interact range: the tag carries the key hint (tuning.world.door.prompt)
   var NAME_TAG = 200;          // name tags over named people within 200 u
   var FLOAT_RISE = 40, FLOAT_MS = 900, FLOAT_FADE_MS = 300;
   var FLOAT_MAX = 24;
@@ -178,26 +178,53 @@
     ctx.restore();
   }
 
+  function doorAnchor(dr) {
+    // Over the door's sign: the facade above a south door, the awning's outer edge, the north porch.
+    var f = String(dr.face || 'S').toUpperCase();
+    return { x: dr.x + (f === 'E' ? 16 : f === 'W' ? -16 : 0), y: f === 'S' ? dr.y - 70 : f === 'N' ? dr.y - 60 : dr.y - 64 };
+  }
+
+  function doorLabel(nameKey, tagKey, fallbackId, def) {
+    var name = L().text(nameKey, null, '') || placeName(fallbackId, def);
+    var tag = tagKey ? L().text(tagKey, null, '') : '';
+    return name && tag ? name + ' · ' + tag : name;
+  }
+
   function doorTags(ctx, v, m) {
     if (SR.render.worldui.doorTags === false) return;
+    var D = SR.world && SR.world.doors, G = SR.world && SR.world.geometry;
+    var byId = m.doorById || (m.doorById = m.doors.reduce(function (o, d) { o[d.id] = d; o[d.building] = o[d.building] || d; return o; }, {}));
+    if (D && G && G.built && Array.isArray(D.tags) && SR.world.player) {
+      // The live world decides which doors are in range (W1-W doors: prompt within 96 u, tags to 160 u).
+      if (D.prompt && D.prompt.kind === 'enter' && byId[D.prompt.door]) {
+        var pd = byId[D.prompt.door], pt = D.tagFor ? D.tagFor(D.prompt.door) : null;
+        var pa = doorAnchor(pd.door);
+        pill(ctx, sx(v, pa.x), sy(v, pa.y), doorLabel(D.prompt.name, pt && pt.tag, pd.building, pd.geom.def), keyGlyph(), true);
+      }
+      for (var k = 0; k < D.tags.length; k++) {
+        var tg = D.tags[k], dd = byId[tg.door];
+        if (!dd) continue;
+        var ta = doorAnchor(dd.door);
+        pill(ctx, sx(v, ta.x), sy(v, ta.y), doorLabel(tg.name, tg.tag, dd.building, dd.geom.def), null, false);
+      }
+      return;
+    }
     var A = SR.render.actors;
     var p = A && A.playerPos ? A.playerPos() : null;
     if (!p) return;
     var key = null;
+    var tagR = L().tune('world.door.tag', DOOR_TAG), promptR = L().tune('world.door.prompt', DOOR_PROMPT);
     for (var i = 0; i < m.doors.length; i++) {
       var d = m.doors[i], dr = d.door;
       var dx = dr.x - p.x, dy = dr.y - p.y;
-      if (Math.abs(dx) > DOOR_TAG || Math.abs(dy) > DOOR_TAG) continue;
+      if (Math.abs(dx) > tagR || Math.abs(dy) > tagR) continue;
       var dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist > DOOR_TAG) continue;
+      if (dist > tagR) continue;
       var name = placeName(d.building, d.geom.def);
       if (!name) continue;
-      var f = String(dr.face || 'S').toUpperCase();
-      // Over the door's sign: the facade above a south door, the awning's outer edge, the north porch.
-      var tx = dr.x + (f === 'E' ? 16 : f === 'W' ? -16 : 0);
-      var ty = f === 'S' ? dr.y - 70 : f === 'N' ? dr.y - 60 : dr.y - 64;
-      if (dist <= DOOR_PROMPT && key === null) key = keyGlyph();
-      pill(ctx, sx(v, tx), sy(v, ty), name, dist <= DOOR_PROMPT ? key : null, dist <= DOOR_PROMPT);
+      var an = doorAnchor(dr);
+      if (dist <= promptR && key === null) key = keyGlyph();
+      pill(ctx, sx(v, an.x), sy(v, an.y), name, dist <= promptR ? key : null, dist <= promptR);
     }
   }
 

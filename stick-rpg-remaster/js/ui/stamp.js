@@ -47,10 +47,12 @@
     layer.appendChild(el);
     cur = { el: el, o: o, timer: 0, at: D().now() };
     D().announce(el.stampText);
-    // The thud and the 4 px paper jolt of the stage (W1-S, W1-G), when they exist.
+    // The thud (W1-S's `stamp` recipe; `confirm`, the ink-stamp click, until it exists), the
+    // level-up stinger once W2-Music registers `stingers.stamp`, and the 4 px paper jolt (W1-G).
+    if (!D().sfx('stamp')) D().sfx('confirm');
     if (SR.audio && typeof SR.audio.stinger === 'function' && SR.reg.song && SR.reg.song['stingers.stamp']) {
-      try { SR.audio.stinger('stamp'); } catch (e) { D().sfx('confirm'); }
-    } else D().sfx('confirm');
+      try { SR.audio.stinger('stamp'); } catch (e) { SR.util.warnOnce('ui.stamp.stinger', 'SR.ui.stamp: stinger failed: ' + e.message); }
+    }
     if (SR.render && SR.render.fx && typeof SR.render.fx.jolt === 'function' && !D().reduced()) {
       try { SR.render.fx.jolt(); } catch (e2) { /* render core not landed */ }
     }

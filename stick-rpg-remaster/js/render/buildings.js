@@ -12,7 +12,7 @@
   var SPRITE_BUDGET_COMPACT = 6e6;   // touch-compact profile
   var SPRITE_DPR_MAX = 1.5;
   var WINDOW_EXPAND = 0.5;           // bake within the view expanded by half a view on every side
-  var FADE_ALPHA = 0.35;             // occlusion fade (B-15 `occlusionAlpha`)
+  var FADE_ALPHA = 0.35;             // occlusion fade (B-15 `occlusionAlpha`; tuning.world wins)
   var FADE_TIME = 0.15;
   var DOOR_FOCUS = 160;              // a door within 160 u of the player keeps its porch clear
   var LIT_SLOT = 15;                 // the lit-window pattern changes every 15 game minutes
@@ -148,6 +148,9 @@
 
   /** The occlusion fade (GDD §3.7): a building covering the player, a door near them, a named NPC or a marker fades to 35 %. */
   function occlusion(v, m) {
+    var oa = L().tune('world.occlusionAlpha', null);
+    var fadeAlpha = oa && typeof oa.alpha === 'number' ? oa.alpha : FADE_ALPHA;
+    var fadeTime = oa && typeof oa.ms === 'number' ? oa.ms / 1000 : FADE_TIME;
     var A = SR.render.actors;
     var focus = A && A.focus ? A.focus(v) : null;
     var dt = v.dt;
@@ -162,27 +165,27 @@
           for (var k = 0; k < g.cover.length; k++) {
             var cr = g.cover[k];
             // Covered: the focus stands north of this piece's south edge and inside its projection.
-            if (fr[3] < cr[3] && inRect(cr, fr[0], fr[1], fr[2], fr[3])) { target = FADE_ALPHA; break; }
+            if (fr[3] < cr[3] && inRect(cr, fr[0], fr[1], fr[2], fr[3])) { target = fadeAlpha; break; }
           }
         }
       }
       if (target === 1 && p) {
         // A door within 160 u of the player whose porch this building covers.
-        var ds = m.doors;
+        var ds = m.doors, near = L().tune('world.door.tag', DOOR_FOCUS);
         for (var d = 0; d < ds.length; d++) {
           var dg = ds[d].geom;
           if (dg === g || !dg.visible) continue;
           var dd = ds[d].door;
-          if (Math.abs(dd.x - p.x) > DOOR_FOCUS || Math.abs(dd.y - p.y) > DOOR_FOCUS) continue;
-          if (Math.hypot(dd.x - p.x, dd.y - p.y) > DOOR_FOCUS) continue;
+          if (Math.abs(dd.x - p.x) > near || Math.abs(dd.y - p.y) > near) continue;
+          if (Math.hypot(dd.x - p.x, dd.y - p.y) > near) continue;
           for (var q = 0; q < g.cover.length; q++) {
-            if (inRect(g.cover[q], dg.visible[0], dg.visible[1], dg.visible[2], dg.visible[3])) { target = FADE_ALPHA; break; }
+            if (inRect(g.cover[q], dg.visible[0], dg.visible[1], dg.visible[2], dg.visible[3])) { target = fadeAlpha; break; }
           }
           if (target !== 1) break;
         }
       }
       rb.target = target;
-      var step = dt > 0 ? dt * (1 - FADE_ALPHA) / FADE_TIME : 1;
+      var step = dt > 0 ? dt * (1 - fadeAlpha) / fadeTime : 1;
       if (rb.alpha < target) rb.alpha = Math.min(target, rb.alpha + step);
       else if (rb.alpha > target) rb.alpha = Math.max(target, rb.alpha - step);
     }
@@ -378,6 +381,15 @@
       x.fillRect(-10, -42, 20, 12);
       x.fillStyle = pal('glass', 0.8); x.fillRect(-8, -40, 5, 5); x.fillRect(3, -40, 5, 5);
       outline(function () { x.rect(-10, -42, 20, 12); x.rect(-2, -30, 4, 30); });
+    } else if (type === 'shelter') {
+      // A bus shelter: glass back panel, two posts, a roof slab and a bench.
+      var post = pal(['prop.lampPost', 'railing'], 0.3), glass = pal(['prop.shelter', 'glass'], 0.8);
+      shadow(50, 8);
+      x.save(); x.globalAlpha = 0.55; x.fillStyle = glass; x.fillRect(-48, -58, 96, 40); x.restore();
+      x.fillStyle = post; x.fillRect(-50, -60, 4, 60); x.fillRect(46, -60, 4, 60);
+      x.fillStyle = tone(post, 1); x.fillRect(-54, -66, 108, 8);
+      x.fillStyle = pal(['prop.bench', 'path'], 0.6); x.fillRect(-36, -16, 72, 6);
+      outline(function () { x.rect(-54, -66, 108, 8); x.rect(-48, -58, 96, 40); });
     } else if (type === 'plinth') {
       var st = pal(['prop.plinth', 'stone'], 0.8);
       shadow(34, 8);

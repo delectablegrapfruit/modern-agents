@@ -383,7 +383,9 @@
     g.flat.forEach(function (p) { water(ctx, p, x0, y0, x1, y1, px); });
     // 4. The Dog-Ear flap: the back of the paper with its mirrored print.
     flap(ctx, g.dogEar, x0, y0, x1, y1, px);
-    // 5. Door mats, steps and porches (ground decals, under people).
+    // 5. Building footprint slabs (seen through a building faded by the occlusion rule), then door
+    //    mats, steps and porches (ground decals, under people).
+    m.buildings.forEach(function (b) { footprint(ctx, b.geom, x0, y0, x1, y1); });
     m.doors.forEach(function (d) { decal(ctx, d, x0, y0, x1, y1, px); });
     // 6. Paper grain over the land.
     grain(ctx, x0, y0, x1, y1, ppu);
@@ -711,6 +713,17 @@
     ctx.strokeStyle = pal('paperEdge', 0.95);
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+  }
+
+  function footprint(ctx, g, x0, y0, x1, y1) {
+    var f = g.footprint;
+    if (!f || !hitsR(f, x0, y0, x1, y1)) return;
+    var P = SR.art.exterior.colours(g);
+    ctx.fillStyle = L().tone(P.shade, -2);
+    for (var i = 0; i < g.masses.length; i++) {
+      var ms = g.masses[i];
+      ctx.fillRect(ms.x0, ms.y0, ms.x1 - ms.x0, ms.y1 - ms.y0);
+    }
   }
 
   function decal(ctx, d, x0, y0, x1, y1, px) {

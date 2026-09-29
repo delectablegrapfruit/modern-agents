@@ -10,7 +10,7 @@
   var SR = window.SR;
 
   // Geometry constants (GDD §3.6, ARCHITECTURE §8.1, ART_AUDIO §5.1).
-  var PROJ = 0.5;             // screenY = y - 0.5 z (B-15 `projection`)
+  var PROJ = 0.5;             // screenY = y - 0.5 z (B-15 `projection`; read from tuning per call)
   var PORCH_S = 40;           // south porch depth: step and mat
   var PORCH_HALF = 48;        // porches and awnings span the door ± 48 u
   var AWNING_DEPTH = 32;      // east / west awnings project 32 u over the sidewalk
@@ -57,8 +57,11 @@
    * @returns {object} { id, archetype, roof, palette, masses[], order[], door, porch, visible,
    *   awning, canopy, post, sortY, bounds, footprint }
    */
+  function projK() { var k = L().tune('world.projection.k', 0.5); return typeof k === 'number' && k > 0 ? k : 0.5; }
+
   function geom(def) {
     if (geomCache && geomCache.has(def)) return geomCache.get(def);
+    PROJ = projK();
     var ex = def.exterior || {};
     var arch = ex.archetype || (def.id === 'skybus' ? 'vehicle' : 'box');
     var roof = ex.roof || { house: 'pitched', castle: 'crenel', depot: 'sawtooth' }[arch] || 'flat';
@@ -112,7 +115,7 @@
       b = union(b, [main.x0, main.y0 - PROJ * (towerH || main.h + 100) - R0 * 2.2 - 30, main.x1, main.y1]);
     }
     // What the building hides from view: its masses' and tall features' projected rects.
-    g.cover = masses.map(function (m) { return m.proj; }).concat(tops.map(function (t) { return [t.x0, t.y0 - PROJ * t.h, t.x1, t.y1]; }));
+
     var d = def.door;
     if (d && num(d.x) && num(d.y)) {
       var face = String(d.face || 'S').toUpperCase().charAt(0);
@@ -149,6 +152,9 @@
         b = union(b, [g.post.x - g.post.w / 2 - 2, g.post.y - PROJ * g.post.h - 26, g.post.x + g.post.w / 2 + 2, g.post.y + 4]);
       }
     }
+    // What the building hides from view: its masses' and tall features' projected rects. (People
+    // on an east / west door mat are drawn in front of the awning instead: js/render/actors.js.)
+    g.cover = masses.map(function (m) { return m.proj; }).concat(tops.map(function (t) { return [t.x0, t.y0 - PROJ * t.h, t.x1, t.y1]; }));
     // Signature rects (worldmap and W2-Exterior) are drawn inside the sprite: include them.
     g.signature = signatures(def);
     g.signature.forEach(function (r) { b = union(b, r); });
@@ -472,11 +478,14 @@
     ctx.clip();
     ctx.fillStyle = L().tone(col, -1);
     ctx.beginPath(); ctx.ellipse(cx, cy + R * 0.55, R * 1.05, R * 0.75, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = L().tone(col, 1);
-    ctx.lineWidth = Math.max(2, R * 0.03);
+    // Brass ribs (ART_AUDIO §5.2: a brass dome over the navy shell) and a brass ring at the base.
+    ctx.strokeStyle = P.trim;
+    ctx.lineWidth = Math.max(2, R * 0.035);
     ctx.beginPath();
     for (var k = -2; k <= 2; k++) ctx.ellipse(cx, cy, Math.abs(k) * R / 3 + 0.01, R * K, 0, k < 0 ? Math.PI / 2 : -Math.PI / 2, k < 0 ? Math.PI * 1.5 : Math.PI / 2);
     ctx.stroke();
+    ctx.lineWidth = Math.max(3, R * 0.07);
+    ctx.beginPath(); ctx.ellipse(cx, cy, R, R, 0, 0, Math.PI); ctx.stroke();
     ctx.fillStyle = L().tone(col, 2);
     ctx.globalAlpha = 0.55;
     ctx.beginPath(); ctx.ellipse(cx - R * 0.38, cy - R * 0.55, R * 0.18, R * 0.32, -0.5, 0, Math.PI * 2); ctx.fill();
@@ -991,6 +1000,7 @@
    * @returns {{step: function(): boolean, done: boolean, result: object|null, steps: number}}
    */
   function baker(def, zoom, dpr) {
+    PROJ = projK();
     var g = geom(def);
     var sc = Math.max(0.05, zoom * (dpr || 1));
     var P = colours(g);

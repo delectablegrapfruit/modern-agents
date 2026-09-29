@@ -45,6 +45,7 @@ T.section('HP 0 by difficulty');
   const q = H.state(SR, { stats: { hp: 0 }, perks: { owned: ['secondWind'] } }, { difficulty: 'hardcore' });
   const dq = HL.down(q, 'fall', H.ctx(SR, 1));
   T.eq([dq.outcome, q.stats.hp, q.daily.secondWind, q.over], ['secondWind', 1, 1, false], 'Second Wind: HP 1, nothing else');
+  T.eq(dq.toasts, [{ key: 'toast.health.secondWind', vars: {}, kind: 'warning' }], '… but its toast (ARCHITECTURE §6.7)');
   q.stats.hp = 0;
   T.eq(HL.down(q, 'fall', H.ctx(SR, 1)).outcome, 'death', 'once a day');
   rf();

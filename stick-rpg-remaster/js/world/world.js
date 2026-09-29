@@ -2,9 +2,11 @@
 // the geometry and the nav grid at boot (prio 30, headless), reads the world numbers from
 // SR.tuning (BALANCE B-15) into SR.world.cfg, starts and places the player from the state
 // (spawn points, the home door, a door's exit), writes positions back to state.player once a
-// second and on scene changes, and runs SR.world.update(dt): player → fall → doors → traffic →
-// pedestrians → street people and police → markers → weather → camera, pausing 1 and 3-8 while
-// a fall plays. Node-safe (no DOM at load or in update).
+// second and on scene changes (never a point in the sky while a fall plays), reads other modules'
+// cars and people (SR.world.entities) and runs SR.world.update(dt): step start (px / py for the
+// renderer's interpolation, the dynamic hash) → player → fall → doors → traffic → pedestrians →
+// street people and police → markers → weather → camera, pausing 1 and 3-8 while a fall plays.
+// Node-safe (no DOM at load or in update).
 (function () {
   'use strict';
   var SR = window.SR;
@@ -37,7 +39,8 @@
   var LOCAL = {
     skateAccel: 0.25,      // GDD §3.8: skateboard and Pro Deck reach top speed in 0.25 s
     carRange: 64,          // GDD §3.8: C / Y enters or leaves your car within 64 u of it
-    carRadius: 26,         // cars are 96 × 52 boxes (GDD §3.8); against the static world, a circle of half the width
+    carRadius: 26,         // cars are 96 × 52 boxes (GDD §3.8): against the static world a capsule of half the width...
+    carLength: 96,         // ...and the car's length along its heading
     driveZoomEase: 0.6,    // GDD §3.7: driving eases the zoom one level out over 0.6 s
     teeterAssistMs: 300,   // UI §8: Assist's longer teeter grace
     navCacheSec: 1,        // ARCHITECTURE §8.2: nav paths are cached for 1 s
@@ -206,25 +209,58 @@
   };
 
   var syncT = 0;
-  /** Writes the player's position (and a driven car's) into state.player. */
+  /**
+   * Writes the player's position (and a driven car's) into state.player. While a teeter or the
+   * Fold Rescue plays, the player is over the sky: the state gets the landing point (or the last
+   * point on the sheet), so a save taken then never loads the player in mid-air.
+   */
   W.sync = function (s) {
     s = s || SR.state;
     syncT = 0;
     if (!s || !s.player) return;
-    var p = W.player, pl = s.player;
-    pl.x = Math.round(p.x); pl.y = Math.round(p.y); pl.facing = Math.round(p.facing) % 360;
+    var p = W.player, pl = s.player, f = W.fall, pos = p;
+    if (f && f.active && f.active()) pos = f.to || f.from || p.lastSafe || p;
+    pl.x = Math.round(pos.x); pl.y = Math.round(pos.y); pl.facing = Math.round(p.facing) % 360;
     pl.driving = p.car || null;
     if (p.lastSafe) pl.lastSafe = { x: Math.round(p.lastSafe.x), y: Math.round(p.lastSafe.y) };
     if (p.car && pl.cars && pl.cars[p.car]) {
-      pl.cars[p.car].x = Math.round(p.x); pl.cars[p.car].y = Math.round(p.y);
+      pl.cars[p.car].x = Math.round(pos.x); pl.cars[p.car].y = Math.round(pos.y);
       pl.cars[p.car].a = Math.round(p.a * 1000) / 1000;
     }
   };
 
+  // --- entities of other modules -----------------------------------------------------------------
+  // The entity arrays the world reads from the modules that own walkers and cars (W2-City's traffic
+  // and pedestrians, W2-Street's street people, W3-Crime's police), under the same names the
+  // renderer accepts (js/render/actors.js). Entities are { x, y, visible?, active?, ... }.
+  var ENTITY_SOURCES = {
+    car: [['traffic', ['cars', 'list', 'pool']]],
+    ped: [['pedestrians', ['peds', 'list', 'pool']]],
+    person: [['streetnpcs', ['people', 'list', 'npcs']]],
+    police: [['police', ['officers', 'list']]],
+  };
+  var NO_ENTITIES = [];
+
+  /**
+   * @param {string} kind 'car' | 'ped' | 'person' | 'police'
+   * @returns {object[]} that module's live entity array (never copied; empty while the module is a stub)
+   */
+  W.entities = function (kind) {
+    var src = ENTITY_SOURCES[kind];
+    if (!src) return NO_ENTITIES;
+    var mod = W[src[0][0]], names = src[0][1];
+    if (!mod) return NO_ENTITIES;
+    for (var i = 0; i < names.length; i++) if (Array.isArray(mod[names[i]])) return mod[names[i]];
+    return NO_ENTITIES;
+  };
+  W.ENTITY_KINDS = Object.keys(ENTITY_SOURCES);
+
   // --- input ------------------------------------------------------------------------------------
+  var INPUT = { x: 0, y: 0, skate: false };   // readInput's result, refilled every call (read it at once)
   /** @returns {{x: number, y: number, skate: boolean}} the move axis and the skate hold from SR.input. */
   W.readInput = function () {
-    var inp = SR.input, out = { x: 0, y: 0, skate: false };
+    var inp = SR.input, out = INPUT;
+    out.x = 0; out.y = 0; out.skate = false;
     if (!inp) return out;
     try {
       if (typeof inp.axis === 'function') { var a = inp.axis('move'); if (a) { out.x = a.x || 0; out.y = a.y || 0; } }
@@ -264,6 +300,10 @@
     W.nav.tick(dt);
     var inp = input || W.readInput();
     var hasGame = !!SR.state;
+    // The step's start positions (the renderer interpolates by alpha, ARCHITECTURE §3) and the
+    // per-step dynamic hash of cars and people (ARCHITECTURE §8.2).
+    W.player.px = W.player.x; W.player.py = W.player.y;
+    if (W.collide.dynamic) W.collide.dynamic.rebuild();
     if (hasGame && !W.fall.active()) W.player.update(dt, inp);
     if (hasGame) W.fall.update(dt, inp);
     if (!W.fall.active()) {

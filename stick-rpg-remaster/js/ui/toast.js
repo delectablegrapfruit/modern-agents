@@ -28,7 +28,9 @@
     var kind = o.kind || 'info';
     var text = o.text !== undefined ? D().t(o.text, o.vars) : D().t(o.key, o.vars);
     var chips = (o.chips || []).map(function (c) { return c && c.nodeType ? c : SR.ui.chip(c); });
-    var el = D().h('div', { class: ['toast', 'toast--' + kind, 'paper'], role: kind === 'warning' ? 'alert' : 'status',
+    // Read out once, through #aria (toast() announces it); role="alert" would make screen readers
+    // announce a warning a second time as it is inserted.
+    var el = D().h('div', { class: ['toast', 'toast--' + kind, 'paper'], role: 'status',
       'data-id': o.id || 'toast', 'data-kind': kind },
       D().h('span', { class: 'toast-ico' }, D().icon(o.icon || KIND_ICON[kind] || 'info', 24)),
       D().h('span', { class: 'toast-body' },

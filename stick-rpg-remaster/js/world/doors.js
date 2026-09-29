@@ -4,7 +4,8 @@
 // move input points within 45° of the way in, or while a click-to-walk route ends inside), the
 // re-arm rule (after exiting or cancelling, a trigger waits until you are more than 64 u from it),
 // the prompt ("[E] Enter McSticks" within 96 u, a plain name tag from 96 to 160 u), Interact,
-// and "Park and enter" within 64 u of a door's kerb (or by driving into its trigger). Node-safe.
+// and "Park and enter" within 64 u of a door's kerb (or by driving into its trigger, moving within
+// 45° of the way in, so driving along a sidewalk past a door never enters it). Node-safe.
 (function () {
   'use strict';
   var SR = window.SR;
@@ -26,11 +27,16 @@
   var disarmed = {};   // door id -> true while disarmed
   var dwell = {};      // door id -> seconds of qualifying dwell in its trigger
   var clock = 0;
+  // Per-step output without garbage (ARCHITECTURE §17): the tags array is reused, a door's tag
+  // object and the prompt object stay the same while they describe the same door.
+  var TAGS = [], tagObjs = {}, promptObj = null, tiersCache = {};
+  D.tags = TAGS;
 
   /** Forgets prompts, dwell, disarmed triggers and the entry log (a new game, a test). */
   D.reset = function () {
-    D.prompt = null; D.tags = []; D.last = null; D.entered = [];
+    D.prompt = null; D.tags = TAGS; TAGS.length = 0; D.last = null; D.entered = [];
     disarmed = {}; dwell = {}; clock = 0;
+    tiersCache = {}; promptObj = null; tagObjs = {};
   };
 
   // --- the resolver -------------------------------------------------------------------------------
@@ -79,6 +85,18 @@
     }
     return { scene: 'building', id: 'home', params: { homeId: tiers[0], mode: 'forSale' } };
   };
+
+  /** The tag key of a door (a home door: door.live / door.owned / door.forSale; others null), allocation-free. */
+  function tagKey(d, s) {
+    if (!d.homes) return null;
+    var tiers = tiersCache[d.id] || (tiersCache[d.id] = D.doorHomes(d.id) || []);
+    var h = s && s.homes;
+    if (!tiers.length || !h) return 'door.forSale';
+    if (h.living && tiers.indexOf(h.living) >= 0) return 'door.live';
+    var owned = h.owned || [];
+    for (var i = 0; i < owned.length; i++) if (tiers.indexOf(owned[i]) >= 0) return 'door.owned';
+    return 'door.forSale';
+  }
 
   /** The tag a door shows (home doors say For Sale / Yours / Home; ART_AUDIO §5.2 reacting signs). */
   D.tagFor = function (doorId, s) {
@@ -131,14 +149,26 @@
     return r;
   };
 
+  /**
+   * The heading (radians, 0 = east) a car parked at a kerb takes: along the drivable strip the kerb
+   * lies on (a street, path or plaza, its long side), the way closer to `a`.
+   */
+  D.kerbHeading = function (d, a) {
+    var g = G(), k = d.kerb || [d.exit.x, d.exit.y], rect = null;
+    (g.map.streets || []).forEach(function (s) {
+      if (!rect && s.kind !== 'sidewalk' && g.util.inRect(k[0], k[1], s.rect)) rect = s.rect;
+    });
+    var along = rect ? (rect[2] - rect[0] >= rect[3] - rect[1] ? 0 : Math.PI / 2) : (d.face === 'E' || d.face === 'W' ? Math.PI / 2 : 0);
+    return Math.cos((a || 0) - along) >= 0 ? along : along - Math.PI;
+  };
+
   /** Parks the car at the door's kerb, aligned with the street, and enters on foot. */
   D.parkAndEnter = function (doorId) {
     var d = G().doorById[doorId], p = P();
     if (!d || !p.car) return null;
     var k = d.kerb || [d.exit.x, d.exit.y];
     // Align with the kerb: along the street, the way closer to the car's heading.
-    var along = d.face === 'E' || d.face === 'W' ? Math.PI / 2 : 0;
-    var a = Math.cos(p.a - along) >= 0 ? along : along - Math.PI;
+    var a = D.kerbHeading(d, p.a);
     p.park(k[0], k[1], a);
     p.x = d.exit.x; p.y = d.exit.y; p.facing = (d.facing + 180) % 360;
     return D.enter(doorId, 'park');
@@ -175,6 +205,15 @@
   /** @returns {boolean} (x, y) is on the door's outer side (Interact never works through a wall). */
   function outside(d, x, y) { return (x - d.x) * d.out[0] + (y - d.y) * d.out[1] > 0; }
 
+  /** The prompt object for a door (the same object while it names the same door and kind). */
+  function promptFor(kind, d, dist) {
+    if (!promptObj || promptObj.kind !== kind || promptObj.door !== d.id) {
+      promptObj = { kind: kind, door: d.id, name: d.name, verb: kind === 'park' ? 'door.park' : 'door.enter', dist: dist };
+    }
+    promptObj.dist = dist;
+    return promptObj;
+  }
+
   /**
    * One step: re-arm, the prompt and tags, park-and-enter by driving in, and the walking dwell.
    * @param {number} dt
@@ -189,7 +228,8 @@
       if (!d || Math.hypot(p.x - d.tc[0], p.y - d.tc[1]) > c.rearm) delete disarmed[id];
     }
     D.prompt = null;
-    D.tags = [];
+    D.tags = TAGS;
+    TAGS.length = 0;
     if (p.car) {
       var bestK = null, bk = c.parkRange;
       for (i = 0; i < g.doors.length; i++) {
@@ -198,10 +238,18 @@
         var dk = Math.hypot(p.x - d.kerb[0], p.y - d.kerb[1]);
         if (dk <= bk) { bk = dk; bestK = d; }
       }
-      if (bestK) D.prompt = { kind: 'park', door: bestK.id, name: bestK.name, verb: 'door.park', dist: bk };
+      if (bestK) D.prompt = promptFor('park', bestK, bk);
+      // Driving into a trigger parks and enters, like walking in: only while the car moves within
+      // the dwell angle of the way in, so driving along a sidewalk past a door never enters it.
+      var sp = Math.sqrt(p.vx * p.vx + p.vy * p.vy), cosCar = Math.cos(c.dwellAngle * Math.PI / 180);
+      if (p.knockdown > 0 || sp < 1) return;
+      // The car is in a trigger when its centre or its nose (just inside the bumper) is.
+      var nose = Math.max(0, c.carLength / 2 - 8) * (p.v < 0 ? -1 : 1);
+      var nx = p.x + Math.cos(p.a) * nose, ny = p.y + Math.sin(p.a) * nose;
       for (i = 0; i < g.doors.length; i++) {
         d = g.doors[i];
-        if (!disarmed[d.id] && inTrigger(d, p.x, p.y)) { D.parkAndEnter(d.id); return; }
+        if (disarmed[d.id] || (!inTrigger(d, p.x, p.y) && !inTrigger(d, nx, ny))) continue;
+        if (-(p.vx * d.out[0] + p.vy * d.out[1]) / sp >= cosCar - 1e-9) { D.parkAndEnter(d.id); return; }
       }
       return;
     }
@@ -211,18 +259,20 @@
       var dist = Math.hypot(p.x - d.x, p.y - d.y);
       if (dist <= c.interact && outside(d, p.x, p.y) && dist < bd) { bd = dist; best = d; }
     }
-    if (best) D.prompt = { kind: 'enter', door: best.id, name: best.name, verb: 'door.enter', dist: bd };
+    if (best) D.prompt = promptFor('enter', best, bd);
     for (i = 0; i < g.doors.length; i++) {
       d = g.doors[i];
       var dt2 = Math.hypot(p.x - d.x, p.y - d.y);
       if (d !== best && dt2 <= c.tag && outside(d, p.x, p.y)) {
-        var t = D.tagFor(d.id);
-        D.tags.push({ door: d.id, name: d.name, tag: t && t.tag, dist: dt2 });
+        var t = tagObjs[d.id] || (tagObjs[d.id] = { door: d.id, name: d.name, tag: null, dist: 0 });
+        t.tag = tagKey(d, SR.state); t.dist = dt2;
+        TAGS.push(t);
       }
     }
     // Walking in: dwell counted only while the input points within 45° of the way in, or while a
     // click-to-walk route ends inside this trigger.
     var mag = Math.sqrt(input.x * input.x + input.y * input.y), cosMax = Math.cos(c.dwellAngle * Math.PI / 180);
+    if (p.knockdown > 0) mag = 0;   // knocked down: the input moves nothing, so it aims at nothing
     for (i = 0; i < g.doors.length; i++) {
       d = g.doors[i];
       if (!inTrigger(d, p.x, p.y)) { dwell[d.id] = 0; continue; }

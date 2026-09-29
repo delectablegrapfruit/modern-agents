@@ -39,13 +39,18 @@
     var r = [Math.max(a[0], b[0]), Math.max(a[1], b[1]), Math.min(a[2], b[2]), Math.min(a[3], b[3])];
     return r[0] < r[2] && r[1] < r[3] ? r : null;
   }
-  /** @returns {{d: number, x: number, y: number, t: number}} the closest point of segment ab to p. */
-  function segClosest(px, py, ax, ay, bx, by) {
+  /**
+   * @param {object=} out an object to fill (default: a new object)
+   * @returns {{d: number, x: number, y: number, t: number}} the closest point of segment ab to p.
+   */
+  function segClosest(px, py, ax, ay, bx, by, out) {
     var dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
     var t = l2 ? ((px - ax) * dx + (py - ay) * dy) / l2 : 0;
     t = t < 0 ? 0 : t > 1 ? 1 : t;
     var qx = ax + t * dx, qy = ay + t * dy;
-    return { d: Math.sqrt((px - qx) * (px - qx) + (py - qy) * (py - qy)), x: qx, y: qy, t: t };
+    out = out || {};
+    out.d = Math.sqrt((px - qx) * (px - qx) + (py - qy) * (py - qy)); out.x = qx; out.y = qy; out.t = t;
+    return out;
   }
   /** @returns {boolean} point-in-polygon (even-odd). */
   function inPoly(x, y, poly) {
@@ -128,15 +133,16 @@
    * @returns {{d: number, x: number, y: number, nx: number, ny: number, railed: boolean, edge: object}|null}
    *   nx, ny: the edge's outward normal (toward the sky)
    */
+  var NE = { d: 0, x: 0, y: 0, t: 0 };   // nearestEdge's scratch (it is called every frame by the renderer)
   G.nearestEdge = function (x, y, opts) {
-    var best = null, want = opts && opts.railed;
+    var bd = Infinity, bx = 0, by = 0, be = null, want = opts && opts.railed;
     for (var i = 0; i < G.edges.length; i++) {
       var e = G.edges[i];
       if (want !== undefined && e.railed !== want) continue;
-      var c = segClosest(x, y, e.a[0], e.a[1], e.b[0], e.b[1]);
-      if (!best || c.d < best.d) best = { d: c.d, x: c.x, y: c.y, nx: e.out[0], ny: e.out[1], railed: e.railed, edge: e };
+      var c = segClosest(x, y, e.a[0], e.a[1], e.b[0], e.b[1], NE);
+      if (c.d < bd) { bd = c.d; bx = c.x; by = c.y; be = e; }
     }
-    return best;
+    return be ? { d: bd, x: bx, y: by, nx: be.out[0], ny: be.out[1], railed: be.railed, edge: be } : null;
   };
 
   function edgeBucket(x, y) {
@@ -233,9 +239,13 @@
   }
 
   // --- solids ---------------------------------------------------------------------------------------
-  /** @returns {object[]} the static solids whose bounding boxes touch the box around (x, y) ± r. */
-  G.solidsNear = function (x, y, r) {
-    var out = [], seen = G._stamp = (G._stamp || 0) + 1;
+  /**
+   * @param {object[]=} out an array to fill (emptied first; hot loops pass a scratch array)
+   * @returns {object[]} the static solids whose bounding boxes touch the box around (x, y) ± r
+   */
+  G.solidsNear = function (x, y, r, out) {
+    if (out) out.length = 0; else out = [];
+    var seen = G._stamp = (G._stamp || 0) + 1;
     var c0 = Math.floor((x - r) / HASH), c1 = Math.floor((x + r) / HASH);
     var d0 = Math.floor((y - r) / HASH), d1 = Math.floor((y + r) / HASH);
     for (var cx = c0; cx <= c1; cx++) {
@@ -254,44 +264,51 @@
     return out;
   };
 
+  function setDist(out, d, nx, ny) { out.d = d; out.nx = nx; out.ny = ny; return out; }
+  var SEGB = { d: 0, x: 0, y: 0, t: 0 }, DIST = { d: 0, nx: 0, ny: 0 };   // scratch results (never returned)
+
   /**
    * Distance from (x, y) to a solid's outline (negative inside).
+   * @param {object=} out an object to fill (hot loops pass a scratch one; default: a new object)
    * @returns {{d: number, nx: number, ny: number}} n: the unit direction pushing the point out
    */
-  G.solidDist = function (s, x, y) {
+  G.solidDist = function (s, x, y, out) {
+    out = out || { d: 0, nx: 0, ny: 0 };
     if (s.kind === 'circle') {
       var dx = x - s.x, dy = y - s.y, l = Math.sqrt(dx * dx + dy * dy);
-      return l > 1e-9 ? { d: l - s.r, nx: dx / l, ny: dy / l } : { d: -s.r, nx: 0, ny: 1 };
+      return l > 1e-9 ? setDist(out, l - s.r, dx / l, dy / l) : setDist(out, -s.r, 0, 1);
     }
     if (s.kind === 'rect') {
       var r = s.rect;
       if (inRect(x, y, r)) {
         var dl = x - r[0], dr = r[2] - x, dt = y - r[1], db = r[3] - y, m = Math.min(dl, dr, dt, db);
-        if (m === dl) return { d: -dl, nx: -1, ny: 0 };
-        if (m === dr) return { d: -dr, nx: 1, ny: 0 };
-        if (m === dt) return { d: -dt, nx: 0, ny: -1 };
-        return { d: -db, nx: 0, ny: 1 };
+        if (m === dl) return setDist(out, -dl, -1, 0);
+        if (m === dr) return setDist(out, -dr, 1, 0);
+        if (m === dt) return setDist(out, -dt, 0, -1);
+        return setDist(out, -db, 0, 1);
       }
       var qx = x < r[0] ? r[0] : x > r[2] ? r[2] : x, qy = y < r[1] ? r[1] : y > r[3] ? r[3] : y;
       var ex = x - qx, ey = y - qy, el = Math.sqrt(ex * ex + ey * ey);
-      return { d: el, nx: ex / el, ny: ey / el };
+      return setDist(out, el, ex / el, ey / el);
     }
     // polygon: closest boundary point
-    var pts = s.pts, best = null;
+    var pts = s.pts, bd = Infinity, bx0 = 0, by0 = 0;
     for (var i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-      var c = segClosest(x, y, pts[j][0], pts[j][1], pts[i][0], pts[i][1]);
-      if (!best || c.d < best.d) best = c;
+      var c = segClosest(x, y, pts[j][0], pts[j][1], pts[i][0], pts[i][1], SEGB);
+      if (c.d < bd) { bd = c.d; bx0 = c.x; by0 = c.y; }
     }
-    var inside = inPoly(x, y, pts), bx = x - best.x, by = y - best.y, bl = Math.sqrt(bx * bx + by * by) || 1;
-    return inside ? { d: -best.d, nx: -bx / bl, ny: -by / bl } : { d: best.d, nx: bx / bl, ny: by / bl };
+    var inside = inPoly(x, y, pts), bx = x - bx0, by = y - by0, bl = Math.sqrt(bx * bx + by * by) || 1;
+    return inside ? setDist(out, -bd, -bx / bl, -by / bl) : setDist(out, bd, bx / bl, by / bl);
   };
 
+  var AT = [];   // solidAt's scratch list (it calls nothing that re-enters it)
   /** @returns {object|null} a static solid within r of (x, y) (r = 0: containing it). */
   G.solidAt = function (x, y, r) {
     r = r || 0;
-    var list = G.solidsNear(x, y, r);
-    for (var i = 0; i < list.length; i++) if (G.solidDist(list[i], x, y).d < r) return list[i];
-    return null;
+    var list = G.solidsNear(x, y, r, AT), hit = null;
+    for (var i = 0; i < list.length && !hit; i++) if (G.solidDist(list[i], x, y, DIST).d < r) hit = list[i];
+    list.length = 0;
+    return hit;
   };
 
   /** @returns {boolean} a body of radius r fits at (x, y): on the ground and clear of every solid. */
@@ -525,7 +542,7 @@
         if (graphSegOk(a, b, lawn, false)) edge(i, j);
       }
     }
-    // Drop nodes left without neighbours.
+    // (Every node ends up linked: tests/node/invariants.test.cjs checks the graph is one connected piece.)
     return { nodes: nodes, edges: edges, adj: adj };
   }
 

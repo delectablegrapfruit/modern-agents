@@ -442,14 +442,26 @@ function install() {
       if (!prompt || !ok || !e || e.id !== d.id || e.via !== 'park' || row.x !== Math.round(d.kerb[0]) || row.y !== Math.round(d.kerb[1]) ||
           s.player.driving !== null || P.car !== null || X.gone.length !== 1) bad.push([d.id, prompt, ok, e && e.id, row.x, row.y]);
     });
+    // Driving along the pavement past a door, hugging its building, never enters it.
+    const past = [];
+    G.doors.filter((d) => d.face === 'E' || d.face === 'W').forEach((d) => {
+      [1, -1].forEach((dir) => {
+        const s = X.fresh(), c = s.player.cars.junker;
+        c.owned = true; c.x = d.x + d.out[0] * 30; c.y = d.y - dir * 200; c.a = dir * Math.PI / 2;
+        P.place(c.x, c.y, 180); P.board('junker', true);
+        X.step(150, { x: 0, y: dir });
+        if (D.entered.length) past.push(d.id + '/' + dir);
+      });
+    });
     // Driving into a door trigger does the same.
     const s = X.fresh(), m = G.doorById.mcsticks, c = s.player.cars.junker;
     c.owned = true; c.x = m.kerb[0]; c.y = m.kerb[1]; c.a = Math.PI;
     P.place(c.x, c.y, 270); P.board('junker', true);
     for (let i = 0; i < 240 && !D.last; i++) SR.world.update(1 / 60, { x: -1, y: 0 });
-    return { bad, driveIn: D.last && D.last.id + '/' + D.last.via };
+    return { bad, past, driveIn: D.last && D.last.id + '/' + D.last.via };
   });
   T.eq(park.bad, [], '"Park and enter" at every door\'s kerb: the car parks at the kerb and you enter on foot');
+  T.eq(park.past, [], 'driving along the sidewalk past every east / west door (through its trigger) enters none');
   T.eq(park.driveIn, 'mcsticks/park', 'driving into a door\'s trigger parks and enters too');
 
   // ----------------------------------------------------------------------------------------------
@@ -482,14 +494,27 @@ function install() {
     const cancelled = P.path.length === 0 && P.route === null;
     const sky = P.walkTo(300, 300);
     const end = P.path.length ? P.path[P.path.length - 1] : null;
+    // Routing time in the page: cross-map routes after the JIT has warmed up (past the 1 s cache).
+    const far = [[720, 460], [4125, 4372], [1060, 3810], [4180, 890], [3672, 3190], [998, 1096], [520, 3900]], rt = [];
+    for (let rep = 0; rep < 3; rep++) {
+      far.forEach((a) => far.forEach((b) => {
+        if (a === b) return;
+        N.tick(2);
+        const t0 = performance.now();
+        N.path({ x: a[0], y: a[1] }, { x: b[0], y: b[1] });
+        if (rep) rt.push(performance.now() - t0);
+      }));
+    }
+    rt.sort((a, b) => a - b);
     return { bad, scraps, cancelled, sky, skyEnd: end && G.onGround(end.x, end.y) && G.edgeDistance(end.x, end.y) >= 40,
-      maxMs: Math.max.apply(null, times), cache: N.stats };
+      maxMs: Math.max.apply(null, times), routeMed: rt[rt.length >> 1], routeMax: rt[rt.length - 1], cache: N.stats };
   });
   T.eq(clicks.bad, [], 'a click on each of the 15 buildings walks there and enters its door');
   T.eq(clicks.scraps, [], 'a click on each Torn Scrap walks there (within 32 u), without falling');
   T.ok(clicks.cancelled, 'any movement input cancels the route');
   T.ok(clicks.sky && clicks.skyEnd, 'a click in the sky walks to the nearest safe ground');
-  T.ok(clicks.maxMs < 20, 'routing across the map takes ' + clicks.maxMs.toFixed(1) + ' ms at most (budget 2 ms on the reference machine; CI is slower)');
+  T.ok(clicks.maxMs < 20, 'a click-to-walk (reachability, route, string pulling) takes ' + clicks.maxMs.toFixed(1) + ' ms at most, cold');
+  T.ok(clicks.routeMed <= 2, 'nav.path across the map: median ' + clicks.routeMed.toFixed(2) + ' ms (budget 2 ms), max ' + clicks.routeMax.toFixed(2) + ' ms');
 
   // ----------------------------------------------------------------------------------------------
   T.section('camera');

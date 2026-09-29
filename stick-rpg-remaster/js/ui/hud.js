@@ -194,11 +194,13 @@
       badges.forEach(function (b) { p.badges.appendChild(SR.ui.badge({ text: t(b.key, b.vars), kind: b.kind })); });
     });
     flushGoal(s);
-    if (ui.minimal) {
+    // The minimal HUD is a mode of the city HUD (UI.md §4.1); the building strip (§4.2) is
+    // already compact and keeps its cash and time.
+    if (ui.minimal && !ui.compact) {
       var showFull = D().now() < minimalUntil;
       ui.el.classList.toggle('is-minimal', !showFull);
       if (showFull) schedule();
-    }
+    } else ui.el.classList.remove('is-minimal');
   }
 
   function flushGoal(s) {
@@ -239,6 +241,7 @@
       unsubs.push(SR.events.on(name, function (payload) {
         if (ui && ui.minimal && name !== 'settings:changed') minimalUntil = D().now() + MINIMAL_SHOW_MS;
         if (name === 'settings:changed' && payload && payload.key === 'game.minimalHud') minimal(!!payload.value);
+        else if (name === 'settings:changed' && payload && payload.key === '*') minimal(!!D().setting('game.minimalHud'));
         if (name === 'settings:changed' || name === 'day:started') ui.last = {};
         schedule();
       }));

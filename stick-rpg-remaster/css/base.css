@@ -115,6 +115,9 @@ ul, ol { list-style: none; }
 [data-nav]:focus { outline: none; box-shadow: var(--focus-ring); }
 [data-nav].nav-inset:focus { box-shadow: var(--focus-ring-inset); }
 :focus-visible { outline: none; }
+/* Buttons outside spatial navigation (the HUD's Pocket and Pause) can still take keyboard focus
+   (Tab in the city, where no focus scope wraps it): they show the same ring. */
+#ui button:not([data-nav]):focus-visible, .sr-ui button:not([data-nav]):focus-visible { box-shadow: var(--focus-ring); }
 
 /* ---- accessibility modes (UI.md §7-§8) ---- */
 .hc .paper::after { display: none; }

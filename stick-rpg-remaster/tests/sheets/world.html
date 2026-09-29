@@ -14,10 +14,10 @@
 <title>Paper Sky · world sheet</title>
 <link rel="icon" href="data:,">
 <style>
-  html, body { margin: 0; background: #20222c; }
+  html, body { margin: 0; }
   #app { display: none; }
   canvas[data-id="sheet-map"] { display: block; }
-  [data-id="sheet-legend"] { position: fixed; right: 8px; top: 8px; width: 250px; font: 12px system-ui, sans-serif; color: #eee; background: rgba(0,0,0,.6); padding: 8px; }
+  [data-id="sheet-legend"] { position: fixed; right: 8px; top: 8px; width: 250px; font: 12px system-ui, sans-serif; padding: 8px; opacity: 0.9; }
   body.shot [data-id="sheet-legend"] { display: none; }
 </style>
 </head>
@@ -76,6 +76,11 @@
       porch: pal('ui.money'), trigger: pal('ui.str'), kerb: pal('ui.int'), sig: pal('ui.hp'), graph: pal('ui.cha'),
       nav: pal('ui.time'), scrap: pal('ui.focus'), person: pal('ui.primary-500'), white: pal('white'), tree: pal('grassShade'), lamp: pal('glassLit'),
     };
+    // Page colours from the palette too (no colour literals outside palette.js and tokens.css).
+    document.body.style.background = pal('ui.ink-900');
+    var legendEl = document.querySelector('[data-id="sheet-legend"]');
+    legendEl.style.color = pal('ui.paper-0');
+    legendEl.style.background = pal('ui.ink-700');
 
     var view = [0, 0, 5120, 4608], k = 0.25;
     function X(x) { return (x - view[0]) * k; }

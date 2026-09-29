@@ -120,10 +120,12 @@
     /**
      * Whether a shift can start now (before its cost is paid): hired on the track; Half and
      * Overtime need `hustles`; Overtime only right after a Full shift with nothing in between
-     * (`job.lastFullEnd == now`), once a day (twice with Workaholic) and with HP > 10.
+     * (`job.lastFullEnd == now`), once a day (twice with Workaholic) and with HP > 10 (× 1.5,
+     * rounded up, on a Heat Wave day: the pipeline's ctx.hpScale, B-19).
+     * @param {object=} ctx the action pipeline's context (its hpScale)
      * @returns {{ok: boolean, reason?: string, vars?: object}}
      */
-    canWork: function (s, track, variant) {
+    canWork: function (s, track, variant, ctx) {
       variant = variant || 'full';
       if (!s.job.ranks[track]) return refuse('reason.notHired');
       if (!variantRow(variant) || !variantOn(variant)) return refuse('reason.featureOff');
@@ -133,28 +135,46 @@
         if (s.job.lastFullEnd !== s.clock.min) return refuse('reason.overtimeNotNow');
         if ((s.job.overtimeToday || 0) >= per) return refuse('reason.dailyLimit');
         var hp = jobs.shiftCost(s, 'overtime').hp;
-        if (hp && !(s.stats.hp > hp)) return refuse('reason.tooHurt');
+        if (hp && ctx && ctx.hpScale && ctx.hpScale !== 1) hp = Math.ceil(hp * ctx.hpScale);
+        if (hp && !(s.stats.hp > hp)) return refuse('reason.tooHurt', { n: hp });
       }
       return { ok: true };
     },
 
     /**
+     * The pay multiplier of a played hustle in the rain (B-05 hustle: "rain +20 % tips on orderup
+     * (m × 1.2, cap 1.3)"; GDD §3.12): McSticks' Order Up hustle while it rains (P1 `weather`).
+     * Auto stays exactly 1.0; the rating follows the hustle's own m, not the tips.
+     * @param {number} m the hustle's m (already clamped)
+     * @returns {number}
+     */
+    rainTips: function (s, track, m) {
+      var h = T().hustle, skin = jobs.hustleSkin(s, track);
+      if (!SR.features.weather || !s.world || s.world.weather !== 'rain' || !skin || skin.skin !== 'orderup') return m;
+      return Math.min(h.m[1], m * h.rainTips);
+    },
+
+    /**
      * A shift's pay and counters, applied after its time (and HP) cost was paid, so the clock
      * already reads the shift's end (ARCHITECTURE §6.2). Pay = wage × hours × (1.5 for Overtime) ×
-     * m (the hustle multiplier, 0.7-1.3; Auto 1.0) through the lien; Full gives +1 karma and counts
-     * one shift, Half 0.5; the first shift of a Monday gives +1 CHA (P1 `calendar`); the rating
-     * follows m (P1 `hustles`).
+     * m (the hustle multiplier, 0.7-1.3; Auto 1.0; rain tips on a played Order Up) through the lien;
+     * Full gives +1 karma and counts one shift, Half 0.5; the first shift of a Monday gives +1 CHA
+     * (P1 `calendar`); the rating follows m (P1 `hustles`).
      * @param {number=} m the pay multiplier (default 1.0)
+     * @param {object=} opts { hustle: true } when m is a played hustle's result (not Auto): the
+     *   rain tips apply (rainTips)
      * @returns {{ok: boolean, reason?: string, pay?: number, events?: object[], deltas?: object[]}}
      */
-    work: function (s, track, variant, m) {
+    work: function (s, track, variant, m, opts) {
       variant = variant || 'full';
       var rank = s.job.ranks[track];
       if (!rank) return refuse('reason.notHired');
       if (!variantRow(variant) || !variantOn(variant)) return refuse('reason.featureOff');
       var h = T().hustle, v = variantRow(variant);
-      m = typeof m === 'number' && isFinite(m) ? SR.util.clamp(m, h.m[0], h.m[1]) : h.auto;
-      var pay = Math.round(jobs.wage(s, rank) * v.min / 60 * (v.payMult || 1) * m);
+      var played = typeof m === 'number' && isFinite(m);
+      m = played ? SR.util.clamp(m, h.m[0], h.m[1]) : h.auto;
+      var mPay = played && opts && opts.hustle ? jobs.rainTips(s, track, m) : m;
+      var pay = Math.round(jobs.wage(s, rank) * v.min / 60 * (v.payMult || 1) * mPay);
       var out = { ok: true, pay: pay, deltas: [], events: [] };
       var got = SR.rules.bank.income(s, pay, 'wage', 'cash');
       out.deltas = out.deltas.concat(got.deltas);
@@ -181,7 +201,7 @@
         out.deltas.push({ kind: 'stat', key: mb.stat, n: got2, from: c0, to: s.stats[mb.stat] });
       }
       if (SR.features.hustles) s.job.rating = Math.round((s.job.rating + T().rating.alpha * (m - s.job.rating)) * 10000) / 10000;
-      out.events.push({ name: 'shift', payload: { track: track, rank: rank, variant: variant, m: m, pay: pay } });
+      out.events.push({ name: 'shift', payload: { track: track, rank: rank, variant: variant, m: mPay, pay: pay } });
       return out;
     },
 
@@ -274,10 +294,12 @@
   SR.def.fn('shift.min', function (s, params) { return jobs.shiftCost(s, (params && params.variant) || 'full').min; });
   /** Cost: a shift's HP (Overtime -10, none with Workaholic). */
   SR.def.fn('shift.hp', function (s, params) { return jobs.shiftCost(s, (params && params.variant) || 'full').hp; });
-  SR.def.fn('jobs.canWork', function (s, params, ctx, track) { return jobs.canWork(s, trackOf(params, track), (params && params.variant) || 'full'); });
+  SR.def.fn('jobs.canWork', function (s, params, ctx, track) { return jobs.canWork(s, trackOf(params, track), (params && params.variant) || 'full', ctx); });
+  /** Effect: a shift; params.m is a hustle's result (a minigame result with `auto: true` is Auto). */
   SR.def.fn('jobs.work', function (s, params, ctx, track) {
     params = params || {};
-    return res(jobs.work(s, trackOf(params, track), params.variant || 'full', params.m));
+    return res(jobs.work(s, trackOf(params, track), params.variant || 'full', params.m,
+      { hustle: typeof params.m === 'number' && !params.auto }));
   });
   SR.def.fn('jobs.canPromote', function (s, params, ctx, track) {
     var p = jobs.promotion(s, trackOf(params, track));
@@ -293,6 +315,17 @@
     track = trackOf(params, track);
     if (s.job.ranks[track]) return refuse('reason.hired');
     return res(jobs.promote(s, track));
+  });
+  /** Condition: the CEO takeover is due (P1 `hustles`; the event row of NLI). */
+  SR.def.fn('jobs.takeoverDue', function (s) { return jobs.takeoverDue(s) ? { ok: true } : refuse('reason.notNow'); });
+  /**
+   * Effect: resolves the takeover with the Boardroom's result (params.m; B-30 at D × 2). The loss's
+   * voicemail is NLI's (building data).
+   */
+  SR.def.fn('jobs.takeover', function (s, params) {
+    if (!jobs.takeoverDue(s)) return refuse('reason.notNow');
+    var r = jobs.takeover(s, Number(params && params.m) || 0);
+    return { ok: true, won: r.won, bonus: r.bonus };
   });
   /** The hustle skin of the row's track (ARCHITECTURE §6.3: minigame: { skin: 'jobs.hustleSkin' }). */
   SR.def.fn('jobs.hustleSkin', function (s, params, ctx, track) {

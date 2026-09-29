@@ -101,7 +101,9 @@
 
     /**
      * Reverse split of a ticker that closed below $1: price × 10, held = floor(held / 10), the
-     * leftover shares paid out at the close, cost basis unchanged, history × 10 (B-10).
+     * leftover shares paid out at the close, cost basis unchanged, history × 10 (B-10). A holding of
+     * fewer than 10 shares is paid out entirely, and its cost basis goes with it (a position of 0
+     * shares keeps no basis, which would otherwise eat the position cap for good).
      * @returns {{ticker: string, from: number, to: number, leftover: number, paid: number}}
      */
     reverseSplit: function (s, t) {
@@ -112,6 +114,7 @@
       st.prev = round2(st.prev * k);
       st.hist = (st.hist || []).map(function (p) { return round2(p * k); });
       st.held = Math.floor(st.held / k);
+      if (!st.held) st.basis = 0;
       if (paid) s.money.cash += paid;
       return { ticker: t, from: close, to: st.price, leftover: leftover, paid: paid };
     },

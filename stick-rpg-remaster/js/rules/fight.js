@@ -10,15 +10,16 @@
 // exactly one draw, so a seed replays a fight exactly. Minimum damage 1 (orig), except a miss.
 //
 // Named fns for the building data (W2-Night's bar and the arcs): 'fight.start' (effect, args kind:
-// the start cost and Result.open), 'fight.resolve' (effect, args kind: the minigame result, the win
-// and lose rules), 'fight.canStart' (condition, args kind), 'fight.ringOk' (condition).
+// the start cost, state.fight.open and Result.open), 'fight.resolve' (effect, args kind: the
+// minigame result, the win and lose rules; refused unless today's fight is open, whose identity
+// wins over the echoed result), 'fight.canStart' (condition, args kind; the ring's rules).
 // Pure: no DOM, browser API or unseeded randomness (Node-loadable).
 (function () {
   'use strict';
   var SR = window.SR;
   // Built-ins held locally: in Node's vm contexts (the tests and the balance simulator) every global
   // lookup costs ~150 ns, and these functions run millions of times there.
-  var M = Math;
+  var Mth = Math;
 
   var MOVES = ['punch', 'kick', 'fireball', 'inkBeam', 'guard'];
   var ATTACKS = ['punch', 'kick', 'fireball', 'inkBeam'];
@@ -34,8 +35,8 @@
 
   /** The original's random(floor(x)): an integer 0..floor(x) - 1 (0 when floor(x) < 1); one draw. */
   function rand(rng, x) {
-    var m = M.floor(x);
-    return rng.int(0, M.max(0, m - 1));
+    var m = Mth.floor(x);
+    return rng.int(0, Mth.max(0, m - 1));
   }
 
   // --------------------------------------------------------------------------------------------
@@ -55,7 +56,7 @@
   /** @returns {object|null} the masked regular of ring bout k (they take turns in order). */
   function masked(k) {
     var list = fighters(function (d) { return d.ring; }).sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
-    return list.length ? list[(M.max(1, k) - 1) % list.length] : null;
+    return list.length ? list[(Mth.max(1, k) - 1) % list.length] : null;
   }
 
   /**
@@ -66,7 +67,7 @@
   function nextN(s, rng) {
     var L = T().ladder;
     if (s.fight.champion) return rng0(rng).int(T().afterChampion[0], T().afterChampion[1]);
-    return M.min(L.n, (s.fight.won || 0) + 1);
+    return Mth.min(L.n, (s.fight.won || 0) + 1);
   }
 
   /**
@@ -81,15 +82,15 @@
     rng = rng0(rng);
     var F = T(), def, hp, P, k = 0;
     if (kind === 'ring') {
-      k = M.max(1, M.floor(n || 1));
+      k = Mth.max(1, Mth.floor(n || 1));
       def = masked(k);
       var str = s.stats.str;
-      P = M.floor(F.ring.power.base + F.ring.power.str * str + F.ring.power.perK * k);
-      hp = M.floor(F.ring.hp.base + F.ring.hp.str * str + F.ring.hp.perK * k);
+      P = Mth.floor(F.ring.power.base + F.ring.power.str * str + F.ring.power.perK * k);
+      hp = Mth.floor(F.ring.hp.base + F.ring.hp.str * str + F.ring.hp.perK * k);
       n = 0;
     } else {
       if (kind === 'goons') n = F.goons.n;
-      n = SR.util.clamp(M.floor(n || 1), 1, F.ladder.n);
+      n = SR.util.clamp(Mth.floor(n || 1), 1, F.ladder.n);
       def = kind === 'goons' ? fighters(function (d) { return d.goon; })[0] || regular(n) : regular(n);
       var L = F.ladder;
       hp = L.hp.base + L.hp.perN * n + rng.int(0, L.hp.randPerN * n);
@@ -108,27 +109,29 @@
 
   /**
    * AP per turn (B-13): min(floor(STR / 20) + 1, 15) (orig), +1 with Harold as corner man (the
-   * barfly branch, P1 `arcs`), +1 with Brawler (P1 perk).
+   * barfly branch, P1 `arcs`; B-26: in bar fights and the ring, not when Red's goons jump you in
+   * the street), +1 with Brawler (P1 perk).
+   * @param {string=} kind 'bar' (default) | 'ring' | 'goons'
    * @returns {number}
    */
-  function ap(s) {
+  function ap(s, kind) {
     var A = T().ap;
-    var n = M.min(M.floor(s.stats.str / A.strDiv) + A.base, A.max);
+    var n = Mth.min(Mth.floor(s.stats.str / A.strDiv) + A.base, A.max);
     var h = s.npc && s.npc.harold;
-    if (feat('arcs') && h && h.branch === 'barfly') n += A.harold;
+    if (feat('arcs') && h && h.branch === 'barfly' && kind !== 'goons') n += A.harold;
     if (perk(s, 'brawler')) n += A.brawler;
     return n;
   }
 
   /** @returns {object} the player's fight numbers, frozen at the start of the fight. */
-  function fighterOf(s) {
+  function fighterOf(s, kind) {
     var F = T(), st = s.stats;
-    var night = feat('nightlife');
+    var night = feat('nightlife'), a = ap(s, kind);
     return {
-      hp: M.max(0, st.hp), hpMax: st.hpMax, str: st.str, cha: st.cha,
-      apMax: ap(s), ap: ap(s),
+      hp: Mth.max(0, st.hp), hpMax: st.hpMax, str: st.str, cha: st.cha,
+      apMax: a, ap: a,
       knife: s.items.knife > 0 ? 1 : 0, knuckles: s.items.knuckles > 0 ? 1 : 0,
-      buzz: night ? M.min(st.buzz || 0, F.moves.punch.buzzMax) : 0,
+      buzz: night ? Mth.min(st.buzz || 0, F.moves.punch.buzzMax) : 0,
       vest: s.items.vest > 0 ? F.vest : 0,
       heavy: perk(s, 'heavyHitter') ? F.heavyHitter : 1,
       critP: st.cha >= F.crit.cha ? F.crit.chanceHighCha : F.crit.chance,
@@ -155,7 +158,7 @@
   function hitOf(v, crit, me, foe) {
     var F = T();
     var x = v * (crit ? F.crit.mult : 1) * me.heavy * (1 - (foe.quirk && foe.quirk.armor ? foe.quirk.armor : 0));
-    return M.max(F.minDamage, M.floor(x + 1e-9));
+    return Mth.max(F.minDamage, Mth.floor(x + 1e-9));
   }
 
   /**
@@ -165,7 +168,7 @@
   function range(f, move) {
     var r = baseRoll(f.me, move);
     if (!r) return { min: 0, max: 0 };
-    var hi = M.max(0, M.floor(r.x) - 1) + r.add;
+    var hi = Mth.max(0, Mth.floor(r.x) - 1) + r.add;
     return { min: hitOf(r.add, false, f.me, f.foe), max: hitOf(hi, true, f.me, f.foe) };
   }
 
@@ -177,7 +180,7 @@
   function expected(f, move) {
     var r = baseRoll(f.me, move);
     if (!r) return 0;
-    var m = M.max(1, M.floor(r.x)), p = f.me.critP, sum = 0;
+    var m = Mth.max(1, Mth.floor(r.x)), p = f.me.critP, sum = 0;
     for (var v = 0; v < m; v++) {
       sum += (1 - p) * hitOf(v + r.add, false, f.me, f.foe) + p * hitOf(v + r.add, true, f.me, f.foe);
     }
@@ -216,7 +219,7 @@
     return {
       kind: kind, n: o.n, k: o.k, fighter: o.id, name: o.name,
       turn: 1, phase: 'player', outcome: null,
-      me: fighterOf(s),
+      me: fighterOf(s, kind),
       foe: { hp: o.hp, hpMax: o.hp, P: o.P, quirk: o.quirk },
       guardOk: feat('nightlife'),
       log: [],
@@ -252,7 +255,7 @@
     var v = rand(rng, r.x) + r.add;
     var crit = rng.chance(f.me.critP);
     var dmg = hitOf(v, crit, f.me, f.foe);
-    f.foe.hp = M.max(0, f.foe.hp - dmg);
+    f.foe.hp = Mth.max(0, f.foe.hp - dmg);
     note(f, { who: 'me', move: move, dmg: dmg, crit: crit });
     var win = f.foe.hp <= 0;
     if (win) { f.phase = 'over'; f.outcome = 'win'; }
@@ -273,7 +276,7 @@
     var E = T().enemyMove, P = f.foe.P, q = f.foe.quirk || {};
     var roll = rand(rng, P) + 1, move;
     var fbLow = E.fireball.over;
-    if (q.fireballOdds) fbLow = M.max(0, E.inkBeam.over - (E.inkBeam.over - E.fireball.over) * q.fireballOdds);
+    if (q.fireballOdds) fbLow = Mth.max(0, E.inkBeam.over - (E.inkBeam.over - E.fireball.over) * q.fireballOdds);
     if (roll > E.inkBeam.over) move = 'inkBeam';
     else if (roll > fbLow) move = 'fireball';
     else if (roll > E.kick.over) move = 'kick';
@@ -285,9 +288,9 @@
     if (!miss) {
       var G = T().moves.guard;
       var x = v * (1 - f.me.vest) * (f.me.guard >= 2 ? 1 - G.two : f.me.guard === 1 ? 1 - G.one : 1);
-      dmg = M.max(T().minDamage, M.floor(x + 1e-9));
+      dmg = Mth.max(T().minDamage, Mth.floor(x + 1e-9));
     }
-    f.me.hp = M.max(0, f.me.hp - dmg);
+    f.me.hp = Mth.max(0, f.me.hp - dmg);
     note(f, { who: 'foe', move: move, dmg: dmg, miss: miss });
     var lose = f.me.hp <= 0;
     if (lose) { f.phase = 'over'; f.outcome = 'lose'; } else {
@@ -323,7 +326,7 @@
     ATTACKS.forEach(function (m) {
       if (f.me.ap < M[m].ap) return;
       var per = expected(f, m) / M[m].ap;
-      if (!best || per > best.per + 1e-12 || (M.abs(per - best.per) <= 1e-12 && M[m].ap < M[best.m].ap)) best = { m: m, per: per };
+      if (!best || per > best.per + 1e-12 || (Mth.abs(per - best.per) <= 1e-12 && M[m].ap < M[best.m].ap)) best = { m: m, per: per };
     });
     return best ? best.m : null;
   }
@@ -375,26 +378,27 @@
     ctx = ctx || { rng: SR.rng.rules };
     var rng = rng0(ctx.rng), F = T(), res = partial(), st = s.stats;
     var kind = f.kind || 'bar', outcome = f.outcome || 'run';
-    var n = typeof f.n === 'number' && f.n > 0 ? f.n : kind === 'goons' ? F.goons.n : M.min(F.ladder.n, (s.fight.won || 0) + 1);
+    var n = typeof f.n === 'number' && f.n > 0 ? f.n : kind === 'goons' ? F.goons.n : Mth.min(F.ladder.n, (s.fight.won || 0) + 1);
     var hpLeft = typeof f.hpLeft === 'number' ? f.hpLeft : f.me && typeof f.me.hp === 'number' ? f.me.hp : st.hp;
-    hpLeft = SR.util.clamp(M.floor(hpLeft), 0, st.hp);
+    hpLeft = SR.util.clamp(Mth.floor(hpLeft), 0, st.hp);
     if (outcome === 'lose') {
       var diff = s.mode.difficulty;
       var L = F.lose[diff] || F.lose.standard;
       if (L.down) {
-        st.hp = 0;
+        st.hp = 0;             // the HP-0 hook takes over (Second Wind or FLATLINED): no lose toast
         ctx.cause = 'fight';
       } else {
-        st.hp = M.min(st.hp, L.hp);
+        st.hp = Mth.min(st.hp, L.hp);
         if (L.cashPct > 0) {
-          var tab = M.floor(s.money.cash * L.cashPct);
+          var tab = Mth.floor(s.money.cash * L.cashPct);
           if (tab > 0) {
             s.money.cash -= tab;
             res.toasts.push({ key: 'toast.fight.tab', vars: { n: tab, money: SR.text.money(tab) }, kind: 'warning' });
           }
         }
       }
-      res.toasts.push({ key: 'toast.fight.lose', vars: { name: nameOf(f) }, kind: 'warning' });
+      // The bouncer throws you out of Sticky's (bar, ring); Red's goons leave you in the street.
+      if (!L.down) res.toasts.push({ key: kind === 'goons' ? 'toast.fight.goonsLose' : 'toast.fight.lose', vars: { name: nameOf(f) }, kind: 'warning' });
     } else {
       st.hp = hpLeft;
     }
@@ -424,7 +428,7 @@
         }
         res.log.push({ kind: 'fightWin', vars: { n: n, name: nameOf(f) } });
       } else if (kind === 'ring') {
-        var k = typeof f.k === 'number' && f.k > 0 ? f.k : M.max(1, s.fight.ringBouts || 1);
+        var k = typeof f.k === 'number' && f.k > 0 ? f.k : Mth.max(1, s.fight.ringBouts || 1);
         var purse = F.ring.purse.base + F.ring.purse.perK * k;
         credit(s, purse, 'prize');
         s.records.ringWins = (s.records.ringWins || 0) + 1;
@@ -478,21 +482,34 @@
 
   /**
    * Resolves a fight from the engine's result (params of '<id>:resolve'): { outcome, hpLeft, n?, k?,
-   * choice? }; the fight's identity falls back to state.fight.open (set by start).
+   * choice? }. The fight's identity is state.fight.open's (set by start) when one is open, then the
+   * echoed result's, then the data's kind argument.
    * @returns {object} a partial Result
    */
   function resolve(s, kind, r, ctx) {
     r = r || {};
     var open = s.fight.open || {};
     var f = {
-      kind: r.kind || kind || open.kind || 'bar',
-      n: typeof r.n === 'number' ? r.n : open.n,
-      k: typeof r.k === 'number' ? r.k : open.k,
-      fighter: r.fighter || open.fighter,
+      kind: open.kind || r.kind || kind || 'bar',
+      n: typeof open.n === 'number' ? open.n : r.n,
+      k: typeof open.k === 'number' ? open.k : r.k,
+      fighter: open.fighter || r.fighter,
       outcome: r.outcome === 'win' || r.outcome === 'lose' ? r.outcome : 'run',
       hpLeft: r.hpLeft,
     };
     return finish(s, f, r.choice, ctx);
+  }
+
+  /**
+   * The named fn 'fight.resolve': only today's open fight can be resolved, once (finish closes it),
+   * so a stray or repeated '<id>:resolve' never pays a wallet, a purse or STR for a fight that
+   * did not happen.
+   * @returns {object} a partial Result (ok: false with reason.notNow when no fight is open)
+   */
+  function resolveOpen(s, kind, r, ctx) {
+    var open = s.fight && s.fight.open;
+    if (!open || open.day !== s.clock.day) return { ok: false, reason: 'reason.notNow', vars: {} };
+    return resolve(s, kind, r, ctx);
   }
 
   /**
@@ -512,7 +529,7 @@
   }
 
   SR.def.fn('fight.start', function (s, params, ctx, kind) { return start(s, kind || params.kind, ctx); });
-  SR.def.fn('fight.resolve', function (s, params, ctx, kind) { return resolve(s, kind, params, ctx); });
+  SR.def.fn('fight.resolve', function (s, params, ctx, kind) { return resolveOpen(s, kind, params, ctx); });
   SR.def.fn('fight.canStart', function (s, params, ctx, kind) { return canStart(s, kind || params.kind); });
 
   SR.rules.fight = {

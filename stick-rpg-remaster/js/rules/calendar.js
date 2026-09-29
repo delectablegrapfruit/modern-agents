@@ -17,6 +17,11 @@
   function states() { return TW().states; }
   /** @returns {number} the weekday (0 = Monday) of a day number. */
   function weekdayOf(day) { return SR.rules.time.weekdayOf(day); }
+  // The weekday bonuses whose content belongs to another flag (BUILD_PLAN Appendix B): Open Mic,
+  // the Ring and the VIP points are `nightlife`, the skate contest is the kid's arc (`arcs`). The
+  // report does not announce them while that flag is off.
+  var BONUS_FEATURE = { tue: 'nightlife', sat: 'nightlife', sun: 'arcs' };
+
   /** @returns {number[]} the weekdays a city event may fall on (B-19: 'any', 'fri', ['mon', ...]). */
   function eventDays(ev) {
     if (!ev.day || ev.day === 'any') return [0, 1, 2, 3, 4, 5, 6];
@@ -34,8 +39,9 @@
      * @returns {{weekday: number, key: string, bonuses: string[], event: (string|null)}}
      */
     today: function (s) {
-      var wd = weekdayOf(s.clock.day), key = weekdays()[wd];
-      return { weekday: wd, key: key, bonuses: SR.features.calendar && TC()[key] ? [key] : [], event: calendar.cityEvent(s) };
+      var wd = weekdayOf(s.clock.day), key = weekdays()[wd], need = BONUS_FEATURE[key];
+      var on = SR.features.calendar && TC()[key] && (!need || SR.features[need]);
+      return { weekday: wd, key: key, bonuses: on ? [key] : [], event: calendar.cityEvent(s) };
     },
 
     /** @returns {string|null} the city event on today (P1 `calendar`), or null. */
@@ -70,7 +76,7 @@
       }
       rng = rng || SR.rng.rules;
       var today = states().indexOf(w.tomorrow) >= 0 ? w.tomorrow : TW().day1;
-      if (calendar.cityEvent(s) === 'heatWave') today = 'clear';
+      if (calendar.cityEvent(s) === 'heatWave') today = TC().events.heatWave.weather;
       w.weather = today;
       w.tomorrow = calendar.next(today, rng);
       var others = states().filter(function (x) { return x !== w.tomorrow; });

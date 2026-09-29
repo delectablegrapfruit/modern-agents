@@ -50,7 +50,7 @@
   var SR = window.SR;
   var W = 1280, H = 720;
   var FLOOR_Y = 400, VP = [400, 300], FOCAL = 600;
-  var LW = 2.5, DL = 1.5; // silhouette and detail ink widths in interiors
+  var LW = 3, DL = 1;     // ink widths in interiors (ART_AUDIO §1.1 rule 2: outlines 3 u, details inside shapes 1 u)
 
   // ---- colour helpers ------------------------------------------------------------------------------
   function C(K, key) {
@@ -119,7 +119,8 @@
   // ---- the live sky in a window --------------------------------------------------------------------
   function skyAt(min) {
     var keys = SR.art.palette.sky;
-    var h = ((min || 720) / 60) % 24;
+    var h = ((min === undefined || min === null ? 720 : min) / 60) % 24; // 0 is midnight, not a missing clock
+    if (h < 0) h += 24;
     var a = keys[keys.length - 1], b = keys[0], ah = a.h - 24, bh = b.h;
     for (var i = 0; i < keys.length; i++) {
       if (keys[i].h <= h) { a = keys[i]; ah = a.h; b = keys[i + 1] || keys[0]; bh = keys[i + 1] ? b.h : b.h + 24; }
@@ -350,6 +351,10 @@
   // Each type: { wall, w, h, d, draw(ctx, p, K), anim(ctx, p, K, t) }. p has w, h, d filled in.
   function seeded(K, p, salt) { return SR.rng.create(SR.util.hash(K.id, p.type, p.x, p.y, salt || 0)); }
   function txt(key) { return key && SR.text && SR.text.has && SR.text.has(key) ? SR.text(key) : ''; }
+  /** @returns {boolean} the Flash Reduction setting (flickers and dropouts hold steady). */
+  function flashReduced() {
+    try { return !!(SR.settings && typeof SR.settings.get === 'function' && SR.settings.get('access.flashReduction')); } catch (e) { return false; }
+  }
 
   var PROPS = {
     counter: { w: 400, h: 100, d: 60, draw: function (ctx, p, K) {
@@ -403,8 +408,8 @@
         for (var bx = p.x + 16; bx < p.x + p.w - 20; bx += 14) rect(ctx, bx, sy - 22, 9, 22, C(K, cols[rng.int(0, cols.length - 1)]), 1);
       }
     }, anim: function (ctx, p, K, t) {
-      // the flickering fridge light (ART_AUDIO §9 Five-O)
-      var f = Math.sin(t * 23) > 0.93 ? 0.35 : 0.12;
+      // the flickering fridge light (ART_AUDIO §9 Five-O); steady with Flash Reduction
+      var f = !flashReduced() && Math.sin(t * 23) > 0.93 ? 0.35 : 0.12;
       ctx.save(); ctx.globalAlpha *= f; ctx.globalCompositeOperation = 'lighter';
       rect(ctx, p.x + 10, p.y - p.h + 14, p.w - 20, p.h - 40, C(K, 'kit.fridge'), 0);
       ctx.restore();
@@ -529,6 +534,27 @@
       var pts = [];
       for (var i = 0; i <= 8; i++) pts.push(p.x + 58 + i * 8, p.y - p.h + 30 - Math.sin(i * 0.9 + t * 2) * 10);
       line(ctx, pts, 2, C(K, 'kit.plant'));
+      ctx.restore();
+    } },
+    workstation: { w: 220, h: 160, d: 70, draw: function (ctx, p, K) {
+      // the tier-2 Pixelwright Workstation (B-08b): a wider desk, two screens and a tower
+      PROPS.desk.draw(ctx, { x: p.x, y: p.y, w: p.w, h: 80, d: p.d, color: p.color }, K);
+      for (var i = 0; i < 2; i++) {
+        var sx = p.x + 30 + i * 88;
+        rect(ctx, sx, p.y - p.h, 76, 54, C(K, 'kit.screen'), LW);
+        rect(ctx, sx + 6, p.y - p.h + 6, 64, 40, C(K, 'kit.screenGlow'), DL);
+        rect(ctx, sx + 32, p.y - p.h + 54, 12, 14, C(K, 'kit.screen'), DL);
+      }
+      rect(ctx, p.x + 40, p.y - 88, 140, 8, C(K, 'kit.paper'), DL);
+      box(ctx, K, p.x + p.w - 44, p.y, 34, 64, 40, 'kit.cabinet');
+      circle(ctx, p.x + p.w - 27, p.y - 50, 3, C(K, 'kit.plant'), 0);
+    }, anim: function (ctx, p, K, t) {
+      ctx.save(); ctx.beginPath(); ctx.rect(p.x + 36, p.y - p.h + 6, 64, 40); ctx.rect(p.x + 124, p.y - p.h + 6, 64, 40); ctx.clip();
+      var pts = [], bars = C(K, 'kit.plant');
+      for (var i = 0; i <= 8; i++) pts.push(p.x + 38 + i * 7.5, p.y - p.h + 28 - Math.sin(i * 0.9 + t * 2) * 9);
+      line(ctx, pts, 2, bars);
+      ctx.fillStyle = bars;
+      for (var k = 0; k < 5; k++) { var bh = 8 + 12 * Math.abs(Math.sin(t * 1.3 + k)); ctx.fillRect(p.x + 130 + k * 11, p.y - p.h + 44 - bh, 7, bh); }
       ctx.restore();
     } },
     desk: { w: 200, h: 80, d: 80, draw: function (ctx, p, K) {
@@ -843,8 +869,10 @@
       // the neon beer mug (ART_AUDIO §9 Sticky's); lit in drawAnim
       ctx.save(); ctx.globalAlpha *= 0.35; neonMug(ctx, p, K, 1); ctx.restore();
     }, anim: function (ctx, p, K, t) {
-      var on = !(Math.sin(t * 7.3) > 0.97);
-      if (!on) return;
+      // ART_AUDIO §3 neon: each second has a 2 % chance of a 120 ms dropout (seeded per sign and
+      // second, so a frame redraw agrees with itself); never with Flash Reduction.
+      var sec = Math.floor(t);
+      if (!flashReduced() && SR.util.hash('neon', K.id, p.x, p.y, sec) % 100 < 2 && t - sec < 0.12) return;
       ctx.save(); ctx.globalCompositeOperation = 'lighter'; neonMug(ctx, p, K, 1); ctx.restore();
     } },
     cabinet: { w: 90, h: 190, d: 60, draw: function (ctx, p, K) {
@@ -901,13 +929,13 @@
       line(ctx, [x - 10, y, x + 10, y], 2, C(K, 'kit.bulb')); line(ctx, [x, y - 10, x, y + 10], 2, C(K, 'kit.bulb'));
       ctx.restore();
     } },
-    window: { wall: true, w: 180, h: 140, draw: function (ctx, p, K, t, state) {
+    window: { wall: true, sky: true, w: 180, h: 140, draw: function (ctx, p, K, t, state) {
       windowStatic(ctx, K, p, state);
     }, anim: function (ctx, p, K, t, state) {
       sky(ctx, [p.x, p.y, p.w, p.h], state);
       windowPanes(ctx, K, p, true);
     } },
-    balconydoor: { wall: true, w: 160, h: 290, draw: function (ctx, p, K, t, state) {
+    balconydoor: { wall: true, sky: true, w: 160, h: 290, draw: function (ctx, p, K, t, state) {
       windowStatic(ctx, K, { x: p.x, y: p.y, w: p.w, h: p.h - 10, panes: 2, frame: p.frame }, state);
     }, anim: function (ctx, p, K, t, state) {
       sky(ctx, [p.x, p.y, p.w, p.h - 10], state);
@@ -1058,7 +1086,7 @@
   // Menu-board item names that are not icon names (ART_AUDIO §9 writes 'shake').
   var ICON_ALIAS = { shake: 'milkshake', soda: 'slushee', meal: 'megameal', triple: 'tripleburger', candy: 'candybar' };
   // Aliases: the furniture ids of B-08b and ART_AUDIO's names.
-  var PROP_ALIAS = { fridge: 'cooler', pc: 'computer', workstation: 'computer', board: 'chalkboard', ring: 'ringrope',
+  var PROP_ALIAS = { fridge: 'cooler', pc: 'computer', board: 'chalkboard', ring: 'ringrope',
     tellerwindow: 'teller', ticketwindow: 'ticket', slotmachine: 'slot', beertaps: 'taps', filingcabinet: 'filing',
     departuresboard: 'departures', motivational: 'poster', sign: 'poster', counterstool: 'stool' };
   function propDef(type) {
@@ -1128,6 +1156,14 @@
     ctx.restore();
   }
 
+  /** @returns {boolean} whether the rect x, y, w, h meets one of the sky rects ([x, y, w, h, ...]). */
+  function overlapsSky(skies, x, y, w, h) {
+    for (var i = 0; i < skies.length; i += 4) {
+      if (x < skies[i] + skies[i + 2] && x + w > skies[i] && y < skies[i + 1] + skies[i + 3] && y + h > skies[i + 1]) return true;
+    }
+    return false;
+  }
+
   function customFn(K) {
     var c = K.def.custom;
     if (!c) return null;
@@ -1181,17 +1217,35 @@
     ctx.lineJoin = 'round'; ctx.lineCap = 'round';
     var props = visibleProps(K, state);
     var i, q;
+    // The live sky is repainted every frame over the cached static layer, so whatever the static
+    // layer drew over a window (wall props, the lights, a tall floor prop standing in front of it)
+    // is drawn again on top of the new sky: wall props and lights here, floor props in the depth pass.
+    var skies = K.skies || (K.skies = []);
+    skies.length = 0;
     if (K.def.window) {
       var w = K.def.window;
       sky(ctx, [w.x, w.y, w.w, w.h], state);
       windowPanes(ctx, K, w, true);
-      // wall props that overlap the window stay in front of it, as in the static layer
-      for (i = 0; i < props.length; i++) {
-        q = props[i];
-        if (q.def.wall && q.x < w.x + w.w + 8 && q.x + q.w > w.x - 8 && q.y < w.y + w.h + 8 && q.y + q.h > w.y - 8) drawProp(ctx, K, q, t, state);
-      }
+      skies.push(w.x - 8, w.y - 8, w.w + 16, w.h + 16);
     }
-    for (i = 0; i < props.length; i++) { q = props[i]; if (q.def.wall && q.def.anim) q.def.anim(ctx, q, K, t, state); }
+    for (i = 0; i < props.length; i++) {
+      q = props[i];
+      if (q.def.sky) { q.def.anim(ctx, q, K, t, state); skies.push(q.x - 8, q.y - 8, q.w + 16, q.h + 16); }
+    }
+    for (i = 0; i < props.length; i++) {
+      q = props[i];
+      if (!q.def.wall || q.def.sky) continue;
+      if (skies.length && overlapsSky(skies, q.x, q.y, q.w, q.h)) drawProp(ctx, K, q, t, state);
+      if (q.def.anim) q.def.anim(ctx, q, K, t, state);
+    }
+    if (skies.length && K.def.lights && K.def.lights.length) {
+      ctx.save();
+      ctx.beginPath();
+      for (i = 0; i < skies.length; i += 4) ctx.rect(skies[i], skies[i + 1], skies[i + 2], skies[i + 3]);
+      ctx.clip();
+      drawLights(ctx, K);
+      ctx.restore();
+    }
     // people, in depth order with the props in front of them drawn again
     var people = [];
     var def = K.def;
@@ -1213,8 +1267,9 @@
     for (i = 0; i < props.length; i++) {
       q = props[i];
       if (q.def.wall) continue;
-      var redraw = false;
-      for (var j = 0; j < people.length; j++) {
+      // a floor prop standing in front of a window, reaching up past its sill
+      var redraw = skies.length > 0 && overlapsSky(skies, q.x - 16, q.y - q.h - (q.d || 0) * 0.2 - 48, q.w + 32, q.h + (q.d || 0) * 0.2 + 48);
+      for (var j = 0; j < people.length && !redraw; j++) {
         var pp = people[j], half = 80 * depthScale(K, pp.y);
         if (q.sortY > pp.y && q.x < pp.x + half && q.x + q.w > pp.x - half) { redraw = true; break; }
       }

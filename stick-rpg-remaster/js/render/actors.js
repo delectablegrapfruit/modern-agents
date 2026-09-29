@@ -76,7 +76,7 @@
     if (tmp.x < v.x0 - CULL || tmp.x > v.x1 + CULL || tmp.y < v.y0 - 20 || tmp.y > v.y1 + STANDEE_H + CULL) return;
     if (kind === 'player' || kind === 'person' || e.marker) frameFocus.push([tmp.x - 12, tmp.y - STANDEE_H - (e.marker ? 30 : 0), tmp.x + 12, tmp.y]);
     if (kind === 'player') cur.playerAdded = true;
-    cur.push(tmp.y, 'actor', e, kind, cur.alpha);
+    cur.push(sortKey(tmp.x, tmp.y, kind), 'actor', e, kind, cur.alpha);
     if (kind === 'car') {
       frameCars.push(e);
       frameBoxes.push(tmp.x - 60, tmp.y - 50, tmp.x + 60, tmp.y + 34);
@@ -84,6 +84,26 @@
       frameBoxes.push(tmp.x - 16, tmp.y - STANDEE_H - 8, tmp.x + 16, tmp.y + 8);
     }
     cur.n++;
+  }
+
+  // People standing on an east / west door mat sort in front of that building: its awning hangs
+  // over them, and drawing them after it keeps them readable at every door (GDD §3.6).
+  var awnings = null, awningModel = null;
+  function sortKey(x, y, kind) {
+    if (kind === 'car') return y;
+    var m = SR.render.lib.model();
+    if (m && awningModel !== m) {
+      awningModel = m;
+      awnings = m.doors.filter(function (d) { return d.geom.awning && d.geom.porch; })
+        .map(function (d) { return { r: d.geom.porch, key: d.geom.sortY + 0.5 }; });
+    }
+    if (awnings) {
+      for (var i = 0; i < awnings.length; i++) {
+        var r = awnings[i].r;
+        if (x >= r[0] - 14 && x <= r[2] + 14 && y >= r[1] && y <= r[3]) return awnings[i].key;
+      }
+    }
+    return y;
   }
 
   function addList(list, kind) { if (list) for (var i = 0; i < list.length; i++) add(list[i], kind); }
@@ -129,7 +149,7 @@
     SR.util.warnOnce('render.actors:' + key, msg);
   }
 
-  /** @returns {string} 'up' | 'down' | 'left' | 'right' from a facing (a name, radians from east, or degrees clockwise from north). */
+  /** @returns {string} 'up' | 'down' | 'left' | 'right' from a facing: a name, or degrees clockwise from north (the world's convention, W1-W player.facing). */
   function facing(f, vx, vy) {
     if (typeof f === 'string') {
       var s = f.toLowerCase();
@@ -140,8 +160,8 @@
     }
     var ax, ay;
     if (num(f)) {
-      if (Math.abs(f) > 6.3) { var r = f * Math.PI / 180; ax = Math.sin(r); ay = -Math.cos(r); }
-      else { ax = Math.cos(f); ay = Math.sin(f); }
+      var r = f * Math.PI / 180;
+      ax = Math.sin(r); ay = -Math.cos(r);
     } else if (num(vx) && num(vy) && (vx || vy)) { ax = vx; ay = vy; }
     else return 'down';
     return Math.abs(ax) > Math.abs(ay) ? (ax > 0 ? 'right' : 'left') : (ay > 0 ? 'down' : 'up');

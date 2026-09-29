@@ -10,7 +10,7 @@
   var SR = window.SR;
   var hasOwn = Object.prototype.hasOwnProperty;
 
-  var stack = [];   // open dialogs: { params, scope, rows }
+  var stack = [];   // open dialogs: { params, scope, rows, speech, skipCode }
 
   function D() { return SR.ui.dom; }
   function t(k, v) { return D().t(k, v); }
@@ -41,7 +41,7 @@
     var h = D().h;
     var num = null;
     var chips = h('span', { class: 'dlg-chips' });
-    var btn = SR.ui.button({ id: 'choice-' + ch.id, label: ch.label, vars: ch.vars, variant: ch.variant || (i === 0 ? 'primary' : 'secondary'),
+    var btn = SR.ui.button({ id: 'choice-' + ch.id, label: ch.label, vars: ch.vars, variant: ch.variant || (i === 0 ? 'primary' : 'secondary'), hotkey: i + 1,
       onClick: function () {
         var n = num ? num.value : undefined;
         var pv = previewOf(ch, n);
@@ -49,7 +49,6 @@
         D().sfx('confirm');
         close(entry, { choice: ch.id, n: n });
       } });
-    btn.insertBefore(h('span', { class: 'dlg-key', 'aria-hidden': 'true' }, String(i + 1)), btn.firstChild);
     var wrap = h('div', { class: 'dlg-choice', 'data-choice': ch.id }, btn);
     if (ch.number) {
       num = SR.ui.numberField({ id: 'choice-' + ch.id + '-n', label: ch.number.label, value: ch.number.value !== undefined ? ch.number.value : ch.number.min,
@@ -95,7 +94,9 @@
     var name = personName(params);
     if (name) main.appendChild(h('h2', { class: 'dlg-name t-h3', 'data-id': 'dialog-name' }, name));
     if (params.text) {
-      var sp = SR.ui.speech({ id: 'dialog-text', text: params.text, vars: params.vars, voice: params.voice, tail: 'left' });
+      var who = params.person && SR.reg.person && SR.reg.person[params.person];
+      var sp = SR.ui.speech({ id: 'dialog-text', text: params.text, vars: params.vars, tail: 'left',
+        voice: params.voice !== undefined ? params.voice : who && who.voice });   // the person's voice blips
       entry.speech = sp;
       main.appendChild(sp);
     }
@@ -120,12 +121,18 @@
     return entry;
   }
 
+  /**
+   * What Esc / B returns (UI.md §6: "Esc = Leave where offered"): params.cancel names a choice,
+   * false turns Esc off; by default Esc picks an offered `leave` choice and does nothing when none
+   * is offered (a police stop cannot be escaped with Esc).
+   * @returns {{choice: string, n: undefined}|null} null: Esc does nothing
+   */
   function cancelResult(params) {
     var c = params.cancel;
-    if (c === false) return null;
+    if (c === false || c === null) return null;
     if (c === undefined) {
       var leave = (params.choices || []).filter(function (ch) { return ch.id === 'leave'; })[0];
-      return { choice: leave ? 'leave' : null, n: undefined };
+      return leave ? { choice: 'leave', n: undefined } : null;
     }
     return { choice: c, n: undefined };
   }
@@ -143,7 +150,22 @@
     onAction: function (action, ev) {
       var e = stack[stack.length - 1];
       if (!e) return;
-      if (e.speech && !e.speech.done()) e.speech.complete();
+      // Any key completes the typewriter (UI.md §2.3). Enter / Space / A, the keys players press
+      // to skip a line, only complete the text, so skipping never also commits the focused choice
+      // (e.g. "Give $10"); a hotkey 1-4 names its choice and still picks it.
+      var picks = (action === 'confirm' || action === 'interact') && !SR.ui.focus.isTextTarget(document.activeElement);
+      var code = (ev && ev.code) || '(inject)';
+      if (e.speech && !e.speech.done() && (!ev || ev.down !== false)) {
+        e.speech.complete();
+        if (picks) {
+          // One key fires several actions (Enter: interact and confirm), all within the same
+          // input event: the rest of the press that completed the text is consumed too.
+          e.skipCode = code;
+          Promise.resolve().then(function () { e.skipCode = null; });
+          return;
+        }
+      }
+      if (picks && e.skipCode === code) return;
       if (SR.ui.focus.handle(action, ev)) return;
       var m = /^row(\d)$/.exec(action);
       if (m && !(ev && ev.repeat)) {
@@ -153,7 +175,7 @@
       }
       if (action === 'back' && !(ev && ev.repeat)) {
         var res = cancelResult(e.params);
-        if (res) { D().sfx('close'); close(e, res); }
+        if (res) { D().sfx('close'); close(e, res); } else D().refuse(null);   // no Leave on offer
       }
     },
   });
@@ -162,12 +184,13 @@
     /**
      * Opens the Dialog sheet over the current scene.
      * @param {{id: string, person: string, portrait: string, name: string, text: string, vars: object,
-     *   mood: string, voice: number, cancel: (string|false),
+     *   mood: string, voice: (number|string), cancel: (string|false),
      *   choices: {id: string, label: string, vars: object, action: string, params: object,
      *     chips: object[], chance: number, disabled: boolean, reason: string, variant: string,
      *     number: {min: number, max: number, step: number, label: string, value: number, money: boolean}}[]}} opts
      *   action: an action id previewed for the choice's chips and enabled state (the caller runs
-     *   it); cancel: the choice id Esc returns (default 'leave' when offered), false: Esc does nothing
+     *   it); cancel: the choice id Esc returns (default: 'leave' when offered, else Esc does
+     *   nothing), false: Esc does nothing
      * @returns {Promise<{choice: (string|null), n: (number|undefined)}>}
      */
     open: function (opts) {

@@ -31,8 +31,9 @@
 
   // The P0 satellite: a separate piece with no slot that needs the TV (GDD §4.15 note). In P1 the
   // SkyDish becomes the TV's tier 2; the v2 save migration turns an owned satellite into it.
+  // retiredBy: no longer sold while that flag is on (SR.rules.homes.buyFurniture).
   piece('satellite', { name: 'furn.satellite', tier: 1, base: 'satellite', upgrade: null, stat: null,
-    needs: 'tv', icon: 'skydish', draw: 'satellite', order: 9, p: 0 });
+    needs: 'tv', retiredBy: 'homesPlus', icon: 'skydish', draw: 'satellite', order: 9, p: 0 });
 
   // Tier 2 (P1 `homesPlus`): replaces the tier-1 piece and credits 50 % of its price (B-08b).
   piece('pod', { name: 'furn.pod', tier: 2, base: 'bed', upgrade: null, stat: null, sleep: true,

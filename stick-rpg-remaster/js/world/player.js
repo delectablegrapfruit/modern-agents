@@ -11,6 +11,14 @@
 
   var TAU = Math.PI * 2;
   var BACKWARD = Math.PI * 0.75;   // input more than 135° from the car's heading is the brake / reverse key
+  // Feel constants of this module (engine details BALANCE B-15 does not tabulate).
+  var DEAD = 0.2;                  // a move input longer than this counts (the pad's dead zone, CONTRACT §12.1)
+  var WAYPOINT_R = 12, ARRIVE_R = 2, ARRIVE_EASE = 10;   // route waypoints reached within 12 u, the last within 2 u, slowing at 10 u/s per u
+  var STUCK_FRAC = 0.25, STUCK_SEC = 0.6;                // a route moving < 25 % of its speed for 0.6 s re-plans once, then drops
+  var BRAKE_X = 2, COAST_X = 0.5, HIT_KEEP = 0.5;        // the back key brakes at 2× the acceleration; coasting 0.5×; a wall keeps 50 % speed
+  var STEER_V0 = 60, STEER_V1 = 240;                     // steering authority (v + 60) / 240, full from 180 u/s
+  var KNOCK_DAMP = 0.8;                                  // velocity kept per step while knocked down
+  var HOP_MIN_V = 20, HOP_REACH = 12, HOP_SEC = 0.6, BARK_SEC = 1.5;   // people hop from a car over 20 u/s within its radius + 12 u
 
   function W() { return SR.world; }
   function cfg() { return SR.world.cfg || (SR.world.cfg = SR.world.readCfg()); }
@@ -21,6 +29,8 @@
 
   var P = {
     x: 0, y: 0, vx: 0, vy: 0,
+    /** The position at the start of the last fixed step (the renderer interpolates px → x by alpha). */
+    px: 0, py: 0,
     /** Degrees clockwise from north (0 N, 90 E, 180 S, 270 W), as the original's rot. */
     facing: 180,
     /** 'walk' | 'skate' | 'drive'. */
@@ -81,7 +91,7 @@
   /** Puts the player on foot at (x, y) (a car being driven is parked where it is first). */
   P.place = function (x, y, facing) {
     if (P.car) P.park(P.x, P.y, P.a);
-    P.x = x; P.y = y; P.vx = P.vy = 0; P.v = 0;
+    P.x = P.px = x; P.y = P.py = y; P.vx = P.vy = 0; P.v = 0;
     if (facing !== undefined) P.facing = facing;
     P.mode = 'walk'; P.teeter = 0;
     P.cancelRoute();
@@ -97,7 +107,7 @@
     if (!row || !row.owned || row.towed) return false;
     if (!silent && Math.hypot(row.x - P.x, row.y - P.y) > cfg().carRange) return false;
     P.cancelRoute();
-    P.car = car; P.mode = 'drive'; P.x = row.x; P.y = row.y; P.a = row.a || 0; P.v = 0; P.vx = P.vy = 0;
+    P.car = car; P.mode = 'drive'; P.x = P.px = row.x; P.y = P.py = row.y; P.a = row.a || 0; P.v = 0; P.vx = P.vy = 0;
     P.facing = ((P.a * 180 / Math.PI + 90) % 360 + 360) % 360;
     var s = state();
     if (s && s.player) s.player.driving = car;
@@ -133,13 +143,13 @@
    */
   P.toggleCar = function () {
     if (P.car) {
-      var car = P.car, cx = P.x, cy = P.y, a = P.a, c = cfg(), off = c.carRadius + P.r + 4;
+      var car = P.car, cx = P.x, cy = P.y, a = P.a, c = cfg(), side = c.carRadius + P.r + 4, end = c.carLength / 2 + P.r + 4;
       P.park(cx, cy, a);
       // Step out on the driver's side, else the other side, else behind or ahead.
-      var tries = [[-Math.sin(a), Math.cos(a)], [Math.sin(a), -Math.cos(a)], [-Math.cos(a), -Math.sin(a)], [Math.cos(a), Math.sin(a)]];
+      var tries = [[-Math.sin(a), Math.cos(a), side], [Math.sin(a), -Math.cos(a), side], [-Math.cos(a), -Math.sin(a), end], [Math.cos(a), Math.sin(a), end]];
       for (var i = 0; i < tries.length; i++) {
-        var x = cx + tries[i][0] * off, y = cy + tries[i][1] * off;
-        if (G().walkable(x, y, P.r) && !G().nearEdge(x, y, P.r)) { P.x = x; P.y = y; break; }
+        var x = cx + tries[i][0] * tries[i][2], y = cy + tries[i][1] * tries[i][2];
+        if (G().walkable(x, y, P.r) && !G().nearEdge(x, y, P.r)) { P.x = P.px = x; P.y = P.py = y; break; }
       }
       return { action: 'out', car: car };
     }
@@ -153,19 +163,36 @@
   P.cancelRoute = function () { P.path = []; P.route = null; stuck = 0; replans = 0; };
 
   /**
+   * The door a click at ground point (x, y) means: a click on a door's porch or near its trigger
+   * wins; otherwise a click on a building's footprint or drawn (projected) rect picks the building
+   * drawn in front (the one whose ground contact is furthest south, as the painter sorts them).
+   * @returns {object|null} the door
+   */
+  P.doorAt = function (x, y) {
+    var g = G(), best = null, bestKey = -Infinity;
+    for (var i = 0; i < g.doors.length; i++) {
+      var d = g.doors[i], b = g.buildings[d.building], key = -Infinity;
+      if (g.util.rectDist(x, y, d.trigger) < 24 || g.util.inRect(x, y, d.porch)) key = Infinity;
+      else {
+        b.masses.forEach(function (m, k) {
+          var r = m.rect;
+          if (g.util.inRect(x, y, r) || g.util.inRect(x, y, b.projected[k])) key = Math.max(key, r[3]);
+        });
+        b.tops.forEach(function (r) { if (g.util.inRect(x, y, r)) key = Math.max(key, r[3]); });
+      }
+      if (key > bestKey) { bestKey = key; best = d; }
+    }
+    return best;
+  };
+
+  /**
    * Click / tap to walk (GDD §3.8): a route over the nav grid to (x, y). A click on a building, its
    * porch or its door trigger walks to that door's trigger (the route then enters it).
    * @returns {boolean} a route was found
    */
   P.walkTo = function (x, y) {
     if (P.car) return false;
-    var g = G(), door = null, to = { x: x, y: y };
-    for (var i = 0; i < g.doors.length && !door; i++) {
-      var d = g.doors[i], b = g.buildings[d.building];
-      var hitB = b.masses.some(function (m) { return g.util.inRect(x, y, m.rect); }) ||
-        b.projected.some(function (r) { return g.util.inRect(x, y, r); });
-      if (hitB || g.util.rectDist(x, y, d.trigger) < 24 || g.util.inRect(x, y, d.porch)) door = d;
-    }
+    var door = P.doorAt(x, y), to = { x: x, y: y };
     if (door) to = { x: door.tc[0], y: door.tc[1] };
     else if (!SR.world.nav.reachable(x, y).ok) {
       var near = SR.world.nav.nearest(x, y, 0);
@@ -197,43 +224,57 @@
       if (G().walkable(x, y, 8)) { e.x = x; e.y = y; break; }
     }
     // hopT and barkT are the owner's animation timers; hopUntil keeps the car from re-hopping them.
-    e.state = 'hop'; e.hopT = 0.6; e.hopUntil = SR.world.time + 0.6; e.bark = 'toast.world.hey'; e.barkT = 1.5;
+    e.state = 'hop'; e.hopT = HOP_SEC; e.hopUntil = SR.world.time + HOP_SEC; e.bark = 'toast.world.hey'; e.barkT = BARK_SEC;
     P.hops++;
   };
 
+  var PEOPLE_KINDS = ['ped', 'person', 'police'], SEG = { d: 0, x: 0, y: 0, t: 0 };
   function hopPeople() {
-    if (Math.abs(P.v) < 20) return;
-    var c = cfg(), reach = c.carRadius + 12;
-    [SR.world.pedestrians, SR.world.streetnpcs, SR.world.police].forEach(function (mod) {
-      var list = mod && mod.list;
-      if (!Array.isArray(list)) return;
+    if (Math.abs(P.v) < HOP_MIN_V) return;
+    var c = cfg(), reach = c.carRadius + HOP_REACH, h = Math.max(0, c.carLength / 2 - c.carRadius);
+    var hx = Math.cos(P.a) * h, hy = Math.sin(P.a) * h, g = G();
+    for (var k = 0; k < PEOPLE_KINDS.length; k++) {
+      var list = SR.world.entities(PEOPLE_KINDS[k]);
       for (var i = 0; i < list.length; i++) {
         var e = list[i];
-        if (!e || e.visible === false || (e.hopUntil && SR.world.time < e.hopUntil)) continue;
-        if (Math.hypot(e.x - P.x, e.y - P.y) < reach) P.hopAside(e);
+        if (!e || typeof e.x !== 'number' || e.visible === false || e.active === false) continue;
+        if (e.hopUntil && SR.world.time < e.hopUntil) continue;
+        // within reach of the car's axis (its capsule), not only of its centre
+        if (g.util.segClosest(e.x, e.y, P.x - hx, P.y - hy, P.x + hx, P.y + hy, SEG).d < reach) P.hopAside(e);
       }
-    });
+    }
   }
 
   // --- update -------------------------------------------------------------------------------------
-  function body(r) { return { x: P.x, y: P.y, r: r, safeEdges: SR.world.safeEdges() }; }
+  // Scratch objects for the per-step hot path (ARCHITECTURE §17: no per-frame allocation).
+  var BODY = { x: 0, y: 0, r: 14, safeEdges: false, len: 0, a: 0 }, WANT = { x: 0, y: 0 };
+  /** The collision body: a circle on foot; in the car a capsule of its length along its heading. */
+  function body(r, len) {
+    BODY.x = P.x; BODY.y = P.y; BODY.r = r; BODY.safeEdges = SR.world.safeEdges();
+    BODY.len = len || 0; BODY.a = P.a;
+    return BODY;
+  }
 
   function afterMove(res, ox, oy, dt) {
     P.x = res.x; P.y = res.y; P.surface = res.surface;
     if (res.hit) { P.vx = (P.x - ox) / dt; P.vy = (P.y - oy) / dt; }
     if (res.offGround) { SR.world.fall.teeter({ x: ox, y: oy }); return; }
-    if (!G().nearEdge(P.x, P.y, cfg().fallInside)) P.lastSafe = { x: P.x, y: P.y };
+    if (!G().nearEdge(P.x, P.y, cfg().fallInside)) {
+      if (P.lastSafe) { P.lastSafe.x = P.x; P.lastSafe.y = P.y; } else P.lastSafe = { x: P.x, y: P.y };
+    }
   }
 
+  /** The velocity toward the route's next waypoint, into WANT. */
   function followRoute(top) {
     var wp = P.path[0], ex = wp.x - P.x, ey = wp.y - P.y, d = Math.sqrt(ex * ex + ey * ey);
-    while (P.path.length > 1 && d < 12) {
+    while (P.path.length > 1 && d < WAYPOINT_R) {
       P.path.shift();
       wp = P.path[0]; ex = wp.x - P.x; ey = wp.y - P.y; d = Math.sqrt(ex * ex + ey * ey);
     }
-    if (P.path.length === 1 && d < 2) { P.path = []; return { x: 0, y: 0 }; }
-    var speed = P.path.length === 1 ? Math.min(top, d * 10) : top;
-    return { x: ex / d * speed, y: ey / d * speed };
+    if (P.path.length === 1 && d < ARRIVE_R) { P.path = []; WANT.x = WANT.y = 0; return WANT; }
+    var speed = P.path.length === 1 ? Math.min(top, d * ARRIVE_EASE) : top;
+    WANT.x = ex / d * speed; WANT.y = ey / d * speed;
+    return WANT;
   }
 
   function foot(dt, input) {
@@ -245,7 +286,8 @@
     if (P.path.length) want = followRoute(top);
     else {
       var m = mag > 1 ? 1 / mag : 1;
-      want = { x: input.x * m * top, y: input.y * m * top };
+      want = WANT;
+      WANT.x = input.x * m * top; WANT.y = input.y * m * top;
     }
     var ddx = want.x - P.vx, ddy = want.y - P.vy, dl = Math.sqrt(ddx * ddx + ddy * ddy), max = rate * dt;
     if (dl > max) { ddx *= max / dl; ddy *= max / dl; }
@@ -257,8 +299,8 @@
     // A route that stops making progress is re-planned once, then dropped.
     if (P.path.length) {
       var moved = Math.hypot(P.x - ox, P.y - oy);
-      stuck = moved < top * dt * 0.25 ? stuck + dt : 0;
-      if (stuck > 0.6) {
+      stuck = moved < top * dt * STUCK_FRAC ? stuck + dt : 0;
+      if (stuck > STUCK_SEC) {
         stuck = 0;
         var route = P.route;
         if (replans++ < 1 && route) {
@@ -270,12 +312,12 @@
   }
 
   function drive(dt, input) {
-    var c = cfg(), spec = carSpec(P.car), top = spec.top, acc = top / spec.accel, brake = acc * 2;
+    var c = cfg(), spec = carSpec(P.car), top = spec.top, acc = top / spec.accel, brake = acc * BRAKE_X;
     var mag = Math.min(1, Math.sqrt(input.x * input.x + input.y * input.y));
-    if (mag > 0.2) {
+    if (mag > DEAD) {
       var diff = wrap(Math.atan2(input.y, input.x) - P.a);
       if (Math.abs(diff) <= BACKWARD) {
-        var steer = spec.turn * dt * Math.min(1, (Math.abs(P.v) + 60) / 240);
+        var steer = spec.turn * dt * Math.min(1, (Math.abs(P.v) + STEER_V0) / STEER_V1);
         P.a = wrap(P.a + clamp(diff, -steer, steer));
         var target = top * mag;
         if (P.v < 0) P.v = Math.min(0, P.v + brake * dt);
@@ -287,14 +329,14 @@
         P.v = Math.max(-c.reverse, P.v - acc * dt);       // ...then reverses at 200 u/s
       }
     } else {
-      P.v = P.v > 0 ? Math.max(0, P.v - acc * 0.5 * dt) : Math.min(0, P.v + acc * 0.5 * dt);
+      P.v = P.v > 0 ? Math.max(0, P.v - acc * COAST_X * dt) : Math.min(0, P.v + acc * COAST_X * dt);
     }
     var cap = P.surfaceCap(G().surfaceAt(P.x, P.y), top);
     P.v = clamp(P.v, -Math.min(cap, c.reverse), cap);
     var dx = Math.cos(P.a) * P.v * dt, dy = Math.sin(P.a) * P.v * dt;
-    var ox = P.x, oy = P.y, res = SR.world.collide.move(body(c.carRadius), dx, dy);
+    var ox = P.x, oy = P.y, res = SR.world.collide.move(body(c.carRadius, c.carLength), dx, dy);
     P.vx = Math.cos(P.a) * P.v; P.vy = Math.sin(P.a) * P.v;
-    if (res.hit) P.v *= 0.5;
+    if (res.hit) P.v *= HIT_KEEP;
     P.facing = ((P.a * 180 / Math.PI + 90) % 360 + 360) % 360;
     afterMove(res, ox, oy, dt);
     if (P.car) hopPeople();
@@ -310,10 +352,12 @@
     input = input || SR.world.readInput();
     if (P.knockdown > 0) {
       P.knockdown = Math.max(0, P.knockdown - dt);
-      P.vx *= 0.8; P.vy *= 0.8; P.v *= 0.8;
+      P.vx *= KNOCK_DAMP; P.vy *= KNOCK_DAMP; P.v *= KNOCK_DAMP;
       return;
     }
-    if (P.path.length && Math.sqrt(input.x * input.x + input.y * input.y) > 0.2) P.cancelRoute();
+    // Any movement input cancels the route, also one whose path has already run out (its end may
+    // lie in a disarmed door trigger: a stale route there would later count as "routed" dwell).
+    if ((P.path.length || P.route) && Math.sqrt(input.x * input.x + input.y * input.y) > DEAD) P.cancelRoute();
     if (P.car) drive(dt, input); else foot(dt, input);
   };
 

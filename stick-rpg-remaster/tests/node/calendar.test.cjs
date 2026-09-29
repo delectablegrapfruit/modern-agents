@@ -69,6 +69,11 @@ T.section('the calendar and city events (P1 calendar)');
   const rf = H.features(SR, { calendar: true });
   T.eq([1, 2, 3, 4, 5, 6, 7, 8].map((d) => C.today(H.state(SR, { clock: { day: d } })).key), ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun', 'mon'], 'day 1 is a Monday');
   T.eq(C.today(H.state(SR, { clock: { day: 3 } })).bonuses, ['wed'], 'the weekday bonus');
+  const week = () => [1, 2, 3, 4, 5, 6, 7].map((d) => C.today(H.state(SR, { clock: { day: d } })).bonuses.join('') || '-');
+  T.eq(week(), ['mon', '-', 'wed', 'thu', 'fri', '-', '-'], 'Open Mic, the Ring and the skate contest wait for their own flags (review fix)');
+  const rn = H.features(SR, { nightlife: true, arcs: true });
+  T.eq(week(), ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'], '… and are announced with them');
+  rn();
   const rng = SR.rng.create(33), seen = {}, days = {};
   for (let i = 0; i < 6000; i++) {
     const s = H.state(SR, { clock: { day: 8 } });   // Monday morning: the week's event

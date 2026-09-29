@@ -1,8 +1,9 @@
 // js/rules/homes.js — owner: W1-E. SR.rules.homes: buying, selling, moving in and letting homes,
-// furniture slots, tier-2 upgrades, storage, the sleep bonus, TV channels, home doors and the
-// net-worth values of homes and furniture (BALANCE B-08; GDD §4.15; ARCHITECTURE §8.4).
+// furniture slots, tier-2 upgrades, storage, the sleep bonus, TV channels, home doors, the
+// Workstation catalogue (furniture and the sports car) and the net-worth values of homes and
+// furniture (BALANCE B-08; GDD §4.15, §4.18; ARCHITECTURE §8.4).
 // Pure. Numbers: SR.tuning.homes (B-08a), SR.tuning.furniture (B-08b), SR.tuning.sleep (B-07),
-// SR.tuning.endgame (B-18).
+// SR.tuning.endgame (B-18), SR.tuning.items.sportscar (B-06), SR.tuning.world.homeLots (B-15).
 // Furniture state: furniture.owned[baseId] = tier (1 | 2), keyed by the tier-1 id; storage lists
 // the base ids of pieces that don't fit the home you live in (they do nothing).
 (function () {
@@ -79,11 +80,17 @@
       });
     },
 
-    /** Removes a piece you own (seizure, donation). @returns {boolean} */
+    /**
+     * Removes a piece you own (seizure, donation). A piece in use frees its slots, so stored pieces
+     * that now fit come back out (the same display-order fill as moving in).
+     * @returns {boolean}
+     */
     removePiece: function (s, base) {
       if (!s.furniture.owned[base]) return false;
+      var stored = (s.furniture.storage || []).indexOf(base) >= 0;
       delete s.furniture.owned[base];
       s.furniture.storage = (s.furniture.storage || []).filter(function (b) { return b !== base; });
+      if (!stored && s.furniture.storage.length) homes.restock(s);
       return true;
     },
 
@@ -308,8 +315,12 @@
       var def = SR.reg.furniture[id];
       if (!def || def.tier !== 1 || !TF()[id]) return refuse('reason.noPiece');
       if (!feature(def)) return refuse('reason.featureOff');
+      // The P0 satellite is not sold once its flag's tier 2 replaces it (GDD §4.15 note: in P1 the
+      // SkyDish is the TV's upgrade), nor next to a TV already upgraded to it.
+      if (def.retiredBy && SR.features[def.retiredBy]) return refuse('reason.unavailable');
       if (s.furniture.owned[id]) return refuse('reason.owned');
       if (def.needs && !s.furniture.owned[def.needs]) return refuse('reason.needPiece', { name: SR.text('furn.' + def.needs) });
+      if (def.needs && def.retiredBy && s.furniture.owned[def.needs] >= 2) return refuse('reason.owned');
       if (slotSize(id) > homes.freeSlots(s)) return refuse('reason.needSlot');
       var where = opts.where === 'catalogue' ? 'catalogue' : 'furniture';
       if (where === 'catalogue' && !SR.features.homesPlus) return refuse('reason.featureOff');
@@ -322,6 +333,33 @@
       return { ok: true, price: p.price, applied: p.applied,
         deltas: [delta('cash', null, c0, s.money.cash), { kind: 'furniture', key: id, n: 1, from: 0, to: 1 }],
         events: [{ name: 'buy', payload: { item: id, n: 1, where: where, price: p.price } }] };
+    },
+
+    /**
+     * Buys the sports car from the Workstation catalogue (P1 `homesPlus`; B-06 `sportscar`,
+     * $60,000, no delivery markup): delivered to its home lot on the mansion drive, `bought: true`
+     * (net worth counts it, B-18). Not while you already have it (the day-365 gift included). The
+     * Workstation itself is the action's requirement.
+     * @param {object=} opts { ctx }
+     * @returns {{ok: boolean, reason?: string, vars?: object, price?: number, events?: object[]}}
+     */
+    buyCar: function (s, opts) {
+      opts = opts || {};
+      if (!SR.features.homesPlus) return refuse('reason.featureOff');
+      var car = s.player.cars.sports;
+      if (car.owned || car.bought) return refuse('reason.owned');
+      var p = modPrice(s, SR.tuning.items.sportscar.price, 'catalogue.sportscar', opts.ctx);
+      if (p.price > s.money.cash) return refuse('reason.needCash', { n: p.price, money: SR.text.money(p.price), have: s.money.cash });
+      var c0 = s.money.cash, lot = SR.tuning.world.homeLots.sports;
+      s.money.cash -= p.price;
+      s.records.spent = (s.records.spent || 0) + p.price;
+      car.owned = true;
+      car.bought = true;
+      car.towed = false;
+      car.x = (lot[0] + lot[2]) / 2;
+      car.y = (lot[1] + lot[3]) / 2;
+      return { ok: true, price: p.price, deltas: [delta('cash', null, c0, s.money.cash)],
+        events: [{ name: 'buy', payload: { item: 'sportscar', n: 1, where: 'catalogue', price: p.price } }] };
     },
 
     /**
@@ -368,6 +406,8 @@
     return res(homes.buyFurniture(s, pid(params, id, 'piece'), { where: params && params.where, ctx: ctx }));
   });
   SR.def.fn('homes.upgrade', function (s, params, ctx, id) { return res(homes.upgrade(s, pid(params, id, 'piece'), { ctx: ctx })); });
+  /** Effect: the Workstation catalogue's sports car (P1 `homesPlus`). */
+  SR.def.fn('homes.buyCar', function (s, params, ctx) { return res(homes.buyCar(s, { ctx: ctx })); });
   /** Condition: the perk of params.homeId (or the argument) can be used now. */
   SR.def.fn('homes.perkHere', function (s, params, ctx, id) { return homes.perkOk(s, pid(params, id, 'homeId')); });
   /** Effect: use the perk of the home you live in. */

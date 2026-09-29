@@ -71,27 +71,43 @@ it; the history starts on day 2.
 - `SR.rules.stocks`: `quirkShock(t, facts)`, `reveal(s, source)`, `revealed(s)`, `spread(s)`,
   `tickers()`; the tip is `state.tip = { day, ticker, dir, truthful, size, pct, reliability,
   revealed: { tv, paper, market, mingle, harold } }`.
-- `SR.rules.homes`: `freeSlots`, `has(s, base)` → tier in use, `pieces`, `removePiece`, `restock`,
-  `channels(s)`, `nightly(s)`, `perk(s)`, `perkOk(s, homeId)`, `usePerk(s)`, `rentOf`, `saleOf`,
-  `rents(s)`, `homesValue`, `furnitureValue`, `tierId(base, tier)`.
+- `SR.rules.homes`: `freeSlots`, `has(s, base)` → tier in use, `pieces`, `removePiece` (restocks
+  stored pieces into freed slots), `restock`, `channels(s)`, `nightly(s)`, `perk(s)`, `perkOk(s,
+  homeId)`, `usePerk(s)`, `rentOf`, `saleOf`, `rents(s)`, `homesValue`, `furnitureValue`,
+  `tierId(base, tier)`, `buyCar(s, opts)` (the Workstation catalogue's sports car, P1 `homesPlus`:
+  B-06 `sportscar`, target `catalogue.sportscar`, cash, `cars.sports.owned = bought = true` on its
+  home lot). Furniture defs may carry `retiredBy: '<flag>'` (the P0 satellite: not sold while
+  `homesPlus` is on).
 - `SR.rules.jobs`: `ladder`, `missingReason(p)`, `shiftCost(s, variant)`, `canWork(s, track,
-  variant)`, `weeklyBonus(s)`, `legacyRank(s)`, `hustleSkin(s, track)` → `{ skin, step }`,
-  `takeoverDue(s)`, `takeover(s, m)`.
-- `SR.rules.training`: `can(s, id, opts)`, `classTrack(id)`, `canGraduate(s, track)`.
-- `SR.rules.calendar`: `weekdayOf`, `eventDays`, `storm(s)`, `next(from, rng)`.
+  variant, ctx)` (Overtime's "Too hurt" line follows the pipeline's Heat Wave `ctx.hpScale`), `weeklyBonus(s)`, `legacyRank(s)`, `hustleSkin(s, track)` → `{ skin, step }`,
+  `takeoverDue(s)`, `takeover(s, m)`, `rainTips(s, track, m)`; `work(s, track, variant, m, opts)`
+  takes an optional 5th argument `{ hustle: true }` when `m` is a played hustle's result (the rain
+  tips of B-05 `hustle.rainTips` apply to a played Order Up only; Auto stays exactly 1.0).
+- `SR.rules.training`: `can(s, id, opts)`, `classTrack(id)`, `canGraduate(s, track)`, `gain(s, id)`
+  (Study follows the Public Library Act through W1-C's named fn `decree.studyGain`), `minutes(s, id)`
+  (Speed Reader), `napHp(s)` (B-03 `nap`).
+- `SR.rules.calendar`: `weekdayOf`, `eventDays`, `storm(s)`, `next(from, rng)`; `today(s).bonuses`
+  lists Tuesday (Open Mic), Saturday (the Ring, VIP points) and Sunday (the skate contest) only while
+  their own flags (`nightlife`, `arcs`) are on as well as `calendar`.
 - `SR.rules.endgame`: `breakdown(s)`, `column(karma)`, `tier(nw)`, `banners(s, reason)`.
 - `SR.rules.news`: `lead(s)`. `SR.rules.night`: `SUBSETS`, `steps` (numbered GDD §4.7 steps).
 - `night.run(s, ctx, opts)`: `opts` also takes `bill`, `paid`, `writtenOff`, `cause` (the Stick
   General lines, from `health.down`) and `trace` (an array the step numbers are pushed to; tests).
 - Report: an optional `achievements: [ids]` (step 12, when `achievements` is on). Down: `events`
-  (the `down` rule event; `act.js` already reads it).
+  (the `down` rule event; `act.js` already reads it) and `toasts` (Second Wind's
+  `toast.health.secondWind`, ARCHITECTURE §6.7 "a toast; nothing else happens"). **`js/rules/act.js`
+  (W1-R):** in `down()`, also append `Down.toasts` to `Result.toasts`, as it does with
+  `Down.events`; until then the hospital scene can show it from `player:down`'s `down.toasts`.
 - Named fns (for the wave-2 building data): `bank.{deposit, withdraw, loan, repay, openCd, breakCd,
   charge, canLoan, hasLoan}` (params `amount` / `index`), `stocks.{buy, sell, reveal}` (params
   `ticker`, `n`, `where`), `homes.{buy, sell, moveIn, letOut, endLet, buyFurniture, upgrade, fits,
   perkHere, usePerk}` (params `homeId` / `piece`, or an argument), `jobs.{canWork, work, canPromote,
-  promote, canApply, apply, hustleSkin}` (a track argument or `params.track`; `params.variant`,
-  `params.m`), `shift.min` and `shift.hp` (costs by `params.variant`), `training.{apply, can,
-  seminarOk, canGraduate, graduate}` (a source id argument; `params.track` for seminars).
+  promote, canApply, apply, hustleSkin, takeoverDue, takeover}` (a track argument or `params.track`;
+  `params.variant`, `params.m`, and `params.auto` from a minigame's Auto result), `shift.min` and
+  `shift.hp` (costs by `params.variant`), `training.{apply, can, seminarOk, canGraduate, graduate}`
+  (a source id argument; `params.track` for seminars), the cost / amount fns `training.studyMin`,
+  `training.paperMin` (Speed Reader) and `training.napHp` (`['heal', 'training.napHp']`), and
+  `homes.buyCar`.
   Module functions return partial Results whose `log` / `msgs` the pipeline's merge delivers
   (as `js/rules/effects.js` does); `deltas` in them are informational (the pipeline diffs).
 
@@ -101,12 +117,14 @@ effects through `run`.
 **Why.** These are called across packages (building data, sub-screens, the report, the sim).
 **Meanwhile.** Implemented as listed.
 
-## R4. `docs/CONTRACT.md` §7 (lead): `vm.crew.*` → `en-econ.js`
+## R4. `docs/CONTRACT.md` §7 (lead): `vm.crew.*` and `vm.skywatch.*` → `en-econ.js`
 
-**Change.** Add `vm.crew.*` (the day-365 call "from your friendly remaster crew", raised by night
-step 11) to `en-econ.js` (W1-E) in the key-owner table.
-**Why.** No NPC owns it and the night (a W1-E module) raises it (D27's rule for module-raised keys).
-**Meanwhile.** `vm.crew.day365` is defined in `en-econ.js`.
+**Change.** Add `vm.crew.*` (the day-365 call "from your friendly remaster crew") and
+`vm.skywatch.*` (the weather alerts: `windy`, `fog`, `storm`, P1 `weather`), both raised by night
+step 11, to `en-econ.js` (W1-E) in the key-owner table.
+**Why.** No NPC owns them and the night (a W1-E module) raises them (D27's rule for module-raised
+keys); GDD §4.7 step 11 and §6.8 list "weather alerts" among the night's voicemails.
+**Meanwhile.** `vm.crew.day365` and `vm.skywatch.{windy,fog,storm}` are defined in `en-econ.js`.
 
 ## R5. `js/data/text/en-money.js` (W2-Money): Penny's loan voicemails
 
@@ -135,8 +153,10 @@ no-show (`debate.noShow`) when `campaignDay` becomes 5 without `debateDone`, and
 unaccepted nomination (`acceptWithin`, then `retryFromDay = day + retry`). After campaign day 7 it
 calls `SR.rules.election.electionNight(s, rng)` and expects a partial Result `{ won, poll, roll,
 path, events?, msgs?, log? }` that also sets the status (office / lost); msgs and log are delivered
-by the night. At step 12 it calls `nominationCheck(s)` and, in office, `officeMorning(s, rng)`,
-absorbing any partial Result. `campaignDay` is 1 on the first campaign day. Decree ids are the
+by the night. At step 12 it calls `nominationCheck(s)`, then, on a campaign day's morning (status
+`campaign`), `campaignMorning(s, rng)` (the P1 campaign event; W1-C wrote it "for the morning of a
+campaign day" and nothing else called it), and, in office, `officeMorning(s, rng)`, absorbing any
+partial Result (msgs, log, events, lines). `campaignDay` is 1 on the first campaign day. Decree ids are the
 camelCase keys of B-17 (`casinoLevy`, `statueOfMe`, `mandatoryHats`, `toughOnCrime`, `fourDayWeek`,
 `seizeBank` in `decreesUsed`), as `tuning.priceMods` uses them.
 **Why.** GDD §4.7 puts these nightly rules in the night; W1-C's functions then need not apply the

@@ -1,7 +1,8 @@
 // js/data/text/en-econ.js — owner: W1-E. text: items, jobs, homes, furniture, stocks, ranks, the
 // morning report's lines, and the toasts and stamps the economy rules raise (CONTRACT §7):
 // item.*, job.*, home.<tier>.*, furn.*, stock.*, rank.*, report.*, toast.jobs|training|night|
-// health|homes|stocks.*, stamp.jobs|training.*. Numbers never appear in the prose (the UI's chips
+// health|homes|stocks.*, stamp.jobs|training.*, and the night's own voicemails vm.crew.* and
+// vm.skywatch.* (docs/requests/W1-E.md R4). Numbers never appear in the prose (the UI's chips
 // and the report's vars carry them), so tuning changes never make a line lie.
 // Pure data (Node-loadable).
 (function () {
@@ -301,9 +302,16 @@
     'toast.homes.storage': 'Some furniture went into storage',
 
     // ---------------------------------------------------------------------------------------------
-    // The day-365 call (night step 11). vm.crew.* has no owner in CONTRACT §7 yet: see
-    // docs/requests/W1-E.md.
+    // Voicemails the night queues itself (step 11): the day-365 call and the weather alerts (P1
+    // `weather`). vm.crew.* and vm.skywatch.* have no owner in CONTRACT §7 yet: see
+    // docs/requests/W1-E.md (R4).
     'vm.crew.day365': 'Hello from your friendly remaster crew! A whole year on the paper, and you never ' +
       'fell off for good. We left a red sports car on the mansion drive as a thank-you. Keys are in your Bag.',
+    'vm.skywatch.windy': 'Skywatch weather alert: strong winds today. Gusts push hard near the unrailed ' +
+      'edges, so keep to the middle of the paper.',
+    'vm.skywatch.fog': "Skywatch weather alert: fog banks over the edges today. You won't see the drop " +
+      'until you are on it, and the traffic is crawling.',
+    'vm.skywatch.storm': 'Skywatch weather alert: thunderstorms today. Heavy rain, empty sidewalks and ' +
+      'slippery brakes. Umbrellas recommended.',
   });
 })();

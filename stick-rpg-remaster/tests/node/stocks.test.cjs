@@ -109,6 +109,20 @@ T.section('reverse splits');
   T.eq([sp.leftover, sp.paid, s.money.cash], [5, Math.floor(5 * close), Math.floor(5 * close)], 'the 5 leftover shares are paid out at the close');
   T.eq(s.stocks.SKY.hist.map((p) => Math.round(p * 100)), [1100, 1000, Math.round(close * 1000)], 'the history is rescaled');
   T.ok(Object.keys(s.stocks).every((t) => t === 'SKY' || s.stocks[t].price >= 1), 'only the ticker below $1 splits');
+
+  // Fewer than 10 shares: all of them are paid out, and the basis goes with them (review fix: a
+  // 0-share position kept its basis, which then ate the position cap for good).
+  const o = market(3, { money: { cash: 0 }, stats: { int: 0 } });
+  Object.assign(o.stocks.SKY, { price: 0.95, prev: 1.2, held: 7, basis: 9, hist: [] });
+  const so = S.reverseSplit(o, 'SKY');
+  T.eq([o.stocks.SKY.held, o.stocks.SKY.basis, so.leftover, so.paid, o.money.cash], [0, 0, 7, 6, 6], 'a 7-share holding is paid out whole; no basis is left');
+  o.money.cash = 1e6;
+  const fill = o.stocks.SKY.price * (1 + TS.spread), n = Math.floor(S.cap(o) / fill);
+  T.ok(S.buy(o, 'SKY', n).ok, 'the full position cap is free again after the payout', n);
+  const k = market(3, { money: { cash: 0 } });
+  Object.assign(k.stocks.SKY, { price: 0.95, prev: 1.2, held: 12, basis: 30, hist: [] });
+  S.reverseSplit(k, 'SKY');
+  T.eq([k.stocks.SKY.held, k.stocks.SKY.basis], [1, 30], 'a holding that survives keeps its basis (B-10: unchanged)');
 }
 
 T.section('the tip: reliability and the draw');
