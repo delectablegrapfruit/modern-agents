@@ -1,0 +1,332 @@
+{
+ "fmt": "sr-save",
+ "v": 1,
+ "meta": {
+  "name": "Rikki",
+  "day": 12,
+  "length": 40,
+  "difficulty": "standard",
+  "title": "",
+  "netWorth": 1540,
+  "savedAt": 1790000000000,
+  "playSec": 5400,
+  "thumb": ""
+ },
+ "state": {
+  "v": 1,
+  "seed": 777,
+  "rng": {
+   "rules": [
+    2837285622,
+    685048431,
+    4245975992,
+    13
+   ]
+  },
+  "mode": {
+   "length": 40,
+   "difficulty": "standard",
+   "tutorial": true,
+   "cheat": false,
+   "keepPlaying": false,
+   "inProgress": false
+  },
+  "clock": {
+   "day": 12,
+   "min": 870,
+   "wake": 480,
+   "pillAuto": true
+  },
+  "player": {
+   "name": "Rikki",
+   "look": {
+    "acc": "none"
+   },
+   "x": 998,
+   "y": 1088,
+   "facing": 180,
+   "driving": null,
+   "cars": {
+    "junker": {
+     "owned": false,
+     "bought": false,
+     "x": 727,
+     "y": 1113,
+     "a": 0,
+     "towed": false
+    }
+   },
+   "lastSafe": {
+    "x": 998,
+    "y": 1088
+   }
+  },
+  "stats": {
+   "str": 18,
+   "int": 41,
+   "cha": 12,
+   "karma": 6,
+   "hp": 27,
+   "hpMax": 33,
+   "heat": 0
+  },
+  "money": {
+   "cash": 340,
+   "bank": 1200,
+   "rate": 1.2,
+   "rateHist": [
+    2,
+    2.25,
+    2.5
+   ],
+   "loan": null,
+   "creditFrozenUntil": 0
+  },
+  "job": {
+   "ranks": {
+    "mcsticks": "cook",
+    "nli": null
+   },
+   "shiftsAtRank": {
+    "mcsticks": 5,
+    "nli": 0
+   },
+   "totalShifts": 5,
+   "rating": 1,
+   "weekNliWages": 0,
+   "weekNliShifts": 0,
+   "overtimeToday": 0,
+   "lastFullEnd": -1,
+   "ceoSinceDay": 0,
+   "office": null
+  },
+  "edu": {
+   "classes": {
+    "biz": 0,
+    "kin": 0,
+    "thr": 0
+   },
+   "degrees": {
+    "biz": false,
+    "kin": false,
+    "thr": false
+   }
+  },
+  "perks": {
+   "owned": [],
+   "pending": []
+  },
+  "items": {
+   "smokes": 2,
+   "pills": 1,
+   "gum": 0,
+   "paper": 0,
+   "scratch": 0,
+   "takeout": [],
+   "knife": 0,
+   "knuckles": 0,
+   "gun": 0,
+   "ammo": 0,
+   "vest": 0,
+   "alarm": 0,
+   "phone": 0,
+   "skateboard": 0,
+   "prodeck": 0,
+   "booze": 0,
+   "snow": 0,
+   "shirt": 0,
+   "scraps": [],
+   "diplomas": []
+  },
+  "homes": {
+   "owned": [
+    "apt"
+   ],
+   "living": "apt",
+   "lets": {}
+  },
+  "furniture": {
+   "owned": {},
+   "storage": []
+  },
+  "stocks": {
+   "MCS": {
+    "price": 9,
+    "prev": 9,
+    "hist": [
+     9,
+     9.5,
+     10
+    ],
+    "held": 10,
+    "basis": 95
+   },
+   "NLI": {
+    "price": 25,
+    "prev": 25,
+    "hist": [],
+    "held": 0,
+    "basis": 0
+   },
+   "SLC": {
+    "price": 20,
+    "prev": 20,
+    "hist": [],
+    "held": 0,
+    "basis": 0
+   },
+   "PPR": {
+    "price": 6,
+    "prev": 6,
+    "hist": [],
+    "held": 0,
+    "basis": 0
+   },
+   "GLU": {
+    "price": 5,
+    "prev": 5,
+    "hist": [],
+    "held": 0,
+    "basis": 0
+   },
+   "SKY": {
+    "price": 2,
+    "prev": 2,
+    "hist": [],
+    "held": 0,
+    "basis": 0
+   }
+  },
+  "tip": null,
+  "trade": {
+   "rep": {},
+   "visited": {},
+   "smuggleProfit": 0,
+   "tours": 0,
+   "demand": {},
+   "tourDemand": {},
+   "tourWeek": {},
+   "buyers": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  "fight": {
+   "won": 0,
+   "champion": false,
+   "ringBouts": 0
+  },
+  "casino": {
+   "points": 0,
+   "barredUntil": 0,
+   "suspicion": 0,
+   "winToday": 0,
+   "shoe": null,
+   "lastBet": 0
+  },
+  "crime": {
+   "bankRobDays": []
+  },
+  "npc": {
+   "harold": {
+    "gave10": 0,
+    "bottles": 0,
+    "takeout": 0,
+    "shirt": false,
+    "branch": null,
+    "stage": "start",
+    "hiredDay": 0,
+    "repayDay": 0
+   },
+   "dealer": {
+    "bought": 0,
+    "credit": null,
+    "creditEnded": false,
+    "goonsDue": false,
+    "stage": "red",
+    "turnedInDay": 0
+   },
+   "mcholland": {
+    "stage": "none",
+    "bribedUntil": 0
+   },
+   "crease": {
+    "stage": "none"
+   }
+  },
+  "election": {
+   "status": "none",
+   "path": null,
+   "nominatedDay": 0,
+   "poll": 0,
+   "campaignDay": 0,
+   "chest": 0,
+   "debateDone": false,
+   "decrees": [],
+   "decreesUsed": [],
+   "offer": [],
+   "nextDecreeDay": 0,
+   "retryFromDay": 0,
+   "flipMornings": 0,
+   "runs": 0,
+   "cityName": null
+  },
+  "world": {
+   "weather": "clear",
+   "tomorrow": "clear",
+   "forecast": "clear",
+   "todayHadRain": false,
+   "encounters": [],
+   "cityEvent": null,
+   "skateContestDay": 0
+  },
+  "jail": null,
+  "pending": null,
+  "msgs": [
+   {
+    "id": "m1",
+    "from": "mel",
+    "key": "vm.mel.job",
+    "vars": {},
+    "day": 1,
+    "read": true,
+    "archived": false
+   },
+   {
+    "id": "m2",
+    "from": "bank",
+    "key": "vm.bank.rate",
+    "vars": {
+     "rate": 2.5
+    },
+    "day": 11,
+    "read": false,
+    "archived": false
+   }
+  ],
+  "log": {
+   "today": [
+    {
+     "kind": "shift",
+     "weight": 2,
+     "vars": {}
+    }
+   ],
+   "yesterday": []
+  },
+  "history": {
+   "nw": [],
+   "str": [],
+   "int": [],
+   "cha": [],
+   "karma": []
+  },
+  "flags": {},
+  "over": false,
+  "result": null,
+  "legacyNote": "kept"
+ }
+}

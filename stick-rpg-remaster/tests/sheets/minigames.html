@@ -1,0 +1,241 @@
+<!doctype html>
+<!-- tests/sheets/minigames.html — owner: W1-M. Contact sheet for the minigame frame (UI §5.8) and
+     the three reskinnable engines (Shift Rush, Timing Ring, Duel) with test skins. Opens from disk.
+     Loads js/boot/*, js/core/*, the modules the frame uses and the W1-M files (all real: SR.input,
+     SR.loop, css/tokens.css and the mg.frame.* strings of en-ui.js have landed, so the wave-1 fakes
+     are gone; CONTRACT §1, D27), registers the test skins and their test-only strings, and boots
+     with SR.boot({ scene: false }).
+     Query: ?paused (no rAF loop; tests step), ?run=<skin> (open a skin at once). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paper Sky · minigames sheet</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../../css/tokens.css">
+<link rel="stylesheet" href="../../css/base.css">
+<link rel="stylesheet" href="../../css/components.css">
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  #app { position: fixed; left: 0; top: 0; width: 1280px; height: 720px; }
+  #stage { position: absolute; left: 0; top: 0; width: 1280px; height: 720px; overflow: hidden; }
+  #world, #fx { position: absolute; left: 0; top: 0; width: 1280px; height: 720px; }
+  #ui { position: absolute; left: 0; top: 0; width: 1280px; height: 720px; }
+  #aria { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  [data-id="sheet-panel"] {
+    position: fixed; left: 1296px; top: 0; width: 280px; bottom: 0; overflow: auto; padding: 12px;
+    box-sizing: border-box; font: 14px system-ui, sans-serif; display: flex; flex-direction: column; gap: 6px;
+  }
+  [data-id="sheet-panel"] button { font: 600 14px system-ui, sans-serif; padding: 6px 8px; text-align: left; cursor: pointer; }
+  [data-id="sheet-panel"] pre { white-space: pre-wrap; font-size: 12px; margin: 0; }
+  body.shot [data-id="sheet-panel"] { display: none; }
+</style>
+</head>
+<body>
+  <div id="app">
+    <div id="stage">
+      <canvas id="world"></canvas>
+      <canvas id="fx"></canvas>
+      <div id="ui"></div>
+      <div id="aria" role="status" aria-live="polite"></div>
+    </div>
+  </div>
+  <div data-id="sheet-panel">
+    <strong>Minigames sheet (W1-M)</strong>
+    <div data-id="sheet-launch" style="display:flex;flex-direction:column;gap:4px"></div>
+    <label><input type="checkbox" data-id="sheet-hardcore"> Hardcore state</label>
+    <button type="button" data-id="sheet-step">Step 60 frames</button>
+    <button type="button" data-id="sheet-toggle">Pause / play loop</button>
+    <pre data-id="sheet-log"></pre>
+  </div>
+
+  <script src="../../js/boot/namespace.js"></script>
+  <script src="../../js/boot/util.js"></script>
+  <script src="../../js/boot/events.js"></script>
+  <script src="../../js/core/rng.js"></script>
+  <script src="../../js/core/loop.js"></script>
+  <script src="../../js/core/stage.js"></script>
+  <script src="../../js/core/quality.js"></script>
+  <script src="../../js/core/input.js"></script>
+  <script src="../../js/core/scenes.js"></script>
+  <script src="../../js/core/save.js"></script>
+  <script src="../../js/core/settings.js"></script>
+  <script src="../../js/core/text.js"></script>
+  <script src="../../js/core/debug.js"></script>
+  <!-- what the frame and the engines use -->
+  <script src="../../js/rules/state.js"></script>
+  <script src="../../js/rules/check.js"></script>
+  <script src="../../js/rules/conditions.js"></script>
+  <script src="../../js/rules/time.js"></script>
+  <script src="../../js/rules/stats.js"></script>
+  <script src="../../js/rules/perks.js"></script>
+  <script src="../../js/data/tuning.js"></script>
+  <script src="../../js/data/features.js"></script>
+  <script src="../../js/data/text/en-ui.js"></script>
+  <script src="../../js/art/palette.js"></script>
+  <script src="../../js/art/draw.js"></script>
+  <script src="../../js/art/icons.js"></script>
+  <script src="../../js/art/portraits.js"></script>
+  <script src="../../js/ui/dom.js"></script>
+  <script src="../../js/ui/components.js"></script>
+  <!-- W1-M -->
+  <script src="../../js/minigames/framework.js"></script>
+  <script src="../../js/minigames/shiftrush.js"></script>
+  <script src="../../js/minigames/timingring.js"></script>
+  <script src="../../js/minigames/duel.js"></script>
+  <script src="../../js/scenes/minigame.js"></script>
+
+  <script>
+  (function () {
+    'use strict';
+    var SR = window.SR;
+    var query = new URLSearchParams(location.search);
+    var fakes = [];
+
+    // Test skins' strings (test-only keys, never shipped).
+    var TEST_TEXT = {
+      'mg.test.orderup': 'Order Up (test)', 'mg.test.sortit': 'Sort It (test)', 'mg.test.pitch': 'Pitch (test)',
+      'mg.test.hotwire': 'Hotwire (test)', 'mg.test.holdup': 'Hold-up (test)', 'mg.test.debate': 'Debate (test)',
+      'mg.test.boardroom': 'Boardroom (test)', 'mg.test.bun': 'Bun', 'mg.test.patty': 'Patty', 'mg.test.cheese': 'Cheese',
+      'mg.test.lettuce': 'Lettuce', 'mg.test.fries': 'Fries', 'mg.test.soda': 'Soda', 'mg.test.letters': 'Letters',
+      'mg.test.parcels': 'Parcels', 'mg.test.trash': 'Trash', 'mg.test.letter': 'Letter', 'mg.test.memo': 'Memo', 'mg.test.box': 'Box',
+      'mg.test.tube': 'Tube', 'mg.test.can': 'Can', 'mg.test.peel': 'Peel', 'mg.test.intimidate': 'Intimidate',
+      'mg.test.sweettalk': 'Sweet-talk', 'mg.test.outwit': 'Outwit', 'mg.test.rival': 'The Rival',
+      'mg.test.holdup1': 'The clerk eyes the paper gun in your hand.', 'mg.test.holdup2': 'A siren wails two streets over.',
+      'mg.test.holdup3': 'The till drawer sticks halfway.', 'mg.test.debate1': 'Opening statements. The hall goes quiet.',
+      'mg.test.debate2': 'A question about the pothole budget.', 'mg.test.debate3': 'Closing words. Make them count.',
+      'mg.test.board1': 'The quarterly numbers are soft.', 'mg.test.board2': 'A rival firm is circling.', 'mg.test.board3': 'The shareholders want a story.',
+    };
+    var missing = {};
+    Object.keys(TEST_TEXT).forEach(function (k) { if (!SR.text.has(k)) missing[k] = TEST_TEXT[k]; });
+    if (Object.keys(missing).length) SR.def.text(missing);
+
+    // ---- test skins ----------------------------------------------------------------------
+    SR.def.skin('test_orderup', {
+      engine: 'shiftrush', text: { title: 'mg.test.orderup' },
+      params: { mode: 'tickets', bins: [
+        { id: 'bun', label: 'mg.test.bun' }, { id: 'patty', label: 'mg.test.patty' }, { id: 'cheese', label: 'mg.test.cheese' },
+        { id: 'lettuce', label: 'mg.test.lettuce' }, { id: 'fries', label: 'mg.test.fries', icon: 'fries' }, { id: 'soda', label: 'mg.test.soda', icon: 'milkshake' },
+      ] },
+    });
+    SR.def.skin('test_sortit', {
+      engine: 'shiftrush', text: { title: 'mg.test.sortit' },
+      params: {
+        mode: 'conveyor',
+        bins: [{ id: 'letters', label: 'mg.test.letters' }, { id: 'parcels', label: 'mg.test.parcels' }, { id: 'trash', label: 'mg.test.trash' }],
+        items: [{ id: 'letter', label: 'mg.test.letter', bin: 0 }, { id: 'memo', label: 'mg.test.memo', bin: 0 }, { id: 'box', label: 'mg.test.box', bin: 1 },
+          { id: 'tube', label: 'mg.test.tube', bin: 1 }, { id: 'can', label: 'mg.test.can', bin: 2 }, { id: 'peel', label: 'mg.test.peel', bin: 2 }],
+      },
+    });
+    SR.def.skin('test_pitch', { engine: 'timingring', text: { title: 'mg.test.pitch' }, params: { mode: 'grade', step: 0 } });
+    SR.def.skin('test_hotwire', { engine: 'timingring', text: { title: 'mg.test.hotwire' }, params: { mode: 'unlock' } });
+    SR.def.skin('test_holdup', {
+      engine: 'duel', stake: true, text: { title: 'mg.test.holdup', beats: ['mg.test.holdup1', 'mg.test.holdup2', 'mg.test.holdup3'] },
+      params: { mode: 'plain', beats: 3, bestOf: true, check: 'holdup.store', D: 60, options: [
+        { id: 'intimidate', label: 'mg.test.intimidate', stat: 'str' },
+        { id: 'sweettalk', label: 'mg.test.sweettalk', stat: 'cha' },
+        { id: 'outwit', label: 'mg.test.outwit', stat: 'int' },
+      ] },
+    });
+    SR.def.skin('test_debate', {
+      engine: 'duel', text: { title: 'mg.test.debate', beats: ['mg.test.debate1', 'mg.test.debate2', 'mg.test.debate3'] },
+      params: { mode: 'stance', beats: 3, D: 500, opponent: { name: 'mg.test.rival' } },
+    });
+    SR.def.skin('test_boardroom', {
+      engine: 'duel', text: { title: 'mg.test.boardroom', beats: ['mg.test.board1', 'mg.test.board2', 'mg.test.board3'] },
+      params: { mode: 'cards', cards: [['safe', 'bold'], ['safe', 'bold', 'ruthless'], ['bold', 'ruthless']] },
+    });
+
+    // A base scene under the frame (test-only id).
+    SR.scenes.register('sheet', { kind: 'base' });
+
+    SR.boot({ scene: false });
+    SR.scenes.go('sheet');
+
+    // A game state for the frame and the engines: W1-R's SR.rules.state.create once it exists (the
+    // check modifiers of B-28b read it), else a stand-in with the fields they read.
+    function fakeState(opts) {
+      opts = opts || {};
+      var s;
+      if (SR.rules.state && typeof SR.rules.state.create === 'function') {
+        s = SR.rules.state.create({ seed: 7 });
+      } else {
+        s = { v: 1, seed: 7, mode: { difficulty: 'standard' }, pending: null, perks: { owned: [], pending: [] },
+          stats: { str: 7, int: 7, cha: 7, karma: 0, hp: 22, hpMax: 22, heat: 0, buzz: 0 }, money: { cash: 100, bank: 0 } };
+      }
+      s.mode.difficulty = opts.difficulty || 'standard';
+      Object.assign(s.stats, { str: 60, int: 220, cha: 100, hp: 40, hpMax: 75 }, opts.stats || {});
+      s.money.cash = 1240;
+      return s;
+    }
+    SR.state = fakeState();
+
+    // ---- the loop: SR.loop once it lands, else a stand-in -----------------------------------
+    var realLoop = !!(SR.loop && typeof SR.loop.step === 'function');
+    var ctx = document.getElementById('world').getContext('2d');
+    function tick() { if (SR.input && typeof SR.input.poll === 'function') SR.input.poll(); SR.scenes.update(SR.STEP); }
+    function draw() { SR.scenes.render(ctx, 1); }
+    var playing = !query.has('paused'), acc = 0, lastT = 0;
+    function frame(ts) {
+      if (playing && !realLoop) {
+        var dt = lastT ? Math.min(0.1, (ts - lastT) / 1000) : 0;
+        acc += dt;
+        var n = 0;
+        while (acc >= SR.STEP && n < 5) { tick(); acc -= SR.STEP; n++; }
+        draw();
+      }
+      lastT = ts;
+      requestAnimationFrame(frame);
+    }
+    if (!realLoop) requestAnimationFrame(frame);
+    else if (!playing && typeof SR.loop.pause === 'function') SR.loop.pause();
+
+    var log = document.querySelector('[data-id="sheet-log"]');
+    var sheet = window.sheet = {
+      fakes: fakes, realLoop: realLoop, last: null, results: [],
+      fakeState: fakeState,
+      /** Advances n fixed steps, then renders once. */
+      step: function (n) {
+        n = n === undefined ? 1 : n;
+        if (realLoop) { SR.loop.step(n); return; }
+        for (var i = 0; i < n; i++) tick();
+        draw();
+      },
+      play: function (on) { playing = on !== false; if (realLoop) { if (playing) SR.loop.resume(); else SR.loop.pause(); } },
+      /** Opens a minigame; its result lands in sheet.last. */
+      run: function (id, params) {
+        var rec = { id: id, done: false, result: null, error: null };
+        sheet.last = rec;
+        SR.minigame.run(id, params).then(function (r) {
+          rec.done = true; rec.result = r; sheet.results.push(r);
+          log.textContent = id + ' → ' + JSON.stringify(r);
+        }, function (e) { rec.done = true; rec.error = String(e && e.message); log.textContent = String(e && e.message); });
+        sheet.step(0);
+        return rec;
+      },
+      peek: function () { var c = SR.minigame.current(); return c && c.inst && c.inst.peek ? c.inst.peek() : null; },
+    };
+
+    var launch = document.querySelector('[data-id="sheet-launch"]');
+    ['test_orderup', 'test_sortit', 'test_pitch', 'test_hotwire', 'test_holdup', 'test_debate', 'test_boardroom'].forEach(function (id) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = id;
+      b.setAttribute('data-id', 'launch-' + id);
+      b.addEventListener('click', function () {
+        if (SR.minigame.current()) return;
+        var hc = document.querySelector('[data-id="sheet-hardcore"]').checked;
+        SR.state = fakeState({ difficulty: hc ? 'hardcore' : 'standard' });
+        sheet.run(id, id === 'test_holdup' ? { stake: 250 } : {});
+        b.blur();
+      });
+      launch.appendChild(b);
+    });
+    document.querySelector('[data-id="sheet-step"]').addEventListener('click', function () { sheet.step(60); });
+    document.querySelector('[data-id="sheet-toggle"]').addEventListener('click', function () { sheet.play(!playing); });
+    log.textContent = 'fakes: ' + (fakes.join(', ') || 'none');
+    if (query.get('run')) sheet.run(query.get('run'));
+  })();
+  </script>
+</body>
+</html>

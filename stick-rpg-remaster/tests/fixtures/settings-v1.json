@@ -1,0 +1,38 @@
+{
+ "game": {
+  "clock24": false,
+  "hints": "yes",
+  "alwaysAuto": true,
+  "unknown": 1
+ },
+ "audio": {
+  "master": 0.5,
+  "music": 7
+ },
+ "display": {
+  "quality": "ultra",
+  "fpsCap": 30
+ },
+ "access": {
+  "textScale": 1.25,
+  "colorblind": "deutan"
+ },
+ "controls": {
+  "keys": {
+   "interact": [
+    "KeyF"
+   ]
+  },
+  "pad": {},
+  "contexts": {
+   "blackjack": {
+    "hit": [
+     "KeyG"
+    ]
+   }
+  }
+ },
+ "extra": {
+  "x": 1
+ }
+}

@@ -1,7 +1,8 @@
 // tests/harness.cjs — owner: W1-K (lead). Playwright helpers for the e2e suites: opens index.html
 // over file:// in Chromium and drives the game through SR.debug (ARCHITECTURE §18, §20;
-// docs/CONTRACT.md §17). The loop is paused and the quality preset pinned to High once those
-// modules exist (M1); tests step the clock.
+// docs/CONTRACT.md §17). After boot the loop is paused and the quality preset pinned to High
+// (M1); tests step the clock. Options: width, height, dpr, touch (a coarse-pointer mobile context),
+// hash, live (keep the loop running), quality, fast (SR.debug.fast(true)), timeout, url.
 //
 //   const h = require('../harness.cjs');
 //   const t = await h.open({ width: 1280, height: 720 });
@@ -53,17 +54,23 @@ async function open(opts = {}) {
   page.on('requestfailed', (r) => errors.push('requestfailed: ' + r.url()));
 
   const url = (opts.url || INDEX_URL) + (opts.hash || '');
+  /** Waits for SR.booted, then pauses the loop, pins the preset and applies fast (unless opted out). */
+  const settle = async () => {
+    try {
+      await page.waitForFunction(() => window.SR && window.SR.booted === true, null, { timeout: opts.timeout || 10000 });
+    } catch (e) {
+      await browser.close();
+      throw new Error('harness.open: SR did not boot (' + e.message + ')\n' + errors.join('\n'));
+    }
+    await page.evaluate(([live, quality, fast]) => {
+      const SR = window.SR;
+      if (!live && SR.loop && typeof SR.loop.pause === 'function') SR.loop.pause();
+      if (quality && SR.quality && typeof SR.quality.set === 'function') SR.quality.set(quality);
+      if (fast && SR.debug && typeof SR.debug.fast === 'function') SR.debug.fast(true);
+    }, [!!opts.live, opts.quality === undefined ? 'high' : opts.quality, !!opts.fast]);
+  };
   await page.goto(url);
-  try {
-    await page.waitForFunction(() => window.SR && window.SR.booted === true, null, { timeout: opts.timeout || 10000 });
-  } catch (e) {
-    await browser.close();
-    throw new Error('harness.open: SR did not boot (' + e.message + ')\n' + errors.join('\n'));
-  }
-  await page.evaluate(([live, quality]) => {
-    if (!live && window.SR.loop && typeof window.SR.loop.pause === 'function') window.SR.loop.pause();
-    if (window.SR.quality && typeof window.SR.quality.set === 'function') window.SR.quality.set(quality);
-  }, [!!opts.live, opts.quality || 'high']);
+  await settle();
 
   /** Calls SR.debug[name](...args) in the page and returns its (JSON) result. */
   const debug = (name, ...args) => page.evaluate(([name, args]) => {
@@ -95,6 +102,20 @@ async function open(opts = {}) {
     quality: (preset) => debug('quality', preset),
     perf: () => debug('perf'),
     ui: () => debug('ui'),
+    get: (p) => debug('get', p),
+    setDay: (d) => debug('setDay', d),
+    fast: (on) => debug('fast', on === undefined ? true : on),
+    night: (kind) => debug('night', kind),
+    down: (cause) => debug('down', cause),
+    /** Presses (down: true) or releases an action through SR.input.inject. */
+    inject: (action, down) => page.evaluate(([a, d]) => { window.SR.input.inject(a, d); return true; }, [action, down !== false]),
+    /** Resizes the viewport and lays the stage out at once (skipping the 150 ms resize debounce). */
+    resize: async (width, height) => {
+      await page.setViewportSize({ width, height });
+      return page.evaluate(() => { window.SR.stage.resize(); return window.SR.stage.box; });
+    },
+    /** Reloads the page (storage survives) and waits for the boot again, paused and pinned. */
+    reload: async () => { await page.reload(); await settle(); },
     /** @returns {Promise<string[]>} the scene stack, bottom to top. */
     scenes: () => page.evaluate(() => window.SR.scenes.stack()),
     /** Clicks the visible #ui element with data-id (a real pointer click). */

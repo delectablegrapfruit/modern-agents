@@ -1,13 +1,16 @@
 // tests/node/core.test.cjs — owner: W1-K (lead). The kernel's Node tests (BUILD_PLAN §3.1).
-// M0 part: the loader (modes rules and all, the DOM and Math.random guards, shuffled order), the
+// M0: the loader (modes rules and all, the DOM and Math.random guards, shuffled order), the
 // registries and boot, SR.events, SR.rng (sfc32, determinism per seed, the three streams), SR.text
-// and SR.util. M1 adds the rules stream round trip through a save, migrations, deep-fill of a v1
-// fixture, quarantine, retention and the export code.
+// and SR.util. M1 (the kernel's browser modules loaded in Node, which proves them load-time clean):
+// SR.settings (schema, checks, persistence), SR.save (envelope, tmp swap, the rules stream round
+// trip, deep-fill of a v1 fixture, a synthetic migration chain, quarantine, retention, the export
+// code, recovery, quota, Hardcore), SR.quality (presets and Auto), SR.loop.step and SR.input
+// (bindings, contexts, inject, remap, the gamepad poll).
 //   node tests/node/core.test.cjs
 'use strict';
 const L = require('./load.cjs');
 
-const T = L.suite('core (M0)');
+const T = L.suite('core');
 
 /** A fresh context with the boot files, rng.js and text.js; extra files as { rel: code }. */
 function kernel(extra, opts) {
@@ -339,6 +342,636 @@ T.section('SR.util');
   T.eq([U.pad(7, 2), U.pad(123, 2)], ['07', '123'], 'pad');
   T.eq([U.warnOnce('k', 'first'), U.warnOnce('k', 'again')], [true, false], 'warnOnce');
   T.ok(U.isObject({}) && !U.isObject([]) && !U.isObject(null), 'isObject');
+}
+
+// ================================================================================================
+// M1: the kernel's browser modules, loaded in Node (they must be load-time clean).
+const fs = require('fs');
+const path = require('path');
+const FIX = path.join(L.ROOT, 'tests', 'fixtures');
+const fixture = (name) => fs.readFileSync(path.join(FIX, name), 'utf8');
+const fixtureJSON = (name) => JSON.parse(fixture(name));
+const CORE_M1 = ['js/core/loop.js', 'js/core/stage.js', 'js/core/quality.js', 'js/core/input.js', 'js/core/scenes.js',
+  'js/core/save.js', 'js/core/settings.js', 'js/core/debug.js'];
+const J = (v) => JSON.parse(JSON.stringify(v));
+
+/** A Storage double: a Map, a write log and an optional per-value quota (bytes). */
+function fakeStorage(opts) {
+  opts = opts || {};
+  const m = opts.map || new Map();
+  const log = [];
+  return {
+    get length() { return m.size; },
+    key(i) { return Array.from(m.keys())[i] === undefined ? null : Array.from(m.keys())[i]; },
+    getItem(k) { return m.has(k) ? m.get(k) : null; },
+    setItem(k, v) {
+      if (opts.quota && String(v).length > opts.quota && k !== 'sr1.probe') { const e = new Error('full'); e.name = 'QuotaExceededError'; throw e; }
+      log.push('set ' + k); m.set(k, String(v));
+    },
+    removeItem(k) { log.push('remove ' + k); m.delete(k); },
+    map: m, log,
+  };
+}
+
+/**
+ * Loads mode rules plus the kernel's M1 files; installs a fake localStorage and (unless real)
+ * the fixture as SR.rules.state (a test fake, D27); boots headless.
+ */
+function m1(opts) {
+  opts = opts || {};
+  const res = L.load({ mode: 'rules', extra: CORE_M1, boot: false, console: opts.console });
+  const ctx = res.context, SR = res.SR;
+  const ls = opts.noStorage ? null : fakeStorage(opts.storage);
+  if (ls) ctx.localStorage = ls;
+  if (!opts.realRules) {
+    const base = fixtureJSON('state-v1.json');
+    SR.rules.state = { defaults: () => J(base), create: (o) => Object.assign(J(base), { seed: (o && o.seed) || base.seed }) };
+  }
+  if (opts.navigator) ctx.navigator = opts.navigator;
+  SR.boot({ headless: true });
+  return { ctx, SR, ls, state: () => SR.rules.state.create({ seed: 777 }) };
+}
+/** Every leaf path of a plain object ('money.cash', 'npc.kid.packs'); arrays are leaves. */
+function leaves(o, pre, out) {
+  out = out || [];
+  Object.keys(o).forEach((k) => {
+    const p = pre ? pre + '.' + k : k;
+    if (o[k] && typeof o[k] === 'object' && !Array.isArray(o[k])) leaves(o[k], p, out); else out.push(p);
+  });
+  return out;
+}
+const get = (o, p) => p.split('.').reduce((a, k) => (a == null ? undefined : a[k]), o);
+
+// ------------------------------------------------------------------------------------------------
+T.section('M1: the kernel files are load-time clean');
+{
+  const q = quietConsole();
+  const res = L.load({ mode: 'rules', extra: CORE_M1, keepGoing: true, console: q.console });
+  T.eq(res.errors.map((e) => e.file + ': ' + e.error.message), [], 'loop, stage, quality, input, scenes, save, settings, debug load in Node (no DOM at load time) and boot headless');
+  const SR = res.SR;
+  T.ok(['pause', 'resume', 'step'].every((f) => typeof SR.loop[f] === 'function') && 'time' in SR.loop && 'paused' in SR.loop && 'perf' in SR.loop && 'fpsCap' in SR.loop, 'SR.loop: pause, resume, step, time, paused, perf, fpsCap (CONTRACT §20)');
+  T.ok(['toLogical', 'fullscreen', 'resize'].every((f) => typeof SR.stage[f] === 'function') &&
+    ['k', 'uiK', 'dpr', 'scale', 'compact', 'portrait', 'world', 'fx', 'ctx', 'fxCtx'].every((k) => k in SR.stage), 'SR.stage: toLogical, fullscreen, resize and the read-only k, uiK, dpr, scale, compact, portrait, world, fx, ctx, fxCtx');
+  T.ok(typeof SR.quality.set === 'function' && ['preset', 'auto', 'params'].every((k) => k in SR.quality), 'SR.quality: set, preset, auto, params');
+  T.ok(['on', 'off', 'held', 'axis', 'bind', 'bindings', 'pushContext', 'popContext', 'inject', 'typing'].every((f) => typeof SR.input[f] === 'function') && 'last' in SR.input,
+    'SR.input: on, off, held, axis, bind, bindings, pushContext, popContext, inject, typing, last (CONTRACT §12.2)');
+  T.ok(['write', 'read', 'load', 'list', 'remove', 'exportCode', 'importCode', 'exportFile', 'importFile', 'profile', 'saveProfile'].every((f) => typeof SR.save[f] === 'function') &&
+    SR.save.CURRENT === 1 && typeof SR.save.migrations === 'object', 'SR.save: CURRENT 1, migrations and every §16 function');
+  T.ok(['get', 'set', 'all'].every((f) => typeof SR.settings[f] === 'function'), 'SR.settings: get, set, all');
+  T.ok(['newGame', 'set', 'get', 'act', 'preview', 'enter', 'teleport', 'setTime', 'setDay', 'step', 'press', 'hold', 'mg', 'fast', 'perf', 'shot', 'ui', 'grid', 'time',
+    'night', 'down', 'quality', 'projected', 'seed', 'feature', 'goto'].every((f) => typeof SR.debug[f] === 'function'), 'SR.debug has every function of ARCHITECTURE §20');
+  T.ok(!!SR.reg.scene.artbible && SR.reg.scene.artbible.kind === 'base', 'the artbible scene is registered by js/core/debug.js (D25)');
+  const shuffled = L.load({ mode: 'rules', extra: CORE_M1, shuffle: 99, keepGoing: true, console: q.console });
+  T.eq(shuffled.errors.length, 0, 'and in a shuffled order');
+}
+
+// ------------------------------------------------------------------------------------------------
+T.section('M1: SR.settings');
+{
+  const { SR, ls, ctx } = m1();
+  const S = SR.settings;
+  T.eq(S.all(), {
+    game: { clock24: true, hints: true, alwaysAuto: false, confirmSpendOver: 1000, holdRepeat: true, rightClickBack: false, skateToggle: false, minimalHud: false, minimap: true },
+    audio: { master: 0.8, music: 0.7, sfx: 0.8, ambience: 0.6, ui: 0.7, mono: false },
+    display: { quality: 'auto', fpsCap: 60, fullscreen: false, screenShake: true, lean: false },
+    access: { textScale: 1, highContrast: false, colorblind: 'none', reducedMotion: 'system', flashReduction: false, captions: false, assist: false, safeEdges: false, noGusts: false, typewriterCps: 60, haptics: true },
+    controls: { keys: {}, pad: {}, contexts: {} },
+  }, 'defaults are the ARCHITECTURE §16 schema');
+  T.eq([S.get('game.clock24'), S.get('audio.music'), S.get('nope.key'), S.get('controls')], [true, 0.7, undefined, { keys: {}, pad: {}, contexts: {} }], 'get by dotted key (undefined when unknown)');
+  const got = [];
+  SR.events.on('settings:changed', (p) => got.push(p));
+  T.eq(S.set('game.clock24', false), false, 'set returns the value');
+  T.eq(got, [{ key: 'game.clock24', value: false }], 'set emits settings:changed { key, value }');
+  S.set('game.clock24', false);
+  T.eq(got.length, 1, 'setting the same value again emits nothing');
+  T.eq(JSON.parse(ls.getItem('sr1.settings')).game.clock24, false, 'the change is saved to sr1.settings');
+  T.throws(() => S.set('game.clock24', 'no'), /invalid value/, 'a wrong type throws');
+  T.throws(() => S.set('display.quality', 'ultra'), /invalid value/, 'a value outside an enum throws');
+  T.throws(() => S.set('audio.music', 1.5), /invalid value/, 'a volume outside 0..1 throws');
+  T.throws(() => S.set('nope.key', 1), /unknown key/, 'an unknown key throws');
+  T.throws(() => S.set('audio', {}), /group/, 'a group cannot be set at once');
+  S.set('controls.keys', { interact: ['KeyF'] });
+  S.set('controls.contexts.blackjack.hit', ['KeyG']);
+  T.eq(S.get('controls'), { keys: { interact: ['KeyF'] }, pad: {}, contexts: { blackjack: { hit: ['KeyG'] } } }, 'controls take remap maps, also per context');
+  T.throws(() => S.set('controls.keys', { interact: 'KeyF' }), /controls/, 'a controls map must hold arrays of codes');
+  const x = S.all(); x.game.clock24 = 'mutated';
+  T.eq(S.get('game.clock24'), false, 'all() returns a copy');
+  S.set('access.textScale', 1.5);
+  S.reset('access.textScale');
+  T.eq(S.get('access.textScale'), 1, 'reset(key) restores the default');
+  // A second context over the same storage reads what was saved.
+  const again = m1({ storage: { map: ls.map } });
+  T.eq([again.SR.settings.get('game.clock24'), again.SR.settings.get('controls.keys')], [false, { interact: ['KeyF'] }], 'settings persist (a reload reads sr1.settings)');
+  S.reset();
+  T.eq(S.all(), S.defaults(), 'reset() restores every default');
+  T.eq(got[got.length - 1].key, '*', 'and emits settings:changed with key *');
+  void ctx;
+}
+{
+  const store = new Map([['sr1.settings', fixture('settings-v1.json')]]);
+  const { SR } = m1({ storage: { map: store } });
+  const all = SR.settings.all();
+  T.eq([all.game.clock24, all.game.hints, all.game.alwaysAuto, all.audio.master, all.audio.music, all.display.quality, all.display.fpsCap, all.access.textScale, all.access.colorblind],
+    [false, true, true, 0.5, 0.7, 'auto', 30, 1.25, 'deutan'], 'stored settings are sanitised: valid values kept, bad types and values back to defaults');
+  T.ok(!('unknown' in all.game) && !('extra' in all), 'unknown keys are dropped');
+  T.eq(all.controls, { keys: { interact: ['KeyF'] }, pad: {}, contexts: { blackjack: { hit: ['KeyG'] } } }, 'stored remaps are kept');
+  const q = quietConsole();
+  const broken = m1({ storage: { map: new Map([['sr1.settings', '{"game": {']]) }, console: q.console });
+  T.eq(broken.SR.settings.all(), broken.SR.settings.defaults(), 'unreadable stored settings give the defaults');
+  T.ok(q.log.warn.some((w) => /unreadable/.test(w)), 'with a warning (not an error)');
+}
+
+// ------------------------------------------------------------------------------------------------
+T.section('M1: SR.save — write, read, load, the rules stream');
+{
+  const { SR, ls, state } = m1();
+  const s = state();
+  T.eq(SR.save.available, true, 'SR.save.available with a working localStorage');
+  SR.save.load(s);
+  T.ok(SR.state === s, 'load(state) makes a state the live game');
+  const written = [];
+  SR.events.on('save:written', (p) => written.push(p));
+  ls.log.length = 0;
+  const meta = SR.save.write('slot1');
+  T.eq(ls.log, ['set sr1.tmp', 'set sr1.slot1', 'remove sr1.tmp'], 'write order: tmp, then the slot, then remove tmp');
+  T.eq(ls.getItem('sr1.tmp'), null, 'no tmp is left behind');
+  T.eq(written, [{ slot: 'slot1' }], 'save:written { slot }');
+  const env = JSON.parse(ls.getItem('sr1.slot1'));
+  T.eq([env.fmt, env.v, Object.keys(env).join()], ['sr-save', 1, 'fmt,v,meta,state'], 'the envelope { fmt: sr-save, v, meta, state }');
+  T.ok(['name', 'day', 'length', 'difficulty', 'title', 'netWorth', 'savedAt', 'playSec', 'thumb'].every((k) => k in env.meta), 'meta has name, day, length, difficulty, title, netWorth, savedAt, playSec, thumb');
+  T.eq([meta.name, meta.day, meta.length, meta.difficulty], [s.player.name, s.clock.day, s.mode.length, s.mode.difficulty], 'meta describes the run');
+  T.eq(env.state.rng.rules, SR.rng.rules.state(), 'the live rules stream is recorded in state.rng.rules before writing');
+  T.eq(J(SR.save.read('slot1')), J(s), 'read(slot) returns an equal state');
+  T.eq(SR.save.write(2).slot, 'slot2', 'numeric slots 1-3 are slot1-slot3');
+  T.throws(() => SR.save.write('slot9'), /unknown slot/, 'an unknown slot throws');
+  T.eq(SR.save.list().map((x) => x.slot), ['slot1', 'slot2'], 'list() shows the saves that exist');
+  SR.save.remove('slot2');
+  T.eq(SR.save.list().map((x) => x.slot), ['slot1'], 'remove(slot)');
+
+  // The rules stream round-trips through a save (BUILD_PLAN §3.1).
+  for (let i = 0; i < 13; i++) SR.rng.rules.next();
+  SR.save.write('slot3');
+  const after = Array.from({ length: 20 }, () => SR.rng.rules.int(1, 1000000));
+  for (let i = 0; i < 50; i++) SR.rng.rules.next();
+  SR.save.load('slot3');
+  T.eq(Array.from({ length: 20 }, () => SR.rng.rules.int(1, 1000000)), after, 'the rules stream continues exactly where the save left it');
+  const w = SR.rng.create(1); w.seed(SR.util.hash(SR.state.seed, SR.state.clock.day));
+  T.eq(SR.rng.world.state(), w.state(), 'loading reseeds the world stream with hash(seed, day)');
+  const fresh = state();
+  delete fresh.rng;
+  SR.save.load(fresh);
+  T.eq(SR.rng.rules.state(), SR.rng.create(fresh.seed).state(), 'a state without rng seeds the rules stream from state.seed');
+
+  SR.save.write('suspend');
+  T.ok(!!SR.save.load('suspend') && ls.getItem('sr1.suspend') === null, 'loading the suspend slot deletes it');
+  T.eq(SR.save.load('slot2'), null, 'loading an empty slot returns null');
+  const bad = state(); bad.money.cash = -1;
+  T.throws(() => SR.save.load(bad), /broken values/, 'load(state) refuses broken values');
+  SR.save.write('slot1');
+  const good = ls.getItem('sr1.slot1');
+  const cash = SR.state.money.cash;
+  SR.state.money.cash = NaN;                       // a rules bug; JSON would store it as null
+  let wcode = '';
+  try { SR.save.write('slot1'); } catch (e) { wcode = e.code; }
+  SR.state.money.cash = cash;
+  T.eq([wcode, ls.getItem('sr1.slot1') === good, ls.getItem('sr1.tmp')], ['invalid', true, null], 'write refuses a state the read would quarantine (code invalid); the slot keeps its previous save');
+  T.eq(ls.getItem('srpg.save'), null, 'Classic mode\'s srpg.save is never touched');
+  T.ok(Array.from(ls.map.keys()).every((k) => k.indexOf('sr1.') === 0), 'every key is under sr1.');
+}
+{
+  const { SR } = m1();
+  T.throws(() => SR.save.write('slot1'), /no game/, 'write without a game throws (code nogame)');
+  const s = SR.rules.state.create({ seed: 5 });
+  s.mode.difficulty = 'hardcore';
+  SR.save.load(s);
+  let code = '';
+  try { SR.save.write('slot1'); } catch (e) { code = e.code; }
+  T.eq(code, 'hardcore', 'Hardcore has no manual saves (write to a slot throws code hardcore)');
+  T.eq(SR.save.write('ironman').slot, 'ironman', 'Hardcore writes the ironman slot');
+  SR.state.mode.inProgress = false;
+  SR.state.pending = { resolve: 'bar.fight:resolve', worst: { outcome: 'lose' } };
+  const pm = SR.save.write('ironman');
+  T.eq([pm.inProgress, SR.state.mode.inProgress], [true, true], 'an ironman write with pending (the minigame frame\'s) is marked in progress (a mid-day state)');
+  // The ironman rule is data: B-16 `saves: 'ironman'` in tuning.difficulty, not the id 'hardcore'.
+  SR.state.pending = null;
+  const row = SR.tuning.difficulty.relaxed;
+  const was = row.saves;
+  row.saves = 'ironman';
+  SR.state.mode.difficulty = 'relaxed';
+  code = '';
+  try { SR.save.write('slot1'); } catch (e) { code = e.code; }
+  row.saves = was;
+  T.eq(code, 'hardcore', 'a difficulty whose tuning row says saves: ironman keeps the single ironman slot');
+  SR.state.mode.difficulty = 'standard';
+  T.eq(SR.save.write('slot1').slot, 'slot1', 'Standard (saves: slots) writes manual slots');
+}
+{
+  const { SR, ls } = m1({ storage: { quota: 3000 } });
+  const s = SR.rules.state.create({ seed: 9 });
+  SR.save.load(s);
+  ls.map.set('sr1.slot1', 'the previous save');
+  let e = null;
+  try { SR.save.write('slot1'); } catch (x) { e = x; }
+  T.eq(e && e.code, 'quota', 'a full storage makes write throw an Error with code quota');
+  T.eq([ls.getItem('sr1.slot1'), ls.getItem('sr1.tmp')], ['the previous save', null], 'the slot keeps its previous save and tmp is removed');
+}
+{
+  const { SR } = m1({ noStorage: true });
+  T.eq(SR.save.available, false, 'without localStorage saves fall back to memory (available: false)');
+  SR.save.load(SR.rules.state.create({ seed: 3 }));
+  SR.save.write('slot1');
+  T.eq(SR.save.read('slot1').seed, SR.state.seed, 'and still write and read');
+}
+
+// ------------------------------------------------------------------------------------------------
+T.section('M1: SR.save — migrations, deep-fill, quarantine');
+{
+  const { SR, ls } = m1();
+  const defaults = SR.rules.state.defaults();
+  const raw = fixture('save-v1-missing.json');
+  const src = JSON.parse(raw).state;
+  const missing = leaves(defaults).filter((p) => get(src, p) === undefined);
+  T.ok(missing.length >= 10, 'the v1 fixture misses fields (' + missing.length + ')');
+  ls.setItem('sr1.slot1', raw);
+  const s = SR.save.read('slot1');
+  T.eq(leaves(defaults).filter((p) => get(s, p) === undefined), [], 'read deep-fills every missing field from SR.rules.state.defaults()');
+  T.eq(missing.filter((p) => JSON.stringify(get(s, p)) !== JSON.stringify(get(defaults, p))), [], 'with the default values');
+  T.eq([s.player.name, s.money.cash, s.clock.day, s.stats.str, s.legacyNote], ['Rikki', 340, 12, 18, 'kept'], 'existing values and unknown fields are kept');
+
+  ls.setItem('sr1.slot2', raw);
+  const trail = [];
+  SR.save.CURRENT = 3;
+  SR.save.migrations[2] = (st) => { trail.push('2:v' + st.v); st.trail = ['2']; };
+  SR.save.migrations[3] = (st) => { trail.push('3:v' + st.v); st.trail.push('3'); return st; };
+  const m = SR.save.read('slot2');
+  T.eq(trail, ['2:v1', '3:v2'], 'a synthetic migration chain runs in order, v2 then v3');
+  T.eq([m.v, m.trail], [3, ['2', '3']], 'the state ends at CURRENT with every step applied');
+  ls.setItem('sr1.slot2', raw);
+  delete SR.save.migrations[3];
+  T.eq(SR.save.read('slot2'), null, 'a missing migration fails the read');
+  T.eq(SR.save.lastError.reason, 'migration', 'lastError.reason migration');
+  SR.save.CURRENT = 1;
+  delete SR.save.migrations[2];
+
+  const broken = [];
+  SR.events.on('save:broken', (p) => broken.push(p));
+  const corrupt = fixture('save-corrupt.txt');
+  ls.setItem('sr1.slot3', corrupt);
+  T.eq(SR.save.read('slot3'), null, 'a corrupt save reads as null');
+  const key = SR.save.lastError.key;
+  T.ok(/^sr1\.broken\.\d+/.test(key) && ls.getItem(key) === corrupt, 'it is quarantined: the raw string is copied to sr1.broken.<timestamp>');
+  T.eq(ls.getItem('sr1.slot3'), null, 'and the slot is removed');
+  T.eq([SR.save.lastError.reason, broken.length, broken[0] && broken[0].key], ['corrupt', 1, key], 'save:broken { slot, reason, key } for the UI');
+  ls.setItem('sr1.auto', fixture('save-v1-invalid.json'));
+  T.eq([SR.save.read('auto'), SR.save.lastError.reason], [null, 'invalid'], 'broken values (negative cash, clock past 24:00, HP null) are quarantined too');
+  T.ok(SR.save.validate(JSON.parse(fixture('save-v1-invalid.json')).state).length >= 3, 'validate lists each problem');
+  ls.setItem('sr1.slot1', fixture('save-v9-newer.json'));
+  const nBroken = ls.map.size;
+  T.eq([SR.save.read('slot1'), SR.save.lastError.reason], [null, 'newer'], 'a save from a newer version is refused');
+  T.ok(ls.getItem('sr1.slot1') !== null && ls.map.size === nBroken, 'and kept as it is (not quarantined)');
+  ls.setItem('sr1.slot2', '{"fmt":"something-else","state":{}}');
+  T.eq(SR.save.list().filter((x) => x.slot === 'slot2').map((x) => [x.broken, x.meta]), [[true, null]], 'list() flags a save it cannot read (without quarantining it)');
+  T.eq([SR.save.read('slot2'), SR.save.lastError.reason], [null, 'format'], 'a foreign JSON file is refused as format');
+}
+{
+  // A full storage cannot take the quarantine copy: the unreadable slot must stay (it is the only copy).
+  const q = quietConsole();
+  const { SR, ls } = m1({ console: q.console });
+  const set = ls.setItem;
+  ls.setItem = function (k, v) { if (k.indexOf('sr1.broken.') === 0) { const e = new Error('full'); e.name = 'QuotaExceededError'; throw e; } return set.call(this, k, v); };
+  const corrupt = fixture('save-corrupt.txt');
+  ls.map.set('sr1.slot1', corrupt);
+  T.eq(SR.save.read('slot1'), null, 'a corrupt save still reads as null when the quarantine copy fails');
+  T.eq([ls.getItem('sr1.slot1'), SR.save.lastError.reason, SR.save.lastError.key], [corrupt, 'corrupt', null], 'but the slot is kept (never deleted without its copy) and lastError.key is null');
+  T.ok(Array.from(ls.map.keys()).every((k) => k.indexOf('sr1.broken.') !== 0) && q.log.warn.some((w) => /quarantine/.test(w)), 'no half-written broken key; a warning (not an error) says why');
+}
+
+// ------------------------------------------------------------------------------------------------
+T.section('M1: SR.save — retention (ARCHITECTURE §15)');
+{
+  const { SR, ls, state } = m1();
+  const s = state();
+  // 1,000 messages: every 10th unread, the others read; a third of the read ones archived.
+  s.msgs = Array.from({ length: 1000 }, (_, i) => ({ id: 'm' + i, from: 'x', key: 'vm.x', vars: {}, day: 1 + (i >> 3), read: i % 10 !== 0, archived: i % 3 === 0 && i % 10 !== 0 }));
+  SR.save.load(s);
+  SR.save.write('slot1');
+  const kept = JSON.parse(ls.getItem('sr1.slot1')).state.msgs;
+  T.eq(kept.length, 150, 'a 1,000-message state is pruned to 150');
+  T.eq(kept.filter((m) => !m.read).length, 100, 'every unread message is kept');
+  const readKept = kept.filter((m) => m.read).map((m) => m.id);
+  const archivedNewest = s.msgs.filter((m) => m.read && m.archived).slice(-50).map((m) => m.id);
+  T.eq(readKept, archivedNewest, 'read non-archived messages go first; the 50 read ones kept are the newest archived');
+  const r = { msgs: [] };
+  for (let i = 0; i < 150; i++) r.msgs.push({ id: 'a' + i, read: true, archived: i < 5 });
+  r.msgs.push({ id: 'new', read: false, archived: false });
+  SR.save.retain(r);
+  T.ok(r.msgs.length === 150 && r.msgs[0].id === 'a0' && !r.msgs.some((m) => m.id === 'a5'), 'the oldest read non-archived message goes first');
+  const r2 = { msgs: Array.from({ length: 150 }, (_, i) => ({ id: 'r' + i, read: true, archived: true })).concat([{ id: 'n', read: false }]) };
+  SR.save.retain(r2);
+  T.ok(r2.msgs.length === 150 && r2.msgs[0].id === 'r1', 'then the oldest read archived one');
+  const u = { msgs: Array.from({ length: 151 }, (_, i) => ({ id: 'u' + i, read: false, archived: false })) };
+  SR.save.retain(u);
+  T.ok(u.msgs.length === 150 && u.msgs[0].id === 'u1', 'a 151st unread message drops the oldest unread one');
+  const h = { history: { nw: Array.from({ length: 200 }, (_, i) => ({ day: i + 1, v: i })), str: [1, 2, 3], int: Array.from({ length: 200 }, (_, i) => [i + 1, i]) },
+    log: { today: Array.from({ length: 25 }, (_, i) => ({ kind: 'k', weight: i })), yesterday: [], older: [1] },
+    money: { rateHist: Array.from({ length: 40 }, (_, i) => i) }, stocks: { MCS: { hist: Array.from({ length: 45 }, (_, i) => i) } } };
+  SR.save.retain(h);
+  const days = h.history.nw.map((p) => p.day);
+  T.ok(days.slice(0, 120).join() === Array.from({ length: 120 }, (_, i) => i + 1).join() && days.slice(120).join() === '127,134,141,148,155,162,169,176,183,190,197',
+    'history: one point per morning to day 120, then every 7th morning');
+  T.eq([h.history.int.length, h.history.str], [131, [1, 2, 3]], '[day, value] points thin the same way; untagged points are left alone');
+  T.eq([h.log.today.length, h.log.today[0].weight, 'older' in h.log], [20, 5, false], 'the log keeps two days of 20 entries');
+  T.eq([h.money.rateHist.length, h.money.rateHist[0], h.stocks.MCS.hist.length, h.stocks.MCS.hist[0]], [30, 10, 30, 15], 'rateHist and stock histories keep 30 points');
+}
+
+// ------------------------------------------------------------------------------------------------
+T.section('M1: SR.save — the export code, recovery, profile');
+{
+  const { SR, ls, state } = m1();
+  const s = state();
+  s.player.name = 'Zoë ✂ Stick';
+  SR.save.load(s);
+  const code = SR.save.exportCode();
+  T.ok(/^PSKY1:[A-Za-z0-9+/]+=*:[0-9a-f]{8}$/.test(code), 'the code is PSKY1: + base64 + : + 8 lowercase hex digits');
+  const body = code.slice(6, code.lastIndexOf(':'));
+  T.eq(code.slice(code.lastIndexOf(':') + 1), SR.util.pad((SR.util.crc32(body) >>> 0).toString(16), 8), 'the checksum is the CRC-32 of the base64 part (D23)');
+  T.eq(J(SR.save.importCode(code)), J(SR.state), 'the export code round-trips (unicode names too)');
+  T.eq(J(SR.save.importCode(' \n' + code.slice(0, 40) + '\n' + code.slice(40) + ' ')), J(SR.state), 'whitespace and line breaks in a pasted code are ignored');
+  const flip = (c, i) => c.slice(0, i) + (c[i] === 'A' ? 'B' : 'A') + c.slice(i + 1);
+  let reason = '';
+  try { SR.save.importCode(flip(code, 30)); } catch (e) { reason = e.reason; }
+  T.eq(reason, 'checksum', 'a damaged code fails its checksum');
+  try { SR.save.importCode('PSKY2:' + code.slice(6)); } catch (e) { reason = e.reason; }
+  T.eq(reason, 'code', 'a wrong prefix is refused');
+  const golden = fixture('export-v1.txt').trim();
+  const env = JSON.parse(fixture('save-v1-missing.json'));
+  const g = SR.save.importCode(golden);
+  T.eq([g.player.name, g.money.cash, g.legacyNote, g.v], ['Rikki ✂ Ünïcode', 340, 'kept', 1], 'the golden code (made by Node\'s own base64 and zlib.crc32) decodes');
+  env.meta.name = env.state.player.name = 'Rikki ✂ Ünïcode';
+  T.eq(golden, 'PSKY1:' + Buffer.from(JSON.stringify(env), 'utf8').toString('base64') + ':' + golden.slice(-8), 'and the format matches an independent encoder byte for byte');
+  SR.save.write('slot1');
+  T.eq(J(SR.save.importCode(SR.save.exportCode('slot1'))), J(SR.save.read('slot1')), 'exportCode(slot) encodes a stored save');
+
+  // An interrupted write: tmp holds a newer save of slot1 than slot1 itself.
+  const older = JSON.parse(ls.getItem('sr1.slot1'));
+  const newer = JSON.parse(JSON.stringify(older));
+  newer.meta.savedAt = older.meta.savedAt + 1000; newer.state.money.cash = 777;
+  ls.map.set('sr1.tmp', JSON.stringify(newer));
+  T.eq(SR.save.recover(), 'slot1', 'recover() finishes a write interrupted before the slot was written');
+  T.eq([SR.save.read('slot1').money.cash, ls.getItem('sr1.tmp')], [777, null], 'the slot holds the newer save and tmp is gone');
+  const stale = JSON.parse(ls.getItem('sr1.slot1')); stale.meta.savedAt -= 5000; stale.state.money.cash = 1;
+  ls.map.set('sr1.tmp', JSON.stringify(stale));
+  T.eq([SR.save.recover(), SR.save.read('slot1').money.cash, ls.getItem('sr1.tmp')], [null, 777, null], 'a stale tmp is dropped');
+
+  T.eq(SR.save.profile(), { v: 1, achievements: {}, hallOfFame: {}, badges: {}, hintsSeen: {}, totals: {} }, 'profile() defaults');
+  const p = SR.save.profile(); p.badges.oldSchool = true;
+  SR.save.saveProfile(p);
+  T.eq([SR.save.profile().badges.oldSchool, JSON.parse(ls.getItem('sr1.profile')).badges.oldSchool], [true, true], 'saveProfile persists sr1.profile');
+}
+
+// ------------------------------------------------------------------------------------------------
+T.section('M1: SR.quality');
+{
+  const { SR } = m1();
+  const Q = SR.quality;
+  const got = [];
+  SR.events.on('quality:changed', (p) => got.push(p));
+  T.eq(Q.presets(), {
+    high: { maxDpr: 2, renderScale: 1, shadowHours: 1, particles: 1, crowd: 1, rain: 300, lean: true },
+    medium: { maxDpr: 1.5, renderScale: 1, shadowHours: 2, particles: 0.7, crowd: 1, rain: 200, lean: false },
+    low: { maxDpr: 1, renderScale: 0.75, shadowHours: 0, particles: 0.4, crowd: 0.5, rain: 90, lean: false },
+  }, 'the preset table of ARCHITECTURE §2');
+  T.eq([Q.preset, Q.auto], ['high', true], 'Auto starting at High by default');
+  T.eq(Q.set('low'), 'low', 'set(low)');
+  T.eq([Q.preset, Q.auto, Q.params.renderScale, Q.params.crowd], ['low', false, 0.75, 0.5], 'a fixed preset turns Auto off; params follow the table');
+  T.eq(got, [{ preset: 'low', auto: false }], 'quality:changed { preset, auto }');
+  const p1 = Q.params;
+  T.ok(p1 === Q.params && Object.isFrozen(p1), 'params is one frozen object per preset (read every frame without allocating)');
+  Q.set('medium');
+  T.ok(Q.params !== p1 && Q.params.maxDpr === 1.5 && p1.maxDpr === 1, 'and a new one after a change');
+  Q.set('low');
+  got.length = 1;
+  T.throws(() => Q.set('ultra'), /unknown preset/, 'an unknown preset throws');
+  T.eq(Q.sample(40, 0), null, 'a fixed preset ignores work-time samples');
+  Q.set('high');
+  Q.set('auto');
+  // Auto: 60 samples a second of 16 ms work time.
+  let t = 1e6, changes = [];
+  const feed = (ms, seconds) => { for (let i = 0; i < seconds * 60; i++) { t += 1000 / 60; const r = Q.sample(ms, t); if (r) changes.push([Math.round((t - 1e6) / 1000), r]); } };
+  feed(16, 30);
+  T.eq(changes.map((c) => c[1]), ['medium', 'low'], 'Auto steps down when the 90th percentile of work time exceeds 12 ms');
+  T.ok(changes[0][0] >= 4 && changes[0][0] <= 6 && changes[1][0] - changes[0][0] >= 20, 'after a full 5 s window, then at most one change per 20 s', changes);
+  changes = [];
+  feed(3, 19);
+  T.eq(changes, [], 'fast frames do not step up before 20 s');
+  feed(3, 40);
+  T.eq(changes.map((c) => c[1]), ['medium', 'high'], 'staying under 7 ms for 20 s steps up, one preset per 20 s');
+  changes = [];
+  feed(9, 60);
+  T.eq(changes, [], 'between 7 and 12 ms nothing changes');
+  T.eq(Q.auto, true, 'Auto stays on while it changes presets');
+}
+
+// ------------------------------------------------------------------------------------------------
+T.section('M1: SR.loop.step (headless)');
+{
+  const { SR } = m1();
+  const seen = { update: 0, render: 0, dts: new Set() };
+  SR.scenes.register('test.counter', { kind: 'base', update(dt) { seen.update++; seen.dts.add(dt); }, render() { seen.render++; } });
+  SR.scenes.go('test.counter');
+  T.eq(SR.loop.step(7), 7, 'step(7) returns 7');
+  T.eq([seen.update, seen.render, Array.from(seen.dts)], [7, 1, [1 / 60]], 'step(n) runs exactly n fixed updates of 1/60 s, then one render');
+  T.ok(Math.abs(SR.loop.time - 7 / 60) < 1e-12 && SR.loop.steps === 7, 'SR.loop.time advances by n × STEP');
+  SR.loop.step();
+  T.eq([seen.update, seen.render], [8, 2], 'step() is one step');
+  SR.loop.pause();
+  T.eq(SR.loop.paused, true, 'pause()');
+  SR.loop.step(2);
+  T.eq(seen.update, 10, 'step works while paused (tests)');
+  SR.loop.resume();
+  T.eq(SR.loop.paused, false, 'resume()');
+  const p = SR.loop.perf;
+  T.ok(p.update && typeof p.update.p50 === 'number' && typeof p.update.p95 === 'number' && typeof p.render.p95 === 'number' && typeof p.fps === 'number' && typeof p.draws === 'number' && p.frames === 3,
+    'perf = { update: {p50, p95}, render: {p50, p95}, fps, draws } over the frames so far');
+  T.eq(p.fps, 0, 'step(n) samples work time but never fps (only animation frames measure fps)');
+  T.throws(() => { SR.loop.fpsCap = 45; }, /60 or 30/, 'fpsCap is 60 or 30');
+}
+
+// ------------------------------------------------------------------------------------------------
+T.section('M1: SR.input (headless: bindings, contexts, inject, remap, the gamepad poll)');
+{
+  const pads = [null];
+  const { SR } = m1({ navigator: { getGamepads: () => pads } });
+  const I = SR.input;
+  const want = {
+    up: ['ArrowUp', 'KeyW', 'Pad12'], down: ['ArrowDown', 'KeyS', 'Pad13'], left: ['ArrowLeft', 'KeyA', 'Pad14'], right: ['ArrowRight', 'KeyD', 'Pad15'],
+    interact: ['KeyE', 'Enter', 'NumpadEnter', 'Space', 'Pad0'], confirm: ['Enter', 'NumpadEnter', 'Space', 'KeyE', 'Pad0'], back: ['Escape', 'Backspace', 'Pad1'],
+    skate: ['ShiftLeft', 'ShiftRight', 'Pad7'], car: ['KeyC', 'Pad3'], pocket: ['Tab', 'Pad8'], map: ['KeyM'], bag: ['KeyI'], journal: ['KeyJ'], minimap: ['KeyN'],
+    pause: ['Escape', 'Pad9'], tabPrev: ['Pad4'], tabNext: ['Pad5'], repeat: ['KeyR'], zoomIn: ['Equal', 'NumpadAdd', 'WheelUp'], zoomOut: ['Minus', 'NumpadSubtract', 'WheelDown'],
+    zoomCycle: ['Pad10'], minimalHud: ['KeyH'], row1: ['Digit1', 'Numpad1'], row9: ['Digit9', 'Numpad9'],
+  };
+  T.eq(Object.keys(want).filter((a) => JSON.stringify(I.bindings(a)) !== JSON.stringify(want[a])), [], 'default bindings are CONTRACT §12.1');
+  T.eq([I.bindings('tabNext', 'tabs'), I.bindings('hit', 'blackjack'), I.bindings('serve', 'orderup')], [['KeyE'], ['KeyH', 'Pad0'], ['Enter']], 'the named contexts of CONTRACT §12.3');
+  const log = [];
+  I.on('*', (ev) => log.push(ev.action + (ev.down ? '+' : '-') + (ev.repeat ? 'r' : '') + (ev.context ? '@' + ev.context : '')));
+  const scene = [];
+  SR.scenes.register('test.input', { kind: 'base', onAction(a, ev) { scene.push(a + ':' + ev.down); } });
+  SR.scenes.go('test.input');
+  I.inject('interact', true);
+  T.eq([I.held('interact'), log.splice(0), scene.splice(0)], [true, ['interact+'], ['interact:true']], 'inject(down) holds the action, tells listeners and the top scene');
+  I.inject('interact', false);
+  T.eq([I.held('interact'), log.splice(0), scene.splice(0)], [false, ['interact-'], []], 'inject(up) releases it; releases never reach onAction');
+  I.inject('up', true); I.inject('right', true);
+  const a = I.axis('move');
+  T.ok(Math.abs(a.x - Math.SQRT1_2) < 1e-9 && Math.abs(a.y + Math.SQRT1_2) < 1e-9, 'axis(move) composes the directions, length ≤ 1', a);
+  I.inject('up', false); I.inject('right', false);
+  T.eq(I.axis('move'), { x: 0, y: 0 }, 'and returns to 0');
+  log.length = 0;
+
+  // The gamepad (polled by the loop every step).
+  const btn = (on) => ({ pressed: on, value: on ? 1 : 0 });
+  const padOf = (pressed, axes) => ({ id: 'test pad', connected: true, mapping: 'standard', axes: axes || [0, 0, 0, 0], buttons: Array.from({ length: 17 }, (_, i) => btn(pressed.indexOf(i) >= 0)) });
+  pads[0] = padOf([0]);
+  SR.loop.step(1);
+  T.eq([log.splice(0).sort(), SR.input.last], [['confirm+', 'interact+'], 'pad'], 'pad A (Pad0) presses interact and confirm, and input.last becomes pad');
+  pads[0] = padOf([]);
+  SR.loop.step(1);
+  T.eq(log.splice(0).sort(), ['confirm-', 'interact-'], 'releasing A releases both');
+  pads[0] = padOf([], [0.6, 0, 0, 0]);
+  SR.loop.step(1);
+  const pa = I.axis('move');
+  T.ok(Math.abs(pa.x - 0.5) < 1e-9 && pa.y === 0, 'the left stick drives axis(move), rescaled after the 0.2 dead zone (0.6 → 0.5)', pa);
+  T.eq(log.splice(0), ['right+'], 'past 0.5 the stick presses the digital direction');
+  pads[0] = padOf([], [0.1, 0.05, 0, 0]);
+  SR.loop.step(1);
+  T.eq([I.axis('move'), log.splice(0)], [{ x: 0, y: 0 }, ['right-']], 'inside the dead zone the stick reads 0 and releases the direction');
+  pads[0] = padOf([13]);
+  SR.loop.step(24);
+  T.eq(log.splice(0), ['down+'], 'a held D-pad direction does not repeat before 0.4 s');
+  SR.loop.step(12);
+  T.eq(log.splice(0), ['down+r', 'down+r'], 'then repeats every 0.1 s (menus)');
+  pads[0] = padOf([]);
+  SR.loop.step(1);
+  log.length = 0;
+
+  // Contexts: blackjack shadows H / S / D.
+  const pop = I.pushContext('blackjack');
+  T.eq(I.contexts(), ['blackjack'], 'pushContext(name) with the named default map');
+  pads[0] = padOf([0]); SR.loop.step(1);
+  T.eq(log.splice(0), ['hit+@blackjack'], 'inside the context, Pad0 fires only hit (interact and confirm are shadowed)');
+  pop();
+  T.eq([log.splice(0), I.held('hit'), I.contexts()], [['hit-@blackjack'], false, []], 'popping releases what the context pressed');
+  SR.loop.step(3);
+  T.eq(log.splice(0), [], 'a button held across the pop stays inert (no global press on the next polls)');
+  pads[0] = padOf([]); SR.loop.step(1);
+  pads[0] = padOf([0]); SR.loop.step(1);
+  T.eq(log.splice(0).sort(), ['confirm+', 'interact+'], 'pressed again after the pop, it is interact and confirm');
+  pads[0] = padOf([]); SR.loop.step(1); log.length = 0;
+  I.pushContext('tabs'); I.pushContext('fight');
+  T.ok(I.popContext('tabs') && JSON.stringify(I.contexts()) === '["fight"]', 'popContext(name) removes the most recent context of that name');
+  I.popContext('fight');
+  T.throws(() => I.pushContext('bad', { a: 'KeyA' }), /map must be/, 'a context map must be { action: [bindings] }');
+
+  // Remap.
+  I.bind('interact', ['KeyF', 'Pad2']);
+  T.eq([I.bindings('interact'), SR.settings.get('controls.keys.interact'), SR.settings.get('controls.pad.interact')], [['KeyF', 'Pad2'], ['KeyF'], ['Pad2']], 'bind() replaces the bindings and saves keys and pad in settings.controls');
+  pads[0] = padOf([2]); SR.loop.step(1);
+  T.eq(log.splice(0), ['interact+'], 'the remapped pad button fires the action');
+  pads[0] = padOf([]); SR.loop.step(1); log.length = 0;
+  I.bind('interact', null);
+  T.eq(I.bindings('interact'), want.interact, 'bind(action, null) restores the default');
+  I.bind('hit', ['KeyG'], 'blackjack');
+  T.eq([I.bindings('hit', 'blackjack'), I.bindings('stand', 'blackjack')], [['KeyG'], ['KeyS', 'Pad1']], 'bind(action, list, context) remaps inside one context only');
+  T.throws(() => I.bind('interact', ['not a code']), /codes/, 'bind validates the codes');
+  T.throws(() => I.bind('nope', ['KeyF']), /unknown action/, 'and the global action name');
+  SR.settings.set('game.rightClickBack', true);
+  T.ok(I.bindings('back').indexOf('Mouse2') >= 0, 'rightClickBack adds Mouse2 to back');
+  SR.settings.set('game.skateToggle', true);
+  I.inject('skate', true); I.inject('skate', false);
+  T.eq(I.held('skate'), true, 'with skateToggle a press latches skate');
+  I.inject('skate', true); I.inject('skate', false);
+  T.eq(I.held('skate'), false, 'and the next press unlatches it');
+  SR.settings.set('game.skateToggle', false);
+  T.eq(I.typing(), false, 'typing() is false without a document');
+
+  // A pad that vanishes from getGamepads() without a disconnect event still releases what it held.
+  log.length = 0;
+  pads[0] = padOf([1], [0.9, 0, 0, 0]);
+  SR.loop.step(1);
+  T.eq(log.splice(0).sort(), ['back+', 'right+'], 'pad B and the stick past 0.5 press back and right');
+  pads[0] = null;
+  SR.loop.step(1);
+  T.eq([log.splice(0).sort(), I.held('back'), I.held('right'), I.axis('move')], [['back-', 'right-'], false, false, { x: 0, y: 0 }], 'when the pad vanishes, its button, direction and axis are released');
+  SR.loop.step(5);
+  T.eq(log.splice(0), [], 'and with no pad the poll does nothing');
+
+  // Engine contexts: a context named after an engine defaults to the engine's `keys` (CONTRACT §12.3).
+  SR.minigame.register('test.darts', { keys: { throw: ['Space'], aimUp: ['ArrowUp'] }, create() { return {}; } });
+  T.eq(I.bindings('throw', 'test.darts'), ['Space'], 'bindings(action, engineId) reads the engine\'s keys before the frame pushes them');
+  const popDarts = I.pushContext('test.darts');
+  I.inject('throw', true); I.inject('throw', false);
+  T.eq(log.splice(0), ['throw+@test.darts', 'throw-@test.darts'], 'pushContext(engineId) with no map pushes the engine\'s keys');
+  popDarts();
+}
+
+// ------------------------------------------------------------------------------------------------
+T.section('M1: SR.debug.night finishes the night like the report scene (real rules)');
+{
+  const probe = L.load({ mode: 'rules', keepGoing: true });
+  const real = probe.SR.rules.night && typeof probe.SR.rules.night.run === 'function' && probe.SR.rules.state && typeof probe.SR.rules.state.create === 'function';
+  if (!real) {
+    T.ok(true, 'skipped: SR.rules.night / SR.rules.state are still stubs');
+  } else {
+    const { SR } = m1({ realRules: true });
+    const s = SR.debug.newGame({ seed: 31337 });
+    T.eq([s.seed, s.clock.day, SR.state === s], [31337, 1, true], 'newGame(opts) makes a real new game live');
+    const started = [], nights = [];
+    SR.events.on('day:started', (p) => started.push([p.day, !!p.report]));
+    SR.events.on('night', (p) => nights.push(p.day));
+    const rep = SR.debug.night('sleep');
+    T.eq([rep.day, SR.state.clock.day, nights, started], [2, 2, [2], [[2, true]]], 'night(sleep) runs the night, re-emits its events, then day:started { day, report }');
+    const w = SR.rng.create(1); w.seed(SR.util.hash(31337, 2));
+    T.eq(SR.rng.world.state(), w.state(), 'so the world stream follows the new day (hash(seed, day))');
+  }
+}
+
+// ------------------------------------------------------------------------------------------------
+T.section('M1: SR.save with the real rules (when W1-R has landed)');
+{
+  const probe = L.load({ mode: 'rules', keepGoing: true });
+  const real = probe.SR.rules.state && typeof probe.SR.rules.state.create === 'function' && typeof probe.SR.rules.state.defaults === 'function';
+  if (!real) {
+    T.ok(true, 'skipped: SR.rules.state is still a stub');
+  } else {
+    const { SR, ls } = m1({ realRules: true });
+    const s = SR.rules.state.create({ seed: 4242, name: 'Real' });
+    SR.save.load(s);
+    T.eq(SR.save.validate(s), [], 'a new real state validates');
+    SR.save.write('slot1');
+    T.eq(J(SR.save.read('slot1')), J(SR.state), 'a real state round-trips through a slot');
+    T.eq(J(SR.save.importCode(SR.save.exportCode())), J(SR.state), 'and through an export code');
+    T.eq(leaves(SR.rules.state.defaults()).filter((p) => get(SR.save.read('slot1'), p) === undefined), [], 'no field of defaults() is missing after a read');
+
+    // ARCHITECTURE §15: retention keeps a 1,000-day Unlimited run under the 60 KB budget. The balance
+    // sim (W1-Q) will play one; until then a synthetic worst case on the real schema: every history
+    // series 1,000 mornings long, 1,000 messages, 1,000-point rate and stock histories, 50 log lines a day.
+    const r = SR.rng.create(99);
+    const big = SR.rules.state.create({ seed: 99, length: 0 });
+    big.clock.day = 1000;
+    Object.keys(big.history).forEach((k) => { big.history[k] = Array.from({ length: 1000 }, (_, i) => [i + 1, r.int(0, 9999999)]); });
+    big.msgs = Array.from({ length: 1000 }, (_, i) => ({ id: i + 1, from: 'penny', key: 'vm.penny.loan1', vars: { days: 3, n: 1200, money: '$1,200' }, day: 1 + (i >> 1), read: i % 3 !== 0, archived: i % 5 === 0 }));
+    Object.keys(big.stocks).forEach((t) => { big.stocks[t].hist = Array.from({ length: 1000 }, () => r.float(1, 500)); });
+    big.money.rateHist = Array.from({ length: 1000 }, () => r.float(0.25, 3.5));
+    big.log.today = Array.from({ length: 50 }, (_, i) => ({ kind: 'fall', weight: 10, vars: { n: i } }));
+    big.log.yesterday = big.log.today.slice();
+    SR.save.load(big);
+    SR.save.write('slot2');
+    const raw = ls.getItem('sr1.slot2');
+    const kept = JSON.parse(raw).state;
+    T.ok(raw.length <= 60 * 1024, 'a 1,000-day Unlimited save is within 60 KB after retention (' + (raw.length / 1024).toFixed(1) + ' KB)');
+    T.eq([kept.msgs.length, kept.history.nw.length, kept.log.today.length, kept.money.rateHist.length, kept.stocks[Object.keys(kept.stocks)[0]].hist.length],
+      [150, 120 + Math.floor((1000 - 120) / 7), SR.tuning.news.logMax, 30, SR.tuning.stocks.history], 'messages 150, history daily to 120 then weekly, the log at tuning.news.logMax, rate and stock histories at 30');
+  }
 }
 
 T.done();

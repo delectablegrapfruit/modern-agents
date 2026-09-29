@@ -208,6 +208,13 @@ entries (§15), not tuning; `tuning.karma` holds only the band-index formula.
 | `tests/node/load.cjs`, `tests/harness.cjs` | complete | |
 | `tests/node/core.test.cjs`, `tests/e2e/boot.test.cjs` | M0 parts | save, migration, input, stage, slice suites |
 
+**M1 status (W1-K-M1).** `loop.js`, `stage.js`, `quality.js`, `input.js`, `save.js`, `settings.js`
+and the rest of `debug.js` (§17.1, `#debug`, `#artbible`) are implemented, with the M1 additions to
+`tests/harness.cjs`, the fixtures in `tests/fixtures/`, the M1 part of `tests/node/core.test.cjs` and
+`tests/e2e/{boot,stage,input,save,slice}.test.cjs` (the slice runs the steps whose modules have
+landed; `--strict` fails on the pending ones). The additions to the frozen names are D33-D42. Scene
+transitions (§11.4, `js/core/scenes.js`) were not part of W1-K-M1.
+
 ## 5. `SR.util` *(M0)*
 
 `isObject(v)` (a plain object from any realm) · `clamp(v, lo, hi)` · `lerp(a, b, t)` ·
@@ -523,6 +530,10 @@ compared field by field.
 | `caption` | `{ key, dir }` | `SR.audio.caption` (W1-S) |
 | `stage:resized` | `{ k, uiK, dpr, scale, compact }` | `SR.stage` (W1-K; D22) |
 | `quality:changed` | `{ preset, auto }` | `SR.quality` (W1-K; D22) |
+| `save:loaded` | `{ slot }` (`null` for a state object) | `SR.save.load` (W1-K; D34) |
+| `save:broken` | `{ slot, reason, key }` (the UI says "This save couldn't be read") | `SR.save` quarantine (W1-K; D34) |
+| `input:pad` | `{ connected, id }` (gamepad hot-plug) | `SR.input` (W1-K; D33) |
+| `debug:changed` | `{ flag, on }` (`grid`, `time`, `projected`) | `SR.debug` (W1-K; D39) |
 
 ## 10. Sub-screens
 
@@ -1040,3 +1051,123 @@ design of record; the lead folds these back at integration).
   confirms or files a request, together with D19-D21.
 - **D32 Palette keys** are dotted paths into `SR.art.palette` (§15). ART_AUDIO names the keys but
   not how they resolve, and the validator (W1-Q), the painter (W1-G) and the kit (W1-A) must agree.
+- **D33 Input (M1).** Additions: `SR.input.poll(dt)` (the loop calls it every fixed step; it
+  polls the gamepads), `actions()`, `defaults()` → `{ global, contexts }` (CONTRACT §12.1, §12.3),
+  `contexts()` → the pushed context names, `releaseAll()`, the read-only `stick` (`{ active, ox, oy,
+  x, y }`, for drawing the touch stick) and `on('*', fn)`. `pushContext(name, map?, opts)` returns a
+  function that pops exactly that context; `map` defaults to the named context of §12.3, else to the
+  `keys` of the engine registered under that name (`bindings(action, name)` reads the same default
+  before the frame pushes it). Popping
+  releases what the context pressed, and a key held across the pop stays inert until released.
+  Events carry `consumed` (a listener sets it to keep a press from the scene), `preventDefault()`
+  and `defaultPrevented`. Enter and Space always become actions; `js/ui/focus.js` (W1-D) suppresses
+  the browser's own activation of focused controls and activates them on `confirm`, so there is one
+  path. Bound keys lose their browser default except Tab; keys with Ctrl, Meta or Alt are left to
+  the browser; the left mouse button is never a binding source (DOM clicks, click-to-walk); the
+  device (`last`) follows `pointerdown`'s pointerType, so a tap's compatibility mousedown keeps it on
+  `touch`. While typing, the pad keeps A (`confirm`) and B (`back`). Remaps are stored split:
+  `controls.keys[action]` (every non-pad code) and `controls.pad[action]` (`Pad<n>`), contexts in
+  `controls.contexts[ctx][action]`; `bind(action, null[, ctx])` restores the default. With
+  `game.rightClickBack`, `Mouse2` joins `back`; with `game.skateToggle`, `held('skate')` is a latch
+  flipped by each press. Pad directions (D-pad and the stick past 0.5) repeat for menus after 0.4 s,
+  every 0.1 s. The touch stick: a touch starting on the left half of `canvas#world`, 64 logical units
+  of travel, dead zone 0.2. Hot-plug emits `input:pad` and shows a toast with `ui.pad.connected` /
+  `ui.pad.disconnected` once those keys exist.
+- **D34 Saves (M1).** Additions to `SR.save`: `storage` (`get`, `set`, `remove`, `keys(prefix)`,
+  `detect()`, `persistent`; localStorage with an in-memory fallback), `available` (false = memory only:
+  the boot's warning toast), `SLOTS`, `lastError` (`{ slot, reason, key }`), `retain(state)` (the §15
+  caps), `validate(state)` → problems, `recover()` (finishes a write interrupted between tmp and the
+  slot; run at boot), `playSec()`, `flush()` (writes a debounced ironman or autosave now) and
+  `copyCode()` → `Promise<{ copied, code, fallback }>` (the clipboard, else the read-only,
+  pre-selected textarea modal `[data-id="save-code"]` in `#ui`). `load(x)` takes a slot **or a state
+  object** (a new game from `SR.rules.state.create`, an imported code or file): it deep-fills,
+  validates and makes it live (the rules stream from `state.rng.rules`, else seeded from
+  `state.seed`; the world stream for the day; the play clock). `write(slot, state?)` can write a
+  state other than the live one; `exportCode(slot?)` and `exportFile(slot?)` take a slot too.
+  Errors carry `code` / `reason`: `quota`, `hardcore` (a manual slot on Hardcore), `nogame`, `invalid`
+  (`write` refuses a state that `validate` rejects, so a readable save is never replaced by one the
+  read would quarantine), and for
+  reads and imports `corrupt`, `format`, `newer`, `migration`, `invalid`, `code`, `checksum`. A read
+  failure quarantines (except `newer`, which is kept and refused) and emits `save:broken`; when the
+  quarantine copy cannot be written (a full storage) the slot is kept and `lastError.key` is `null`; `load`
+  emits `save:loaded`. `meta` adds `slot`, `min` and `inProgress` (the ironman card's "In progress ·
+  Day 12, 14:30"). Autosave: `day:started` writes `auto` (Hardcore: `ironman`, `inProgress` false);
+  `door:exited` writes `auto` at most once a minute (a later exit is deferred, not dropped).
+  Ironman: the run keeps the single ironman slot when its B-16 row says `saves: 'ironman'`
+  (`tuning.difficulty.<difficulty>`; Hardcore). `action:done` with an HP, money or karma delta (or any
+  `:resolve`) schedules a write `tuning.difficulty.<difficulty>.ironmanDebounceMs` (2 s) later with
+  `mode.inProgress = true`; the minigame frame (W1-M) sets `state.pending` and calls
+  `SR.save.write('ironman')` before a stake-bearing round (a write with `pending` is marked
+  `inProgress` too); the resolve action's `action:done` clears
+  `pending`; loading an ironman save with `pending` runs `SR.act(pending.resolve, pending.worst)`
+  first; `game:over` (death) and `player:down` (death) delete the slot; a debounced ironman write or
+  a deferred autosave is flushed when the tab hides (`visibilitychange`, `pagehide`). The retention
+  limits (150 messages, 120 daily history points then weekly, 20 log entries a day, 30 rate and stock
+  points) are engine constants of ARCHITECTURE §15 in `save.js` (the log follows
+  `tuning.news.logMax` and the stock history `tuning.stocks.history` when present). History points are
+  thinned only when they carry their day (`{ day }` or `[day, value]`). The profile defaults to
+  `{ v: 1, achievements, hallOfFame, badges, hintsSeen, totals }` (W2-Front / W3-Prog fill it).
+- **D35 Settings (M1).** `SR.settings` adds `reset(key?)` (every key: emits `settings:changed` with
+  `key: '*'`), `defaults()` and `reload()`. `set` throws on an unknown key, a group, a wrong type or
+  a value outside `display.quality` (auto, high, medium, low), `display.fpsCap` (60, 30),
+  `access.textScale` (1, 1.25, 1.5), `access.colorblind` (none, protan, deutan, tritan),
+  `access.reducedMotion` (system, on, off), `access.typewriterCps` (30, 60, 120, 0 = instant), volumes
+  0..1. `settings:changed` fires only on a change. Stored settings are sanitised on load (bad values
+  back to defaults, unknown keys dropped); loading is lazy, so boot-hook order does not matter.
+- **D36 Loop (M1).** Additions: `start()` (boot), `steps` (fixed steps run). `perf.draws` is the p95
+  of `drawImage` + `fill` + `fillRect` calls per rendered frame on the two stage contexts (render
+  caches drawing into their own canvases are not counted); `perf.drawImages` and `perf.fills` give
+  `{ p50, p95, max }` and `perf.frames` the sample count. `step(n)` records one perf sample (the n
+  updates and one render) but never feeds `fps`, which counts requestAnimationFrame frames only and
+  restarts its window on `resume()` (a pause gap never drags it down). Each frame the loop resets both stage contexts to the logical transform
+  before rendering, then calls `SR.stage.tick()` (the letterbox colour). It feeds each rendered
+  frame's work time to `SR.quality.sample`. The world canvas is not cleared by the loop: base scenes
+  paint their own frame. A tab hidden while the loop was paused by a test stays paused when shown.
+- **D37 Stage (M1).** k is snapped so the stage width is a whole number of device pixels (left and
+  top rounded to device pixels; Chrome keeps layout positions in 1/64 CSS px). The backing store is
+  capped at 2560 × 1440 keeping the aspect. Additions: `box` (`{ left, top, width, height, backingW,
+  backingH }`), `horizon(min)` (the letterbox colour: the `horizon` of `SR.art.palette.sky`
+  keyframes `{ h, horizon }`, interpolated; `var(--paper-1)` until the palette has them),
+  `tick()` and `resetPortrait()`. `#app` carries `data-layout="stage" | "compact"` and
+  `data-portrait` for CSS. In the compact layout `#ui` is `position: fixed` at the window's origin.
+  The portrait card is `[data-id="stage-portrait"]` (class `sr-turn-card`) in `#ui`, text
+  `ui.stage.turn` and `ui.stage.playAnyway`; "Play anyway" hides it for the session. The layout
+  styles of the stage layers are set inline by `stage.js`; `css/base.css` (W1-D) holds the rest. Besides
+  `resize`, `orientationchange`, `fullscreenchange` and a pointer-type change, a `(resolution: <dpr>dppx)`
+  media query re-lays the stage out when the device pixel ratio changes without a resize (the window
+  moved to another monitor).
+- **D38 Quality (M1).** Additions: `sample(workMs, at?)` (the loop's feed; tests pass `at`) and
+  `presets()`. `params` is the effective set (the touch-compact profile caps `maxDpr` at 1.5): one
+  frozen object per preset and layout, so it can be read every frame without allocating.
+  `set` never persists; `display.quality` drives the preset at boot and on change. Auto judges only a
+  full 5 s window (≥ 30 samples), at most every 250 ms; after a change the window restarts.
+- **D39 Debug (M1).** `newGame(opts)` = `SR.save.load(SR.rules.state.create(opts))` (seed 12345 when
+  omitted; `opts.scene` / `opts.sceneParams` then go to a scene) and returns the state. `goto` and
+  `enter` pass `{ transition: false }`. `enter(id)` resolves door ids, and `'home'` through the lived-in
+  home's door, with `SR.world.doors.resolve`; any other id opens that building def. `teleport` calls
+  `SR.world.teleport(x, y)` (W1-W: doors disarmed around the spot, camera snapped) and falls back to
+  writing the player's `x`, `y`. `mg(result)` is `SR.minigame.force(result)` (W1-M). `fast()` with no argument
+  reads the flag; `fast(true)` also sets `html.sr-fast`, which zeroes CSS transitions and animations.
+  `grid`, `time`, `projected` set `SR.debug.flags.<name>` (toggle when called without an argument),
+  emit `debug:changed` and invalidate the render caches; the world and render modules draw those
+  overlays. `night(kind)` re-emits the Report's events, then emits `day:started { day, report }` as
+  the report scene does after a night (the world stream follows the new day; HUD, card and autosave
+  react); `down(cause)` sets HP 0, calls
+  `SR.rules.health.down` and emits `player:down`. `ui()` → `{ scenes, top, contexts, items: [{ id,
+  tag, text, enabled, focused? }], rows: [{ id, action, text, enabled, chips }], toasts, card? }`
+  (`rows` are the ActionRows, `data-id="row-<action id>"`; `toasts` from `SR.ui.toast.list()`;
+  `card` from `SR.ui.card.debug()` when W1-D provides it). `overlay(on)` shows the `#debug` overlay;
+  the `artbible` scene leaves on `back` (dropping `#artbible` from the URL).
+- **D40 Crispness check.** ARCHITECTURE §2 says 1366 × 768 gives k = 0.7125, but there k =
+  768 / 720 ≈ 1.067 (1.0664 after snapping); k = 0.7125 is a 912 × 513 window. `stage.test.cjs`
+  checks both, by comparing text in `#ui` with the same text laid out natively at 16·k px at the same
+  sub-pixel offset (they must match; a browser-scaled bitmap control must not).
+- **D41 Harness (M1).** `open({ fast })` calls `SR.debug.fast(true)`; `quality: null` pins nothing.
+  Extras: `get(path)`, `setDay(d)`, `fast(on)`, `night(kind)`, `down(cause)`, `inject(action,
+  down)`, `resize(w, h)` (viewport plus an immediate `SR.stage.resize()`) and `reload()` (storage
+  survives; waits for the boot, pauses and pins again).
+- **D42 Fixtures.** `tests/fixtures/state-v1.json` (a complete day-12 v1 state),
+  `save-v1-missing.json` (fields missing, an unknown field), `save-v1-invalid.json`,
+  `save-v9-newer.json`, `save-corrupt.txt`, `export-v1.txt` (a golden export code made with Node's
+  own base64 and `zlib.crc32`) and `settings-v1.json`. The wave-2 capture
+  `save-v1-wave2.json` joins them at the wave-2 exit (BUILD_PLAN §4.14).
