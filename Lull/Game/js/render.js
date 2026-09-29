@@ -262,6 +262,11 @@
     return c;
   }
 
+  /** How far inside its cells the i-th piece of Classic's top-out pile draws its outline (past the line's own half). */
+  function pileInset(i, s, lw) {
+    return Math.min(i * Math.max(lw + 0.5, Math.min(lw * 1.4, s * 0.1)), s * 0.34 - lw);
+  }
+
   function drawCell(ctx, skin, color, x, y, s, alpha) {
     const dpr = ctx.__dpr || 1;
     const img = cellSprite(skin, color, s * dpr, ctx.__light);
@@ -883,6 +888,9 @@
     attach(game, view) {
       this.game = game;
       this.view = Object.assign({ rot: 0, fog: false, mono: false, blind: false, vanish: false, wrap: false }, view || {});
+      // Classic's top out (ClassicMode.startPile): the pieces piled up at the spawn spot, over the stack, [{ cells,
+      // color, t }] in the order they came, shown at pileT (seconds); queueSkip of them came off the Next queue.
+      this.pileup = null; this.pileT = 0; this.queueSkip = 0;
       this.fx.clear();
       this.lay = null;
       this.dirty = true;
@@ -1128,7 +1136,7 @@
         ctx.restore();
       }
 
-      if (p) {
+      if (p && !this.pileup) {
         const color = this.colorOf(p.type.color);
         if (p.special === 'drill') {
           // What goes: the drill's column.
@@ -1181,7 +1189,8 @@
         }
       }
 
-      if (p && (p.special || (g.s && g.s.gold > 0))) this.ambient(p, pieceCells, now);
+      if (this.pileup) this.drawPileup(ctx, s);
+      else if (p && (p.special || (g.s && g.s.gold > 0))) this.ambient(p, pieceCells, now);
 
       drawRim(ctx, wr, look.theme);
       drawFrame(ctx, look.frame, wr, look.theme.accent, tl, look.theme);
@@ -1285,8 +1294,10 @@
       }
       const items = []; // the queue's pieces, drawn once every box is known
       // Next: the queue in one tray, the piece coming first and largest, the rest after a hairline.
-      const n = Math.min(g.fixed ? g.queue.length : g.previewCount, g.queue.length);
-      label('NEXT', next.x, next.y, next.w, g.fixed ? g.queue.length + ' LEFT' : null);
+      // Classic's top out takes the pieces it piles up off the queue as they come.
+      const queue = this.queueSkip ? g.queue.slice(this.queueSkip) : g.queue;
+      const n = Math.min(g.fixed ? queue.length : g.previewCount, queue.length);
+      label('NEXT', next.x, next.y, next.w, g.fixed ? queue.length + ' LEFT' : null);
       if (nextDir === 'v') {
         const first = Math.round(s * 2.5), slot = Math.round(s * 1.95);
         let shown = 0;
@@ -1296,7 +1307,7 @@
         for (let i = 0; i < shown; i++) {
           const y0 = next.y + (i ? first + (i - 1) * slot : 0), h0 = i ? slot : first;
           if (i === 1) { ctx.fillStyle = th.hair || th.line; ctx.fillRect(next.x + s * 0.4, Math.round(y0) + 0.5, next.w - s * 0.8, 1); }
-          items.push({ entry: g.queue[i], box: { x: next.x, y: y0 + (i ? s * 0.1 : s * 0.05), w: next.w, h: h0 }, i });
+          items.push({ entry: queue[i], box: { x: next.x, y: y0 + (i ? s * 0.1 : s * 0.05), w: next.w, h: h0 }, i });
         }
       } else {
         const first = Math.min(Math.round(s * 3.4), next.w), slot = Math.round(s * 2.8);
@@ -1306,7 +1317,7 @@
         for (let i = 0; i < shown; i++) {
           const x0 = next.x + (i ? first + (i - 1) * slot : 0), w0 = i ? slot : first;
           if (i === 1) { ctx.fillStyle = th.hair || th.line; ctx.fillRect(Math.round(x0) + 0.5, next.y + s * 0.4, 1, next.h - s * 0.8); }
-          items.push({ entry: g.queue[i], box: { x: x0, y: next.y, w: w0, h: next.h }, i });
+          items.push({ entry: queue[i], box: { x: x0, y: next.y, w: w0, h: next.h }, i });
         }
       }
       // With big pieces in play, the held and coming pieces share one scale, so a big piece shows twice the size of a
@@ -1325,6 +1336,61 @@
         if (d) this.drawnQueue.push(Object.assign({ id: it.entry.id, big: !!Pieces.get(it.entry.id).big }, d));
       }
       if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+      ctx.restore();
+    }
+
+    /**
+     * Classic's top out: the pile's pieces a little see-through, each drawn over the stack and the ones before it,
+     * each with its own outline right after it (so a later piece's cells dim the outlines under them). Each piece's
+     * outline sits a step further inside its cells than the one before, so where their edges meet they show as
+     * separate lines, and the layers read whatever the palette. The shade behind the pile is laid once per cell.
+     * Each fades in briefly as it comes (never under reduced motion).
+     */
+    drawPileup(ctx, s) {
+      const look = this.look, light = look.theme.name === 'light';
+      const edge = light ? 'rgba(20,24,34,0.55)' : 'rgba(255,255,255,0.78)';
+      const shade = light ? 'rgba(20,24,34,0.14)' : 'rgba(0,0,0,0.3)';
+      const lw = Math.max(1.5, Math.round(s * 0.08)), o = lw / 2;
+      const pile = this.pileup.map((pc, i) => ({
+        k: this.reducedMotion || pc.t < 0 ? 1 : Math.max(0, Math.min(1, (this.pileT - pc.t) / 0.16)),
+        inset: o + pileInset(i, s, lw),
+        color: this.colorOf(pc.color), cells: pc.cells, rects: pc.cells.map(([x, y]) => this.toScreen(x, y)),
+      })).filter((pc) => pc.k > 0);
+      // Where a piece lies over a block or an earlier piece, it is see-through (what is under it shows); elsewhere
+      // nearly solid.
+      const g = this.game, under = new Set();
+      ctx.save();
+      ctx.strokeStyle = edge; ctx.lineWidth = lw; ctx.lineCap = 'round';
+      for (const pc of pile) {
+        ctx.globalAlpha = pc.k; ctx.fillStyle = shade;
+        // One path, so the shade is even where neighbouring cells' rects meet.
+        ctx.beginPath();
+        pc.cells.forEach(([cx, cy], i) => { if (!under.has(cx + ',' + cy)) { const [x, y] = pc.rects[i]; ctx.rect(x - 1, y - 1, s + 2, s + 2); } });
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        pc.cells.forEach(([cx, cy], i) => {
+          const [x, y] = pc.rects[i], over = under.has(cx + ',' + cy) || !!g.board.get(cx, cy);
+          drawCell(ctx, look.skin, pc.color, x, y, s, (over ? 0.58 : 0.9) * pc.k);
+        });
+        for (const [cx, cy] of pc.cells) under.add(cx + ',' + cy);
+        // Only the edges with no cell of its own beyond them: the shape's outline, this piece's step inside it.
+        const at = new Set(pc.rects.map(([x, y]) => Math.round(x) + ',' + Math.round(y)));
+        const has = (x, y) => at.has(Math.round(x) + ',' + Math.round(y));
+        const n = pc.inset, f = s - n;
+        ctx.globalAlpha = pc.k;
+        ctx.beginPath();
+        for (const [x, y] of pc.rects) {
+          // Where the shape goes on past a side, the line runs the inset into the next cell (it joins that cell's line
+          // there, or turns an inner corner); where it does not, it stops at the inset (an outer corner).
+          const up = has(x, y - s), dn = has(x, y + s), lf = has(x - s, y), rt = has(x + s, y);
+          const x0 = x + (lf ? -n : n), x1 = x + (rt ? s + n : f), y0 = y + (up ? -n : n), y1 = y + (dn ? s + n : f);
+          if (!up) { ctx.moveTo(x0, y + n); ctx.lineTo(x1, y + n); }
+          if (!dn) { ctx.moveTo(x0, y + f); ctx.lineTo(x1, y + f); }
+          if (!lf) { ctx.moveTo(x + n, y0); ctx.lineTo(x + n, y1); }
+          if (!rt) { ctx.moveTo(x + f, y0); ctx.lineTo(x + f, y1); }
+        }
+        ctx.stroke();
+      }
       ctx.restore();
     }
 

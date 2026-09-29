@@ -44,7 +44,7 @@
     /**
      * o: { w, h, wrap, mode, mods: {noRotate, heavy, noHold, vanish}, queue: [{id, rot}] (fixed list: puzzles),
      *      seed, previewCount, board (Board), saved (from toJSON), freeHold (hold swaps back and forth as often as
-     *      you like; Classic turns it off: once per piece) }
+     *      you like; Classic turns it off: once per piece), ceiling (Classic: see below) }
      */
     constructor(o) {
       super();
@@ -58,6 +58,10 @@
       // fitted into the nearest open spot above the stack instead; only when there is none is the board full.
       // Classic (block out at the spawn spot) and puzzles (a fixed queue) keep the plain spawn.
       this.findRoom = o.findRoom != null ? !!o.findRoom : (this.freeHold && !o.queue && !(o.saved && o.saved.fixed));
+      // Classic: the well's top row is a row like any other. Every piece appears with its top in that row (the I too),
+      // a piece touching the ceiling still touches it after a turn, and a piece that cannot appear right where it
+      // appears is the game over (no nearby spot is tried).
+      this.ceiling = !!o.ceiling;
       this.history = [];
       this.over = false;
       const sv = o.saved;
@@ -126,7 +130,12 @@
       return this.spawn(entry, o);
     }
 
-    spawnPosition(type, rot) { return spawnPos(this.w, this.h, type, rot); }
+    spawnPosition(type, rot) {
+      const pos = spawnPos(this.w, this.h, type, rot);
+      // Its own shape of object (never a write to spawnPos's {x, y}): a different y stored into that shape makes V8
+      // widen its fields, and every later spawnPos caller (the puzzle generator) runs about a third slower.
+      return this.ceiling ? { x: pos.x, y: this.h - 1 - type.rotBounds[rot].maxY, top: true } : pos;
+    }
 
     spawn(entry, o) {
       o = o || {};
@@ -143,8 +152,9 @@
       // Near the spawn spot, but never down inside the stack: a spot below it counts only if the piece could get
       // there (sliding and lowering through open cells from the ceiling or the spawn spot).
       const seeds = this.fitsAt(piece, rot, pos.x, pos.y) ? [[pos.x, pos.y]] : [];
-      const open = this.findRoom ? null : new Set(this.reach(piece, rot, seeds, o.from).map(([x, y]) => x + ',' + y));
-      const tries = this.findRoom ? [[0, 0]] : [[0, 0], [0, -1], [-1, 0], [1, 0], [0, -2], [-1, -1], [1, -1], [-2, 0], [2, 0], [0, -3], [-2, -1], [2, -1], [0, -4]];
+      const only = this.findRoom || this.ceiling;
+      const open = only ? null : new Set(this.reach(piece, rot, seeds, o.from).map(([x, y]) => x + ',' + y));
+      const tries = only ? [[0, 0]] : [[0, 0], [0, -1], [-1, 0], [1, 0], [0, -2], [-1, -1], [1, -1], [-2, 0], [2, 0], [0, -3], [-2, -1], [2, -1], [0, -4]];
       for (const [dx, dy] of tries) {
         const x = this.board.wx(pos.x + dx), y = pos.y + dy;
         if (this.fitsAt(piece, rot, x, y) && (!open || open.has(x + ',' + y))) return place(x, y, rot);
@@ -160,7 +170,7 @@
       if (!this.board.wrap) {
         const r = [rot, (rot + 1) % 4, (rot + 3) % 4, (rot + 2) % 4].find((k) => type.rotBounds[k].w <= this.w && type.rotBounds[k].h <= this.h);
         if (r != null) {
-          const b = type.rotBounds[r], at = spawnPos(this.w, this.h, type, r);
+          const b = type.rotBounds[r], at = this.spawnPosition(type, r);
           piece.rot = r;
           piece.x = Math.min(Math.max(at.x, -b.minX), this.w - 1 - b.maxX);
           piece.y = Math.min(Math.max(at.y, -b.minY), this.h - 1 - b.maxY);
@@ -278,11 +288,14 @@
       if (!p || this.over || this.mods.noRotate || p.type.kicks === 'none') return false;
       const from = p.rot, to = (p.rot + dir + 4) % 4;
       const kicks = Pieces.kicksFor(p.type, from, to);
+      // Classic, touching the ceiling: each kick is taken from the spot where the turned shape touches it too (its box
+      // would sink it a row, and a piece never moves up), and never goes up from there.
+      const lift = this.ceiling && p.y + p.type.rotBounds[from].maxY === this.h - 1 ? this.h - 1 - p.type.rotBounds[to].maxY - p.y : null;
       for (let i = 0; i <= kicks.length; i++) {
         // Past the end of the table, one last try: a nudge off the wall, ceiling or stack (odd shapes only).
         const k = i < kicks.length ? kicks[i] : this.nudge(p, to);
         if (!k) break;
-        const [kx, ky] = k;
+        const kx = k[0], ky = lift != null && i < kicks.length ? lift + Math.min(0, k[1]) : k[1];
         if (this.fitsAt(p, to, p.x + kx, p.y + ky)) {
           p.rot = to;
           p.x = this.board.wx(p.x + kx);
@@ -503,7 +516,9 @@
         // corners the T points at blocked it is a full T-spin; with only one it is a Mini, unless the turn needed
         // the last, far kick (the T-spin triple shape), which counts as full. An item piece is never one.
         if (p.type.id === 'T' && p.lastRot && !p.special) {
-          const blocked = (dx, dy) => this.board.get(p.x + dx, p.y + dy) !== 0;
+          // Classic: the space above the ceiling is open (as in the guideline games), so a T turned flat against
+          // the top row does not score a spin from box corners that lie above the well.
+          const blocked = (dx, dy) => !(this.ceiling && p.y + dy >= this.h) && this.board.get(p.x + dx, p.y + dy) !== 0;
           let corners = 0;
           for (const [dx, dy] of [[0, 0], [2, 0], [0, 2], [2, 2]]) if (blocked(dx, dy)) corners++;
           if (corners >= 3) {

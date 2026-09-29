@@ -802,7 +802,166 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await ev(() => { const g = Lull.app.modes.classic.game; for (let y = 0; y < 19; y++) for (let x = 0; x < 10; x++) if (x !== y % 10) g.board.set(x, y, 8); });
   await page.waitForTimeout(2500);
   check('topping out ends the game', await ev(() => Lull.app.modes.classic.over && Lull.app.store.state.stats.classic.best > 0));
+  check('and the card comes after the top out, over the piled-up well', await ev(() => { const m = Lull.app.modes.classic; return m.cardOpen && m.pile && m.pile.done && m.view.pileup.length === 4; }));
   await shot('15-classic-over');
+
+  // The classic top out: the piece that cannot appear sets over the stack, and three more from the queue pile up on it
+  // one after another before the card. Everything counted is as it was at the top out.
+  {
+    // A stack to row 17 (a hole a row), an O floating over it, gravity held; the O set makes the next T top out.
+    const topout = (o) => ev((o) => {
+      const m = Lull.app.modes.classic, app = Lull.app;
+      app.settings.motion = o && o.reduced ? 'reduced' : 'full';
+      m.newGame(true);
+      const g = m.game;
+      for (let y = 0; y < 18; y++) for (let x = 0; x < 10; x++) if (x !== (y * 3) % 10) g.board.set(x, y, 1 + ((x + y) % 7));
+      g.queue.splice(0, 4, { id: 'T', rot: 0 }, { id: 'I', rot: 0 }, { id: 'L', rot: 0 }, { id: 'S', rot: 0 });
+      // An O over it, gravity held: set, it fills the top two rows under the T's spot, and the T cannot appear.
+      g.piece = null; g.spawn({ id: 'O' }); m.acc = -1000; m.score = 4321; m.lines = 12; m.level = 2;
+      const snd = (window.__snd = []), play = app.sound.play;
+      if (!app.sound.__spied) { app.sound.__spied = true; app.sound.play = function (n) { (window.__snd || []).push([n, performance.now()]); return play.apply(this, arguments); }; }
+      const t0 = performance.now();
+      m.action('drop');
+      const S = app.store.state.stats.classic;
+      return { t0, over: m.over, card: m.cardOpen, pile: m.view.pileup ? m.view.pileup.length : -1, score: m.score, lines: m.lines, level: m.level, best: S.best, stats: JSON.stringify(S), cells: g.board.count(), queue: JSON.stringify(g.queue), ach: Object.keys(app.store.state.achievements).sort().join(), piece: g.piece && g.piece.type.id, snd: snd.length };
+    }, o);
+    const after = () => ev(() => {
+      const m = Lull.app.modes.classic, g = m.game, S = Lull.app.store.state.stats.classic;
+      return { over: m.over, card: m.cardOpen, h2: m.cardOpen ? document.querySelector('#classic-overlay h2').textContent : null, pile: m.view.pileup ? m.view.pileup.length : -1, done: !!(m.pile && m.pile.done), started: m.started, score: m.score, lines: m.lines, level: m.level, best: S.best, stats: JSON.stringify(S), cells: g.board.count(), queue: JSON.stringify(g.queue), ach: Object.keys(Lull.app.store.state.achievements).sort().join(), skip: m.view.queueSkip };
+    });
+    const same = (a, b) => ['score', 'lines', 'level', 'best', 'stats', 'cells', 'queue', 'ach'].every((k) => a[k] === b[k]);
+
+    const at = await topout();
+    check('Classic: the O sets in the top rows and the T that cannot appear tops out at once (no card yet)', at.over && !at.card && at.piece === 'T' && at.pile === 1, JSON.stringify(at));
+    const seen = [];
+    for (let i = 0; i < 30; i++) {
+      const a = await after();
+      seen.push([Math.round((await ev(() => performance.now())) - at.t0), a.pile, a.card]);
+      if (a.card) break;
+      await page.waitForTimeout(90);
+    }
+    const early = seen.filter(([t]) => t < 300), firstCard = seen.find(([, , c]) => c);
+    const grows = seen.every(([, n], i) => !i || n >= seen[i - 1][1]) && new Set(seen.map(([, n]) => n)).size === 4;
+    check('the pile-up: four pieces appear one after another at the spawn spot, a calm step apart, then the card', early.every(([, n, c]) => n <= 1 && !c) && grows && firstCard && firstCard[1] === 4 && firstCard[0] > 1300 && firstCard[0] < 3000, JSON.stringify(seen));
+    const fin = await after();
+    const snd = await ev((t0) => window.__snd.map(([n, t]) => [n, Math.round(t - t0)]), at.t0);
+    const locks = snd.filter(([n]) => n === 'lock'), fail = snd.filter(([n]) => n === 'fail');
+    check('each with a soft set sound; the game over sound comes last, once', locks.length === 4 && fail.length === 1 && fail[0][1] >= Math.max(...locks.map(([, t]) => t)), JSON.stringify(snd));
+    check('score, lines, level, best, stats, the board and the queue are as they were at the top out', same(at, fin) && fin.best >= at.score && /New best|Game over/.test(fin.h2), JSON.stringify([at, fin]));
+    check('the Next tray gives up the pieces that piled up', fin.skip === 3);
+    const cells = await ev(() => Lull.app.modes.classic.view.pileup.map((p) => p.cells.map((c) => c.join(',')).sort().join(' ')));
+    check('they pile up where each would appear, over one another', cells.length === 4 && cells.every((c) => /,19/.test(c)) && cells[0] === '3,18 4,18 4,19 5,18' && cells[1] === '3,19 4,19 5,19 6,19', JSON.stringify(cells));
+    // Frames of it (see also the frame sequences made by hand in the Classic notes).
+    await shot('15b-classic-pileup-card');
+    // The layers read whatever the palette: each piece's outline is its own (no two run on the same line where their
+    // edges meet, so they never stack into one heavy line), each is stroked once, and the shade behind the pile is laid
+    // once per cell, in one even pass per piece.
+    const themeWas = await ev(() => Lull.app.settings.theme);
+    for (const theme of ['light', 'dark']) {
+      const drawn = await ev((theme) => {
+        const app = Lull.app, v = app.modes.classic.view;
+        app.settings.theme = theme; app.applySettings(); v.render(performance.now());
+        const c = document.createElement('canvas'); c.width = 1200; c.height = 1800;
+        const real = c.getContext('2d'), ops = [];
+        let path = [];
+        const ctx = new Proxy(real, {
+          get(t, k) {
+            const f = t[k];
+            if (typeof f !== 'function') return f;
+            return (...a) => {
+              if (k === 'beginPath') path = [];
+              else if (k === 'moveTo' || k === 'lineTo' || k === 'rect') path.push([k].concat(a));
+              else if (k === 'stroke') ops.push({ op: 'stroke', path });
+              else if (k === 'fill') ops.push({ op: 'fill', rects: path.filter((q) => q[0] === 'rect').length });
+              else if (k === 'fillRect') ops.push({ op: 'fillRect' });
+              return f.apply(t, a);
+            };
+          },
+          set(t, k, x) { t[k] = x; return true; },
+        });
+        v.drawPileup(ctx, v.lay.s);
+        const cells = new Set(); for (const pc of v.pileup) for (const [x, y] of pc.cells) cells.add(x + ',' + y);
+        return { ops, cells: cells.size, pieces: v.pileup.length, s: v.lay.s };
+      }, theme);
+      const strokes = drawn.ops.filter((o) => o.op === 'stroke');
+      const shadeRects = drawn.ops.reduce((a, o) => a + (o.op === 'fill' ? o.rects : o.op === 'fillRect' ? 1 : 0), 0);
+      // Every point along each piece's lines, by direction: two pieces' lines on the same spot, the same way, coincide.
+      const pts = strokes.map((st) => {
+        const set = new Set();
+        let at = null;
+        for (const [k, x, y] of st.path) {
+          if (k === 'lineTo' && at) {
+            const [x0, y0] = at, hz = Math.abs(y - y0) < 0.01, n = Math.ceil(Math.hypot(x - x0, y - y0) / 0.5);
+            for (let i = 1; i < n; i++) set.add((hz ? 'h' : 'v') + Math.round((x0 + (x - x0) * i / n) * 2) + ',' + Math.round((y0 + (y - y0) * i / n) * 2));
+          }
+          at = [x, y];
+        }
+        return set;
+      });
+      const shared = [];
+      for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) { let n = 0; for (const q of pts[i]) if (pts[j].has(q)) n++; if (n) shared.push([i, j, n]); }
+      check('the pile\'s layers (' + theme + '): one outline per piece, none on the same line as another where they meet, the shade once per cell', drawn.pieces === 4 && strokes.length === 4 && shared.length === 0 && shadeRects === drawn.cells, JSON.stringify({ strokes: strokes.length, shared, shadeRects, cells: drawn.cells }));
+    }
+    await ev((t) => { Lull.app.settings.theme = t; Lull.app.applySettings(); }, themeWas);
+
+    // Space during the pile-up goes straight to the card (and does not start the next game).
+    const at2 = await topout();
+    await page.waitForTimeout(250);
+    await page.keyboard.press('Space');
+    const sk = await after();
+    check('Space during the pile-up skips to the card, the whole pile shown; no new game', sk.card && sk.done && sk.pile === 4 && sk.over && same(at2, sk), JSON.stringify([at2, sk]));
+    await page.keyboard.press('Space');
+    check('and the next Space plays again', await ev(() => { const m = Lull.app.modes.classic; return m.started && !m.over && !m.cardOpen && !m.view.pileup; }));
+
+    // Reduced motion: the whole pile at once, then the card.
+    const rm = await topout({ reduced: true });
+    const rm1 = await after();
+    check('reduced motion: the pile is all there at once, and the card with it', rm.card && rm.pile === 4 && rm1.done && same(rm, rm1), JSON.stringify(rm));
+    await shot('15c-classic-pileup-reduced');
+    await ev(() => { Lull.app.settings.motion = 'full'; });
+
+    // Pausing or leaving the tab mid pile-up: it ends at the card, never a paused or resumed game.
+    const pz = await topout();
+    await page.waitForTimeout(200);
+    await page.keyboard.press('KeyP');
+    const pz1 = await after();
+    check('P during the pile-up ends it at the card (not paused, not resumed)', pz1.card && pz1.done && pz1.over && !(await ev(() => Lull.app.modes.classic.paused)) && same(pz, pz1) && /New best|Game over/.test(pz1.h2), JSON.stringify(pz1));
+    const tb = await topout();
+    await page.waitForTimeout(200);
+    await ev(() => Lull.app.setTab('play'));
+    await page.waitForTimeout(150);
+    await ev(() => Lull.app.setTab('classic'));
+    await page.waitForTimeout(100);
+    const tb1 = await after();
+    check('leaving the tab during the pile-up: back, it is the game over card', tb1.card && tb1.done && tb1.over && same(tb, tb1) && !(await ev(() => Lull.app.modes.classic.paused)), JSON.stringify(tb1));
+    const rs = await topout();
+    await page.waitForTimeout(200);
+    await ev(() => Lull.app.modes.classic.restart());
+    check('Restart during the pile-up starts a clean game', await ev(() => { const m = Lull.app.modes.classic; return m.started && !m.over && !m.pile && !m.view.pileup && !m.view.queueSkip && m.game.board.count() === 0; }) && rs.over);
+    check('Relaxed and Puzzles keep their own spawn and never pile up', await ev(() => !Lull.app.modes.play.game.ceiling && !(Lull.app.modes.puzzle.game && Lull.app.modes.puzzle.game.ceiling) && !Lull.app.modes.play.view.pileup && !Lull.app.modes.puzzle.view.pileup && Lull.app.modes.classic.game.ceiling));
+
+    // A reload during the pile-up: the top out was already saved; Classic comes back to its start card with that best.
+    const rctx = await browser.newContext({ viewport: { width: 520, height: 760 } });
+    const rp = await rctx.newPage();
+    rp.on('pageerror', (e) => errors.push(e.message + '\n' + e.stack));
+    const rev = (fn, a) => rp.evaluate(fn, a);
+    await rp.goto(PAGE);
+    await rp.waitForTimeout(500);
+    await rev(() => { while (Lull.UI.modalOpen()) Lull.UI.closeTopModal(); Lull.app.store.state.settings.hints = false; Lull.app.hints.sync(); Lull.app.setTab('classic'); });
+    const rl = await rev(() => {
+      const m = Lull.app.modes.classic; m.newGame(true);
+      const g = m.game; m.score = 987654;
+      for (let y = 0; y < 19; y++) for (let x = 0; x < 10; x++) if (x !== y % 10) g.board.set(x, y, 8);
+      m.frame(performance.now(), 0.016);
+      return { over: m.over, card: m.cardOpen, pile: m.view.pileup && m.view.pileup.length, best: Lull.app.store.state.stats.classic.best, stored: JSON.parse(localStorage.getItem('lull.save.v1')).stats.classic.best };
+    });
+    await rp.reload();
+    await rp.waitForTimeout(600);
+    const rl1 = await rev(() => { const m = Lull.app.modes.classic; Lull.app.setTab('classic'); return { best: Lull.app.store.state.stats.classic.best, started: m.started, over: m.over, card: m.cardOpen, text: document.getElementById('classic-overlay').textContent }; });
+    check('reload during the pile-up: the game over is kept (the best saved at the top out), Classic waits at its start card', rl.over && !rl.card && rl.pile === 1 && rl.stored === 987654 && rl1.best === 987654 && !rl1.started && rl1.card && /987,654/.test(rl1.text), JSON.stringify([rl, rl1]));
+    await rctx.close();
+    await ev(() => Lull.app.setTab('classic'));
+  }
   await page.click('.tabs button[data-tab="play"]');
   check('leaving Classic stops the music', await ev(() => !Lull.Music.playing));
   // Rendered offline (as scripts/audio-render.cjs does, at length): no clipping, nothing silent, movement barely there,

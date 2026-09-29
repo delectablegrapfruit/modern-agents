@@ -21,6 +21,9 @@
   // double-tap lands within ~150 ms, while aiming a new piece takes longer than this. Moving and turning still work,
   // and Classic's gravity and lock delay are never held up by it.
   const SET_GRACE_MS = 180;
+  // Classic's top out: after the piece that could not appear, this many more from the queue pile up on it, PILE_GAP
+  // seconds apart; the card comes PILE_REST seconds after the last.
+  const PILE_MORE = 3, PILE_GAP = 0.42, PILE_REST = 0.55;
 
   // Items that change the board at once (Board): one that leaves it empty is a fresh start. The rest change the piece
   // in play (Shapers, Choice, Tools) or what the next clears pay (Luck); those can be taken back until the piece sets.
@@ -392,10 +395,10 @@
     get cs() { return this.app.store.state.stats.classic; }
 
     newGame(start) {
-      const game = new Game({ w: 10, h: 20, previewCount: 3, maxHistory: 0, freeHold: false });
+      const game = new Game({ w: 10, h: 20, previewCount: 3, maxHistory: 0, freeHold: false, ceiling: true });
       this.attachGame(game, {});
       this.view.showBank = true;
-      Object.assign(this, { tetrises: 0, level: 1, lines: 0, score: 0, ms: 0, acc: 0, lockT: 0, resets: 0, over: false, paused: false, started: !!start, counted: false, mult: 1 });
+      Object.assign(this, { tetrises: 0, level: 1, lines: 0, score: 0, ms: 0, acc: 0, lockT: 0, resets: 0, over: false, paused: false, started: !!start, counted: false, mult: 1, pile: null, newBest: false });
       if (start) { this.hideCard(); L.Music.rewind(); }
       else this.showStart();
       this.renderStatus();
@@ -422,7 +425,8 @@
 
     frame(now, dt) {
       const g = this.game, p = g.piece;
-      if (this.running() && p && !g.fitsAt(p, p.rot, p.x, p.y)) { g.over = true; this.onTopout(); }
+      if (this.pile && !this.pile.done) this.pileFrame(dt);
+      else if (this.running() && p && !g.fitsAt(p, p.rot, p.x, p.y)) { g.over = true; this.onTopout(); }
       else if (this.running() && p) {
         this.ms += dt * 1000; // the game's own clock: running time only, never paused time
         if (this.ms >= 60000) this.countGame();
@@ -478,13 +482,21 @@
 
     action(act, rep) {
       if (!rep && act === 'drop' && !this.started && !this.over) { this.newGame(true); return true; }
-      // A second Space right after the drop that ended the game does not start the next one unseen.
-      if (!rep && act === 'drop' && this.over) { if (!this.settling('drop')) this.newGame(true); return true; }
+      // A second Space right after the drop that ended the game does not start the next one unseen (nor skip the top
+      // out); during the top out, Space goes straight to the card.
+      if (!rep && act === 'drop' && this.over) {
+        if (this.settling('drop')) return true;
+        if (this.pile && !this.pile.done) this.finishPile();
+        else this.newGame(true);
+        return true;
+      }
       if (!rep && act === 'pause') { this.togglePause(); return true; }
       return super.action(act, rep);
     }
 
     togglePause(force) {
+      // Pausing, leaving the tab or rolling up during the top out: it ends there, at the card (quietly when away).
+      if (this.pile && !this.pile.done) { this.finishPile({ quiet: force === true }); return; }
       if (!this.started || this.over) return;
       this.paused = force != null ? force : !this.paused;
       if (this.paused) this.showCard([h('h2', null, 'Paused'), h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => this.togglePause(false) }, 'Resume'))]);
@@ -536,16 +548,84 @@
       this.app.achieve({ mode: 'classic', r, g: this.game, score: this.score, level: this.level, lines: this.lines, tetrises: this.tetrises, ms: this.ms });
     }
 
+    /**
+     * Topped out: the game ends here, and everything it counts (score, lines, level, best, stats) is final and saved
+     * now. Then the classic top out plays out (see startPile), and the card comes after it.
+     */
     onTopout() {
       if (this.over) return;
       this.over = true;
-      const S = this.cs, best = this.score > S.best;
+      const S = this.cs;
+      this.newBest = this.score > S.best;
       S.best = Math.max(S.best, this.score);
       this.app.store.touch();
-      this.app.sound.play('fail');
-      if (this.app.settings.announcer !== false && this.app.settings.sound) L.Announcer.say(['gameover']);
+      if (this.app.saveNow) this.app.saveNow();
+      this.renderStatus();
+      this.renderControls();
+      this.startPile();
+    }
+
+    /**
+     * The classic top out: the piece that could not appear sets where it appears, over the stack, and the next few
+     * from the queue appear one after another at the same spot, each over the last. The game itself is never
+     * touched (no cells, queue or numbers change): the pile is only drawn (BoardView.pileup). Under reduced motion it
+     * is all there at once.
+     */
+    startPile() {
+      const g = this.game, steps = [];
+      const add = (type, rot, x, y) => steps.push({ color: type.color, cells: type.rots[rot].map(([cx, cy]) => [g.board.wx(x + cx), y + cy]).filter(([, cy]) => cy >= 0 && cy < g.h) });
+      if (g.piece) add(g.piece.type, g.piece.rot, g.piece.x, g.piece.y);
+      const queued = g.queue.slice(0, PILE_MORE);
+      for (const e of queued) {
+        const type = Pieces.get(e.id);
+        if (!type) continue;
+        const rot = e.rot || 0, pos = g.spawnPosition(type, rot);
+        add(type, rot, pos.x, pos.y);
+      }
+      this.pile = { steps, shown: 0, t: 0, done: false, fromQueue: steps.length - (g.piece ? 1 : 0), quietFirst: performance.now() - (this.setAt || -1e9) < 150 };
+      this.view.pileup = [];
+      this.view.queueSkip = 0;
+      if (this.reduced) { this.finishPile(); return; }
+      this.pileFrame(0);
+    }
+
+    /** One step of the pile: the next piece appears, with a soft set sound. */
+    pileStep(quiet) {
+      const P = this.pile, st = P.steps[P.shown++];
+      this.view.pileup.push({ cells: st.cells, color: st.color, t: quiet ? -1 : P.t });
+      this.view.queueSkip = Math.max(0, P.shown - (P.steps.length - P.fromQueue));
+      // The first is the piece that could not appear: when it came right as the last piece set, that set sound is its.
+      if (!quiet && !(P.shown === 1 && P.quietFirst)) this.app.sound.play('lock');
+      this.view.dirty = true;
+    }
+
+    pileFrame(dt) {
+      const P = this.pile;
+      P.t += dt;
+      while (P.shown < P.steps.length && P.t >= P.shown * PILE_GAP) this.pileStep();
+      this.view.pileT = P.t;
+      this.view.dirty = true;
+      if (P.shown >= P.steps.length && P.t >= (P.steps.length - 1) * PILE_GAP + PILE_REST) this.finishPile();
+    }
+
+    /** The top out's end, now: the whole pile, the game over sound and call (unless quiet), and the card. */
+    finishPile(o) {
+      const P = this.pile;
+      if (!P || P.done) return;
+      while (P.shown < P.steps.length) this.pileStep(true);
+      P.done = true;
+      this.view.pileT = Infinity; // every piece of it fully there
+      this.view.dirty = true;
+      if (!(o && o.quiet)) {
+        this.app.sound.play('fail');
+        if (this.app.settings.announcer !== false && this.app.settings.sound) L.Announcer.say(['gameover']);
+      }
+      this.showOverCard();
+    }
+
+    showOverCard() {
       this.showCard([
-        h('h2', null, best ? 'New best!' : 'Game over'),
+        h('h2', null, this.newBest ? 'New best!' : 'Game over'),
         h('p', null, h('span', { class: 'big' }, fmtInt(this.score)), ' points'),
         h('p', null, 'Level ' + this.level + ' · ' + this.lines + ' lines'),
         h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => this.newGame(true) }, 'Play again ', h('kbd', null, 'Space'))),

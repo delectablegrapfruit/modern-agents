@@ -552,6 +552,174 @@ test('hold in Free Play: a swap to a piece with no room is refused and changes n
   assert(c.holdPiece() && c.over, 'Classic block out');
 });
 
+// Classic (the ceiling option): the well's top row holds shapes like any other, and only a blocked spawn spot ends it.
+const classicGame = (seed) => new Game({ w: 10, h: 20, seed: seed || 1, previewCount: 3, maxHistory: 0, freeHold: false, ceiling: true });
+/** Every spot (rot, x, y) the piece in play can get to by moving, turning and lowering (never setting it). */
+function reachable(g) {
+  const p = g.piece, start = { rot: p.rot, x: p.x, y: p.y }, key = (s) => s.rot + ':' + s.x + ':' + s.y;
+  const seen = new Map([[key(start), start]]), q = [start], quiet = g.emit;
+  g.emit = () => {};
+  try {
+    while (q.length) {
+      const s = q.shift();
+      for (const op of ['L', 'R', 'D', 'CW', 'CCW', '180']) {
+        Object.assign(p, s);
+        let ok;
+        if (op === 'L') ok = g.move(-1); else if (op === 'R') ok = g.move(1);
+        else if (op === 'D') { ok = g.fitsAt(p, p.rot, p.x, p.y - 1); if (ok) p.y--; }
+        else ok = g.rotate(op === 'CW' ? 1 : op === 'CCW' ? -1 : 2);
+        const n = { rot: p.rot, x: p.x, y: p.y };
+        if (ok && !seen.has(key(n))) { seen.set(key(n), n); q.push(n); }
+      }
+    }
+  } finally { g.emit = quiet; Object.assign(p, start); }
+  return seen;
+}
+test('Classic: every shape appears with its top in the top row (the I too); puzzles and Free Play keep their spawn', () => {
+  for (const id of Pieces.TETROMINOES) {
+    const g = classicGame(); g.spawn({ id });
+    assert(!g.over && Math.max(...g.cellsOf().map(([, y]) => y)) === 19, id + ' ' + JSON.stringify(g.cellsOf()));
+    const f = new Game({ w: 10, h: 20, seed: 1, freeHold: false }), t = Pieces.get(id);
+    assert.deepStrictEqual(f.spawnPosition(t, 0), L.spawnPos ? L.spawnPos(10, 20, t, 0) : f.spawnPosition(t, 0), 'no ceiling: the plain spawn');
+  }
+  const g = classicGame(); g.spawn({ id: 'I' });
+  assert(g.rotate(1) && cellKey(g.cellsOf()) === cellKey([[5, 16], [5, 17], [5, 18], [5, 19]]), 'an I stood on end at the spawn: column 5, rows 16 to 19');
+  for (const id of Pieces.TETROMINOES.filter((i) => Pieces.get(i).kicks !== 'none')) {
+    const c = classicGame(); c.spawn({ id });
+    // (A pair, not an {x, y} object: storing a ceiling y into that shape slows the puzzle generator's spawnPos in V8.)
+    const at = [c.piece.x, c.piece.y];
+    for (let i = 0; i < 4; i++) assert(c.rotate(1), id + ' turns at the ceiling');
+    assert(c.piece.rot === 0 && c.piece.x === at[0] && c.piece.y === at[1], id + ': four turns at the ceiling come back to the start');
+  }
+});
+test('Classic: every piece, in every turn and column, can be moved and turned into the top row and set there', () => {
+  for (const id of Pieces.TETROMINOES) {
+    const t = Pieces.get(id), shapes = new Set();
+    const g = classicGame(); g.spawn({ id });
+    const seen = reachable(g);
+    for (let rot = 0; rot < 4; rot++) {
+      const b = t.rotBounds[rot], k = t.keys ? t.keys[rot] : rot;
+      if (shapes.has(k)) continue;
+      shapes.add(k);
+      for (let x = -b.minX; x <= 9 - b.maxX; x++) {
+        // Some turn of the piece puts exactly these cells there (the I and S, Z and O have twins).
+        const want = cellKey(t.rots[rot].map(([cx, cy]) => [x + cx, 19 - b.maxY + cy]));
+        const hit = [...seen.values()].some((s) => cellKey(g.cellsOf(g.piece, s.rot, s.x, s.y)) === want);
+        assert(hit, id + ' turn ' + rot + ' at column ' + x + ' cannot reach the top row');
+      }
+    }
+    // And sets there, at the left wall on a column built up to it, with the game going on (the next piece has room).
+    for (let rot = 0; rot < 4; rot++) {
+      const b = t.rotBounds[rot], x = -b.minX, y = 19 - b.maxY;
+      const cells = t.rots[rot].map(([cx, cy]) => [x + cx, y + cy]);
+      const s = classicGame(2); s.spawn({ id }); s.queue[0] = { id: 'O', rot: 0 };
+      const [sx, sy] = cells.reduce((a, c) => (c[1] < a[1] ? c : a));
+      for (let yy = 0; yy < sy; yy++) s.board.set(sx, yy, 8);
+      const target = cellKey(cells);
+      const spot = [...reachable(s).values()].find((q) => cellKey(s.cellsOf(s.piece, q.rot, q.x, q.y)) === target);
+      assert(spot, id + ' turn ' + rot + ': the spot at the top left is reachable over the stack');
+      Object.assign(s.piece, spot);
+      const r = s.lower();
+      assert(r && r.cells && cellKey(r.cells) === target && cells.every(([cx, cy]) => s.board.get(cx, cy)), id + ' turn ' + rot + ' set in the top row');
+      assert(cells.some(([, cy]) => cy === 19) && !s.over && s.piece && s.piece.type.id === 'O', id + ' turn ' + rot + ': the game goes on');
+    }
+  }
+});
+test('Classic: the game goes on while the spawn spot is free, even with the top row partly filled', () => {
+  for (const id of Pieces.TETROMINOES) {
+    const g = classicGame();
+    let tops = 0; g.on('topout', () => tops++);
+    for (let y = 0; y < 18; y++) for (let x = 0; x < 9; x++) g.board.set(x, y, 8);
+    for (const x of [0, 1, 2, 7, 8, 9]) g.board.set(x, 19, 8);
+    assert(g.spawn({ id }) && !g.over && !tops, id + ' appears');
+  }
+  // Rows 0-18 full but for one column: the I appears in the top row and sets there; then the T has nowhere to appear.
+  const g = classicGame(3);
+  let tops = 0; g.on('topout', () => tops++);
+  for (let y = 0; y < 19; y++) for (let x = 0; x < 9; x++) g.board.set(x, y, 8);
+  g.queue[0] = { id: 'I', rot: 0 }; g.queue[1] = { id: 'T', rot: 0 };
+  g.spawnNext();
+  assert(g.piece && g.piece.type.id === 'I' && !g.over && g.cellsOf().every(([, y]) => y === 19), 'the I appears in the top row: ' + JSON.stringify(g.cellsOf()));
+  assert(g.move(-1) && g.move(-1) && g.move(-1), 'and moves along it');
+  const r = g.drop();
+  assert(r && cellKey(r.cells) === cellKey([[0, 19], [1, 19], [2, 19], [3, 19]]) && !r.lines, 'and sets there');
+  assert(g.over && tops === 1 && g.piece.type.id === 'T', 'the T, a row lower, tops out');
+});
+test('Classic: a piece that cannot appear right where it appears is the game over (no nearby spot is tried)', () => {
+  for (const id of Pieces.TETROMINOES) {
+    const t = Pieces.get(id);
+    const pos = classicGame().spawnPosition(t, 0);
+    for (const [cx, cy] of t.rots[0]) {
+      const g = classicGame();
+      let tops = 0; g.on('topout', () => tops++);
+      g.board.set(pos.x + cx, pos.y + cy, 8);
+      assert(!g.spawn({ id }) && g.over && tops === 1, id + ' blocked at one cell');
+      assert(g.piece && g.piece.type.id === id && g.piece.x === pos.x && g.piece.y === pos.y && g.piece.rot === 0, id + ' stays where it appears');
+    }
+  }
+  // A held piece that cannot appear is a block out too.
+  const c = classicGame();
+  c.spawn({ id: 'O' }); while (c.move(-1));
+  c.board.set(4, 19, 8);
+  c.hold = { id: 'T', rot: 0 };
+  assert(c.holdPiece() && c.over && c.piece.type.id === 'T', 'the held T blocks out');
+});
+
+test('Classic: a T turned flat against the ceiling is not a T-spin (above the well is open); real spins still count', () => {
+  // A stack one row below the top next to the spawn, the usual shape just before a top out: turn, move, turn.
+  for (const [col, seq] of [[2, ['CW', 'L', 'CW']], [6, ['CCW', 'R', 'CCW']]]) {
+    const g = classicGame();
+    g.replacePiece({ id: 'T' });
+    for (let y = 0; y <= 18; y++) g.board.set(col, y, 8);
+    for (const s of seq) assert(s === 'L' ? g.move(-1) : s === 'R' ? g.move(1) : g.rotate(s === 'CW' ? 1 : -1), 'column ' + col + ': ' + s);
+    assert(g.piece.rot === 2 && g.cellsOf().some(([, y]) => y === 19) && !g.fitsAt(g.piece, 2, g.piece.x, g.piece.y - 1), 'the T points down, flat in the top row');
+    let r; g.on('lock', (x) => { r = x; });
+    g.lock();
+    assert(!r.mini && !r.tspin && r.score === 0, 'column ' + col + ', ' + seq.join(' ') + ': no spin, no score ' + JSON.stringify({ mini: r.mini, tspin: r.tspin, score: r.score }));
+  }
+  // Every spot in the top row a T can reach over any one column built to row 18, set right after a turn: never a spin.
+  for (let col = 0; col < 10; col++) {
+    const mk = () => { const g = classicGame(); g.replacePiece({ id: 'T' }); for (let y = 0; y <= 18; y++) g.board.set(col, y, 8); return g; };
+    const probe = mk();
+    if (!probe.fitsAt(probe.piece, probe.piece.rot, probe.piece.x, probe.piece.y)) continue; // the stack is in the spawn spot
+    for (const spot of reachable(probe).values()) {
+      if (!probe.cellsOf(probe.piece, spot.rot, spot.x, spot.y).some(([, y]) => y === 19)) continue;
+      const g = mk();
+      Object.assign(g.piece, spot, { lastRot: true, kick: 0 });
+      const r = g.lock();
+      assert(r && !r.mini && !r.tspin, 'column ' + col + ', ' + JSON.stringify(spot) + ': no spin at the ceiling');
+    }
+  }
+  // Real blocks still count, in the top row too: a T turned under an overhang in row 19 is a T-spin double.
+  let g = classicGame();
+  g.replacePiece({ id: 'T' });
+  for (let y = 0; y <= 18; y++) for (let x = y < 17 ? 1 : 0; x < 10; x++) g.board.set(x, y, 8);
+  g.board.set(4, 17, 0); for (const x of [3, 4, 5]) g.board.set(x, 18, 0);
+  g.board.set(3, 19, 8); g.board.set(5, 19, 8);
+  Object.assign(g.piece, { rot: 2, x: 3, y: 17, lastRot: true, kick: 0 });
+  let r = g.lock();
+  assert(r.tspin && r.lines === 2 && r.score > 0, 'a T-spin double under an overhang in the top row');
+  // And at the bottom of a Classic well, the same T-spin double and Mini as in Relaxed.
+  const slot = () => {
+    const c = classicGame(4);
+    const fill = (y, row) => { for (let x = 0; x < 10; x++) if (row[x] === 'X') c.board.set(x, y, 8); };
+    fill(0, 'XXX.XXXXXX');
+    fill(1, 'XX...XXXXX');
+    c.board.set(4, 2, 8);
+    c.replacePiece({ id: 'T' });
+    return c;
+  };
+  g = slot();
+  Object.assign(g.piece, { rot: 2, x: 2, y: 0, lastRot: true });
+  r = g.lock();
+  assert(r.tspin && r.lines === 2 && r.score > 0, 'a T-spin double under an overhang in Classic');
+  g = slot();
+  g.board.set(2, 0, 0); g.board.set(2, 2, 8);
+  Object.assign(g.piece, { rot: 2, x: 2, y: 0, lastRot: true, kick: 1 });
+  r = g.lock();
+  assert(r.mini && !r.tspin && r.score > 0, 'a T-spin Mini under an overhang in Classic');
+});
+
 console.log('puzzles');
 function replay(p) {
   const g = new Game({ board: Board.fromArray(p.w, p.h, p.cells, { wrap: p.wrap }), queue: p.pieces, mods: { noRotate: p.mods.includes('rigid'), heavy: p.mods.includes('heavy'), noHold: !p.mods.includes('hold') } });

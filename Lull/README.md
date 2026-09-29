@@ -124,7 +124,16 @@ look at boards at all.
 
 **Classic** — its own tab, the last of the places to play. Plain Tetris: pieces fall, faster every ten
 lines (guideline speed curve), half-second lock delay, soft and hard drop, hold (once per piece), game over, best
-score. Lines you clear still bank as ⦵, multiplied by the back-to-back streak — ×0.5 for each tetris or T-spin in a
+score. The well's top row is a row like any other: every piece appears with its top in it (the I too), a piece touching
+the ceiling still touches it after a turn (the space above the well counts as open, so a T turned flat against the
+ceiling is no T-spin), and the game ends only when a new piece cannot appear right where it
+appears (no nearby spot is tried). Then it tops out the classic way: that piece sets where it is, over the stack, and
+the next three from the queue appear one after another at the same spot (about 0.4 s apart, each with a soft set
+sound), each over the last, see-through where they overlap and traced round their outlines, each outline a step inside the
+one before so the layers show in any palette; then the game over sound,
+the announcer and the card, the pile still behind it. Nothing counts any more by then (score, lines, best and stats
+are final and saved at the top out); Space or a tap skips to the card, pausing or leaving ends it there, and under
+reduced motion the pile is all there at once. Lines you clear still bank as ⦵, multiplied by the back-to-back streak — ×0.5 for each tetris or T-spin in a
 row, up to ×10 at twenty (the status bar's *Bank*); the score is never multiplied. Music: Korobeiniki (the public-domain folk tune), note for note in its own
 key, A minor, slowed to 80 and dressed as calm ambient electronica with a little IDM in its detail — a soft, round
 lead (a sine with a breath of FM and a triangle under it, gliding between notes that touch, a late vibrato on long
