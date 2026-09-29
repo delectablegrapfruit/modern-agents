@@ -380,11 +380,10 @@
     // goes over its leading edge, lifting toward you as it does; landing, a puff of dust.
     drawTox(bx, t) {
       const ctx = this.ctx, s = bx.s, h = s / 2, st = MZ.toxAt(bx, t), A = bx.tiles[st.i], B = bx.tiles[st.j];
-      if (bx.up == null) { // the face art's up: whichever side of the box is nearest the top of the screen, the same for every face
-        let x = 0, y = 0;
-        for (const q of bx.tiles) { x += q.ux; y += q.uy; }
-        bx.up = -Math.round(Math.atan2(y, x) / (Math.PI / 2)) * (Math.PI / 2);
-      }
+      // The faces are painted on the cube as a Tox Box's are, each upright while it's a side facing along the track: so
+      // once tumbled round on top it lies with its brows toward one end of the track (which end depends on how the box
+      // was painted), and as the box tumbles on, the face coming up turns with it. Never simply upright on screen.
+      if (bx.up == null) { const h = Math.sin(bx.tiles[0].x * 0.013 + bx.tiles[0].y * 0.029) * 43758.5453; bx.up = h - Math.floor(h) < 0.5 ? -Math.PI / 2 : Math.PI / 2; }
       let a0 = Math.atan2(A.uy, A.ux), a1 = Math.atan2(B.uy, B.ux);
       while (a1 - a0 > Math.PI) a1 -= TAU;
       while (a1 - a0 < -Math.PI) a1 += TAU;

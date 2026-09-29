@@ -258,9 +258,18 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     check('Invincible doesn\'t get you through: still solid', G.toxCover(T0, tx.s / 2 - buf, G.ball.x, G.ball.y) === 'none' && !hits.length);
     tx.end = end0;
     losses.length = 0; at(onto(tSolid) - 0.05); put(Tk);
-    const starOn = G.fx.star > 0;
     run(0.05 + tx.roll + 0.1);
-    check('in its path as it slams down: that loses a life, Invincible or not', starOn && losses.length === 1 && losses[0] === 'crush', (starOn ? 'Invincible, ' : '') + (losses.join(',') || 'no loss'));
+    const pin0 = { x: G.ball.x, y: G.ball.y }, pinned = G.toxPin === tx, hidden = parseFloat(document.querySelector('#player').firstElementChild.style.opacity) === 0;
+    run(0.3, rev);
+    check('slammed while Invincible: no life lost, but pinned under it, out of sight, and stuck', !losses.length && pinned && hidden && Math.hypot(G.ball.x - pin0.x, G.ball.y - pin0.y) < 1, [losses.join(',') || 'no loss', pinned ? 'pinned' : 'free', hidden ? 'hidden' : 'shown'].join(', '));
+    let freed = 0;
+    for (let i = 0; i < 60 * 4 && G.toxPin; i++) { run(1 / 60); freed += 1 / 60; }
+    const fr0 = { x: G.ball.x, y: G.ball.y };
+    run(0.4, rev);
+    check('...until it tumbles off you: then you move freely', !G.toxPin && Math.hypot(G.ball.x - fr0.x, G.ball.y - fr0.y) > 20 && !losses.length, 'after ' + freed.toFixed(2) + ' s');
+    fresh(); losses.length = 0; at(onto(tSolid) - 0.05); put(Tk);
+    run(0.05 + tx.roll + 0.1);
+    check('otherwise, in its path as it slams down: that loses a life', losses.length === 1 && losses[0] === 'crush', losses.join(',') || 'no loss');
     G.quit();
 
     // ----- the Gauntlet's item puzzles, and its goals -----

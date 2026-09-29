@@ -420,6 +420,7 @@
       for (const q of [].concat(m.gaps || [], m.squeezes || [])) { q.seen = false; q.revealed = false; }
       for (const gb of m.gboxes || []) { gb.out = false; gb.back = null; gb.seen = false; gb.bornAt = null; gb.gotAt = null; }
       for (const bx of m.toxes || []) bx.seen = false;
+      this.toxPin = null;
       this.world.sw = {};
     },
     mod(id) { return !!(this.maze && this.maze.mods && this.maze.mods.includes(id)); },
@@ -475,7 +476,7 @@
     resetPower() {
       this.hp = HEARTS; this.bonus = 0; this.hurtT = REGEN; this.guardT = 0; this.stuck = false; this.clearT = 0;
       this.stopT = 0; this.shakeT = 0; this.hitAtT = null; this.beepT = 0;
-      this.item = null; this.roll = null; this.fx = {}; this.scale = 1;
+      this.item = null; this.roll = null; this.fx = {}; this.scale = 1; this.toxPin = null;
       this.lastSafe = { x: this.ball.x, y: this.ball.y };
       this.emit('power');
     },
@@ -552,6 +553,7 @@
       this.elapsed += dt;
       if (this.tickPower(dt)) return; // (squeezed in a crawlspace, and that lost the maze)
       if (fx.bullet || fx.launch || fx.bubble) { this.touched = false; this.offEdge(dt); this.fly(dt); if (this.state === 'play' && this.mode === 'endless') this.endlessTick(); return; }
+      if (this.toxPinned()) { this.input.takeGrab(); this.glideVec(); this.vel.x = this.vel.y = 0; return; } // (flattened under a Tox Box: stuck till it's gone)
 
       this.carry(dt);
       const d = inp.takeGrab(), u = inp.vector();
@@ -687,8 +689,9 @@
       return inn === 0 ? 'none' : inn === mask.n ? 'all' : 'some';
     },
     // Each frame: every box that lands this frame thuds (and shakes the view when close). The one thing that hurts is
-    // being in its path as it slams down: that loses a life, Invincible or not (unless it came down hollow side down
-    // right over you). On the Casual rule you're shoved out ahead of it instead, the way it's going, never past it.
+    // being in its path as it slams down: that loses a life (unless it came down hollow side down right over you).
+    // Invincible, it pins you instead: flattened under it, out of sight and stuck until it tumbles off you. On the
+    // Casual rule you're shoved out ahead of it, the way it's going, never past it.
     // True if it lost the maze.
     toxStep(dt) {
       const m = this.maze;
@@ -702,6 +705,7 @@
         if (near < 160) this.shakeT = Math.max(this.shakeT, 0.1);
         if (this.toxCover(T, bx.s / 2 - buf, b.x, b.y) === 'none') continue;
         if (MZ.toxFace(bx, now.i) === 0 && this.toxCover(T, bx.s / 2 + 2 * buf, b.x, b.y) === 'all') continue; // safe inside
+        if (this.fx.star > 0) { this.toxPin = bx; this.vel.x = this.vel.y = 0; this.input.takeGrab(); MZ.Audio.play('crush'); this.emit('power'); continue; } // Invincible: pinned under it, unhurt
         if (S().gameplay.rule !== 'casual') { MZ.Audio.play('crush'); this.lose('crush'); return true; }
         // (Casual) Out ahead of it: the next tile along, or past the end of its track; only if there's no floor there, behind it.
         const d = now.i > was.i ? 1 : -1, W = this.box(), mask = this.sprite.mask, R = (mask && mask.n ? mask.maxR : 0.5) * W;
@@ -713,6 +717,16 @@
         this.input.takeGrab();
         MZ.Audio.play('crush');
       }
+      return false;
+    },
+    // Slammed while Invincible: flattened under the box, out of sight and stuck, until it has tumbled off you.
+    toxPinned() {
+      const bx = this.toxPin;
+      if (!bx) return false;
+      const F = MZ.toxFoot(bx, MZ.toxAt(bx, this.playT)), b = this.ball;
+      if (this.toxCover(F, F.hl, b.x, b.y, F.hs) !== 'none') return true;
+      this.toxPin = null;
+      this.emit('power');
       return false;
     },
     // How hidden the picture is inside a Tox Box (0: not at all, 1: shut in), fading as the box comes down or lifts off.
@@ -1070,7 +1084,7 @@
     giveItem(id) { if (ITEMS[id]) { this.roll = { t: ROLL, id }; this.endRoll(); } },
     useItem() {
       const id = this.item, fx = this.fx;
-      if (!id || this.state !== 'play' || fx.bullet || fx.launch) return false;
+      if (!id || this.state !== 'play' || fx.bullet || fx.launch || this.toxPin) return false;
       if (id === 'bullet') {
         const route = this.bulletRoute();
         if (!route) { MZ.toast('Nowhere to fly', 1200); return false; }
@@ -1731,7 +1745,7 @@
         const cls = (fx.star > 0 ? ' invincible' + (fx.star < 1.5 ? ' ending' : '') : '') + (this.guardT > 0 && this.state === 'play' ? ' guard' : '') +
           (fx.bullet ? ' bullet' : '') + (fx.bubble ? ' bubbled' : '') + (flare ? ' flare' : '') + (this.recharging() ? ' recharge' : '') + (look < 1 ? ' down' : '');
         if (pl.className !== cls.trim()) pl.className = cls.trim();
-        const hid = this.state === 'play' ? this.toxInside() : 0, seen = Math.min(look, 1 - 0.72 * hid); // shut inside a Tox Box: faint under it
+        const hid = this.state === 'play' ? this.toxInside() : 0, seen = this.toxPin && this.state === 'play' ? 0 : Math.min(look, 1 - 0.72 * hid); // shut inside a Tox Box: faint under it; flattened under one: gone
         const pm = pl.firstElementChild, op = seen >= 1 ? '' : seen.toFixed(2), gray = look >= 1 ? '' : ((1 - look) / 0.55 * 0.9).toFixed(2);
         if (pm.style.opacity !== op) pm.style.opacity = op;
         if (pm.style.getPropertyValue('--gray') !== gray) pm.style.setProperty('--gray', gray);
