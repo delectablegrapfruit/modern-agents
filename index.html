@@ -534,19 +534,19 @@ const U={
  mara:{name:"Mara Okonkwo",h:"mara",hue:14,cur:"film",city:"Rotterdam",since:2019,landed:86,tries:1204,vouchedBy:31,picks:212,followers:3104,following:188,rec:[52,34,14],undisclosed:0,affLinks:3,answers:41,price:4,bio:"Programmed a small festival for nine years. Now I watch three films a week and tell you about one."},
  tobias:{name:"Tobias Reinholt",h:"reinholt",hue:205,cur:"music",city:"Leipzig",since:2018,landed:91,tries:2210,vouchedBy:24,picks:388,followers:2210,following:96,rec:[61,30,9],undisclosed:0,affLinks:0,answers:27,price:3,bio:"Record shop, eleven seats, good system. If I pick it, I play it in the shop. If I sell it, I say so."},
  lena:{name:"Lena Vasquez",h:"lenareads",hue:120,cur:"book",city:"Mexico City",since:2017,landed:88,tries:1630,vouchedBy:27,picks:164,followers:4580,following:240,rec:[55,33,12],undisclosed:0,affLinks:12,answers:63,price:5,bio:"Bookseller for fourteen years. Novels, translated when possible. I read slowly and recommend rarely."},
- dev:{name:"Dev Iyer",h:"devplays",hue:270,cur:"game",city:"Bengaluru",since:2021,landed:83,tries:640,vouchedBy:12,picks:96,followers:1480,following:130,rec:[48,35,17],undisclosed:0,affLinks:9,answers:38,price:0,bio:"Games under ten hours, made by teams under ten people. No subscription; the itch.io links keep this going."},
+ dev:{name:"dev.i",short:"dev.i",sn:"D",real:"Dev Iyer",h:"devplays",hue:270,cur:"game",city:"Bengaluru",since:2021,landed:83,tries:640,vouchedBy:12,picks:96,followers:1480,following:130,rec:[48,35,17],undisclosed:0,affLinks:9,answers:38,price:0,bio:"Games under ten hours, made by teams under ten people. No subscription; the itch.io links keep this going."},
  jonah:{name:"Jonah Whitfield",h:"longreads",hue:40,cur:"article",city:"Glasgow",since:2020,landed:79,tries:980,vouchedBy:15,picks:430,followers:2020,following:310,rec:[41,38,21],undisclosed:0,affLinks:0,answers:12,price:3,bio:"I finish the eight-thousand-word pieces and tell you which four were worth it."},
- priya:{name:"Priya Sundaram",h:"priyalistens",hue:330,cur:"podcast",city:"Chennai",since:2019,landed:90,tries:870,vouchedBy:18,picks:141,followers:1320,following:84,rec:[58,32,10],undisclosed:0,affLinks:0,answers:19,price:2,bio:"Former radio producer. Audio documentaries, one at a time."},
+ priya:{name:"priya, listening",short:"priya",sn:"P",real:"Priya Sundaram",h:"priyalistens",hue:330,cur:"podcast",city:"Chennai",since:2019,landed:90,tries:870,vouchedBy:18,picks:141,followers:1320,following:84,rec:[58,32,10],undisclosed:0,affLinks:0,answers:19,price:2,bio:"Former radio producer. Audio documentaries, one at a time."},
  yusra:{name:"Yusra Haddad",h:"yusra",hue:250,cur:"art",city:"London",since:2022,landed:84,tries:310,vouchedBy:19,picks:58,followers:1870,following:77,rec:[50,34,16],undisclosed:0,affLinks:0,answers:8,price:4,bio:"Museum registrar. Paintings to see in person, before they close."},
- sable:{name:"Sable Marchetti",h:"sundaytable",hue:0,cur:"mixed",city:"Turin",since:2018,landed:89,tries:3900,vouchedBy:42,picks:520,followers:9800,following:61,rec:[57,32,11],undisclosed:0,affLinks:0,answers:22,price:6,bio:"One film, one record, one book. Every Sunday."},
- ines:{name:"Ines Kaur",h:"ines",hue:25,since:2025,tried:88,followers:140,following:61,trec:[58,30,12],bio:"Cinema on Fridays, records on Sundays."},
- rae:{name:"Rae Oduya",h:"rae",hue:160,since:2026,tried:21,followers:64,following:40,trec:[52,38,10],bio:"Commuter. Reads on trains."},
- sam:{name:"Sam Whitlock",h:"samw",hue:90,since:2025,tried:47,followers:88,following:52,trec:[45,40,15],bio:"Vinyl, slowly."},
- dana:{name:"Dana Moss",h:"danamoss",hue:300,since:2024,tried:130,followers:210,following:95,trec:[40,44,16],bio:"Reading my way through the translated fiction shelf."},
+ sable:{name:"Sunday Table",short:"Sunday Table",sn:"ST",real:"Sable Marchetti",h:"sundaytable",hue:0,cur:"mixed",city:"Turin",since:2018,landed:89,tries:3900,vouchedBy:42,picks:520,followers:9800,following:61,rec:[57,32,11],undisclosed:0,affLinks:0,answers:22,price:6,bio:"One film, one record, one book. Every Sunday."},
+ ines:{name:"ines at the pictures",short:"ines",sn:"I",h:"ines",hue:25,since:2025,tried:88,followers:140,following:61,trec:[58,30,12],bio:"Cinema on Fridays, records on Sundays."},
+ rae:{name:"rae on the 7:40",short:"rae",sn:"R",h:"rae",hue:160,since:2026,tried:21,followers:64,following:40,trec:[52,38,10],bio:"Commuter. Reads on trains."},
+ sam:{name:"sam // side b",short:"sam",sn:"S",h:"samw",hue:90,since:2025,tried:47,followers:88,following:52,trec:[45,40,15],bio:"Vinyl, slowly."},
+ dana:{name:"dana reads translated",short:"dana",sn:"D",h:"danamoss",hue:300,since:2024,tried:130,followers:210,following:95,trec:[40,44,16],bio:"Reading my way through the translated fiction shelf."},
  theo:{name:"Theo Brandt",h:"theob",hue:190,since:2026,tried:12,followers:30,following:22,trec:[50,33,17],bio:"Dad of two. Looking for films we can all watch."},
  me:{name:"Alex Moreno",h:"alexm",hue:200,since:2026,tried:34,followers:18,following:42,trec:[62,26,12],bio:"Trains, translated novels, co-op games.",invitedBy:"mara"},
 };
-for(const k in U){U[k].id=k;U[k].ini=U[k].name.split(" ").map(w=>w[0]).join("").slice(0,2);}
+for(const k in U){U[k].id=k;U[k].ini=U[k].sn||U[k].name.split(" ").map(w=>w[0]).join("").slice(0,2);}
 const CURL={film:"Film",music:"Music",book:"Books",article:"Long reads",game:"Games",podcast:"Podcasts",art:"Art",mixed:"Film, music and books"};
 
 const VOUCH=[
@@ -589,7 +589,7 @@ add("tworooms",{c:"sable",m:"book",title:"Two Rooms Over",by:"Hanne Sørlie, tr.
 add("glassorchard",{c:"dana",m:"book",title:"The Glass Orchard",by:"Ruth Adeyemi",year:2025,spec:"304 pp",on:["libby","kindle","applebooks"],art:{k:"dot",c:["#1f3d2b","#efe6d0","#e0b44c"]}});
 add("notfinishing",{c:"jonah",m:"article",title:"On Not Finishing",by:"Clara Vance · The Ledger Review",year:2026,spec:"6,000 words · 24 min",on:["safari","instapaper","reader"],pub:"THE LEDGER REVIEW",art:{c:["#f1f0ec","#141414","#c8452d"]}});
 add("keepers",{c:"jonah",m:"article",title:"The Last Lighthouse Keepers",by:"Oisín Hart · Harbour Quarterly",year:2026,spec:"9,000 words · 36 min",on:["safari","instapaper","reader"],pub:"HARBOUR QUARTERLY",art:{c:["#e8eef0","#10252c","#2a6f86"]}});
-add("tidewater",{c:"dev",m:"game",title:"Tidewater",by:"Small Hours Studio",year:2026,spec:"4 hours · single player",on:["steam","itch","eshop"],aff:{itch:"5%"},disc:"Bought it myself. Dev earns 5% through itch.io, most of the rest goes to the studio.",art:{k:"sea",c:["#1b2a4a","#e98a6a","#27476b","#f6d9a8","#f4efe6"]}});
+add("tidewater",{c:"dev",m:"game",title:"Tidewater",by:"Small Hours Studio",year:2026,spec:"4 hours · single player",on:["steam","itch","eshop"],aff:{itch:"5%"},disc:"Bought it myself. dev.i earns 5% through itch.io, most of the rest goes to the studio.",art:{k:"sea",c:["#1b2a4a","#e98a6a","#27476b","#f6d9a8","#f4efe6"]}});
 add("paperkingdoms",{c:"dev",m:"game",title:"Paper Kingdoms",by:"Loom & Lantern",year:2025,spec:"7 hours · 2-player couch co-op",on:["steam","eshop","psstore","gog"],art:{k:"kingdom",c:["#f2ead8","#d6c3a0","#9fb58a","#2b2b2b","#c8452d"]}});
 add("weightrooms",{c:"priya",m:"podcast",title:"The Interpreter",by:"The Weight of Rooms, ep. 3 · Halden & Moss",year:2026,spec:"40 min",on:["overcast","applepod","spotify","pocketcasts"],show:"THE WEIGHT OF ROOMS",art:{c:["#2b1d3a","#f3e6ff","#b58cff"]}});
 add("bluehours",{c:"yusra",m:"art",title:"Blue Hours (Three)",by:"Maren Holt · Kettle Gallery, London",year:2025,spec:"Oil on linen · until Nov 30",on:["maps","gmaps","safari"],disc:"No relationship with the gallery or the artist.",art:{k:"fields",c:["#16233f","#2d4f8a","#3b66a6","#27467c"],fr:"#1d1c1a"}});
@@ -602,7 +602,7 @@ const POSTS={
  pk_salt:{t:"pick",by:"mara",w:"salt",min:120,text:"Go in knowing nothing. #slowcinema",r:4,rv:8,st:64},
  tr_ines:{t:"tried",by:"ines",w:"salt",of:"pk_salt",verdict:"loved",min:58,text:"The radio scene.",r:2,rv:1,st:22},
  sam_q:{t:"post",by:"sam",min:90,text:"Anyone else going to @reinholt’s listening night on the 10th? Looking for someone to split a cab from the station. #sideb",r:3,st:5},
- ask_rae:{t:"ask",by:"rae",min:170,text:"Short novel for a three-hour train ride? Translated, not bleak. #translatedfiction",r:4,st:17,ctx:"Lena and Sable answered"},
+ ask_rae:{t:"ask",by:"rae",min:170,text:"Short novel for a three-hour train ride? Translated, not bleak. #translatedfiction",r:4,st:17,ctx:"Lena and Sunday Table answered"},
  pk_tide:{t:"pick",by:"dev",w:"tidewater",min:185,text:"",r:2,rv:14,st:88},
  pk_blue:{t:"pick",by:"yusra",w:"bluehours",min:210,text:"",r:0,rv:6,st:41},
  pk_jonah:{t:"pick",by:"jonah",w:"notfinishing",min:250,text:"Paywall’s down until the 30th. #longreads",r:0,rv:19,st:73},
@@ -654,14 +654,14 @@ const CLUBS=[
 ];
 const CLUBTALK={slowcinema:[{by:"ines",min:40,text:"Watched it last night. Is the radio scene one take?",st:6},{by:"mara",min:32,text:"@ines One take, seven minutes. Brandt said they shot it nine times.",st:22},{by:"theo",min:20,text:"Our cinema only has it at 10 pm. Worth a late night?",st:2},{by:"sam",min:12,text:"@theob Yes. Bring a coat, it’s a cold film.",st:5}]};
 const LIVE={host:"tobias",title:"Side B, together",w:"lowceil",track:"Track 5 of 8 · Moth Hours",at:"18:42",pct:62,listening:38,
- chat:[{by:"sam",text:"The chair! You can hear it right there."},{by:"ines",text:"First time hearing this on good headphones. Oh."},{by:"tobias",text:"This is the take they almost threw away."},{by:"mara",text:"Watching Salt Year after this, like Sable said."},{by:"dana",text:"Is the vinyl pressing different from streaming?"},{by:"tobias",text:"@danamoss Slightly longer fade on side B. The shop has two copies left."}]};
+ chat:[{by:"sam",text:"The chair! You can hear it right there."},{by:"ines",text:"First time hearing this on good headphones. Oh."},{by:"tobias",text:"This is the take they almost threw away."},{by:"mara",text:"Watching Salt Year after this, like Sunday Table said."},{by:"dana",text:"Is the vinyl pressing different from streaming?"},{by:"tobias",text:"@danamoss Slightly longer fade on side B. The shop has two copies left."}]};
 const ACTIVITY=[
  {k:"live",who:["tobias"],text:"is live: Side B, together",min:6,go:["live",""]},
  {k:"star",who:["mara","ines"],text:"starred your tried-it",ex:"We did argue about the bridge.",min:40,go:["thread","tr_me"]},
  {k:"reply",who:["dev"],text:"replied to you",ex:"@alexm The bridge argument is canon. Everyone has it.",min:55,mention:true,go:["thread","tr_me"]},
  {k:"rv",who:["lena"],text:"re-vouched a pick you saved",ex:"On Not Finishing, from @longreads",min:240,go:["thread","pk_jonah"]},
- {k:"land",who:[],text:"Your answer counted. Paper Kingdoms landed for you and 41 others this week, which adds to Dev’s record.",min:300,go:["profile","dev"]},
- {k:"vouch",who:["mara"],text:"vouched for Priya Sundaram",ex:"Priya finds the documentaries festivals miss.",min:900,go:["profile","priya"]},
+ {k:"land",who:[],text:"Your answer counted. Paper Kingdoms landed for you and 41 others this week, which adds to dev.i’s record.",min:300,go:["profile","dev"]},
+ {k:"vouch",who:["mara"],text:"vouched for priya, listening",ex:"Priya finds the documentaries festivals miss.",min:900,go:["profile","priya"]},
  {k:"answer",who:["dev","sam"],text:"answered your ask",ex:"A game two people can play on one couch?",min:1900,mention:true,go:["ask","ask_me"]},
  {k:"follow",who:["rae","dana","theo"],text:"followed you",min:2500,go:["profile","rae"]},
 ];
@@ -678,7 +678,7 @@ const S={
 /* ---------- helpers ---------- */
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const first=n=>n.split(" ")[0];
+const first=n=>{const u=Object.values(U).find(x=>x.name===n);return u&&u.short?u.short:n.split(" ")[0];};
 const fmt=n=>n.toLocaleString("en-US");
 const fmtK=n=>n>=10000?Math.round(n/1000)+"k":n>=1000?(n/1000).toFixed(1).replace(/\.0$/,"")+"k":String(n);
 const ago=m=>m<60?m+"m":m<1440?Math.floor(m/60)+"h":Math.floor(m/1440)+"d";
@@ -945,7 +945,7 @@ function repBlock(u,full){
   const [l,g,m]=u.rec,fv=followedVouchers(u.id),vs=vouchersOf(u.id),yrs=2026-u.since;
   return `<div class="repcard"><div class="rstats"><div class="acc"><b>${u.landed}%</b><span>Landed<br>${fmt(u.tries)} tries</span></div><div><b>${u.vouchedBy}</b><span>Vouched by<br>${fv.length} you follow</span></div><div><b>${yrs} yrs</b><span>Curating<br>since ${u.since}</span></div></div>
   <div class="rbar"><span class="kick">When people tried a pick</span><div class="bar3" role="img" aria-label="Loved ${l}%, good ${g}%, not for me ${m}%"><i style="width:${l}%"></i><i style="width:${g}%"></i><i style="width:${m}%"></i></div><div class="rlegend"><span><i style="background:var(--accent)"></i>Loved ${l}%</span><span><i style="background:color-mix(in srgb,var(--accent) 40%,var(--bg))"></i>Good ${g}%</span><span><i style="background:var(--line)"></i>Not for me ${m}%</span></div></div>
-  <ul class="facts"><li>${icon("shield","sm")}<span><b>Identity verified.</b> A real person, named.</span></li><li>${icon("flag","sm")}<span><b>${u.undisclosed} undisclosed placements.</b> ${u.affLinks?`${u.affLinks} affiliate links, all labeled.`:"No affiliate links."}</span></li><li>${icon("hash","sm")}<span><b>${u.answers} asks answered</b> this month.</span></li></ul>
+  <ul class="facts"><li>${icon("shield","sm")}<span><b>Identity verified${u.real?` as ${esc(u.real)}`:""}.</b>${u.real?"":" A real person, named."}</span></li><li>${icon("flag","sm")}<span><b>${u.undisclosed} undisclosed placements.</b> ${u.affLinks?`${u.affLinks} affiliate links, all labeled.`:"No affiliate links."}</span></li><li>${icon("hash","sm")}<span><b>${u.answers} asks answered</b> this month.</span></li></ul>
   ${full?"":(fv.length?fv:vs).slice(0,1).map(v=>`<div class="vq"><q>${esc(v.why)}</q><div class="by">${av(U[v.from],"xs")}${esc(U[v.from].name)}${S.follows.has(v.from)?", whom you follow":""}</div></div>`).join("")}</div>`;
 }
 function profile(id){
@@ -959,7 +959,7 @@ function profile(id){
   }else tb=Object.values(POSTS).filter(p=>p.by===id).map(p=>postHTML(p)).join("")||`<div class="empty">No posts yet.</div>`;
   return `${hdr(u.name,u.cur?`${fmt(u.picks)} picks`:"")}
   <section class="prof"><div class="top">${av(u,"xl")}${id==="me"?"":`<div style="display:flex;gap:8px">${u.cur&&u.price?`<button class="btn ghost sm" data-act="toast" data-id="Support is $${u.price} a month; 80% goes to ${esc(first(u.name))}. Not charged in the prototype.">Support $${u.price}</button>`:""}<button class="btn sm ${f?"ghost":""}" data-act="follow" data-id="${id}">${f?"Following":"Follow"}</button></div>`}</div>
-  <h2>${esc(u.name)}${u.cur?chk():""}</h2><div class="hn">@${u.h}</div>
+  <h2>${esc(u.name)}${u.cur?chk():""}</h2><div class="hn">@${u.h}${u.real?` · ${esc(u.real)}`:""}</div>
   ${u.cur?`<div class="role">${icon(u.cur,"xs")} ${CURL[u.cur]} curator</div>`:""}
   <p class="bio">${rich(u.bio)}</p>
   <div class="meta">${u.city?`<span>${icon("pin","xs")}${esc(u.city)}</span>`:""}<span>${icon("cal","xs")}Joined ${u.since}</span></div>
