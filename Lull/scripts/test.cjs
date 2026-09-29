@@ -3089,6 +3089,31 @@ console.log('board recipe');
     });
   });
 
+  test('recipe: Full Blast and Event Horizon count one copy\'s share (R.copies), or a part\'s own count (comboCount); a plain board every cell', () => {
+    const cells = (n) => Array.from({ length: n }, (_, i) => [i % 10, Math.floor(i / 10), 1]);
+    const found = (g, r) => L.Combos.detect(Object.assign({ lines: 0 }, r), g);
+    const plain = new Game({ w: 10, h: 20, seed: 1, recipe: {} });
+    assert.deepStrictEqual(found(plain, { special: 'bomb', blast: cells(10) }), ['fullblast'], 'plain: ten blocks is Full Blast');
+    assert.deepStrictEqual(found(plain, { special: 'bomb', blast: cells(9) }), []);
+    assert.deepStrictEqual(found(plain, { special: 'blackhole', swallowed: cells(20) }), ['horizon']);
+    assert.strictEqual(L.Combos.blocksOf('fullblast', cells(12), plain), 12);
+    assert.strictEqual(L.Combos.blocksOf('fullblast', cells(12), { w: 10, s: {} }), 12, 'a board with no rules: every cell');
+    withParts([{ key: 'tcopy', order: 45, rules: (r, R) => { R.copies = 2; } }], () => {
+      const g = new Game({ w: 10, h: 20, seed: 1, recipe: {} });
+      assert.deepStrictEqual(found(g, { special: 'bomb', blast: cells(19) }), [], 'two copies: 19 blocks is 9.5 on one half');
+      assert.deepStrictEqual(found(g, { special: 'bomb', blast: cells(20) }), ['fullblast']);
+      assert.deepStrictEqual(found(g, { special: 'blackhole', swallowed: cells(39) }), []);
+      assert.deepStrictEqual(found(g, { special: 'blackhole', swallowed: cells(40) }), ['horizon']);
+    });
+    // A part's own count wins (here: only the left half's cells).
+    withParts([{ key: 'tcopy', order: 45, rules: (r, R) => { R.copies = 2; }, engine: () => ({ comboCount: (g, id, cs) => cs.filter(([x]) => x < g.w / 2).length }) }], () => {
+      const g = new Game({ w: 10, h: 20, seed: 1, recipe: {} });
+      assert.strictEqual(L.Combos.blocksOf('fullblast', cells(20), g), 10);
+      assert.deepStrictEqual(found(g, { special: 'bomb', blast: cells(20) }), ['fullblast']);
+      assert.deepStrictEqual(found(g, { special: 'bomb', blast: cells(10).concat(cells(9).map(([x, y, v]) => [x + 5, y + 5, v])) }), [], 'five on the left half only');
+    });
+  });
+
   test('recipe: parts run in their order, never in the order they registered; labels; the last choice wins', () => {
     const log = [];
     const mk = (key, order) => ({ key, order, engine: () => ({ step: () => log.push(key), afterPlace: () => log.push(key + ':placed') }) });

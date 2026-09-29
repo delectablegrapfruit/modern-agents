@@ -1352,7 +1352,7 @@
           }))].concat(extras('size'));
         },
         shapes: () => [h('div', { class: 'nb-chips', role: 'group', 'aria-label': 'Shapes' }, chips().map((c) => option(c.path, c.value, 'nb-chip',
-          [UI.canvasFor(28, 28, (ctx) => { if (c.sample) c.sample(ctx, 28, look); else if (c.piece) Render.drawPieceIn(ctx, { id: c.piece }, { x: 0, y: 0, w: 28, h: 28 }, 7, look); }), h('span', { class: 'nm' }, c.name)])))].concat(extras('shapes')),
+          [UI.canvasFor(28, 28, (ctx) => { if (c.sample) c.sample(ctx, 28, look); else if (c.piece) Render.drawPieceIn(ctx, { id: c.piece }, { x: 0, y: 0, w: 28, h: 28 }, 7, look); }), h('span', { class: 'nm' + (/\S{10,}/.test(c.name) ? ' long' : '') }, c.name)])))].concat(extras('shapes')),
         mods: () => {
           const list = mods();
           return [list.length ? h('div', { class: 'nb-mods', role: 'group', 'aria-label': 'Modifiers' }, list.map((k) => option('mods.' + k, !recipe.mods[k], 'nb-switch',

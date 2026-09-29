@@ -634,12 +634,21 @@ module.exports = async function recipeTests({ browser, check, PAGE, OUT }) {
             noScroll: body.scrollHeight <= body.clientHeight + 1 && body.scrollWidth <= body.clientWidth + 1, panelFits: panel.scrollHeight <= panel.clientHeight + 1,
             h: Math.round(r.height), small, why: m.querySelector('.nb-why').textContent, lvl: !!m.querySelector('.nb-lvl'), custom: !!m.querySelector('.nb-custom'),
             ellipsis: [...m.querySelectorAll('.nb-tab .nm, .nb-chip .nm')].filter((e) => e.scrollWidth > e.clientWidth + 0.5 || e.scrollHeight > e.clientHeight + 1.5).map((e) => e.textContent + ' ' + [e.scrollWidth, e.clientWidth, e.scrollHeight, e.clientHeight].join('/')),
+            // A chip's name is never broken inside a word (each word on one line; CSS keeps it so in any engine: no
+            // overflow-wrap, no hyphens).
+            broken: [...m.querySelectorAll('.nb-chip .nm')].flatMap((e) => {
+              const t = e.firstChild, cs = getComputedStyle(e), out = [];
+              if (cs.overflowWrap !== 'normal' || cs.wordBreak !== 'normal' || cs.hyphens !== 'manual') out.push(e.textContent + ' css');
+              let i = 0;
+              for (const w of e.textContent.split(' ')) { const rg = document.createRange(); rg.setStart(t, i); rg.setEnd(t, i + w.length); if (rg.getClientRects().length !== 1) out.push(w); i += w.length + 1; }
+              return out;
+            }),
           };
         }, touch);
         hs.push(f.h);
         const tallest = k === 'shapes' ? f.custom && !!f.why : k === 'mode' ? f.lvl && !!f.why : true;
-        check(vp.name + ' ' + theme + ' New board, ' + k + (k === 'shapes' ? ' (Custom, a reason shown)' : k === 'mode' ? ' (Battle, its levels, a reason shown)' : '') + ': fits, footer shown, nothing scrolls, targets 44 px' + (touch ? ' (touch)' : ''),
-          tallest && f.inside && f.footer && f.noScroll && f.panelFits && f.small.length === 0 && f.ellipsis.length === 0, JSON.stringify(f));
+        check(vp.name + ' ' + theme + ' New board, ' + k + (k === 'shapes' ? ' (Custom, a reason shown)' : k === 'mode' ? ' (Battle, its levels, a reason shown)' : '') + ': fits, footer shown, nothing scrolls, no name cut or broken mid-word, targets 44 px' + (touch ? ' (touch)' : ''),
+          tallest && f.inside && f.footer && f.noScroll && f.panelFits && f.small.length === 0 && f.ellipsis.length === 0 && f.broken.length === 0, JSON.stringify(f));
         if (vp.name === '320x568' || vp.name === '520x760') await P.shot('recipe-nb-' + vp.name + '-' + k + '-' + theme);
       }
       check(vp.name + ' ' + theme + ' New board: one height across the tabs', new Set(hs).size === 1, hs.join());

@@ -86,6 +86,8 @@
   //   save(g) -> data                                    kept in the save (toJSON's x), given back to the part's engine()
   //   reset(g)                                           the board was started over (resetBoard)
   //   summary(g) -> numbers                              the board's own numbers for its summary (Library.summarize)
+  //   comboCount(g, id, cells) -> n                      the blocks an item took that Full Blast or Event Horizon counts
+  //                                                      (Combos.blocksOf; without it, the cells over R.copies)
   // A part's engine(game, saved, o) runs with game.recipe, game.rules, game.rng and game.seed (a new game's; a resumed
   // one has none: the part keeps its own state in save()) set, and o the Game's own options. A lock a part refuses
   // emits 'refused' with its note. Without a hook the plain code runs, exactly as before.

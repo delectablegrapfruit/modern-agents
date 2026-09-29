@@ -477,7 +477,9 @@ seven in a 7-bag, no modifier, plain play (`scripts/golden.cjs` holds it to a lo
 option is a *part* that registers itself: its rules (`Recipe.rules`: what a row is worth, which feats count, which
 power-ups are refused and why), its engine hooks (where pieces come from and appear, which cells they cover, where an
 item acts and how Tornado shuffles, what clears, what an item may remove, what happens after each piece, and ending the
-board its own way: `game.end(kind)`, told after the lock and kept in the save until Undo), its view and its window. An
+board its own way: `game.end(kind)`, told after the lock and kept in the save until Undo; how Full Blast and Event
+Horizon count what an item took: `comboCount`, or by default one copy's share, `R.copies`, so a Mirror Bomb counts
+one half), its view and its window. An
 unrated board (shapes other than the seven) has no difficult clears: no quad, no back-to-back streak, no bonus, ×1. Parts always run in a fixed
 order (shapes, mirror, jelly, protect, battle), whatever order they load in. What pays and counts is measured in own
 cells: a row holding a cell the player never placed is plain and pays only the player's cells, and no option pays more
@@ -490,7 +492,8 @@ four tabs (roving focus: ← → Home End; Enter or Space on a tab selects it an
 name and, muted, its short value (Shapes "Normal", Modifiers "Off", "Jelly", "Mirror" or "Both", Mode "Plain"; Size has
 none: its value is on the steppers), then one panel the same height on every tab (the tallest panel's at each size; a
 taller one scrolls inside itself and the footer stays): Size the presets, Shapes chips in 3 × 2 (a sample beside the
-name), Modifiers a switch each, Mode the modes and the chosen one's level. It opens on Size with focus on Width, on the
+name; in a narrow window the sample shrinks, and at 440 px and under sits above the name; a name keeps its line whole,
+never broken inside a word, a long one a size smaller), Modifiers a switch each, Mode the modes and the chosen one's level. It opens on Size with focus on Width, on the
 recipe and size last chosen (`boards.recipe`, `boards.size`). The last choice wins (`Recipe.resolve`): an option it
 rules out moves to an allowed one, comes back once it is allowed again, and the change is read out (a part names its own
 values: `said`); an option the other

@@ -224,7 +224,7 @@
 
   /**
    * How a board of this recipe w wide plays and pays (R):
-   *   u (block scale: Big is 2), copies (Mirror: 2), E (mean cells a piece), rated, undo, hints, timed, noFeats,
+   *   u (block scale: Big is 2), copies (Mirror: 2; Full Blast and Event Horizon count one copy's share), E (mean cells a piece), rated, undo, hints, timed, noFeats,
    *   refuse: { itemId: reason }, k (Battle's buffer rows), and derived: f = min(1, 4/E) (pay per cell never above
    *   Standard's), lk = (w/10)·f (what a row is worth in Standard lines), wEff = w/(u·copies), feats (the Free Play
    *   feats count here), quad = 4u (rows a quad needs).

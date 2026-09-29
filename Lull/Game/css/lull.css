@@ -1353,7 +1353,10 @@ body.fv-open header#titlebar { opacity: 0.45; }
 .nb-chips { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 4px; }
 .nb-chip { min-width: 0; height: 44px; display: flex; align-items: center; gap: 5px; padding: 0 6px 0 5px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); font-size: var(--fs-sm); font-weight: 600; text-align: left; }
 .nb-chip canvas { flex: none; display: block; }
-.nb-chip .nm { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nb-chip .nm { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; word-break: normal; hyphens: manual; }
+/* A long name (a word of ten letters or more: Pentominoes) a size smaller, on its own chip only, so it fits whole. */
+.nb-chip .nm.long { font-size: var(--fs-xs); }
+@media (max-width: 480px) { .nb-chip { gap: 4px; padding: 0 5px 0 4px; } .nb-chip canvas { width: 20px !important; height: 20px !important; } }
 @media (hover: hover) { .nb-chip:not([aria-disabled="true"]):hover, .nb-switch:not([aria-disabled="true"]):hover { background: var(--panel-2); } }
 .nb-chip[aria-pressed="true"] { border-color: var(--accent-line); background: var(--accent-soft); }
 /* A shapes part's own line under the chips (Custom: what it deals, and Edit). */
@@ -1373,15 +1376,21 @@ body.fv-open header#titlebar { opacity: 0.45; }
   .nb-modes button, .nb-lvl button { height: 44px; }
 }
 @media (prefers-reduced-motion: reduce) { .nb-switch .sw, .nb-switch .sw::after { transition: none; } }
-/* Narrow: a chip's name may take two lines beside its sample (Pentominoes), never an ellipsis. */
+/* Narrow: the sample shrinks and goes above the name, so a name keeps its line whole (never broken inside a word,
+   never an ellipsis) in any engine; on a phone under 360 px a long name is a size smaller again. */
 @media (max-width: 440px) {
-  .nb-chip .nm { white-space: normal; overflow-wrap: anywhere; hyphens: auto; font-size: var(--fs-xs); line-height: 1.1; max-height: 2.2em; }
+  .nb-chip { flex-direction: column; justify-content: center; gap: 2px; padding: 0 4px; }
+  .nb-chip canvas { width: 20px !important; height: 20px !important; }
+  .nb-chip .nm { max-width: 100%; font-size: var(--fs-xs); line-height: 1.15; }
+}
+@media (max-width: 359px) {
+  .nb-chip { padding: 0 3px; }
+  .nb-chip .nm.long { font-size: var(--fs-2xs); }
 }
 /* A phone: a little more room across, so "Modifiers" and the chips' names fit. */
 @media (max-width: 360px) {
   .modal-newboard .body { padding-left: 12px; padding-right: 12px; }
   .nb-tab { padding: 0 2px; }
-  .nb-chip { padding: 0 4px; gap: 4px; }
 }
 
 .seed-modal p { margin-top: 0; }

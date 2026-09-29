@@ -72,6 +72,22 @@
   }
 
   /**
+   * How many blocks an item took out, as Full Blast and Event Horizon count them (id: the combo, cells: what the item
+   * took): one copy's share on a board of several copies (Mirror: R.copies 2, both halves act at once, so a Bomb
+   * counts for one half), or a part's own count (the engine hook comboCount(g, id, cells) -> number). A plain board:
+   * every cell, as always.
+   */
+  function blocksOf(id, cells, g) {
+    const n = (cells || []).length;
+    if (g && g.hooks && g.hooks.comboCount) {
+      const own = g.ask('comboCount', id, cells || []);
+      if (typeof own === 'number' && isFinite(own)) return own;
+    }
+    const c = g && g.rules && g.rules.copies > 1 ? g.rules.copies : 1;
+    return n / c;
+  }
+
+  /**
    * The combos a lock result makes (Free Play). Keeps one counter on the board's stats: was the last clear a TSD. The
    * skill ones need a rated board with the feats on (no Jelly: R.noFeats); a quad is the board's (r.quad).
    */
@@ -93,12 +109,12 @@
     if (r.tag === 'fit' && quad) out.push('tailor');
     if (r.double === 'won') out.push('allin');
     if ((r.netSaved || 0) >= 5) out.push('caught');
-    if (r.special === 'bomb' && (r.blast || []).length >= 10) out.push('fullblast');
-    if (r.special === 'blackhole' && (r.swallowed || []).length >= 20) out.push('horizon');
+    if (r.special === 'bomb' && blocksOf('fullblast', r.blast, g) >= 10) out.push('fullblast');
+    if (r.special === 'blackhole' && blocksOf('horizon', r.swallowed, g) >= 20) out.push('horizon');
     return skill ? out : out.filter((id) => BY_ID[id].kind !== 'skill');
   }
 
-  const Combos = { LIST: COMBOS, get: (id) => BY_ID[id], reward, detect, SHARE };
+  const Combos = { LIST: COMBOS, get: (id) => BY_ID[id], reward, detect, blocksOf, SHARE };
 
   // ---- luck -------------------------------------------------------------------------------------------------------------
   //
