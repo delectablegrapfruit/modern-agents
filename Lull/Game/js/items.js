@@ -54,7 +54,10 @@
   const BY_ID = Object.fromEntries(COMBOS.map((c) => [c.id, c]));
   const SHARE = [1, 0.5, 0.25];
 
-  /** What a combo pays the (k+1)th time it comes round in the board library (Library.taper). */
+  /**
+   * What a combo pays the (k+1)th time it comes round in the board library (Library.taper). Its lines are Standard
+   * lines: Free Play pays them by the board's width (Library.scale), as every clear.
+   */
   function reward(c, k) {
     const f = SHARE[k] || 0;
     return { lines: Math.floor((c.lines || 0) * f), boost: c.boost && k < 2 ? c.boost : null, score: c.score || 0 };
@@ -64,7 +67,8 @@
   function detect(r, g) {
     const s = g.s, out = [];
     const own = (r.lines || 0) - (r.plain || 0);
-    if (r.lines && (r.removed || []).some((row) => { const c = row[0] & CELL.COLOR; return c && c !== 8 && row.every((v) => (v & CELL.COLOR) === c); })) out.push('painted');
+    // One colour across a row is a flat I on a board 4 wide: Painted Row needs a board at least Standard width.
+    if (r.lines && g.w >= (L.Library ? L.Library.STANDARD.w : 10) && (r.removed || []).some((row) => { const c = row[0] & CELL.COLOR; return c && c !== 8 && row.every((v) => (v & CELL.COLOR) === c); })) out.push('painted');
     if (own >= 4 && r.type === 'I' && r.fromHold && !r.special) out.push('pocket');
     if (own && r.covered && !r.special) out.push('keyhole');
     const tsd = !!(r.tspin && own === 2);
@@ -99,6 +103,56 @@
     goldValue(pay) { return Luck.GOLD_CLEARS * pay * (Luck.GOLD_X - 1); },
     /** Does a clear win a Double or Nothing? A quad or better, or a T-spin, set by the piece itself. */
     doubleWins(r) { return ((r.lines || 0) - (r.plain || 0)) >= 4 || !!r.tspin; },
+  };
+
+  // ---- what a clear pays in Free Play ----------------------------------------------------------------------------------
+  //
+  // Measured in Standard lines (Library.scale: a line w wide is w/10 of one), and so is everything that pays by the
+  // clear: no size earns faster per piece than Standard. The streak's links count by width too (a narrow board makes
+  // difficult clears more often, each clearing fewer cells), never more than one a clear; the difficult-clear bonus is
+  // at most one Standard line (a wide board's T-spin is still one T); gold and a boost last for Standard clears (a
+  // Golden Piece is five Standard-width clears: two and a half 20 wide, twelve and a half 4 wide), the last one paying
+  // its share; and a won Double or Nothing doubles at most one Standard clear's worth.
+
+  const Pay = {
+    /** The chain multiplier after a lock on a board w wide. */
+    mult(g) { return Chain.mult(Chain.streak(g) * Math.min(1, L.Library.scale(g.w))); },
+    /** Gold (or a boost's clears) left, in Standard clears, as clears on a board w wide: "3 left". */
+    clearsLeft(left, w) { return left > 0 ? Math.ceil(left / L.Library.scale(w) - 1e-9) : 0; },
+    /**
+     * What clear `r` pays on board state `s` (its mult already set) w wide, in Standard lines, rounded down to the
+     * hundredth; spends gold, a boost's clears and Double or Nothing from `s`. Returns { pay, golden, goldX, boost,
+     * double }.
+     */
+    clear(s, r, w) {
+      const lk = L.Library.scale(w), out = {};
+      const own = (r.lines || 0) - (r.plain || 0), difficult = own >= 4 || !!r.tspin || !!r.mini;
+      let pay = ((r.lines || 0) * lk + (difficult ? Math.min(1, lk) : 0)) * (s.mult || 1);
+      /** One clear's use of something that lasts `left` Standard clears: the share of this clear it covers. */
+      const use = (left) => ({ share: Math.min(1, left / lk), left: Math.max(0, Math.round((left - lk) * 1000) / 1000) });
+      if (s.gold > 0) {
+        const u = use(s.gold);
+        s.gold = u.left;
+        out.golden = true;
+        out.goldX = 1 + (Luck.GOLD_X - 1) * u.share;
+        pay *= out.goldX;
+      }
+      if (s.boost && s.boost.left > 0) {
+        const u = use(s.boost.left);
+        pay *= 1 + (s.boost.x - 1) * u.share;
+        out.boost = s.boost.x;
+        s.boost.left = u.left;
+        if (s.boost.left <= 0) s.boost = null;
+      }
+      if (s.double) {
+        s.double = false;
+        const won = Luck.doubleWins(r);
+        out.double = won ? 'won' : 'lost';
+        pay = won ? pay * (1 + (Luck.DOUBLE_X - 1) * Math.min(1, 1 / lk)) : 0;
+      }
+      out.pay = L.Library.bank(pay);
+      return out;
+    },
   };
 
   // ---- the daily gift ---------------------------------------------------------------------------------------------------
@@ -162,5 +216,5 @@
     },
   };
 
-  Object.assign(L, { Chain, Combos, Luck, Gifts, Earn });
+  Object.assign(L, { Chain, Combos, Luck, Pay, Gifts, Earn });
 })(typeof globalThis !== 'undefined' ? globalThis : this);

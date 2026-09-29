@@ -22,7 +22,7 @@ no button carries a line of explanation or a key cap), so nothing wraps or crowd
 
 **Free Play** — endless, relaxed. Every cleared line is banked as ⦵ *lines*, the currency. A quad or T-spin is worth one
 line more, and the back-to-back streak multiplies it: an eighth for each quad or T-spin in the streak, so it starts to
-pay past eight in a row and stops at ×2.5 (twenty in a row) — a quad on a full streak pays 13. The *chain* — the streak
+pay past eight in a row and stops at ×2.5 (twenty in a row) — a quad on a full streak pays 12.5 (pay is kept to the hundredth, rounded down). The *chain* — the streak
 plus the combo, the number to be proud of — is counted apart and shown beside the multiplier (`Chain 16 · ×1.75`).
 A piece that has no room where it appears (a new one, one swapped in from hold, or one an item makes) is fitted into the nearest open spot above the stack it could get to — beside a tall column, stood on end, in another turn — never down inside the stack. Only when it fits nowhere is the board full; a hold swap or an item with no room is just refused (a short note says so, nothing is used up).
 A full board just ends that board; the lines stay yours. The ⦵ glyph is a cleared line running into a small black hole; in the wallet it is drawn large, a dark disc in a thin glowing ring. Everywhere else it is one character, `L.LINE` (U+29B5, never an emoji), drawn by a one-glyph font of the page's own (`scripts/line-glyph.py`) that is first in every font list and in the canvas fonts, so text, prices, toasts and the boards all show the same shape. Retiring a board (Boards ▸ Retire, or Retire when it fills up) shows its whole life: how long it
@@ -38,12 +38,54 @@ play and where it was (a T turned into its slot still spins, an I brought out of
 dealt), score, lines, chain and multiplier, gold, boosts and Luck, per-board stats and play time; the one in play is
 shelved as it stands. A power-up still waiting to be taken back is kept as used when you switch (the take-back ends
 there, as when the piece sets), and the Rewind history stays behind, as it does across a reload. New board shelves the
-one in play and starts an empty board with its own seed (never the old board's queue); it is off for a board nothing has
-been done on, and when the library holds 12 (it says Library full; retire or delete one). Each row has Rename (inline:
+one in play and starts an empty board with its own seed (never the old board's queue); it is off when the library
+holds 12 (it says Library full; retire or delete one).
+New board first asks for a size (below); on a board nothing has been done on (no piece set, no power-up used: gold,
+a net or a Giant waiting there is never thrown away), Create makes that board again at the
+size chosen, in its own record, rather than shelving an empty one (so New board is on for it, and even with 12 saved). Each row has Rename (inline:
 Enter keeps it, Esc leaves it, a click elsewhere keeps it and still lands; up to 24 characters, never empty or
 invisible; a name another board has gets a number, "Rainy Sunday 2"), Retire (only a board that was played: its summary, then
 it moves to Retired; the one in play is replaced by a new board) and Delete (asks first; nothing is kept). New boards
-get a calm two-word name no other board has (Mossy Harbor, Quiet Orchard), then Board N. Retired keeps up to 50 read-only
+get a calm two-word name no other board has (Mossy Harbor, Quiet Orchard), then Board N.
+
+*Sizes* — a board is any size from 4 × 8 to 20 × 40, chosen when it is made and fixed for its life. New board opens a
+small window: Width and Height steppers (− and +; on the number, ↑ ↓, Page Up / Down by 5, Home and End; 44 px targets
+by touch), four presets (Small 6 × 12, Standard 10 × 20, Tall 8 × 30, Wide 16 × 16), the empty well drawn at that
+size, and Create (Enter, except on a button: that button, so Cancel is Cancel; a − or + at the limit
+keeps focus and does nothing, and the new size is read out after a button or a preset). It opens on the size last
+chosen (`boards.size` in the save; Standard at first). A board made
+without asking — Retire on a full board's card, Retire or Delete of the board in play — is the size of the one it
+replaces. Four wide is the flat I; eight tall is a Giant I on end; nothing in the engine assumes 10 × 20 (pieces spawn
+centred at the top, a piece or item with no room is refused as always). The size is saved with the board
+(`Game.toJSON`, the shelved and retired records), shown on every library row and record (`12 × 24` first, then the time; up to 440 px wide the size and time
+share the tags' line and Lines and Score take their own, so neither is cut; and a Size tile in
+the summary) and in Stats ▸ Free Play ▸ Past boards; a save edited to a size no board can have is not resumed. On
+screen a board is fitted and centred like any other, its cells never more than 1.4 times a Standard board's in the
+same space (a 4 × 8 board is a small board, not a few giant blocks), and Hold and Next keep a readable width however
+small the cells of a tall board get; the library's thumbnails fit any size into a Standard one's box. At any size,
+Trapdoor and Settle (like Tornado and Mirror World) are refused, "No room. Move the piece first", when a block would
+come down into the piece in play, and words over the board (PERFECT CLEAR, a combo's name) fit the well (two lines,
+then smaller). A board full with a piece wider than the board keeps it inside the walls (turned upright), and a control
+hint wider than the well goes under, over or beside the plate instead.
+
+*Pay per cell* — a Standard line is ten cells, so a line cleared on a board w wide is worth w/10 of one: half on a board
+5 wide, two on one 20 wide; height changes nothing. `Library.scale(w)` is the one place that says so, and every reward
+goes through it: a clear's pay, combos' lines, the power-up every hundred lines (Standard lines), lifetime Lines and
+Best lines (Stats and the achievements' progress), Efficiency, and the line-count and pace achievements. What a clear
+pays is `Pay` in js/items.js, all of it in Standard lines, so no size earns faster per piece than Standard: the
+difficult-clear bonus is at most one Standard line (a board has one T a bag however wide it is); the streak's links
+count by width, never more than one a clear (a narrow board makes difficult clears more often, each clearing fewer
+cells), so the multiplier climbs per cell cleared; gold and a boost last for Standard clears (a Golden Piece is five
+Standard-width clears: two and a half on a board 20 wide, twelve and a half on one 4 wide, the last paying its share;
+Gold on the status bar counts the clears left on this board); and a won Double or Nothing adds at most one Standard
+clear's worth. Pay is rounded down to the hundredth (`Library.bank`); the wallet and its totals keep hundredths (never drifting) and the
+wallet shows whole lines, while "+2.5" on the board, a combo's callout and Lines banked show the hundredths. What stays
+as cleared: the board's own Lines and every per-board figure (the status bar, the rows, the summary's Lines, Past
+boards), clears by size, T-spin lines and the score. On a board narrower than Standard a quad takes three pieces, a
+flat I on an empty board is a perfect clear and combos never end, so the Free Play feats (quads, streaks, combos,
+chains, T-spins, perfect clears, score, Showman) count only on boards 10 wide or more, as do Painted Row and the
+Triathlon's quad; the line counts, pace, Clean Sweep (60 blocks, six rows' worth when wider), Toolbox, Tried
+Everything, Tinkerer and Old Growth count on any board. The Free Play group's note in Achievements says this. Retired keeps up to 50 read-only
 records, newest first — name, started and retired dates, the final stack and the whole summary — and past 50 the oldest
 goes (the Retire card says so). A record opens with a click and can be deleted. Retiring or deleting the board in play
 always starts a new game in its place, and a full board is recorded as Full however it was retired. The windows are
@@ -544,7 +586,7 @@ The address is shown on the `pages` job and under Settings ▸ Pages.
 |---|---|
 | `Game/` | the game: `index.html`, `manifest.webmanifest`, `sw.js` (the offline copy), `icons/` (the Home Screen icons), `css/`, and `js/` — `webapp` (the Home Screen app: the worker, its updates, lasting storage), `icons` (the one SVG icon set), `pieces` (SRS tetrominoes, pentominoes, big and custom shapes, polyomino enumeration), `board`, `engine` (the floating-piece rules and every item), `items` (the chain multiplier, combos, Luck, the daily gift, power-ups earned in play), `library` (the Relaxed board library: shelved and retired boards, names, caps), `puzzlegen` (seeds, wildcards, reverse construction, reachability search, forward verification), `factory` (presses, the belt, the bin, one step for play and time away, save repair), `store` (save, catalog, stats), `achievements`, `fxphysics` (the item effects' blocks, debris and dust: gravity, bounces, spirals, fixed pools), `render` (canvas: skins, frames, effects, item animations, rotated views), `factoryview` (the factory floor, drawn like the board), `hints` (control hints: the struggle signals, their limits and retirement), `touch` (the touch gestures: a pure reader of fingers, and the page's touch helpers), `webapp` (the Home Screen web app: the offline copy's registration and updates), `collapse` (the window rolled up into its title bar, and the parade of pieces along it), `modes`, `ui`, `app` |
 | `Sources/Lull/` | the macOS shell: a borderless `NSPanel` (floating, all Spaces, edge-resizable, draggable by the page's title bar) around a transparent `WKWebView`, a blur for the Glass background, the save file, the ⌥⌘L hot key, and a self-test CI runs |
-| `scripts/` | `make-app.sh`, `icon.swift`, `line-glyph.py` (builds the line glyph's font into `lull.css`), `test.cjs`, `browser-test.cjs`, `audio-render.cjs` (renders and measures the synthesized audio offline), `pitch.cjs` (finds the notes in a render, to check sound effects are in the music's key), `splice-voice.py` (cuts the announcer's lines from a recording), `web-build.cjs` (the site as deployed), `web-icons.cjs` (the Home Screen icons), `web-test.cjs` and `web-browser-test.cjs` (the web app's tests, run by the two above), `touch-test.cjs` (an emulated phone played with gestures, run by browser-test), `device-test.cjs` (what each device is offered in Settings and the bar, and live changes; run by browser-test) |
+| `scripts/` | `make-app.sh`, `icon.swift`, `line-glyph.py` (builds the line glyph's font into `lull.css`), `test.cjs`, `browser-test.cjs`, `audio-render.cjs` (renders and measures the synthesized audio offline), `pitch.cjs` (finds the notes in a render, to check sound effects are in the music's key), `splice-voice.py` (cuts the announcer's lines from a recording), `web-build.cjs` (the site as deployed), `web-icons.cjs` (the Home Screen icons), `web-test.cjs` and `web-browser-test.cjs` (the web app's tests, run by the two above), `touch-test.cjs` (an emulated phone played with gestures, run by browser-test), `device-test.cjs` (what each device is offered in Settings and the bar, and live changes; run by browser-test), `sizes-test.cjs` (board sizes: the New board window, every extreme size, pay by width, layout; run by browser-test) |
 
 ## Credits
 

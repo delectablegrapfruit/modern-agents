@@ -43,6 +43,8 @@
     hint: svg('<path d="M6.1 12.1h3.8M6.6 14.1h2.8M8 1.9a4.1 4.1 0 0 0-2.45 7.4c.5.37.8.92.8 1.5v.3h3.3v-.3c0-.58.3-1.13.8-1.5A4.1 4.1 0 0 0 8 1.9z"/>'),
     skip: svg('<path d="M3.25 3.75 9.25 8l-6 4.25z"/><path d="M12.5 3.5v9"/>'),
     next: svg('<path d="M2.75 8h10M9 4.25 12.75 8 9 11.75"/>'),
+    minus: svg('<path d="M3.75 8h8.5"/>'),
+    plus: svg('<path d="M8 3.75v8.5M3.75 8h8.5"/>'),
     newBoard: svg('<rect x="2.25" y="2.25" width="11.5" height="11.5" rx="2.5"/><path d="M8 5.25v5.5M5.25 8h5.5"/>'),
     // The board library: a board in front of another, holding a small stack; retire files it away; rename, delete.
     boards: svg('<path d="M6 1.75h6.25a1.5 1.5 0 0 1 1.5 1.5v8"/><rect x="2.25" y="4.25" width="8.5" height="10" rx="1.6"/>' + blk(4, 10.6, 2.4, 0.6) + blk(6.6, 10.6, 2.4, 0.6) + blk(6.6, 8, 2.4, 0.6)),

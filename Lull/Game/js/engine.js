@@ -155,6 +155,17 @@
         if (at) return place(at.x, at.y, at.rot);
       }
       if (o.soft) return false;
+      // Full: the piece stays where it would have come in, but always inside the walls (a Noodle or a Giant can be
+      // wider than a narrow board): the first turn that fits across, pushed in from the walls and the ceiling.
+      if (!this.board.wrap) {
+        const r = [rot, (rot + 1) % 4, (rot + 3) % 4, (rot + 2) % 4].find((k) => type.rotBounds[k].w <= this.w && type.rotBounds[k].h <= this.h);
+        if (r != null) {
+          const b = type.rotBounds[r], at = spawnPos(this.w, this.h, type, r);
+          piece.rot = r;
+          piece.x = Math.min(Math.max(at.x, -b.minX), this.w - 1 - b.maxX);
+          piece.y = Math.min(Math.max(at.y, -b.minY), this.h - 1 - b.maxY);
+        }
+      }
       this.piece = piece;
       this.over = true;
       this.emit('topout');
@@ -662,6 +673,9 @@
       if (!this.piece) return false;
       if (SINGLE.has(special)) return this.replacePiece({ id: 'M1', special });
       if (SHAPED.has(special)) {
+        // A Ghost piece or a drill bit can sit inside blocks; a piece that no longer passes through them cannot.
+        const p = this.piece, next = Object.assign({}, p, { special });
+        if (!this.passes(next) && !this.board.fits(p.type.rots[p.rot], p.x, p.y)) { this.emit('blocked', 'replace'); return false; }
         this.piece.special = special;
         this.piece.entry = Object.assign({}, this.piece.entry, { special });
         this.emit('replace', this.piece);
@@ -722,9 +736,25 @@
       return true;
     }
 
-    /** Settle: every column's blocks fall, then full rows clear (plain lines: see score). */
+    /**
+     * Would the piece in play still fit once `change` has been made to the board? Tried and undone: the board is as it
+     * was afterwards. (Blocks that come down could land in a piece tucked beside or under the stack.)
+     */
+    roomAfter(change) {
+      const p = this.piece, before = this.board.snapshot();
+      change();
+      const ok = this.fitsAt(p, p.rot, p.x, p.y);
+      this.board.restore(before);
+      return ok;
+    }
+
+    /**
+     * Settle: every column's blocks fall, then full rows clear (plain lines: see score). Refused (null) on an empty
+     * board, or when a block would come down into the piece in play.
+     */
     settle() {
       if (!this.piece || this.board.isEmpty()) return null;
+      if (!this.roomAfter(() => { this.board.compact(); this.board.clearRows(this.board.fullRows()); })) return null;
       this.pushHistory();
       const before = this.board.snapshot(), had = this.board.count();
       this.board.compact();
@@ -757,12 +787,16 @@
       return moves;
     }
 
-    /** Trapdoor: the bottom row falls away, whatever it holds; everything above comes down one. Pays nothing. */
+    /**
+     * Trapdoor: the bottom row falls away, whatever it holds; everything above comes down one. Pays nothing. Refused
+     * (null) when the bottom row is empty, or when a block would come down into the piece in play.
+     */
     trapdoor() {
       if (!this.piece) return null;
       let any = false;
       for (let x = 0; x < this.w; x++) if (this.board.get(x, 0)) any = true;
       if (!any) return null;
+      if (!this.roomAfter(() => this.board.clearRows([0]))) return null;
       this.pushHistory();
       const row = this.board.clearRows([0])[0];
       this.emit('trapdoor', row);

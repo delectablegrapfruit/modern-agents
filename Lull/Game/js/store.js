@@ -292,16 +292,21 @@
       this.state.stats.days = (this.state.stats.days || 0) + 1;
     }
 
+    /**
+     * Lines into (or, negative, back out of) the wallet. The wallet keeps hundredths (a board narrower than Standard
+     * pays part of a line: js/library.js, scale), so every total is kept to the hundredth and never drifts.
+     */
     addLines(n, source) {
       if (!n) return;
-      const s = this.state;
-      s.lines += n;
+      const s = this.state, r2 = (x) => Math.round(x * 100) / 100;
+      s.lines = r2(s.lines + n);
       if (n > 0) {
-        s.stats.lines.earned += n;
-        if (source && s.stats.lines[source] != null) s.stats.lines[source] += n;
-        this.day().lines += n;
+        s.stats.lines.earned = r2(s.stats.lines.earned + n);
+        if (source && s.stats.lines[source] != null) s.stats.lines[source] = r2(s.stats.lines[source] + n);
+        const d = this.day();
+        d.lines = r2(d.lines + n);
       } else {
-        s.stats.lines.rewound += -n;
+        s.stats.lines.rewound = r2(s.stats.lines.rewound - n);
       }
       this.touch();
       this.emit('lines', n, source);
@@ -309,8 +314,8 @@
 
     spend(n) {
       if (this.state.lines < n) return false;
-      this.state.lines -= n;
-      this.state.stats.lines.spent += n;
+      this.state.lines = Math.round((this.state.lines - n) * 100) / 100;
+      this.state.stats.lines.spent = Math.round((this.state.stats.lines.spent + n) * 100) / 100;
       this.touch();
       this.emit('lines', -n, 'spend');
       return true;

@@ -28,7 +28,7 @@
   class World {
     constructor(o) {
       o = o || {};
-      this.maxBodies = o.maxBodies || 320;
+      this.maxBodies = o.maxBodies || 800; // every cell of the largest board (20 × 40) can fall at once (Settle)
       this.maxParts = o.maxParts || 1400;
       this.bodies = []; this.parts = [];
       for (let i = 0; i < this.maxBodies; i++) this.bodies.push(freshBody());

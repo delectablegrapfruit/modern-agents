@@ -476,9 +476,13 @@ kbd {
 /* A touch hint is words alone (Swipe ↓ drops): no key cap, the words in the text colour. */
 .lhint.plain { padding: 5px 13px; }
 .lhint.plain span { color: var(--fg); }
+/* Beside the board (a well narrower than the pill): on as many lines as it needs. */
+.lhint.side { white-space: normal; flex-wrap: wrap; justify-content: center; text-align: center; row-gap: 3px; border-radius: 12px; }
 .board-sum { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin: 12px 0 2px; text-align: left; }
 .board-sum .bs { background: var(--panel); border-radius: 8px; padding: 6px 8px 5px; min-width: 0; }
 .board-sum .bs.wide { grid-column: 1 / -1; }
+.board-sum .bs.span2 { grid-column: span 2; }
+.board-sum .span2 .l { white-space: normal; }
 .board-sum .v { font-weight: 700; font-size: var(--fs-md); color: var(--fg); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .board-sum .l { color: var(--muted); font-size: var(--fs-2xs); line-height: 1.25; overflow-wrap: anywhere; }
 .board-sum .wide .l { white-space: normal; }
@@ -867,6 +871,9 @@ kbd {
 table.st { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: var(--fs-sm); }
 table.st td { padding: 8px 4px; border-bottom: 1px solid var(--line); }
 table.st tr:last-child td { border-bottom: 0; }
+table.st td.nw { white-space: nowrap; }
+/* Past boards in a narrow window: how long each lived gives way, so the rest keep their room. */
+@media (max-width: 360px) { table.st .opt { display: none; } }
 table.st td:first-child { color: var(--muted); }
 table.st td:last-child { text-align: right; font-weight: 600; color: var(--fg); }
 table.st.cols td { text-align: right; color: var(--fg); }
@@ -1169,6 +1176,10 @@ div.lib-open { cursor: default; }
 .lib-open .t { font-weight: 650; font-size: var(--fs-md); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lib-open .d { display: flex; align-items: center; gap: 6px; margin-top: 3px; color: var(--muted); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; min-width: 0; }
 .lib-open .d .st { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+/* The board's size (and when) leads its numbers ("12 × 24 · Lines …"), on the tags' line when they take two. */
+.lib-open .d .sz { flex: none; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.lib-open .d .sz::after { content: ' ·'; }
+.lib-open .d .sz + .st { margin-left: -2px; }
 .lib-open .tag { flex: none; height: 17px; display: inline-flex; align-items: center; padding: 0 6px; border-radius: 5px; font-size: var(--fs-2xs); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
 .lib-open .tag.on { color: var(--accent-ink); background: var(--accent-soft); }
 .lib-open .tag.full { color: color-mix(in srgb, var(--warn) 80%, var(--fg)); background: color-mix(in srgb, var(--warn) 14%, transparent); }
@@ -1185,13 +1196,53 @@ div.lib-open { cursor: default; }
 .modal-retire .board-sum .bs { background: var(--well); }
 .modal-retire .board-sum .bs:nth-child(-n+3) { background: var(--accent-soft); }
 @media (max-width: 420px) { .lib-head .seg { flex: 1; } .lib-head .seg button { flex: 1; justify-content: center; padding: 0 6px; } .lib-head .lib-new .lbl { display: none; } .lib-head .lib-new { width: 30px; padding: 0; justify-content: center; } }
-/* Narrow: the actions stand in a column at the row's end, and the tags and numbers may take two lines, so the name keeps its room. */
+/* Up to the native minimum and phones: a row's tags and numbers may take two lines (the size, Lines and Score keep their room). */
+@media (max-width: 440px) {
+  .lib-open .d { flex-wrap: wrap; row-gap: 2px; }
+  .lib-open .d .st { flex: 1 1 100%; }
+  .lib-open .d .sz::after { content: none; }
+  .lib-open .d .sz + .st { margin-left: 0; }
+}
+/* Narrow: the actions stand in a column at the row's end, so the name keeps its room. */
 @media (max-width: 360px) {
   .lib-acts { flex-direction: column; gap: 0; }
   .lib-acts .icon-btn { width: 26px; height: 23px; }
   .lib-open { gap: 8px; padding-right: 2px; }
-  .lib-open .d { flex-wrap: wrap; row-gap: 2px; }
-  .lib-open .d .st { flex: 1 1 100%; }
+}
+
+/* New board: a size (Width and Height steppers, presets, the empty well drawn small) and Create. */
+.nb-body { display: flex; flex-direction: column; gap: 14px; position: relative; }
+/* The size read out after a button or a preset (VoiceOver); nothing on screen. */
+.nb-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.nb-main { display: flex; align-items: center; gap: 16px; }
+.nb-well { flex: none; width: 76px; height: 124px; display: flex; align-items: center; justify-content: center; }
+.nb-preview { display: block; border-radius: 3px; outline: 1px solid var(--line); }
+.nb-fields { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.nb-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.nb-label { color: var(--muted); font-size: var(--fs-sm); }
+.nb-stepper { flex: none; display: inline-flex; align-items: center; gap: 2px; padding: 2px; border-radius: 10px; background: var(--well); box-shadow: inset 0 0 0 1px var(--line); }
+.nb-step { width: 30px; height: 30px; }
+/* At the limit a button stays in the Tab order (focus never drops out of the window) and does nothing. */
+.nb-step[aria-disabled="true"] { opacity: 0.35; cursor: default; }
+@media (hover: hover) { .nb-step[aria-disabled="true"]:hover { background: transparent; color: var(--muted); } }
+.nb-step[aria-disabled="true"]:active { background: transparent; }
+.nb-val { min-width: 34px; padding: 3px 2px; border-radius: 6px; text-align: center; font-weight: 700; font-size: var(--fs-md); font-variant-numeric: tabular-nums; color: var(--fg); cursor: default; }
+.nb-val:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 0; }
+.nb-presets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.nb-preset { min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 6px 2px; border-radius: 9px; background: var(--panel); border: 1px solid var(--line); color: var(--muted); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.nb-preset b { color: var(--fg); font-weight: 650; font-size: var(--fs-xs); }
+@media (hover: hover) { .nb-preset:hover { background: var(--panel-2); } }
+.nb-preset[aria-pressed="true"] { border-color: var(--accent-line); background: var(--accent-soft); }
+/* A narrow window: each label over its stepper, so the steppers keep their size beside the well. */
+@media (max-width: 380px) {
+  .nb-row { flex-direction: column; align-items: flex-start; gap: 3px; }
+  .nb-main { gap: 12px; justify-content: center; }
+  .nb-fields { flex: none; }
+}
+@media (hover: none) and (pointer: coarse) {
+  .nb-step { width: 44px; height: 44px; }
+  .nb-val { min-width: 36px; line-height: 38px; }
+  .nb-preset { min-height: 44px; justify-content: center; }
 }
 
 .seed-modal p { margin-top: 0; }

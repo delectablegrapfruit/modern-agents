@@ -108,8 +108,8 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     return { out, status2, status14 };
   });
   check('two quads pay 5 and 5 (a streak of 2 is under ×1), chain 3', chain.out[0][0] === 5 && chain.out[1][0] === 5 && chain.out[1][1] === 1 && chain.out[1][2] === 3 && /Chain 3 · ×1/.test(chain.status2), JSON.stringify(chain));
-  check('fourteen in a row pay ×1.75 (a quad: 9); the chain shows beside it', chain.out[2][0] === 9 && chain.out[2][1] === 1.75 && /Chain 16 · ×1\.75/.test(chain.status14), JSON.stringify(chain));
-  check('the multiplier stops at ×2.5', chain.out[3][1] === 2.5 && chain.out[3][0] === 13, JSON.stringify(chain));
+  check('fourteen in a row pay ×1.75 (a quad: 8.75); the chain shows beside it', chain.out[2][0] === 8.75 && chain.out[2][1] === 1.75 && /Chain 16 · ×1\.75/.test(chain.status14), JSON.stringify(chain));
+  check('the multiplier stops at ×2.5 (a quad: 12.5)', chain.out[3][1] === 2.5 && chain.out[3][0] === 12.5, JSON.stringify(chain));
   await page.waitForTimeout(150);
   await shot('10a-chain');
   // Retiring a board shows its whole life, and logs it.
@@ -1706,11 +1706,18 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   const lib0 = await ev(() => ({ rows: document.querySelectorAll('.modal-lib .lib-row').length, cur: !!document.querySelector('.modal-lib .lib-row.current .tag.on'), thumb: (() => { const i = document.querySelector('.modal-lib .lib-thumb'); return i && i.complete && i.naturalWidth > 0; })(), counts: document.querySelector('.lib-tabs').textContent }));
   check('the library lists the board in play, with a thumbnail and the counts', lib0.rows === libA.n && lib0.cur && lib0.thumb && /Saved/.test(lib0.counts) && /Retired/.test(lib0.counts), JSON.stringify(lib0));
   await shot('75-library');
+  // New board asks for a size (sizes-test.cjs has the window itself); Create keeps the one it opens on.
   await page.click('.modal-lib .lib-new');
+  await page.waitForTimeout(150);
+  await page.click('.modal-newboard footer .btn.primary');
   await page.waitForTimeout(150);
   const libB = await ev(() => { const g = Lull.app.modes.play.game, B = Lull.app.store.state.boards; return { id: B.cur, n: B.list.length, pieces: g.s.pieces, empty: g.board.isEmpty(), rng: g.rng.state(), rows: document.querySelectorAll('.modal-lib .lib-row').length, first: document.querySelector('.modal-lib .lib-row').dataset.id }; });
   check('New board shelves the one in play and starts an empty one (its own seed)', libB.id !== libA.id && libB.n === libA.n + 1 && libB.pieces === 0 && libB.empty && JSON.stringify(libB.rng) !== JSON.stringify(JSON.parse(libA.json).rng) && libB.rows === libA.n + 1 && libB.first === libB.id, JSON.stringify(libB));
-  check('an untouched board cannot start another', await ev(() => document.querySelector('.modal-lib .lib-new').disabled));
+  await page.click('.modal-lib .lib-new');
+  await page.click('.modal-newboard footer .btn.primary');
+  await page.waitForTimeout(100);
+  const libB2 = await ev(() => { const B = Lull.app.store.state.boards; return { id: B.cur, n: B.list.length }; });
+  check('an untouched board never shelves another empty one: it is made again in its own record', libB2.id === libB.id && libB2.n === libB.n, JSON.stringify([libB, libB2]));
   await shot('75a-library-new');
   // Keyboard: ↓ to the shelved board, Enter resumes it exactly.
   await page.focus('.modal-lib button.lib-open');
@@ -3052,6 +3059,8 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
 
   check('no page errors', errors.length === 0, errors.slice(0, 5).join('\n'));
 
+  // ---- board sizes: the New board window, sizes at every extreme, pay by width, layout (scripts/sizes-test.cjs) --------
+  await require('./sizes-test.cjs')({ browser, check, PAGE, OUT });
   // ---- touch: an emulated phone, played with gestures (scripts/touch-test.cjs) -----------------------------------------
   await require('./touch-test.cjs')({ browser, check, PAGE, OUT });
   // ---- what the device can do: a phone, a desktop browser, the app, a tablet with a trackpad (device-test.cjs) -------

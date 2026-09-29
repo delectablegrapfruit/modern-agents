@@ -787,12 +787,32 @@
         ctx.save();
         ctx.globalAlpha = k < 0.8 ? 1 : (1 - k) / 0.2;
         ctx.font = '700 ' + f.size + 'px ' + FONT;
+        // Too wide for the well (a narrow board): on two lines (PERFECT / CLEAR), and smaller if still too wide,
+        // never under 8 px.
+        let lines = [f.str], size = f.size;
+        if (this.maxW) {
+          const tw = ctx.measureText(f.str).width;
+          if (tw > this.maxW) {
+            const sp = [...f.str].map((c, i) => (c === ' ' ? i : -1)).filter((i) => i > 0);
+            if (sp.length) {
+              const mid = sp.reduce((a, i) => (Math.abs(i - f.str.length / 2) < Math.abs(a - f.str.length / 2) ? i : a));
+              lines = [f.str.slice(0, mid).trim(), f.str.slice(mid + 1).trim()];
+            }
+            const lw = Math.max(...lines.map((l) => ctx.measureText(l).width));
+            if (lw > this.maxW) size = Math.max(8, Math.floor(f.size * this.maxW / lw));
+            ctx.font = '700 ' + size + 'px ' + FONT;
+          }
+        }
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         // On the light well a pale callout is deepened and haloed in white; on the dark one it keeps a dark halo.
         ctx.lineWidth = 3.5; ctx.lineJoin = 'round'; ctx.strokeStyle = this.light ? 'rgba(255,255,255,0.9)' : 'rgba(8,11,18,0.55)';
-        const yy = f.y - k * 18;
-        ctx.strokeText(f.str, f.x, yy);
-        ctx.fillStyle = this.light && luminance(f.color) > 0.55 ? shade(f.color, -0.5) : f.color; ctx.fillText(f.str, f.x, yy);
+        const yy = f.y - k * 18, lh = Math.round(size * 1.1);
+        ctx.fillStyle = this.light && luminance(f.color) > 0.55 ? shade(f.color, -0.5) : f.color;
+        lines.forEach((l, i) => {
+          const ly = yy + (i - (lines.length - 1) / 2) * lh;
+          ctx.strokeText(l, f.x, ly);
+          ctx.fillText(l, f.x, ly);
+        });
         ctx.restore();
       }
     }
@@ -869,25 +889,40 @@
       const cols = rot % 180 === 0 ? g.w : g.h, rows = rot % 180 === 0 ? g.h : g.w;
       const W = this.cssW, H = this.cssH, m = 8;
       const side = 2.7, gap = 0.4, pad = 0.42, wp = 0.2, top = 2.9;
+      // The side trays never go narrower than this (a tall board's cells can be a few pixels; HOLD and NEXT still fit).
+      const SW_MIN = 36;
       const hs = g.mods.noHold ? 0 : 1; // no hold slot (most puzzles): no column for it
-      const sA = Math.min((W - 2 * m) / (cols + (1 + hs) * (side + gap) + 2 * pad + 2 * wp), (H - 2 * m) / (rows + 2 * pad + 2 * wp));
-      const sB = Math.min((W - 2 * m) / (cols + 2 * pad + 2 * wp), (H - 2 * m) / (rows + top + gap + 2 * pad + 2 * wp));
-      const wide = sA >= sB * 0.9;
-      const s = Math.max(4, Math.floor(wide ? sA : sB));
+      /** The cell size for a grid of c × r: beside the trays (A) or under them (B). */
+      const fit = (c, r) => {
+        let sA = Math.min((W - 2 * m) / (c + (1 + hs) * (side + gap) + 2 * pad + 2 * wp), (H - 2 * m) / (r + 2 * pad + 2 * wp));
+        if (sA * side < SW_MIN) sA = Math.min((W - 2 * m - (1 + hs) * SW_MIN) / (c + (1 + hs) * gap + 2 * pad + 2 * wp), (H - 2 * m) / (r + 2 * pad + 2 * wp));
+        const sB = Math.min((W - 2 * m) / (c + 2 * pad + 2 * wp), (H - 2 * m) / (r + top + gap + 2 * pad + 2 * wp));
+        return { sA, sB, wide: sA >= sB * 0.9 };
+      };
+      const f = fit(cols, rows);
+      let wide = f.wide, s = Math.max(4, Math.floor(wide ? f.sA : f.sB));
+      // A small board is drawn no larger than cellCap times a Standard board's cells in the same space, so a 4 × 8 board
+      // is a small board, not a few giant blocks (Free Play sets it; puzzles keep their own sizes). Held to that size,
+      // it keeps its trays beside it when they fit there.
+      if (this.opts.cellCap) {
+        const S = L.Library ? L.Library.STANDARD : { w: 10, h: 20 }, std = fit(S.w, S.h), cap = Math.floor(this.opts.cellCap * (std.wide ? std.sA : std.sB));
+        if (cap < s) { s = Math.max(4, cap); if (s <= Math.floor(f.sA)) wide = true; }
+      }
+      // The trays' own scale: the board's, or larger when the board's cells are too small for them to read.
+      const sw = Math.max(Math.round(side * s), SW_MIN), ts = Math.max(s, Math.floor(sw / side));
       const bw = cols * s, bh = rows * s, P = Math.round(pad * s), G = Math.round(gap * s), WP = Math.max(3, Math.round(s * 0.16));
-      const lab = Math.round(Math.max(16, s * 0.72)); // the label row over each tray
+      const lab = Math.round(Math.max(16, ts * 0.72)); // the label row over each tray
       let plate, bx, by, hold, next, nextDir;
       if (wide) {
-        const sw = Math.round(side * s);
         const pw = P * 2 + (sw + G) * (1 + hs) + bw + WP * 2, ph = P * 2 + bh + WP * 2;
         plate = { x: Math.round((W - pw) / 2), y: Math.round((H - ph) / 2), w: pw, h: ph };
         bx = plate.x + P + (sw + G) * hs + WP; by = plate.y + P + WP;
         const ty = plate.y + P + lab;
         hold = { x: plate.x + P, y: ty, w: sw, h: Math.round(sw * 0.82) };
-        next = { x: bx + bw + WP + G, y: ty, w: sw, h: bh + WP * 2 - lab };
+        next = { x: bx + bw + WP + G, y: ty, w: sw, h: Math.max(Math.round(ts * 2.5), bh + WP * 2 - lab) };
         nextDir = 'v';
       } else {
-        const th = Math.round(top * s) - lab;
+        const th = Math.max(Math.round(top * s) - lab, Math.round(ts * 1.6));
         const pw = P * 2 + bw + WP * 2, ph = P * 2 + lab + th + G + bh + WP * 2;
         plate = { x: Math.round((W - pw) / 2), y: Math.round((H - ph) / 2), w: pw, h: ph };
         bx = plate.x + P + WP; by = plate.y + P + lab + th + G + WP;
@@ -898,7 +933,11 @@
         next = { x: plate.x + P + nx, y: ty, w: iw - nx, h: th };
         nextDir = 'h';
       }
-      this.lay = { s, cols, rows, board: { x: bx, y: by, w: bw, h: bh }, hold, next, nextDir, wide, plate, lab };
+      // A wide board's plate can be shorter than the Next tray it holds (a short board beside a column of trays).
+      if (wide) plate.h = Math.max(plate.h, next.y + next.h + P - plate.y);
+      this.lay = { s, ts, cols, rows, board: { x: bx, y: by, w: bw, h: bh }, hold, next, nextDir, wide, plate, lab };
+      // Words over the board (PERFECT CLEAR, a combo's name) are kept within the well (its walls included).
+      this.fx.maxW = bw + WP * 2;
       this.lay.well = wellRect(this.lay.board, s);
       return this.lay;
     }
@@ -1184,7 +1223,8 @@
     }
 
     drawSide(ctx, now) {
-      const g = this.game, look = this.look, { s, hold, next, nextDir, lab } = this.lay;
+      // The trays are drawn at their own scale (the board's, or larger for a board of tiny cells: layout).
+      const g = this.game, look = this.look, { ts: s, hold, next, nextDir, lab } = this.lay;
       const th = look.theme;
       ctx.save();
       // Labels: small spaced capitals over each tray, quieter than anything they label.
@@ -1332,7 +1372,7 @@
         }
         if (!reduced) this.fx.shake = Math.max(this.fx.shake, Math.min(2.5, 0.6 * result.lines));
         const b = this.lay.board;
-        if (this.showBank) this.fx.text('+' + (result.banked || 0) + ' ' + LINE + (result.mult > 1 ? '  ×' + Math.round(result.mult * 1000) / 1000 : ''), b.x + b.w / 2, b.y + b.h * 0.55, '#8fe3ff', Math.max(12, Math.min(18, s * 0.75)));
+        if (this.showBank) this.fx.text('+' + L.fmtLines(result.banked || 0) + ' ' + LINE + (result.mult > 1 ? '  ×' + Math.round(result.mult * 1000) / 1000 : ''), b.x + b.w / 2, b.y + b.h * 0.55, '#8fe3ff', Math.max(12, Math.min(18, s * 0.75)));
         const label = labelFor(result);
         if (label) this.fx.text(label, b.x + b.w / 2, b.y + b.h * 0.42, result.perfect ? '#ffe28a' : '#ffffff', Math.max(13, Math.min(22, s * 0.9)));
       } else if (result.tspin || result.mini) {

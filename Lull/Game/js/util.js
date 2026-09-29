@@ -121,6 +121,13 @@
   /** Whole number with thousands separators. */
   function fmtInt(n) { return Math.floor(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
 
+  /** Lines, as paid: thousands separators and up to two decimals, no trailing zeros (12.5, 0.4, 1,204.75). */
+  function fmtLines(n) {
+    const v = Math.round((+n || 0) * 100) / 100, neg = v < 0, a = Math.abs(v), whole = Math.floor(a + 1e-9);
+    const frac = Math.round((a - whole) * 100);
+    return (neg ? '-' : '') + fmtInt(whole) + (frac ? '.' + String(frac).padStart(2, '0').replace(/0$/, '') : '');
+  }
+
   function fmtDuration(ms) {
     const s = Math.floor(ms / 1000);
     if (s < 60) return s + 's';
@@ -200,7 +207,7 @@
 
   Object.assign(L, {
     hash32, RNG, codeFromInt, intFromCode, CODE_ALPHABET,
-    fmt, fmtInt, fmtDuration, fmtAgo, fmtClock, pct, dateKey, clamp, lerp,
+    fmt, fmtInt, fmtLines, fmtDuration, fmtAgo, fmtClock, pct, dateKey, clamp, lerp,
     Emitter, native, decodeBase64Utf8, LINE,
     bus: new Emitter(),
   });

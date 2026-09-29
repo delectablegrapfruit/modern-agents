@@ -344,9 +344,8 @@
       this.el.replaceChildren(...kids);
       this.el.classList.toggle('plain', !parts.some((p) => Array.isArray(p) && p.length));
       this.el.dataset.hint = due.id;
-      // Centred low in the well: under the piece on an upright board, clear of the stack on an Upside Down one.
       const lay = mode.view.lay;
-      if (lay) { this.el.style.left = Math.round(lay.board.x + lay.board.w / 2) + 'px'; this.el.style.top = Math.round(lay.board.y + lay.board.h - 12) + 'px'; }
+      if (lay && !this.place(lay, wrap)) { this.el.remove(); return; }
       clearTimeout(this.gone);
       this.el.classList.remove('show');
       void this.el.offsetWidth;
@@ -354,6 +353,36 @@
       this.shownFor = mode;
       this.visibleUntil = now + SHOW_MS;
       this.app.store.dirty = true;
+    }
+
+    /**
+     * Where the pill goes: centred low in the well (under the piece on an upright board, clear of the stack on an Upside
+     * Down one). A well narrower than the pill (a board 4 wide) keeps it off its walls: under the plate or over it, or
+     * beside it (on more lines) when the board fills the height. False when there is nowhere it fits.
+     */
+    place(lay, wrap) {
+      const el = this.el, B = lay.board, P = lay.plate, W = wrap.clientWidth, H = wrap.clientHeight, gap = 6;
+      el.classList.remove('side');
+      el.style.maxWidth = '';
+      let pw = el.offsetWidth, x = B.x + B.w / 2, y = B.y + B.h - 12;
+      const ph = el.offsetHeight;
+      if (pw > B.w - 8) {
+        if (H - (P.y + P.h) >= ph + gap * 2) y = P.y + P.h + gap + ph;
+        else if (P.y >= ph + gap * 2) y = P.y - gap;
+        else {
+          const lw = P.x - gap * 2, rw = W - P.x - P.w - gap * 2, room = Math.max(lw, rw);
+          if (room < 56) return false;
+          el.classList.add('side');
+          el.style.maxWidth = room + 'px';
+          pw = el.offsetWidth;
+          x = lw >= rw ? P.x - gap - pw / 2 : P.x + P.w + gap + pw / 2;
+          y = P.y + P.h;
+        }
+        x = Math.min(Math.max(x, pw / 2 + gap), W - pw / 2 - gap);
+      }
+      el.style.left = Math.round(x) + 'px';
+      el.style.top = Math.round(y) + 'px';
+      return true;
     }
 
     /** Fades it out, then takes it off the page (so a pill placed for an old layout never widens a view). */

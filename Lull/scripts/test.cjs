@@ -2056,6 +2056,328 @@ console.log('board library');
   });
 }
 
+console.log('board sizes');
+{
+  const { Library } = L;
+  const EXTREMES = [[4, 8], [4, 40], [20, 8], [20, 40]];
+  /** Every cell of the piece in play inside the board and on an empty cell; the stack the right length. */
+  const sane = (g, what) => {
+    assert.strictEqual(g.board.cells.length, g.w * g.h, what + ': stack length');
+    if (g.piece && !g.over) {
+      for (const [x, y] of g.cellsOf(g.piece)) {
+        assert(x >= 0 && x < g.w && y >= 0 && y < g.h, what + ': piece cell ' + x + ',' + y + ' out of a ' + g.w + ' x ' + g.h + ' board');
+        assert(!g.board.get(x, y), what + ': piece over a block at ' + x + ',' + y);
+      }
+    }
+  };
+  const fillRow = (g, y, gapAt) => { for (let x = 0; x < g.w; x++) if (!gapAt || !gapAt.includes(x)) g.board.set(x, y, 8); };
+  test('sizes: 4 x 8 to 20 x 40, whole numbers; anything else is clamped; a line w wide is worth w/10; pay rounds down to the hundredth', () => {
+    assert.deepStrictEqual([Library.LIMITS.w, Library.LIMITS.h], [[4, 20], [8, 40]]);
+    for (const [w, h] of EXTREMES.concat([[10, 20], [7, 13]])) assert(Library.validSize(w, h), w + 'x' + h);
+    for (const [w, h] of [[3, 20], [21, 20], [10, 7], [10, 41], [10.5, 20], ['10', 20], [null, 20], [NaN, 20]]) assert(!Library.validSize(w, h), w + 'x' + h);
+    assert.deepStrictEqual(Library.clampSize({ w: 2, h: 99 }), { w: 4, h: 40 });
+    assert.deepStrictEqual(Library.clampSize({ w: 12.4, h: 'x' }), { w: 12, h: 20 });
+    assert.deepStrictEqual(Library.clampSize(null), { w: 10, h: 20 });
+    assert.deepStrictEqual([4, 5, 10, 15, 20].map(Library.scale), [0.4, 0.5, 1, 1.5, 2]);
+    assert.strictEqual(Library.bank(8.75), 8.75);
+    assert.strictEqual(Library.bank(5 * 1.1 * 1.25), 6.87, 'rounded down, never up');
+    assert.strictEqual(Library.bank(0.7 + 0.1 + 0.2), 1, 'float drift does not lose a hundredth');
+    assert.strictEqual(Library.bank(-3), 0);
+    assert.strictEqual(Library.sizeLabel(12, 24), '12 × 24');
+    assert.deepStrictEqual([L.fmtLines(12.5), L.fmtLines(0.4), L.fmtLines(1204.75), L.fmtLines(0.1 + 0.2), L.fmtLines(3), L.fmtLines(0.05)], ['12.5', '0.4', '1,204.75', '0.3', '3', '0.05']);
+  });
+  test('sizes: the same clear pays w/10 of Standard, at every width (and never faster per cell)', () => {
+    // What PlayMode.onLock pays (js/items.js, Pay.clear): lines x scale, plus at most one Standard line for a difficult
+    // clear, x the multiplier, rounded down to the hundredth.
+    const pay = (lines, difficult, mult, w) => L.Pay.clear({ mult }, { lines, tspin: difficult && lines < 4 }, w).pay;
+    for (let w = 4; w <= 20; w++) {
+      for (const [lines, diff, mult] of [[1, false, 1], [2, false, 1], [4, true, 1], [4, true, 1.75], [2, true, 2.5], [4, true, 2.5 * 3]]) {
+        const std = pay(lines, diff, mult, 10), here = pay(lines, diff, mult, w);
+        if (w <= 10 || !diff) assert(Math.abs(here - Library.bank(std * w / 10)) <= 0.01, w + ' wide: ' + here + ' vs ' + std);
+        assert(here / w <= std / 10 + 1e-9, w + ' wide pays faster per cell: ' + here + ' vs ' + std);
+      }
+    }
+    assert.strictEqual(pay(4, true, 1.75, 10), 8.75, 'a Standard quad at x1.75');
+    assert.strictEqual(pay(4, true, 1, 5), 2.5, 'a quad 5 wide');
+    assert.strictEqual(pay(1, false, 1, 20), 2, 'a single 20 wide');
+    assert.strictEqual(pay(4, true, 1, 20), 9, 'a quad 20 wide: its bonus is one Standard line');
+    assert.strictEqual(pay(1, true, 1, 20), 3, 'a T-spin single 20 wide: two lines and one');
+  });
+  test('sizes: the difficult-clear bonus is at most one Standard line, so a T a bag never earns more on a wide board', () => {
+    // The best a bag can do: its one T clears a line with a T-spin, the other 28 - w cells go as quads; at the cap.
+    const bag = (w) => {
+      const tss = L.Pay.clear({ mult: 2.5 }, { lines: 1, tspin: true }, w).pay, quad = L.Pay.clear({ mult: 2.5 }, { lines: 4 }, w).pay;
+      return tss + quad * (28 - w) / (4 * w);
+    };
+    const std = bag(10);
+    for (let w = 4; w <= 20; w++) assert(bag(w) <= std + 0.01, w + ' wide: ' + bag(w).toFixed(3) + ' a bag vs ' + std.toFixed(3));
+  });
+  test('sizes: the streak climbs by cells cleared: a narrow board playing quads never out-earns Standard', () => {
+    // Quads only, never broken: after the same number of cells, a board w wide has paid no more than Standard.
+    const run = (w, cells) => {
+      const g = { w, s: { b2b: -1 } };
+      let paid = 0, done = 0;
+      while (done + 4 * w <= cells) {
+        g.s.b2b++;
+        g.s.mult = L.Pay.mult(g);
+        paid += L.Pay.clear(g.s, { lines: 4 }, w).pay;
+        done += 4 * w;
+      }
+      return paid;
+    };
+    for (const w of [4, 5, 6, 7, 8, 9]) {
+      for (let cells = 40; cells <= 40 * 60; cells += 40) {
+        const here = run(w, cells), std = run(10, cells);
+        assert(here <= std + 0.01, w + ' wide after ' + cells + ' cells: ' + here + ' vs ' + std);
+      }
+    }
+    // The count itself (the chain, achievements) stays raw: twelve quads in a row are a streak of twelve at any width.
+    const g = { w: 7, s: { b2b: 11 } };
+    assert.strictEqual(L.Chain.streak(g), 12);
+    assert.strictEqual(L.Pay.mult(g), L.Chain.mult(12 * 0.7));
+    assert.strictEqual(L.Pay.mult({ w: 20, s: { b2b: 11 } }), L.Chain.mult(12), 'wider: one link a clear');
+  });
+  test('sizes: a Golden Piece, a boost and Double or Nothing are worth the same at every width (in Standard clears)', () => {
+    const { Luck, Pay } = L;
+    // One Golden Piece, spent on quads at x1: what it adds over the same quads without it.
+    const golden = (w) => {
+      const s = { mult: 1, gold: Luck.GOLD_CLEARS };
+      let extra = 0, n = 0;
+      while (s.gold > 0 && n++ < 100) extra += Pay.clear(s, { lines: 4 }, w).pay - Pay.clear({ mult: 1 }, { lines: 4 }, w).pay;
+      return { extra: Math.round(extra * 100) / 100, clears: n };
+    };
+    const std = golden(10);
+    assert.deepStrictEqual(std, { extra: 50, clears: 5 });
+    // (Wider than Standard a quad's bonus is still one Standard line, so gold there adds a little less.)
+    for (let w = 4; w <= 20; w++) assert(golden(w).extra <= std.extra + 1e-9 && golden(w).extra >= (w <= 10 ? std.extra - 0.1 : std.extra * 0.9), w + ' wide: ' + JSON.stringify(golden(w)));
+    assert.strictEqual(golden(20).clears, 3, '20 wide: two clears and a half');
+    assert.strictEqual(golden(4).clears, 13, '4 wide: twelve clears and a half');
+    assert.strictEqual(Pay.clearsLeft(5, 20), 3);
+    assert.strictEqual(Pay.clearsLeft(5, 4), 13);
+    assert.strictEqual(Pay.clearsLeft(5, 10), 5);
+    assert.strictEqual(Pay.clearsLeft(0, 10), 0);
+    // A x1.5 boost for three clears: 20 wide it covers a clear and a half.
+    const boost = (w) => {
+      const s = { mult: 1, boost: { x: 1.5, left: 3 } };
+      let extra = 0, n = 0;
+      while (s.boost && n++ < 100) extra += Pay.clear(s, { lines: 4 }, w).pay - Pay.clear({ mult: 1 }, { lines: 4 }, w).pay;
+      return Math.round(extra * 100) / 100;
+    };
+    for (let w = 4; w <= 20; w++) assert(boost(w) <= boost(10) + 1e-9 && boost(w) >= (w <= 10 ? boost(10) - 0.1 : boost(10) * 0.9), w + ' wide boost ' + boost(w) + ' vs ' + boost(10));
+    // A won Double or Nothing adds at most one Standard clear's worth; lost, the clear pays nothing.
+    const dbl = (w) => { const s = { mult: 2.5, gold: 5, double: true }, r = Pay.clear(s, { lines: 4 }, w); return [r.pay, r.double, s.double]; };
+    const plain = (w) => Pay.clear({ mult: 2.5, gold: 5 }, { lines: 4 }, w).pay;
+    for (let w = 4; w <= 20; w++) {
+      const [won, what, left] = dbl(w);
+      assert.strictEqual(what, 'won'); assert.strictEqual(left, false);
+      assert(won - plain(w) <= dbl(10)[0] - plain(10) + 0.01, w + ' wide: double adds ' + (won - plain(w)));
+    }
+    const lost = { mult: 1, double: true };
+    assert.deepStrictEqual([Pay.clear(lost, { lines: 1 }, 20).pay, lost.double], [0, false]);
+  });
+  test('sizes: the wallet keeps hundredths and never drifts', () => {
+    const s = new L.Store();
+    const st = s.state;
+    const l0 = st.lines;
+    for (let i = 0; i < 10; i++) s.addLines(0.1, 'play');
+    assert.strictEqual(st.lines, l0 + 1);
+    s.addLines(0.7, 'play'); s.addLines(0.2, 'play');
+    assert.strictEqual(st.lines, l0 + 1.9);
+    assert(s.spend(0.3));
+    assert.strictEqual(st.lines, l0 + 1.6);
+    s.addLines(-0.6, 'rewind');
+    assert.strictEqual(st.lines, l0 + 1);
+    assert.strictEqual(L.fmtInt(st.lines), String(l0 + 1));
+  });
+  test('sizes: at 4 x 8, 4 x 40, 20 x 8 and 20 x 40 every piece spawns inside (the I flat), lines clear, a perfect clear is seen, and undo takes it back', () => {
+    for (const [w, h] of EXTREMES) {
+      const g = new Game({ w, h, seed: 3 });
+      sane(g, w + 'x' + h + ' spawn');
+      for (const id of L.Pieces.TETROMINOES) {
+        assert(g.replacePiece({ id }), w + 'x' + h + ' ' + id + ' fits');
+        sane(g, w + 'x' + h + ' ' + id);
+      }
+      g.replacePiece({ id: 'I' });
+      assert.strictEqual(g.piece.rot, 0, 'the I is flat');
+      assert.strictEqual(g.piece.y + g.piece.type.rotBounds[0].maxY <= h - 1, true);
+      // Two rows full but for four cells, and an I dropped flat into them: two lines, then an empty board.
+      g.resetBoard();
+      fillRow(g, 0, [0, 1, 2, 3]);
+      g.replacePiece({ id: 'I' });
+      while (g.move(-1));
+      const r = g.drop();
+      assert.strictEqual(r.lines, 1, w + 'x' + h + ' one line');
+      assert(r.perfect, w + 'x' + h + ' perfect clear');
+      assert(g.board.isEmpty());
+      sane(g, w + 'x' + h + ' after the clear');
+      const res = g.undo();
+      assert.strictEqual(res.lines, 1, 'undo gives back the line');
+      assert.strictEqual(g.board.count(), w - 4, 'and the row it cleared');
+      sane(g, w + 'x' + h + ' after undo');
+    }
+  });
+  test('sizes: a T-spin double against the wall and in the middle, at both widths', () => {
+    for (const w of [4, 20]) {
+      for (const at of w === 4 ? [0] : [0, 8, 17]) {
+        const g = new Game({ w, h: 8, seed: 4 });
+        // Rows 0 and 1 full but for a T-slot at column at+1 (row 0) and at..at+2 (row 1), roofed at at+2 over row 2.
+        for (let x = 0; x < w; x++) { if (x !== at + 1) g.board.set(x, 0, 8); if (x < at || x > at + 2) g.board.set(x, 1, 8); }
+        g.board.set(at + 2 < w ? at + 2 : at, 2, 8);
+        g.replacePiece({ id: 'T' });
+        Object.assign(g.piece, { rot: 2, x: at, y: 0, lastRot: true });
+        assert(g.fitsAt(g.piece, 2, at, 0), 'the T fits its slot');
+        const r = g.lock();
+        assert(r.tspin && r.lines === 2, w + ' wide at ' + at + ': ' + JSON.stringify({ tspin: r.tspin, lines: r.lines }));
+      }
+    }
+  });
+  test('sizes: a piece wider than the board (a Noodle 4 or 5 wide) tops out inside the walls, and stays inside after a reload', () => {
+    const noodle = L.Pieces.customType([[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [5, 0]]).id;
+    for (const [w, h] of [[4, 8], [5, 12]]) {
+      const g = new Game({ w, h, seed: 2 });
+      // A Noodle in play goes back into the line with Pick of Three; then a stack with no column six rows free.
+      assert(g.replacePiece({ id: noodle }), 'a Noodle');
+      assert(g.pickFromQueue(0), 'picked');
+      assert.strictEqual(g.queue[0].id, noodle);
+      for (let y = 0; y < h - 4; y++) for (let x = 0; x < w; x++) if (x !== y % w) g.board.set(x, y, 8);
+      g.drop();
+      assert(g.over, w + 'x' + h + ' full');
+      for (const [x, y] of g.cellsOf(g.piece)) assert(x >= 0 && x < w && y >= 0 && y < h, w + 'x' + h + ' cell ' + x + ',' + y + ' out of the well');
+      const back = new Game({ saved: JSON.parse(JSON.stringify(g.toJSON())) });
+      for (const [x, y] of back.cellsOf(back.piece)) assert(x >= 0 && x < w && y >= 0 && y < h, 'reloaded: ' + x + ',' + y);
+    }
+  });
+  test('Laser on a Ghost piece or a drill bit inside blocks is refused; out in the open it turns', () => {
+    for (const [w, h] of [[10, 20], [4, 8], [20, 40]]) {
+      const g = new Game({ w, h, seed: 3 });
+      for (let x = 0; x < w; x++) for (let y = 0; y < 3; y++) g.board.set(x, y, 8);
+      assert(g.setSpecial('phase'));
+      Object.assign(g.piece, { y: 0 });
+      assert(g.fitsAt(g.piece, g.piece.rot, g.piece.x, 0), 'the ghost sits in the blocks');
+      assert.strictEqual(g.setSpecial('laser'), false, w + 'x' + h + ' refused');
+      assert.strictEqual(g.piece.special, 'phase');
+      Object.assign(g.piece, { y: h - 1 - g.piece.type.rotBounds[g.piece.rot].maxY });
+      assert(g.setSpecial('laser'), 'in the open');
+      assert.strictEqual(g.piece.special, 'laser');
+    }
+  });
+  test('sizes: every item at the extremes never throws, never leaves a piece out of the board or in a block, and saves and loads', () => {
+    const rnd = new RNG('items-at-sizes');
+    const shapes = [() => ({ id: 'M1' }), () => ({ id: L.Pieces.customType([[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [5, 0]]).id }), () => ({ id: L.Pieces.bigOf('I').id }), () => ({ id: L.Pieces.bigOf('T').id }),
+      () => ({ id: L.Pieces.customType([[0, 0], [1, 0], [1, 1], [2, 1], [2, 2], [3, 2]]).id }), () => ({ id: L.Pieces.mirrorOf(L.Pieces.TYPES.J).id })];
+    const acts = [
+      (g) => g.replacePiece(shapes[rnd.int(shapes.length)]()),
+      (g) => g.setSpecial(['patch', 'phase', 'drill', 'bomb', 'laser', 'blackhole'][Math.floor(rnd.next() * 6)]),
+      (g) => g.bestFit(), (g) => g.pickFromQueue(Math.floor(rnd.next() * 3)),
+      (g) => g.settle(), (g) => g.tornado(), (g) => g.trapdoor(), (g) => g.flipWorld(), (g) => g.undo(), (g) => g.holdPiece(),
+    ];
+    for (const [w, h] of EXTREMES.concat([[10, 20], [5, 9]])) {
+      for (let run = 0; run < 6; run++) {
+        const g = new Game({ w, h, seed: run * 7 + w });
+        for (let i = 0; i < 160 && !g.over; i++) {
+          const what = w + 'x' + h + ' run ' + run + ' step ' + i;
+          if (rnd.next() < 0.35) { const k = Math.floor(rnd.next() * acts.length); acts[k](g); sane(g, what + ' act ' + k); }
+          if (!g.piece) break;
+          for (let t = Math.floor(rnd.next() * 3); t > 0; t--) g.rotate(1);
+          g.move(Math.floor(rnd.next() * (w + 1)) - Math.floor(w / 2));
+          sane(g, what + ' moved');
+          g.drop();
+          sane(g, what + ' dropped');
+          if (i % 25 === 0) {
+            const j = JSON.parse(JSON.stringify(g.toJSON())), back = new Game({ saved: j });
+            assert.strictEqual(JSON.stringify(back.toJSON()), JSON.stringify(g.toJSON()), what + ' round trip');
+            assert.deepStrictEqual([back.w, back.h], [w, h]);
+          }
+        }
+      }
+    }
+  });
+  test('sizes: Settle and Trapdoor refuse (nothing changes) when a block would come down into the piece in play', () => {
+    for (const [w, h] of [[10, 20], [20, 8], [4, 40]]) {
+      // A column of blocks over a gap, the piece tucked in the gap beside the stack's foot.
+      const g = new Game({ w, h, seed: 9 });
+      g.replacePiece({ id: 'M1' });
+      for (let x = 1; x < w - 1; x++) g.board.set(x, 0, 8);
+      g.board.set(0, 2, 8); g.board.set(0, 3, 8);
+      Object.assign(g.piece, { x: 0, y: 1, rot: 0 });
+      assert(g.fitsAt(g.piece, 0, 0, 1));
+      const before = JSON.stringify(g.toJSON()), hist = g.history.length;
+      assert.strictEqual(g.settle(), null, w + 'x' + h + ' settle refused');
+      assert.strictEqual(g.trapdoor(), null, w + 'x' + h + ' trapdoor refused');
+      assert.strictEqual(JSON.stringify(g.toJSON()), before, 'nothing moved');
+      assert.strictEqual(g.history.length, hist, 'nothing to undo');
+      // Moved out from under them, both work.
+      Object.assign(g.piece, { x: Math.floor(w / 2), y: h - 1 });
+      assert(g.trapdoor(), 'trapdoor with room');
+      sane(g, 'after trapdoor');
+    }
+  });
+  test('sizes: saved and loaded with the board, shelved and resumed, and kept on a retired record; a size no board can have is dropped', () => {
+    const st = L.loadState({});
+    let rn = 3; const rnd = () => { rn = (rn * 16807 + 11) % 2147483647; return rn / 2147483647; };
+    const B = Library.ensure(st, 1000, rnd);
+    assert.deepStrictEqual(B.size, { w: 10, h: 20 }, 'Standard until one is chosen');
+    const a = new Game({ w: 7, h: 13, seed: 1 });
+    for (let i = 0; i < 5; i++) a.drop();
+    st.free = a.toJSON();
+    const idA = B.cur;
+    const b = new Game({ w: 20, h: 40, seed: 2 });
+    Library.startNew(st, a.toJSON(), 2000, rnd);
+    const back = Library.open(st, idA, b.toJSON(), 3000);
+    const g = new Game({ saved: JSON.parse(JSON.stringify(back)) });
+    assert.deepStrictEqual([g.w, g.h, g.s.pieces], [7, 13, 5]);
+    const e = Library.retire(st, idA, g.toJSON(), 4000, 'manual');
+    assert.deepStrictEqual([e.w, e.h, e.sum.w, e.sum.h, e.cells.length], [7, 13, 7, 13, 91]);
+    // Edited by hand: a shelved board of an impossible size goes; a retired one is clamped (its stack no longer drawn).
+    const bad = Object.assign(new Game({ w: 10, h: 20, seed: 5 }).toJSON(), { w: 30 });
+    const st2 = L.loadState({ v: 1, boards: { cur: 'b1', list: [{ id: 'b1' }, { id: 'b2', game: bad }, { id: 'b3', game: new Game({ w: 4, h: 40 }).toJSON() }], retired: [{ id: 'b4', w: 50, h: 3, cells: 'abc' }], size: { w: 99, h: 'x' } } });
+    const B2 = Library.ensure(st2, 1, rnd);
+    assert.deepStrictEqual(B2.list.map((r) => r.id), ['b1', 'b3']);
+    assert.deepStrictEqual([B2.retired[0].w, B2.retired[0].h, B2.retired[0].cells], [20, 8, '']);
+    assert.deepStrictEqual(B2.size, { w: 20, h: 20 });
+    assert(!Library.playable(bad) && Library.playable(new Game({ w: 4, h: 8 }).toJSON()));
+  });
+  test('sizes: power-ups every hundred lines and the line achievements count Standard lines; feats count on boards 10 wide or more', () => {
+    // A board 5 wide: 200 of its lines are 100 Standard ones (as PlayMode passes them to Earn).
+    const e = { board: null, paid: 0 }, k = Library.scale(5);
+    assert.strictEqual(L.Earn.lines(e, 1, 199 * k, 198 * k), 0);
+    assert.strictEqual(L.Earn.lines(e, 1, 200 * k, 199 * k), 1);
+    const A = L.Achievements;
+    const on = (w, h, s, r) => { const g = new Game({ w, h, seed: 1 }); Object.assign(g.s, s || {}); return { mode: 'play', r: Object.assign({ lines: 1, combo: 0 }, r), g }; };
+    const ids = (st, ev) => A.check(st, ev).map((a) => a.id);
+    let st = L.defaultState();
+    assert.deepStrictEqual(ids(st, on(5, 20, { lines: 299 })), [], '299 lines 5 wide are under 150');
+    assert.deepStrictEqual(ids(st, on(5, 20, { lines: 300 })), ['lines150']);
+    st = L.defaultState();
+    assert.deepStrictEqual(ids(st, on(20, 20, { lines: 75 })), ['lines150'], '75 lines 20 wide are 150');
+    // A quad, a perfect clear and a combo on a narrow board: nothing. The same at Standard width and wider: earned.
+    st = L.defaultState();
+    assert.deepStrictEqual(ids(st, on(4, 20, { hcombo: 10, hperfect: 10 }, { lines: 4, perfect: true, hand: true })), []);
+    assert.deepStrictEqual(ids(st, on(9, 20, { score: 1e6 }, { lines: 4, hand: true })), [], '9 wide is still narrow');
+    assert.deepStrictEqual(ids(st, on(12, 20, {}, { lines: 4, hand: true })), ['quad']);
+    // The perfect-clear opener counts every block: pieces x 4 = lines x width.
+    st = L.defaultState();
+    assert(!ids(st, on(12, 20, { pieces: 10, lines: 3 }, { lines: 3, perfect: true, hand: true })).includes('pc_open'), '40 cells are not 36');
+    assert(ids(st, on(12, 20, { pieces: 9, lines: 3 }, { lines: 3, perfect: true, hand: true })).includes('pc_open'));
+    // Clean Sweep: 60 blocks, or six rows' worth on a wider board.
+    st = L.defaultState();
+    assert.deepStrictEqual(ids(st, on(20, 20, {}, { lines: 3, special: 'settle', had: 100 })), []);
+    assert.deepStrictEqual(ids(st, on(20, 20, {}, { lines: 3, special: 'settle', had: 120 })), ['it_sweep']);
+    st = L.defaultState();
+    assert.deepStrictEqual(ids(st, on(4, 40, {}, { lines: 3, special: 'settle', had: 59 })), []);
+    assert.deepStrictEqual(ids(st, on(4, 40, {}, { lines: 3, special: 'settle', had: 60 })), ['it_sweep'], 'counts on a narrow board too');
+    // Pace: 36 Standard lines in the last hundred pieces.
+    st = L.defaultState();
+    const pace = (per) => Array.from({ length: 101 }, (_, i) => [i * 890, Math.floor(i * per)]);
+    assert.deepStrictEqual(ids(st, on(5, 20, { pace: pace(0.4) })), [], '40 lines 5 wide are 20');
+    assert.deepStrictEqual(ids(st, on(5, 20, { pace: pace(0.8) })).sort(), ['pace33', 'pace67']);
+    // Painted Row: one colour across a row is a flat I on a board 4 wide.
+    const painted = (w) => { const g = new Game({ w, h: 20, seed: 1 }); return L.Combos.detect({ lines: 1, removed: [Array(w).fill(1)] }, g); };
+    assert.deepStrictEqual([painted(4), painted(9), painted(10), painted(16)], [[], [], ['painted'], ['painted']]);
+    assert(['lines150', 'lines500', 'lines5000', 'purist', 'pace33', 'pace67', 'it_sweep'].every((id) => A.ANY_SIZE.has(id)));
+  });
+}
+
 console.log('sound and music');
 {
   load(['audio.js']);

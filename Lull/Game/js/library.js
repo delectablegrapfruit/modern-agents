@@ -2,7 +2,8 @@
 // the retired ones kept as read-only records. Plain data on the save (state.boards), no DOM: the Boards window lives in
 // js/modes.js (PlayMode), and this file is what the tests drive.
 //
-// state.boards = { seq, cur, list: [record], retired: [entry], taper: { comboId: times paid } }
+// state.boards = { seq, cur, list: [record], retired: [entry], taper: { comboId: times paid }, size: { w, h } }
+//   size: the size last chosen in the New board window (Standard, 10 x 20, until one is chosen).
 //   record: { id, name, created, touched, game, earn } — the current board's game is the save's `free` (null here);
 //           a shelved one's is its Game.toJSON() (cells, piece, hold, queue, bag, RNG state, every per-board stat).
 //           earn is the save's per-board Earn record (js/items.js), parked with the board so a milestone pays once.
@@ -15,12 +16,34 @@
   const ADJ = ['Quiet', 'Gentle', 'Mossy', 'Velvet', 'Sleepy', 'Patient', 'Cozy', 'Silent', 'Tidy', 'Lazy', 'Soft', 'Misty', 'Amber', 'Slow', 'Still', 'Mellow', 'Hushed', 'Dusky', 'Linen', 'Paper', 'Willow', 'Pale', 'Drowsy', 'Warm'];
   const NOUN = ['Harbor', 'Orchard', 'Garden', 'Porch', 'Meadow', 'Lantern', 'Pond', 'Attic', 'Cove', 'Hollow', 'Brook', 'Nook', 'Terrace', 'Pantry', 'Grove', 'Window', 'Lagoon', 'Valley', 'Cabin', 'Dune', 'Teacup', 'Alcove', 'Field', 'Tide'];
 
-  function blank() { return { seq: 0, cur: null, list: [], retired: [], taper: {} }; }
+  // ---- board sizes and what a line is worth -------------------------------------------------------------------------
+  //
+  // A Relaxed board is any size from 4 x 8 to 20 x 40, fixed for its life. Four wide is the flat I; eight tall is a
+  // Giant I on end. Everything that pays or counts toward a reward is measured in Standard lines: a Standard line is ten
+  // cells, so a line cleared on a board w wide is worth w/10 of one (height changes nothing). scale() is the one place
+  // that says so; bank() rounds a payout down to the hundredth, so no size ever earns faster than Standard.
+
+  const STANDARD = Object.freeze({ w: 10, h: 20 });
+  const LIMITS = Object.freeze({ w: Object.freeze([4, 20]), h: Object.freeze([8, 40]) });
+  /** What one line cleared on a board w wide is worth, in Standard lines. */
+  function scale(w) { return (typeof w === 'number' && w > 0 ? w : STANDARD.w) / STANDARD.w; }
+  /** A payout in lines, rounded down to the hundredth (the wallet keeps hundredths). */
+  function bank(x) { return x > 0 ? Math.floor(x * 100 + 1e-6) / 100 : 0; }
+  const inRange = (v, [lo, hi]) => Number.isInteger(v) && v >= lo && v <= hi;
+  /** A size a board can have: whole numbers in range. */
+  function validSize(w, h) { return inRange(w, LIMITS.w) && inRange(h, LIMITS.h); }
+  const clampTo = (v, [lo, hi], d) => (typeof v === 'number' && isFinite(v) ? Math.max(lo, Math.min(hi, Math.round(v))) : d);
+  /** Any { w, h } made a size a board can have (Standard where a number is missing). */
+  function clampSize(o) { o = o || {}; return { w: clampTo(o.w, LIMITS.w, STANDARD.w), h: clampTo(o.h, LIMITS.h, STANDARD.h) }; }
+  /** "12 × 24". */
+  function sizeLabel(w, h) { return w + ' \u00d7 ' + h; }
+
+  function blank() { return { seq: 0, cur: null, list: [], retired: [], taper: {}, size: { w: STANDARD.w, h: STANDARD.h } }; }
 
   const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
   const num = (v, d) => (typeof v === 'number' && isFinite(v) ? v : d);
-  /** A shelved game that can be resumed: a stack, a queue, a bag, a random stream and stats. */
-  const playable = (g) => isObj(g) && Array.isArray(g.cells) && Array.isArray(g.queue) && Array.isArray(g.bag) && g.rng != null && isObj(g.s) && num(g.w, 0) > 0 && num(g.h, 0) > 0;
+  /** A saved game that can be resumed: a size in range with a stack to match, a queue, a bag, a random stream, stats. */
+  const playable = (g) => isObj(g) && validSize(g.w, g.h) && Array.isArray(g.cells) && g.cells.length === g.w * g.h && Array.isArray(g.queue) && Array.isArray(g.bag) && g.rng != null && isObj(g.s);
 
   /**
    * The save's library, made whole and safe to show: only records with an id (each id once), a shelved board only if
@@ -41,11 +64,15 @@
     B.retired.forEach((e) => {
       e.sum = Object.assign(summarize({}, 0), isObj(e.sum) ? e.sum : {});
       e.cells = typeof e.cells === 'string' ? e.cells : '';
-      e.w = num(e.w, 10); e.h = num(e.h, 20); e.at = num(e.at, now); e.created = num(e.created, e.at);
+      const sz = clampSize(e);
+      // A stack that does not match its size is not drawn (the record keeps its numbers).
+      if (sz.w !== e.w || sz.h !== e.h || e.cells.length !== sz.w * sz.h) e.cells = '';
+      e.w = sz.w; e.h = sz.h; e.sum.w = e.w; e.sum.h = e.h; e.at = num(e.at, now); e.created = num(e.created, e.at);
       named(e);
     });
     if (B.retired.length > MAX_RETIRED) B.retired.length = MAX_RETIRED;
     if (!isObj(B.taper)) B.taper = {};
+    B.size = clampSize(B.size);
     B.seq = Math.max(num(B.seq, 0), ...B.list.concat(B.retired).map((r) => (/^b(\d+)$/.test(r.id) ? +r.id.slice(1) : 0)));
     if (typeof B.cur !== 'string' || !find(B, B.cur)) {
       const started = st.free && st.free.s && st.free.s.startedAt;
@@ -154,17 +181,20 @@
     return rec.name;
   }
 
-  /** A board's life in numbers, from its stats (Game.s), as of `now` (what the summary card and the record show). */
-  function summarize(s, now) {
+  /**
+   * A board's life in numbers, from its stats (Game.s), as of `now` (what the summary card and the record show); with
+   * its size when given. Lines are the board's own (raw); banked is what it paid, in Standard lines.
+   */
+  function summarize(s, now, size) {
     s = s || {};
-    return {
+    return Object.assign(size ? { w: size.w, h: size.h } : {}, {
       startedAt: s.startedAt || 0, life: s.startedAt ? Math.max(0, now - s.startedAt) : 0, playMs: s.playMs || 0,
       pieces: s.pieces || 0, lines: s.lines || 0, score: s.score || 0,
       quads: (s.clears && s.clears[4]) || 0, tspins: s.tspins || 0, perfect: s.perfect || 0,
       maxCombo: Math.max(0, s.maxCombo || 0), maxB2B: Math.max(0, s.maxB2B || 0), chain: s.bestChain || 0, hchain: s.bestHChain || 0,
       banked: s.banked || 0, combos: Object.values(s.combos || {}).reduce((a, b) => a + b, 0),
       items: Object.assign({}, s.items || {}),
-    };
+    });
   }
 
   const CELL_CHARS = '0123456789abcdefghijklmnopqrstuv';
@@ -182,7 +212,7 @@
     if (i < 0 || !game) return null;
     const rec = B.list[i];
     B.list.splice(i, 1);
-    const entry = { id: rec.id, name: rec.name, created: rec.created, at: now, reason: reason || 'manual', sum: summarize(game.s, now), w: game.w, h: game.h, cells: encodeCells(game.cells) };
+    const entry = { id: rec.id, name: rec.name, created: rec.created, at: now, reason: reason || 'manual', sum: summarize(game.s, now, game), w: game.w, h: game.h, cells: encodeCells(game.cells) };
     B.retired.unshift(entry);
     if (B.retired.length > MAX_RETIRED) B.retired.length = MAX_RETIRED;
     if (B.cur === id) B.cur = null;
@@ -232,5 +262,5 @@
     return (cur ? [cur] : []).concat(B.list.filter((r) => r !== cur).sort((a, b) => (b.touched || 0) - (a.touched || 0)));
   }
 
-  L.Library = { MAX_ACTIVE, MAX_RETIRED, NAME_MAX, ADJ, NOUN, blank, ensure, find, findRetired, current, full, cleanName, uniqueName, makeName, add, shelve, take, startNew, open, rename, summarize, encodeCells, decodeCells, retire, remove, removeRetired, newCurrent, taper, ordered };
+  L.Library = { STANDARD, LIMITS, scale, bank, validSize, clampSize, sizeLabel, playable, MAX_ACTIVE, MAX_RETIRED, NAME_MAX, ADJ, NOUN, blank, ensure, find, findRetired, current, full, cleanName, uniqueName, makeName, add, shelve, take, startNew, open, rename, summarize, encodeCells, decodeCells, retire, remove, removeRetired, newCurrent, taper, ordered };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

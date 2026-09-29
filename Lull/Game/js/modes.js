@@ -2,7 +2,7 @@
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
-  const { Game, Board, CELL, Pieces, Puzzles, Factory, Render, UI, ITEMS, ITEM_ORDER, ITEM_GROUPS, Chain, Combos, Luck, Gifts, Earn, Library, fmt, fmtInt, fmtClock, fmtDuration, dateKey } = L;
+  const { Game, Board, CELL, Pieces, Puzzles, Factory, Render, UI, ITEMS, ITEM_ORDER, ITEM_GROUPS, Chain, Combos, Luck, Pay, Gifts, Earn, Library, fmt, fmtInt, fmtLines, fmtClock, fmtDuration, dateKey } = L;
   const { h, toast } = UI;
   const ico = UI.icon;
   const { LINE } = L;
@@ -565,15 +565,18 @@
   class PlayMode extends BoardMode {
     constructor(app) {
       super(app, 'cv-play', 'play-overlay');
+      // Boards come in many sizes: a small one is drawn at most 1.4 times a Standard board's cells (render.js, layout).
+      this.view.opts.cellCap = 1.4;
       this.status = document.getElementById('play-status');
       this.itembar = document.getElementById('itembar');
+      // The board library (js/library.js): a record for the board in play, shelved ones, retired ones.
+      const B = Library.ensure(app.store.state, Date.now());
       let game = null;
       const saved = app.store.state.free;
-      if (saved) { try { game = new Game({ saved, previewCount: this.settings.preview }); } catch (e) { game = null; } }
-      if (!game) game = new Game({ w: 10, h: 20, previewCount: this.settings.preview });
+      // A board in play of a size no board can have (a save edited by hand) is not resumed: a new one takes its place.
+      if (saved && Library.playable(saved)) { try { game = new Game({ saved, previewCount: this.settings.preview }); } catch (e) { game = null; } }
+      if (!game) game = new Game({ w: B.size.w, h: B.size.h, previewCount: this.settings.preview });
       game.previewCount = this.settings.preview;
-      // The board library (js/library.js): a record for the board in play, shelved ones, retired ones.
-      Library.ensure(app.store.state, Date.now());
       this.thumbs = new Map(); // thumbnail images (data URLs) by board, stack and look
       this.attachGame(game, {});
       this.view.showBank = true;
@@ -602,46 +605,40 @@
       const st = this.app.store, F = st.state.stats.free, g = this.game;
       this.syncCounters();
       if (this.armed) { this.armed = null; this.renderItems(); }
-      // What the lines pay: a quad or T-spin (or 5+ lines) is worth one extra; the multiplier — the back-to-back
-      // streak alone, an eighth a link, ×2.5 at most (twenty in a row) — multiplies it; gold triples that, and a
-      // combo's boost adds its share. The chain (streak plus combo) is counted beside it, for the record.
+      // What the lines pay (js/items.js, Pay): a quad or T-spin (or 5+ lines) is worth one extra; the multiplier — the
+      // back-to-back streak alone, an eighth a link, ×2.5 at most (twenty in a row) — multiplies it; gold triples that,
+      // and a combo's boost adds its share. All of it in Standard lines, by the board's width. The chain (streak plus
+      // combo) is counted beside it, for the record.
       const s = g.s;
       s.chain = Chain.count(g); s.bestChain = Math.max(s.bestChain || 0, s.chain);
-      s.mult = Chain.mult(Chain.streak(g)); s.bestMult = Math.max(s.bestMult || 1, s.mult);
+      s.mult = Pay.mult(g); s.bestMult = Math.max(s.bestMult || 1, s.mult);
       F.bestChain = Math.max(F.bestChain || 0, s.chain); F.bestMult = Math.max(F.bestMult || 1, s.mult);
       r.chain = s.chain;
       g.notePace(r, Date.now());
+      // Every line pays by its width (Library.scale): a line 5 wide is half a Standard line, 20 wide two.
+      const lk = Library.scale(g.w);
       if (r.lines) {
-        const own = r.lines - (r.plain || 0), difficult = own >= 4 || r.tspin || r.mini;
-        let pay = (r.lines + (difficult ? 1 : 0)) * s.mult;
-        if (s.gold > 0) {
-          // Gold on the board is spent one clear at a time.
-          s.gold--;
+        const paid = Pay.clear(s, r, g.w);
+        const pay = paid.pay;
+        if (paid.golden) {
+          // Gold on the board is spent one clear at a time (the last of it on a wide board pays its share).
           r.golden = true;
-          pay *= Luck.GOLD_X;
-          const b = this.view.lay.board;
-          this.view.fx.text('GOLDEN ×' + Luck.GOLD_X + (s.gold > 0 ? ' · ' + s.gold + ' left' : ''), b.x + b.w / 2, b.y + b.h * 0.3, '#ffd35a', 18);
+          const b = this.view.lay.board, left = Pay.clearsLeft(s.gold, g.w);
+          this.view.fx.text('GOLDEN ' + Chain.fmt(paid.goldX) + (left > 0 ? ' · ' + left + ' left' : ''), b.x + b.w / 2, b.y + b.h * 0.3, '#ffd35a', 18);
           this.app.sound.play('golden');
         }
-        if (s.boost && s.boost.left > 0) {
-          pay *= s.boost.x;
-          r.boost = s.boost.x;
-          if (--s.boost.left <= 0) s.boost = null;
-        }
-        if (s.double) {
-          // Double or Nothing: this clear decides it.
-          s.double = false;
-          const won = Luck.doubleWins(r), b = this.view.lay.board;
-          r.double = won ? 'won' : 'lost';
-          pay = won ? pay * Luck.DOUBLE_X : 0;
+        if (paid.boost) r.boost = paid.boost;
+        if (paid.double) {
+          // Double or Nothing: this clear decided it.
+          const won = paid.double === 'won', b = this.view.lay.board;
+          r.double = paid.double;
           this.view.fx.text(won ? 'DOUBLE' : 'NOTHING', b.x + b.w / 2, b.y + b.h * 0.3, won ? '#ffd35a' : '#9aa3b2', 18);
           if (won) this.app.sound.play('golden');
         }
-        pay = Math.round(pay);
         r.banked = pay; r.mult = s.mult;
         // Gold spent on a chain of 20 or more, built by hand (Midas): counted clear by clear, reset by any other.
         s.goldRun = r.golden && r.hand && (s.hchain || 0) >= 20 ? (s.goldRun || 0) + 1 : 0;
-        s.banked = (s.banked || 0) + pay;
+        s.banked = Library.bank((s.banked || 0) + pay);
       }
       if (r.netSaved) { const b = this.view.lay.board; this.view.fx.text('SAFETY NET', b.x + b.w / 2, b.y + b.h * 0.3, '#8fe3ff', 16); }
       if (r.special !== 'settle') {
@@ -651,22 +648,25 @@
         F.byType[key] = (F.byType[key] || 0) + 1;
       }
       if (r.lines) {
-        F.lines += r.lines;
+        // Lifetime lines and records are in Standard lines; the board's own count (s.lines) and clears stay as cleared.
+        F.lines = Library.bank(F.lines + r.lines * lk);
         F.clears[Math.min(5, r.lines)]++;
         if (r.banked) st.addLines(r.banked, 'play');
         this.app.refreshWallet(true);
-        // A power-up for every hundred lines on a board (counted in the save, so a rewound clear never pays twice).
-        const due = Earn.lines(st.state.earn, s.startedAt, s.lines, s.lines - r.lines);
+        // A power-up for every hundred (Standard) lines on a board (counted in the save, so a rewound clear never pays twice).
+        const due = Earn.lines(st.state.earn, s.startedAt, s.lines * lk, (s.lines - r.lines) * lk);
         for (let k = 0; k < due; k++) this.earnItem();
       }
       const found = Combos.detect(r, g);
       if (r.tspin) { F.tspins++; F.tspinLines += r.lines; }
       if (r.perfect) F.perfect++;
-      if (r.lines - (r.plain || 0) >= 4) st.day().quad = 1; // set by a piece (an item's lines are plain: never a quad)
+      // Set by a piece (an item's lines are plain: never a quad), on a board at least Standard width (a narrow quad is
+      // a few pieces).
+      if (r.lines - (r.plain || 0) >= 4 && g.w >= Library.STANDARD.w) st.day().quad = 1;
       F.maxCombo = Math.max(F.maxCombo, g.s.maxCombo);
       F.maxB2B = Math.max(F.maxB2B, g.s.maxB2B);
       F.bestScore = Math.max(F.bestScore, g.s.score);
-      F.bestLines = Math.max(F.bestLines, g.s.lines);
+      F.bestLines = Math.max(F.bestLines, Library.bank(g.s.lines * lk));
       const snd = this.app.sound;
       playLockSound(snd, r);
       this.view.onLock(r, this.reduced);
@@ -690,15 +690,17 @@
       const st = this.app.store, g = this.game, s = g.s, c = Combos.get(id);
       s.combos = s.combos || {};
       const k = Library.taper(st.state.boards || Library.ensure(st.state, Date.now()), id, s.combos[id]), rw = Combos.reward(c, k);
+      // Its lines are Standard lines: a board narrower or wider than Standard is paid by its width, as every clear is.
+      const lines = Library.bank(rw.lines * Library.scale(g.w));
       s.combos[id] = (s.combos[id] || 0) + 1;
-      if (rw.lines) { st.addLines(rw.lines, 'combos'); s.banked = (s.banked || 0) + rw.lines; this.app.refreshWallet(true); }
+      if (lines) { st.addLines(lines, 'combos'); s.banked = Library.bank((s.banked || 0) + lines); this.app.refreshWallet(true); }
       if (rw.boost) s.boost = { x: Math.max(rw.boost.x, s.boost ? s.boost.x : 1), left: Math.max(rw.boost.clears, s.boost ? s.boost.left : 0) };
       s.score += rw.score;
       const book = st.state.combos = st.state.combos || {};
       const first = !book[id];
       book[id] = book[id] || { n: 0, lines: 0, first: Date.now() };
-      book[id].n++; book[id].lines += rw.lines;
-      const bits = [rw.lines ? '+' + rw.lines + ' ' + LINE : null, rw.boost ? Chain.fmt(rw.boost.x) + ' for ' + rw.boost.clears + ' clears' : null, !rw.lines && !rw.boost ? '+' + fmtInt(rw.score) + ' points' : null].filter(Boolean);
+      book[id].n++; book[id].lines = Library.bank(book[id].lines + lines);
+      const bits = [lines ? '+' + fmtLines(lines) + ' ' + LINE : null, rw.boost ? Chain.fmt(rw.boost.x) + ' for ' + rw.boost.clears + ' clears' : null, !lines && !rw.boost ? '+' + fmtInt(rw.score) + ' points' : null].filter(Boolean);
       this.view.callout(c.name, bits.join(' · '), i, this.reduced);
       setTimeout(() => this.app.sound.play('combo', 3 + Math.min(4, i * 2)), 260 + i * 180);
       if (first) setTimeout(() => this.earnItem(), 900 + i * 300);
@@ -726,8 +728,13 @@
       ]);
     }
 
-    /** A board's lifelong numbers (Library.summarize), as a grid of small tiles. */
+    /**
+     * A board's lifelong numbers (Library.summarize), as a grid of small tiles. Its size is the summary's own (a record,
+     * or one made with it), else the board in play's (the full board's card). Lines is the board's own count; Lines
+     * banked is what it paid, in Standard lines.
+     */
     boardSummary(m) {
+      const sz = m.w ? m : this.game;
       const items = Object.entries(m.items || {}).filter(([id, n]) => n > 0 && ITEMS[id]).sort((a, b) => b[1] - a[1]);
       const nItems = items.reduce((a, [, n]) => a + n, 0);
       const ppm = m.playMs > 30000 ? (m.pieces / (m.playMs / 60000)).toFixed(1) : '—';
@@ -737,16 +744,18 @@
         tile(fmtInt(m.lines), 'Lines'), tile(fmtInt(m.score), 'Score'), tile(ppm, 'Pieces / min'),
         tile(fmtInt(m.quads), 'Quads'), tile(fmtInt(m.tspins), 'T-spins'), tile(fmtInt(m.perfect), 'Perfect clears'),
         tile(fmtInt(m.maxCombo), 'Best combo'), tile(fmtInt(m.maxB2B), 'Best back-to-back'), tile(fmtInt(m.chain), 'Best chain'),
-        tile(fmtInt(m.hchain), 'Best chain, no power-ups'), tile(fmtInt(m.banked) + ' ' + LINE, 'Lines banked'), tile(fmtInt(m.combos), 'Combos'),
-        h('div', { class: 'bs wide' }, h('div', { class: 'v' }, nItems ? fmtInt(nItems) + ' used' : 'none'), h('div', { class: 'l' }, 'Power-ups' + (items.length ? ': ' + items.slice(0, 6).map(([id, n]) => ITEMS[id].name + (n > 1 ? ' ×' + n : '')).join(', ') : ''))));
+        tile(fmtInt(m.hchain), 'Best chain, no power-ups'), tile(fmtLines(m.banked) + ' ' + LINE, 'Lines banked'), tile(fmtInt(m.combos), 'Combos'),
+        tile(Library.sizeLabel(sz.w, sz.h), 'Size'),
+        h('div', { class: 'bs span2' }, h('div', { class: 'v' }, nItems ? fmtInt(nItems) + ' used' : 'none'), h('div', { class: 'l' }, 'Power-ups' + (items.length ? ': ' + items.slice(0, 6).map(([id, n]) => ITEMS[id].name + (n > 1 ? ' ×' + n : '')).join(', ') : ''))));
     }
 
     /** Stats ▸ Free Play's log of past boards (kept apart from the library's records; deleting a record keeps it). */
-    logBoard(s, reason) {
+    logBoard(s, reason, size) {
       if (!s || !s.pieces) return;
       const F = this.app.store.state.stats.free, now = Date.now(), m = Library.summarize(s, now);
       F.boardLog = F.boardLog || [];
-      F.boardLog.unshift({ at: now, reason: reason || 'manual', life: m.life, playMs: m.playMs, pieces: m.pieces, lines: m.lines, score: m.score, quads: m.quads, tspins: m.tspins, perfect: m.perfect, maxCombo: m.maxCombo, chain: m.chain, items: Object.values(m.items).reduce((a, b) => a + b, 0) });
+      size = size || this.game;
+      F.boardLog.unshift({ at: now, reason: reason || 'manual', w: size.w, h: size.h, life: m.life, playMs: m.playMs, pieces: m.pieces, lines: m.lines, score: m.score, quads: m.quads, tspins: m.tspins, perfect: m.perfect, maxCombo: m.maxCombo, chain: m.chain, items: Object.values(m.items).reduce((a, b) => a + b, 0) });
       if (F.boardLog.length > 30) F.boardLog.length = 30;
     }
 
@@ -758,26 +767,37 @@
       const st = this.app.store, now = Date.now();
       Library.ensure(st.state, now);
       this.syncCounters();
-      const s = this.game.s;
+      const s = this.game.s, size = { w: this.game.w, h: this.game.h };
       if (s.pieces) {
         this.logBoard(s, reason);
         Library.retire(st.state, st.state.boards.cur, this.game.toJSON(), now, reason);
         Library.newCurrent(st.state, now);
       }
-      this.freshGame();
+      // The new board is the old one's size: nothing asks (New board is where a size is chosen).
+      this.freshGame(size);
       this.persist();
     }
 
-    /** A new, empty game for the board in play (after Retire, Delete or New board). */
-    freshGame() {
+    /**
+     * A new, empty game for the board in play (after Retire, Delete or New board), at `size` (clamped to what a board
+     * can be): by default the size last chosen in the New board window.
+     */
+    freshGame(size) {
+      const z = Library.clampSize(size || this.app.store.state.boards.size);
       this.app.store.state.stats.free.boards++;
-      this.setGame(new Game({ w: 10, h: 20, previewCount: this.settings.preview }));
+      this.setGame(new Game({ w: z.w, h: z.h, previewCount: this.settings.preview }));
     }
 
     // ---- the board library -------------------------------------------------------------------------------------------
 
-    /** True for a board nothing has been done on yet (a new board from it would be the same board). */
-    untouched() { return !this.game.s.pieces && this.game.board.isEmpty(); }
+    /**
+     * True for a board nothing has been done on yet (a new board from it would be the same board): no piece set, an
+     * empty stack and no power-up used on it (gold, a net or a Giant waiting there would be lost with it).
+     */
+    untouched() {
+      const s = this.game.s;
+      return !s.pieces && this.game.board.isEmpty() && !Object.values(s.items || {}).some((n) => n > 0) && !s.gold && !s.double && !s.net && !s.boost;
+    }
 
     /** The board in play as saved, marked when it is full (for the library's list). */
     boardJSON() { const j = this.game.toJSON(); if (this.game.over) j.over = true; return j; }
@@ -799,17 +819,112 @@
     /** Saves the board in play and the save at once (a library change is never left to the next autosave). */
     persist() { this.save(); this.app.store.save(); }
 
-    /** Shelves the board in play and starts a new one (its own seed). False when the library is full. */
-    shelveAndNew() {
-      const st = this.app.store, now = Date.now();
+    /**
+     * Shelves the board in play and starts a new one (its own seed) at `size`, by default the size last chosen. A board
+     * nothing has been done on is not shelved (it would be an empty board kept): it is made again at that size, in its
+     * own record. False when the library is full, or when an untouched board would be made again as it is.
+     */
+    shelveAndNew(size) {
+      const st = this.app.store, now = Date.now(), z = Library.clampSize(size || st.state.boards.size);
+      if (this.untouched()) {
+        if (!size && z.w === this.game.w && z.h === this.game.h) return false;
+        this.setGame(new Game({ w: z.w, h: z.h, previewCount: this.settings.preview }));
+        this.app.sound.play('hold');
+        this.persist();
+        return true;
+      }
       if (Library.full(st.state.boards)) { toast('Library full', 'bad'); this.app.sound.play('error'); return false; }
-      if (this.untouched()) return false;
       this.syncCounters();
       Library.startNew(st.state, this.boardJSON(), now);
-      this.freshGame();
+      this.freshGame(z);
       this.app.sound.play('hold');
       this.persist();
       return true;
+    }
+
+    /**
+     * The New board window: a size (Width and Height, a few presets, the empty well drawn small) and Create. It opens
+     * on the size last chosen (Standard at first); Create remembers it and makes the board (shelveAndNew).
+     * `done(true)` once a board was made.
+     */
+    openNewBoard(done) {
+      const st = this.app.store, B = st.state.boards;
+      const { LIMITS, STANDARD } = Library;
+      let z = Library.clampSize(B.size);
+      const PRESETS = [['Small', 6, 12], ['Standard', STANDARD.w, STANDARD.h], ['Tall', 8, 30], ['Wide', 16, 16]];
+      const preview = h('canvas', { class: 'nb-preview', 'aria-hidden': 'true' });
+      const presets = h('div', { class: 'nb-presets', role: 'group', 'aria-label': 'Presets' }, PRESETS.map(([name, w, hh]) =>
+        h('button', { type: 'button', class: 'nb-preset', 'data-w': String(w), 'data-h': String(hh), 'aria-pressed': 'false', onclick: () => set({ w, h: hh }, true) },
+          h('b', null, name), h('span', null, Library.sizeLabel(w, hh)))));
+      /** One stepper: its label, −, the number (a spin button: ↑ ↓, Page Up / Down by 5, Home, End) and +. */
+      const stepper = (key, label) => {
+        const [lo, hi] = LIMITS[key];
+        const minus = h('button', { type: 'button', class: 'icon-btn nb-step', 'aria-label': 'Fewer ' + (key === 'w' ? 'columns' : 'rows'), html: L.Icons.icon('minus'), onclick: () => set({ [key]: z[key] - 1 }, true) });
+        const plus = h('button', { type: 'button', class: 'icon-btn nb-step', 'aria-label': 'More ' + (key === 'w' ? 'columns' : 'rows'), html: L.Icons.icon('plus'), onclick: () => set({ [key]: z[key] + 1 }, true) });
+        const val = h('div', { class: 'nb-val', role: 'spinbutton', tabindex: '0', 'aria-label': label, 'aria-valuemin': String(lo), 'aria-valuemax': String(hi), 'data-k': key });
+        val.addEventListener('keydown', (e) => {
+          const by = { ArrowUp: 1, ArrowRight: 1, ArrowDown: -1, ArrowLeft: -1, PageUp: 5, PageDown: -5 }[e.key];
+          if (by) set({ [key]: z[key] + by });
+          else if (e.key === 'Home') set({ [key]: lo });
+          else if (e.key === 'End') set({ [key]: hi });
+          else return;
+          e.preventDefault(); e.stopPropagation();
+        });
+        return { el: h('div', { class: 'nb-row' }, h('span', { class: 'nb-label' }, label), h('div', { class: 'nb-stepper' }, minus, val, plus)), minus, plus, val, key, lo, hi };
+      };
+      const steppers = [stepper('w', 'Width'), stepper('h', 'Height')];
+      const paint = () => {
+        // The empty well at this size, fitted in a fixed box on whole device pixels (as the library's thumbnails).
+        const theme = this.app.theme, dpr = Math.min(3, root.devicePixelRatio || 1);
+        const boxW = 76, boxH = 124;
+        const c = Math.max(1, Math.floor(Math.min(boxW * dpr / z.w, boxH * dpr / z.h)));
+        const W = z.w * c, H = z.h * c;
+        preview.width = W; preview.height = H;
+        preview.style.width = W / dpr + 'px'; preview.style.height = H / dpr + 'px';
+        const ctx = preview.getContext('2d');
+        const gr = ctx.createLinearGradient(0, 0, 0, H);
+        gr.addColorStop(0, theme.wellTop || theme.well); gr.addColorStop(1, theme.wellBottom || theme.well);
+        ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H);
+        if (c >= 4) {
+          ctx.fillStyle = theme.grid || theme.line;
+          for (let x = 1; x < z.w; x++) ctx.fillRect(x * c, 0, 1, H);
+          for (let y = 1; y < z.h; y++) ctx.fillRect(0, y * c, W, 1);
+        }
+      };
+      // A button or a preset changes a number that does not have focus: the new size is read out (VoiceOver).
+      const live = h('div', { class: 'nb-live', 'aria-live': 'polite' });
+      const set = (o, say) => {
+        const was = z;
+        z = Library.clampSize(Object.assign({}, z, o));
+        for (const sp of steppers) {
+          sp.val.textContent = String(z[sp.key]);
+          sp.val.setAttribute('aria-valuenow', String(z[sp.key]));
+          // Off at the limit, but never disabled: a disabled button would drop focus out of the window, where Enter
+          // is Create. It keeps focus and a press does nothing (the size is clamped).
+          sp.minus.setAttribute('aria-disabled', String(z[sp.key] <= sp.lo));
+          sp.plus.setAttribute('aria-disabled', String(z[sp.key] >= sp.hi));
+        }
+        presets.querySelectorAll('.nb-preset').forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.w === z.w && +b.dataset.h === z.h)));
+        if (say && (was.w !== z.w || was.h !== z.h)) live.textContent = was.h === z.h ? 'Width ' + z.w : was.w === z.w ? 'Height ' + z.h : Library.sizeLabel(z.w, z.h);
+        paint();
+      };
+      set({});
+      const body = h('div', { class: 'nb-body' },
+        h('div', { class: 'nb-main' }, h('div', { class: 'nb-well' }, preview), h('div', { class: 'nb-fields' }, steppers.map((sp) => sp.el))),
+        presets, live);
+      const handle = UI.openModal({
+        title: 'New board', icon: 'newBoard', width: 340, cls: 'modal-newboard', body,
+        buttons: [{ label: 'Cancel' }, { label: 'Create', kind: 'primary', onClick: () => {
+          B.size = { w: z.w, h: z.h };
+          const made = this.shelveAndNew(z);
+          if (!made) st.touch();
+          if (done) done(made);
+        } }],
+      });
+      // Enter on a button (a stepper's, a preset, Cancel, Close) presses that button; anywhere else it is Create.
+      handle.el.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.closest('button') && !e.target.closest('.btn.primary')) e.stopPropagation(); });
+      steppers[0].val.focus();
+      return handle;
     }
 
     /** Resumes a shelved board exactly as it was left; the one in play is shelved as it stands. */
@@ -818,8 +933,9 @@
       const json = Library.open(st.state, id, this.boardJSON(), Date.now());
       if (!json) return false;
       this.syncCounters();
-      let game;
-      try { game = new Game({ saved: json, previewCount: this.settings.preview }); } catch (e) { game = new Game({ w: 10, h: 20, previewCount: this.settings.preview }); }
+      let game = null;
+      if (Library.playable(json)) { try { game = new Game({ saved: json, previewCount: this.settings.preview }); } catch (e) { game = null; } }
+      if (!game) { const z = Library.clampSize(json); game = new Game({ w: z.w, h: z.h, previewCount: this.settings.preview }); }
       this.setGame(game);
       this.app.sound.play('hold');
       this.persist();
@@ -834,7 +950,7 @@
       if (!s || !s.pieces) return;
       UI.openModal({
         title: 'Retire ' + rec.name + '?', icon: 'retire', width: 420, cls: 'modal-retire',
-        body: [this.boardSummary(Library.summarize(s, Date.now())), B.retired.length >= Library.MAX_RETIRED ? h('p', { class: 'lib-note' }, 'Oldest retired board is removed') : null],
+        body: [this.boardSummary(Library.summarize(s, Date.now(), cur ? this.game : rec.game)), B.retired.length >= Library.MAX_RETIRED ? h('p', { class: 'lib-note' }, 'Oldest retired board is removed') : null],
         buttons: [{ label: 'Cancel' }, { label: 'Retire', kind: 'primary', onClick: () => { this.retire(id); if (after) after(); } }],
       });
     }
@@ -844,7 +960,7 @@
       if (id === B.cur) { this.newBoard(this.game.over ? 'full' : 'manual'); return; }
       const rec = Library.find(B, id);
       if (!rec || !rec.game) return;
-      this.logBoard(rec.game.s, rec.game.over ? 'full' : 'manual');
+      this.logBoard(rec.game.s, rec.game.over ? 'full' : 'manual', rec.game);
       Library.retire(st.state, id, rec.game, Date.now(), rec.game.over ? 'full' : 'manual');
       this.persist();
     }
@@ -860,10 +976,12 @@
       const st = this.app.store, B = st.state.boards, now = Date.now();
       if (Library.findRetired(B, id)) { Library.removeRetired(B, id); this.persist(); return; }
       if (id === B.cur) {
+        // The board that takes its place is its size.
+        const size = { w: this.game.w, h: this.game.h };
         this.syncCounters();
         Library.remove(st.state, id);
         Library.newCurrent(st.state, now);
-        this.freshGame();
+        this.freshGame(size);
       } else Library.remove(st.state, id);
       this.persist();
     }
@@ -877,7 +995,9 @@
     /**
      * A board's stack in miniature, in the current palette (still: Prism at rest), as an image. Drawn on whole device
      * pixels, as plain squares (a skin's detail does not survive at three pixels a cell), so it stays crisp at any
-     * scale. Cached by board, stack, look and scale, so it is redrawn only when one of those changed.
+     * scale. Every thumbnail is the size of a Standard board's (three pixels a cell): a smaller board sits in the middle
+     * of it at that scale, a larger one is fitted in, at one device pixel a cell or more, so every row is as tall. Cached by board, stack, look and scale, so it is redrawn only when one of those
+     * changed.
      */
     thumb(id, cells, w, hh) {
       const eq = this.app.store.state.equipped, theme = this.app.theme;
@@ -887,15 +1007,19 @@
       let url = this.thumbs.get(id);
       if (!url || url.key !== key) {
         const vals = (typeof cells === 'string' ? Library.decodeCells(cells) : cells) || [];
-        const c = Math.max(3, Math.round(3 * dpr)), gap = c >= 5 ? 1 : 0, pad = Math.max(2, Math.round(2 * dpr));
-        const W = w * c + pad * 2, H = hh * c + pad * 2;
+        // The box a Standard board fills (three pixels a cell, or whole device pixels near it); any size is fitted in it.
+        const c0 = Math.max(3, Math.round(3 * dpr)), BW = Library.STANDARD.w * c0, BH = Library.STANDARD.h * c0;
+        const c = Math.max(1, Math.min(c0, Math.floor(BW / w), Math.floor(BH / hh))), gap = c >= 5 ? 1 : 0, pad = Math.max(2, Math.round(2 * dpr));
+        const W = BW + pad * 2, H = BH + pad * 2, ww = w * c + pad * 2, wh = hh * c + pad * 2;
+        const ox = Math.floor((W - ww) / 2), oy = Math.floor((H - wh) / 2);
         const look = Render.makeLook(eq, theme, 0, true);
         const cv = document.createElement('canvas');
         cv.width = W; cv.height = H;
         const ctx = cv.getContext('2d');
-        const gr = ctx.createLinearGradient(0, 0, 0, H);
+        ctx.translate(ox, oy);
+        const gr = ctx.createLinearGradient(0, 0, 0, wh);
         gr.addColorStop(0, theme.wellTop || theme.well); gr.addColorStop(1, theme.wellBottom || theme.well);
-        ctx.fillStyle = gr; Render.rr(ctx, 0, 0, W, H, 4 * dpr); ctx.fill();
+        ctx.fillStyle = gr; Render.rr(ctx, 0, 0, ww, wh, Math.min(4 * dpr, ww / 4)); ctx.fill();
         for (let y = 0; y < hh; y++) for (let x = 0; x < w; x++) {
           const v = vals[y * w + x];
           if (!v) continue;
@@ -904,7 +1028,7 @@
         }
         const lw = Math.max(1, Math.round(dpr));
         ctx.strokeStyle = theme.rim || theme.line; ctx.lineWidth = lw;
-        Render.rr(ctx, lw / 2, lw / 2, W - lw, H - lw, 4 * dpr); ctx.stroke();
+        Render.rr(ctx, lw / 2, lw / 2, ww - lw, wh - lw, Math.min(4 * dpr, ww / 4)); ctx.stroke();
         url = { key, src: cv.toDataURL(), W: W / dpr, H: H / dpr };
         this.thumbs.set(id, url);
         if (this.thumbs.size > 80) this.thumbs.delete(this.thumbs.keys().next().value);
@@ -986,13 +1110,14 @@
         const s = cur ? this.game.s : (g && g.s) || {};
         const full = cur ? this.game.over : !!(g && g.over);
         const cells = cur ? this.game.board.cells : g ? g.cells : [];
-        const w = cur ? this.game.w : (g && g.w) || 10, hh = cur ? this.game.h : (g && g.h) || 20;
+        const z = cur ? this.game : Library.clampSize(g), w = z.w, hh = z.h;
         const open = h(editing === rec.id ? 'div' : 'button', {
           class: 'lib-open', 'data-id': rec.id, 'aria-label': editing === rec.id ? null : (cur ? rec.name + ', in play' : 'Play ' + rec.name),
           onclick: editing === rec.id ? null : () => { if (!cur) this.switchTo(rec.id); close(); },
         }, this.thumb(rec.id, cells, w, hh), h('div', { class: 'grow' }, nameEl(rec, B),
           h('div', { class: 'd' }, cur ? h('span', { class: 'tag on' }, 'Playing') : null, full ? h('span', { class: 'tag full' }, 'Full') : null,
-            h('span', { class: 'st' }, ['Lines ' + fmtInt(s.lines || 0), 'Score ' + fmtInt(s.score || 0), cur ? null : when(rec.touched)].filter(Boolean).join(' · ')))));
+            h('span', { class: 'sz' }, [Library.sizeLabel(w, hh), cur ? null : when(rec.touched)].filter(Boolean).join(' · ')),
+            h('span', { class: 'st' }, ['Lines ' + fmtInt(s.lines || 0), 'Score ' + fmtInt(s.score || 0)].join(' · ')))));
         return h('div', { class: 'lib-row' + (cur ? ' current' : ''), 'data-id': rec.id }, open,
           h('div', { class: 'lib-acts' },
             act('rename', 'Rename', () => { editing = rec.id; draw(); }),
@@ -1001,12 +1126,13 @@
       };
       const retiredRow = (e) => h('div', { class: 'lib-row retired', 'data-id': e.id },
         h('button', { class: 'lib-open', 'data-id': e.id, 'aria-label': e.name, onclick: () => this.openRetired(e.id, afterGone(e.id)) },
-          this.thumb(e.id, e.cells, e.w || 10, e.h || 20),
+          this.thumb(e.id, e.cells, e.w, e.h),
           h('div', { class: 'grow' }, h('div', { class: 't' }, e.name),
             h('div', { class: 'd' }, e.reason === 'full' ? h('span', { class: 'tag full' }, 'Full') : null,
-              h('span', { class: 'st' }, [when(e.at), 'Lines ' + fmtInt(e.sum.lines || 0), 'Score ' + fmtInt(e.sum.score || 0)].join(' · '))))),
+              h('span', { class: 'sz' }, when(e.at) + ' · ' + Library.sizeLabel(e.w, e.h)),
+              h('span', { class: 'st' }, ['Lines ' + fmtInt(e.sum.lines || 0), 'Score ' + fmtInt(e.sum.score || 0)].join(' · '))))),
         h('div', { class: 'lib-acts' }, act('trash', 'Delete', () => this.confirmDelete(e.id, afterGone(e.id)), 'del')));
-      const newBtn = h('button', { class: 'btn sm primary lib-new', 'aria-label': 'New board', onclick: () => { if (this.shelveAndNew()) { tab = 'saved'; draw(st.state.boards.cur); } } }, ico('newBoard'), h('span', { class: 'lbl' }, 'New board'));
+      const newBtn = h('button', { class: 'btn sm primary lib-new', 'aria-label': 'New board', onclick: () => this.openNewBoard((made) => { if (made && handle && handle.el.isConnected) { tab = 'saved'; editing = null; draw(st.state.boards.cur); } }) }, ico('newBoard'), h('span', { class: 'lbl' }, 'New board'));
       const seg = h('div', { class: 'seg lib-tabs' }, [['saved', 'Saved'], ['retired', 'Retired']].map(([k, l]) =>
         h('button', { 'data-k': k, 'aria-pressed': String(k === tab), onclick: () => { tab = k; editing = null; draw(); } }, l, h('span', { class: 'c' }))));
       const draw = (focusId) => {
@@ -1014,9 +1140,10 @@
         seg.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.k === tab)));
         seg.querySelector('[data-k="saved"] .c').textContent = B.list.length + '/' + Library.MAX_ACTIVE;
         seg.querySelector('[data-k="retired"] .c').textContent = String(B.retired.length);
-        const isFull = Library.full(B), fresh = this.untouched();
-        newBtn.disabled = isFull || fresh;
-        newBtn.dataset.tip = isFull ? 'Library full' : fresh ? 'This board is new' : 'New board';
+        // Full, a board that was played cannot be shelved; an untouched one can still be made again at another size.
+        const isFull = Library.full(B) && !this.untouched();
+        newBtn.disabled = isFull;
+        newBtn.dataset.tip = isFull ? 'Library full' : 'New board';
         const rows = tab === 'saved' ? Library.ordered(B).map((r) => savedRow(r, B)) : B.retired.map(retiredRow);
         list.replaceChildren(...(rows.length ? rows : [h('p', { class: 'empty' }, 'None')]));
         const field = list.querySelector('input.lib-name');
@@ -1058,7 +1185,7 @@
       // Delete asks first; only once it is done does the record close (Cancel leaves it open, where it was).
       const rec = UI.openModal({
         title: e.name, icon: 'retire', width: 420, cls: 'modal-retire',
-        body: [h('div', { class: 'lib-dates' }, this.thumb(e.id, e.cells, e.w || 10, e.h || 20), h('div', null, h('div', null, h('i', null, 'Started '), day(e.sum.startedAt || e.created)), h('div', null, h('i', null, 'Retired '), day(e.at)))), this.boardSummary(e.sum)],
+        body: [h('div', { class: 'lib-dates' }, this.thumb(e.id, e.cells, e.w, e.h), h('div', null, h('div', null, h('i', null, 'Started '), day(e.sum.startedAt || e.created)), h('div', null, h('i', null, 'Retired '), day(e.at)))), this.boardSummary(e.sum)],
         buttons: [{ label: 'Delete', kind: 'danger', onClick: () => { this.confirmDelete(id, () => { rec.close(); if (after) after(); }); return false; } }, { label: 'Close', kind: 'primary' }],
       });
     }
@@ -1067,10 +1194,10 @@
 
     renderStatus() {
       const s = this.game.s;
-      const side = s.gold > 0 ? stat('Gold', String(s.gold), 'opt gold', 'Next clears pay ×' + Luck.GOLD_X)
+      const side = s.gold > 0 ? stat('Gold', String(Pay.clearsLeft(s.gold, this.game.w)), 'opt gold', 'Next clears pay ×' + Luck.GOLD_X)
         : s.double ? stat('Luck', 'Double', 'opt gold', ITEMS.double.desc)
         : s.net > 0 ? stat('Luck', 'Net', 'opt boost', ITEMS.net.desc)
-        : s.boost ? stat('Boost', Chain.fmt(s.boost.x) + ' · ' + s.boost.left, 'opt boost', 'Next ' + s.boost.left + ' clears pay ' + Chain.fmt(s.boost.x))
+        : s.boost ? stat('Boost', Chain.fmt(s.boost.x) + ' · ' + Pay.clearsLeft(s.boost.left, this.game.w), 'opt boost', 'Next ' + Pay.clearsLeft(s.boost.left, this.game.w) + ' clears pay ' + Chain.fmt(s.boost.x))
         : stat('Pieces', fmtInt(s.pieces), 'opt');
       this.status.replaceChildren(
         h('div', { class: 'stats' },
@@ -1272,9 +1399,9 @@
           UI.openPickOfThree(this.app, g.queue.slice(0, 3), (i) => { if (i == null) return; if (g.pickFromQueue(i)) done(); else noRoom(); });
           break;
         case 'fit': if (g.bestFit()) done(); else noRoom(); break;
-        case 'settle': if (g.settle()) done(); else toast('Board is empty', 'bad'); break;
+        case 'settle': if (g.settle()) done(); else toast(g.board.isEmpty() ? 'Board is empty' : 'No room. Move the piece first', 'bad'); break;
         case 'tornado': if (g.tornado()) done(); else toast(g.board.isEmpty() ? 'Board is empty' : 'No room. Move the piece first', 'bad'); break;
-        case 'trapdoor': if (g.trapdoor()) done(); else toast('Bottom row is empty', 'bad'); break;
+        case 'trapdoor': if (g.trapdoor()) done(); else toast([...Array(g.w).keys()].some((x) => g.board.get(x, 0)) ? 'No room. Move the piece first' : 'Bottom row is empty', 'bad'); break;
         case 'flip': if (g.flipWorld()) done(); else toast(g.board.isEmpty() ? 'Board is empty' : 'No room. Move the piece first', 'bad'); break;
         case 'golden':
           // Gold stays on the board for the next five clears, whatever piece makes them.
@@ -1299,7 +1426,7 @@
           const refund = Math.max(0, banked0 - (g.s.banked || 0));
           if (refund) st.addLines(-refund, 'rewind');
           if (res.lines) {
-            st.state.stats.free.lines = Math.max(0, st.state.stats.free.lines - res.lines);
+            st.state.stats.free.lines = Math.max(0, Library.bank(st.state.stats.free.lines - res.lines * Library.scale(g.w)));
             this.app.refreshWallet();
           }
           this.hideCard();

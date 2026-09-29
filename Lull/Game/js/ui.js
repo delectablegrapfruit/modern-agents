@@ -697,10 +697,10 @@
       const log = F.boardLog || [];
       if (log.length) {
         els.push(h('h4', null, 'Past boards'), h('table', { class: 'st cols' },
-          h('tr', null, ['Retired', 'Lived', 'Lines', 'Score', 'Pieces', 'Power-ups'].map((c) => h('th', null, c))),
+          h('tr', null, ['Retired', 'Size', 'Lived', 'Lines', 'Score', 'Pieces', 'Power-ups'].map((c) => h('th', c === 'Lived' ? { class: 'opt' } : null, c))),
           log.slice(0, 15).map((b) => h('tr', null,
             h('td', null, new Date(b.at).toLocaleDateString([], { month: 'short', day: 'numeric' }) + (b.reason === 'full' ? ' · full' : '')),
-            h('td', null, b.life ? fmtDuration(b.life) : '—'), h('td', null, fmtInt(b.lines)), h('td', null, fmtInt(b.score)), h('td', null, fmtInt(b.pieces)), h('td', null, fmtInt(b.items))))));
+            h('td', { class: 'nw' }, b.w && b.h ? L.Library.sizeLabel(b.w, b.h).replace(/ /g, '\u202f') : '—'), h('td', { class: 'opt' }, b.life ? fmtDuration(b.life) : '—'), h('td', null, fmtInt(b.lines)), h('td', null, fmtInt(b.score)), h('td', null, fmtInt(b.pieces)), h('td', null, fmtInt(b.items))))));
       }
     } else if (sub === 'puzzle') {
       const rows = [['', 'Solved', '1st try', 'Tries', 'Best', 'Streak']];
