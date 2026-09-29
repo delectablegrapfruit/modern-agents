@@ -1,4 +1,4 @@
-// js/rules/bank.js — owner: W1-E. SR.rules.bank: deposits, withdrawals, forced charges and the
+// js/rules/bank.js — owner: W2-RulesE (W1-E in wave 1). SR.rules.bank: deposits, withdrawals, forced charges and the
 // hard money rule, the lien, the savings rate and its tiered, capped interest, loans with their
 // nightly countdown and default (seizure, lien, penalty), and CDs (BALANCE B-09; GDD §4.8;
 // ARCHITECTURE §6.2, §6.5). Pure: no DOM, no browser API, randomness only from the rng passed in.

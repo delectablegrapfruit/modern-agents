@@ -1,4 +1,4 @@
-// tests/node/time.test.cjs — owner: W1-R. SR.rules.time and the time wall through the pipeline
+// tests/node/time.test.cjs — owner: W2-RulesE (W1-R in wave 1). SR.rules.time and the time wall through the pipeline
 // (GDD §4.1; BALANCE B-01; BUILD_PLAN §3.2: a 6 h shift at 18:00 and not 18:30; a 2 h class at 22:00
 // and not 22:30; food at 23:30; a robbery at 20:30 and not at 21:00).
 //   node tests/node/time.test.cjs

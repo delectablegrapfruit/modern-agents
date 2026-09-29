@@ -1,4 +1,4 @@
-// tests/node/mods.test.cjs — owner: W1-R. Price and check modifiers (ARCHITECTURE §6.10; BALANCE
+// tests/node/mods.test.cjs — owner: W2-RulesE (W1-R in wave 1). Price and check modifiers (ARCHITECTURE §6.10; BALANCE
 // B-28a, B-28b): the stacking order, the B-28a examples (Friday beer with Regular under Beer Subsidy
 // = $10; fries to go as an employee with a flyer coupon = $7, coupon consumed), and the B-28b rows
 // (Relaxed touches only its listed checks).

@@ -1,4 +1,4 @@
-// js/data/furniture.js — owner: W1-E. SR.def.furniture: the furniture of BALANCE B-08b (GDD §4.15).
+// js/data/furniture.js — owner: W2-RulesE (W1-E in wave 1). SR.def.furniture: the furniture of BALANCE B-08b (GDD §4.15).
 // A def carries a piece's structure: its tier, the tier-1 piece it upgrades (`base`), its upgrade,
 // the stat it trains at night, the interior draw id and the text keys. The state keys owned pieces
 // by their tier-1 id (`furniture.owned.bed = 2` means the Hibernation Pod), so a tier-2 def names

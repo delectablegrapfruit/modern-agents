@@ -1,4 +1,4 @@
-// tests/node/training.test.cjs — owner: W1-E. SR.rules.training (BALANCE B-03; GDD §4.5): gains
+// tests/node/training.test.cjs — owner: W2-RulesE (W1-E in wave 1). SR.rules.training (BALANCE B-03; GDD §4.5): gains
 // through SR.rules.stats.add (Winded, the cap), daily limits, the U of S karma (+1, at most +3 a
 // day), class counts, seminars and degrees (P1 `degrees`: +25 once, then +1 on later gains).
 //   node tests/node/training.test.cjs

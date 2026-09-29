@@ -1,4 +1,4 @@
-// js/data/jobs.js — owner: W1-E. SR.def.job: the job ladder of BALANCE B-05 (GDD §4.6).
+// js/data/jobs.js — owner: W2-RulesE (W1-E in wave 1). SR.def.job: the job ladder of BALANCE B-05 (GDD §4.6).
 // A def carries the job's identity (track, employer, icon, text key, priority); the ladder order,
 // every number (INT and CHA gates, shifts at rank, wage, credit limit, rating) and the hustle skins
 // live in SR.tuning.jobs and are read by SR.rules.jobs at call time, so the balance wave tunes only

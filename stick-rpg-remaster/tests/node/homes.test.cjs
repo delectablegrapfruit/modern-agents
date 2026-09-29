@@ -1,4 +1,4 @@
-// tests/node/homes.test.cjs — owner: W1-E. SR.rules.homes (BALANCE B-08; GDD §4.15; ARCHITECTURE
+// tests/node/homes.test.cjs — owner: W2-RulesE (W1-E in wave 1). SR.rules.homes (BALANCE B-08; GDD §4.15; ARCHITECTURE
 // §8.4): buying, moving in, storage, slots ("Needs a free slot"), tier-2 upgrades with the 50 %
 // credit, the sleep bonus, TV channels, nightly gains, letting and selling (P1), rent, the home
 // perk only for the home you live in, door homes, and net-worth values.

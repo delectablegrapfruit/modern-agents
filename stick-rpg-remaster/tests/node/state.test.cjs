@@ -1,4 +1,4 @@
-// tests/node/state.test.cjs — owner: W1-R. SR.rules.state: the v1 schema of ARCHITECTURE §6.1
+// tests/node/state.test.cjs — owner: W2-RulesE (W1-R in wave 1). SR.rules.state: the v1 schema of ARCHITECTURE §6.1
 // (every top-level key and the nested fields), defaults() fully populated and JSON-safe, create(opts)
 // deterministic per seed with the B-02 / B-09 / B-10 starting values, the cheat name, and the save
 // migration's deep-fill of a partial v1 state.
@@ -46,7 +46,7 @@ T.section('defaults(): the v1 schema');
   T.eq(Object.keys(d.daily.campaign), ['rally', 'tvAd', 'doorKnock', 'kissBabies', 'intimidate', 'bribe'], 'daily campaign caps');
   T.eq(Object.keys(d.npc), ['harold', 'kid', 'dealer', 'mcholland', 'crease'], 'the street cast');
   T.eq(Object.keys(d.election).length, 15, 'the 15 election fields');
-  T.eq(Object.keys(d.records).length, 12, 'the records');
+  T.eq(Object.keys(d.records).length, 13, 'the records (the 12 of ARCHITECTURE §6.1 and meals, W2-Pocket request 5)');
   T.eq(d.player.cars.sports, { owned: false, bought: false, x: 1865, y: 1120, a: 0, towed: false }, 'the sports car on its lot');
   T.eq([d.jail, d.pending, d.tip, d.over, d.result], [null, null, null, false, null], 'nullable fields start null');
   T.eq(d.log, { today: [], yesterday: [] }, 'an empty log');
@@ -95,8 +95,8 @@ T.section('create(opts)');
 T.section('wave-1 integration additions (W1-C request 1, W1-E request R2)');
 {
   const d = St.defaults();
-  T.eq([d.trade.offer, d.fight.open, d.casino.match, d.crime.open], [null, null, null, null],
-    'the start → :resolve records: trade.offer, fight.open, casino.match, crime.open start null');
+  T.eq([d.trade.offer, d.fight.open, d.casino.match, d.crime.open, d.casino.card], [null, null, null, null, null],
+    'the start → :resolve records: trade.offer, fight.open, casino.match, crime.open (and casino.card, W2-RulesC 3) start null');
   T.eq(d.daily.shifts, 0, 'daily.shifts: the day\'s shift count (B-05 mondayBonus)');
   T.eq(d.history, { nw: [], str: [], int: [], cha: [], karma: [] }, 'defaults() has empty history series');
   const c = St.create({ seed: 4, stats: { str: 3, int: 9, cha: 10 }, difficulty: 'relaxed' });
@@ -104,9 +104,9 @@ T.section('wave-1 integration additions (W1-C request 1, W1-E request R2)');
     'create() seeds the day-1 point of every series as [day, value] (the shape night step 12 appends)');
   T.eq(c.history.nw[0][1], 300, 'day 1 net worth = the starting cash');
   const old = K.json(St.create({ seed: 5 }));
-  delete old.trade.offer; delete old.fight.open; delete old.casino.match; delete old.crime.open; delete old.daily.shifts;
+  delete old.trade.offer; delete old.fight.open; delete old.casino.match; delete old.crime.open; delete old.daily.shifts; delete old.casino.card;
   SR.util.deepFill(old, St.defaults());
-  T.eq([old.trade.offer, old.fight.open, old.casino.match, old.crime.open, old.daily.shifts], [null, null, null, null, 0],
+  T.eq([old.trade.offer, old.fight.open, old.casino.match, old.crime.open, old.daily.shifts, old.casino.card], [null, null, null, null, 0, null],
     'an older v1 save without them is deep-filled');
 }
 

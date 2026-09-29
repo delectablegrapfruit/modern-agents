@@ -1,4 +1,4 @@
-// tests/node/w1c-kit.cjs — owner: W1-C. Shared helpers for the conflict and chance suites
+// tests/node/w1c-kit.cjs — owner: W2-RulesC (W1-C in wave 1). Shared helpers for the conflict and chance suites
 // (tests/node/{crime,trade,fight,casino,election}.test.cjs): a booted mode-`rules` context, fresh
 // states with a patch, seeded contexts, feature switches, scripted and counting streams, and fixture
 // actions (owner 'testc') that run the W1-C named fns through the real action pipeline. Fakes are
@@ -98,6 +98,14 @@ function fixtures(SR) {
   A('rally', { cost: { cash: 'election.cash', min: 'election.min' }, requires: [['fn', 'election.canCampaign']], effects: [['fn', 'election.campaign']] });
   A('tvAd', { cost: { cash: 'election.cash', min: 'election.min' }, requires: [['fn', 'election.canCampaign']], effects: [['fn', 'election.campaign']] });
   A('accept', { timeRule: 'free', effects: [['fn', 'election.accept']] });
+  // Wave 2 (W2-RulesC): the rows of CONTRACT §8.10 the feature packages add (the debate, stepping
+  // into the city, an arrest by a police stop).
+  A('debate', { cost: { min: 120 }, requires: [['fn', 'election.canDebate']], effects: [['fn', 'election.debateStart']] });
+  A('debate:resolve', { timeRule: 'free', effects: [['fn', 'election.debate']] });
+  A('cityCheck', { timeRule: 'free', silent: true, effects: [['fn', 'election.check']] });
+  A('arrest', { timeRule: 'free', effects: [['fn', 'crime.jail', 'police']] });
+  A('scratch', { p: 1, feature: 'shopsPlus', cost: { items: { scratch: 1 } }, effects: [['fn', 'casino.scratch']] });
+  A('scratch:resolve', { p: 1, feature: 'shopsPlus', timeRule: 'free', effects: [['fn', 'casino.scratchResolve']] });
   A('decree', { timeRule: 'free', p: 1, feature: 'civicPlus', effects: [['fn', 'election.decree']] });
   SR.__w1c = SR.registry.entries('action').filter((e) => e.def.building === 'testc').map((e) => e.id);
   return SR.__w1c;

@@ -1,4 +1,4 @@
-// tests/node/trade.test.cjs — owner: W1-C. SR.rules.trade (GDD §4.11; BALANCE B-12): trip
+// tests/node/trade.test.cjs — owner: W2-RulesC (W1-C in wave 1). SR.rules.trade (GDD §4.11; BALANCE B-12): trip
 // resolution in the original's order (a table of scripted scenarios with fixed seeds), the draws
 // per trip, the offer formulas at CHA 30 / 150 / 300 / 600, demand, take / haggle / walk, the buyer
 // voicemails, the bust threshold and the bust's jail, the red-eye and the ticket, and speaking
@@ -7,7 +7,7 @@
 'use strict';
 const K = require('./w1c-kit.cjs');
 
-const T = K.L.suite('trade (W1-C)');
+const T = K.L.suite('trade (W2-RulesC)');
 const SR = K.boot();
 K.fixtures(SR);
 const R = SR.rules.trade;

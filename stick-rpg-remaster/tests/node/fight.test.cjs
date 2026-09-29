@@ -1,4 +1,4 @@
-// tests/node/fight.test.cjs — owner: W1-C. SR.rules.fight (GDD §4.12, §6.3; BALANCE B-13): AP and
+// tests/node/fight.test.cjs — owner: W2-RulesC (W1-C in wave 1). SR.rules.fight (GDD §4.12, §6.3; BALANCE B-13): AP and
 // the damage ranges at STR 10 / 100 / 300 / 999, the crit, the ladder's HP and power, the enemy's
 // move thresholds and the quirks, the vest and Guard, the Quick-fight Auto (real rolls, the policy),
 // the ring's scaling, and the win / lose / run rules on the state by difficulty, through the pipeline.
@@ -6,7 +6,7 @@
 'use strict';
 const K = require('./w1c-kit.cjs');
 
-const T = K.L.suite('fight (W1-C)');
+const T = K.L.suite('fight (W2-RulesC)');
 const SR = K.boot();
 K.fixtures(SR);
 const F = SR.rules.fight;

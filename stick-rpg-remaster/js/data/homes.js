@@ -1,4 +1,4 @@
-// js/data/homes.js — owner: W1-E. SR.def.home: the five homes of BALANCE B-08a (GDD §4.15).
+// js/data/homes.js — owner: W2-RulesE (W1-E in wave 1). SR.def.home: the five homes of BALANCE B-08a (GDD §4.15).
 // A def carries the home's identity: its door (the worldmap door id resolved by
 // SR.world.doors.resolve through SR.rules.homes.doorHomes), its interior tier, its perk action and
 // its text keys. Every number (price, slots, sleep bonus, rent, perk costs) lives in

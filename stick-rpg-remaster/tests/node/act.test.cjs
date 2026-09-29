@@ -1,4 +1,4 @@
-// tests/node/act.test.cjs — owner: W1-R. The action pipeline (ARCHITECTURE §6.2-§6.4, §6.9;
+// tests/node/act.test.cjs — owner: W2-RulesE (W1-R in wave 1). The action pipeline (ARCHITECTURE §6.2-§6.4, §6.9;
 // CONTRACT §8): preview never mutates the state (every registered action, every fixture); feature
 // flags and `hidden`; the pipeline order and its reasons; the hard money rule and forced charges;
 // the lien; rollback when a named fn refuses; the arcs hook; the HP-0 hook; open / jail / log / msg

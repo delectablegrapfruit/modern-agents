@@ -1,4 +1,4 @@
-// js/rules/health.js — owner: W1-E. SR.rules.health: HP 0 in one place (ARCHITECTURE §6.7;
+// js/rules/health.js — owner: W2-RulesE (W1-E in wave 1). SR.rules.health: HP 0 in one place (ARCHITECTURE §6.7;
 // GDD §4.16; BALANCE B-16, B-31): Second Wind (P1 perk, once a day) → Hardcore death →
 // Relaxed / Standard hospital (the bill as a forced charge, then the hospital night at once), and
 // the bill. The act pipeline (W1-R) calls down() when HP reaches 0 and puts the Down in

@@ -1,4 +1,4 @@
-// js/data/cities.js — owner: W1-C. SR.def.city: the six floating cities the Sky Bus serves
+// js/data/cities.js — owner: W2-RulesC (W1-C in wave 1). SR.def.city: the six floating cities the Sky Bus serves
 // (GDD §4.11; BALANCE B-12a), each mirroring one of the original's six destination handlers.
 // A def is identity and art only: the name and blurb text keys (city.<id>.*, en-conflict.js), the
 // order on the destination board, and the distant-island art params of ART_AUDIO §4 (a silhouette

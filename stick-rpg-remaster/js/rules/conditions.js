@@ -1,4 +1,4 @@
-// js/rules/conditions.js — owner: W1-R. SR.rules.conditions: every action condition of
+// js/rules/conditions.js — owner: W2-RulesE (W1-R in wave 1). SR.rules.conditions: every action condition of
 // ARCHITECTURE §6.4 (CONTRACT §8.4). A condition is an array [name, ...args] and returns
 // { ok, reason, vars }; reason is a text key reason.* (en-prog.js) and vars its display values.
 // Pure: no DOM, browser API or unseeded randomness (Node-loadable).
@@ -131,9 +131,20 @@
     },
     livesIn: function (s, a) { return s.homes.living === a[0] ? yes() : no('reason.notLivingHere'); },
     owns: function (s, a) { return s.homes.owned.indexOf(a[0]) >= 0 ? yes() : no('reason.notOwned'); },
+    /**
+     * A piece is in use in the home you live in, at a tier ≥ minTier (GDD §4.15: pieces in storage
+     * do nothing; the P0 satellite also needs the TV in use). A tier-2 id ('skydish') asks for its
+     * base piece at tier 2. A piece you own that sits in storage refuses with reason.inStorage.
+     */
     furniture: function (s, a) {
-      var tier = s.furniture.owned[a[0]] || 0, need = a[1] === undefined ? 1 : a[1];
-      return tier >= need ? yes() : no('reason.needFurniture', { furn: nameOf('furniture', a[0], 'furn') });
+      var id = a[0], need = a[1] === undefined ? 1 : a[1];
+      var def = SR.reg.furniture && SR.reg.furniture[id], base = id;
+      if (def && def.tier === 2 && def.base) { base = def.base; need = Math.max(need, 2); }
+      var H = SR.rules.homes, owned = s.furniture.owned[base] || 0;
+      var tier = H && typeof H.has === 'function' ? H.has(s, base) : owned;
+      if (tier >= need) return yes();
+      var furn = nameOf('furniture', id, 'furn');
+      return owned >= need && (s.furniture.storage || []).indexOf(base) >= 0 ? no('reason.inStorage', { furn: furn }) : no('reason.needFurniture', { furn: furn });
     },
     freeSlots: function (s, a) {
       var H = SR.rules.homes, n = a[0] === undefined ? 1 : a[0];

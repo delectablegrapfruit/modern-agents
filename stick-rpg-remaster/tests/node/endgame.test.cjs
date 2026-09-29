@@ -1,4 +1,4 @@
-// tests/node/endgame.test.cjs — owner: W1-E. SR.rules.endgame (BALANCE B-18; GDD §4.19): net worth
+// tests/node/endgame.test.cjs — owner: W2-RulesE (W1-E in wave 1). SR.rules.endgame (BALANCE B-18; GDD §4.19): net worth
 // with every part (the lien included), every rank boundary in every karma column, the banners, the
 // legacy score by difficulty, the Hall of Fame buckets, and a run's results.
 //   node tests/node/endgame.test.cjs

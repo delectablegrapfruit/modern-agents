@@ -1,4 +1,4 @@
-// tests/node/bank.test.cjs — owner: W1-E. SR.rules.bank (BALANCE B-09; GDD §4.8): deposits and
+// tests/node/bank.test.cjs — owner: W2-RulesE (W1-E in wave 1). SR.rules.bank (BALANCE B-09; GDD §4.8): deposits and
 // withdrawals, forced charges and the hard money rule, the lien, interest tiers with CDs and the
 // $25,000 cap, the rate step's range and mean, CDs, loans by job, their countdown, and default per
 // difficulty (seizure order, lien, penalty), including "never cheaper than repaying".

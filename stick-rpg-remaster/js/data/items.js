@@ -1,4 +1,4 @@
-// js/data/items.js — owner: W1-E. SR.def.item: every item of BALANCE B-06 and GDD §6.4 (the Bag).
+// js/data/items.js — owner: W2-RulesE (W1-E in wave 1). SR.def.item: every item of BALANCE B-06 and GDD §6.4 (the Bag).
 // A def carries the item's identity: text key, icon, category, where it is sold, whether the Bag
 // shows it, its Bag use action and who can be given it. The numbers (price, HP, minutes, stack
 // limit) live in SR.tuning.items.<id>; a prio-20 boot hook copies price, stack, hp and min onto

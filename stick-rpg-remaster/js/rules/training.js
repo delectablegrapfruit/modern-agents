@@ -1,4 +1,4 @@
-// js/rules/training.js — owner: W1-E. SR.rules.training: the gains of every training source of
+// js/rules/training.js — owner: W2-RulesE (W1-E in wave 1). SR.rules.training: the gains of every training source of
 // BALANCE B-03 with their daily limits and counters, the U of S karma (+1, at most +3 a day),
 // class counts, degrees (P1 `degrees`: 20 classes → +25 once and +1 on later gains) and seminars
 // (P1: stat ≥ 150, ≥ 10 classes in the track, 2 a day) (GDD §4.5). Cash, time and HP are the
@@ -62,6 +62,20 @@
       return row.min;
     },
 
+    /**
+     * How many more times a source can be used today (the TV sub-screen's "views left"): its daily
+     * limit minus today's uses (this week's for Open Mic); null for a source without a limit.
+     * @returns {number|null}
+     */
+    left: function (s, id) {
+      var row = T()[id];
+      if (!row) return 0;
+      if (row.weekly && WEEKLY_FIELD[id]) return Math.max(0, row.weekly - (s.weekly[WEEKLY_FIELD[id]] || 0));
+      if (id === 'seminar') return Math.max(0, row.daily - (s.daily.seminars || 0));
+      if (!row.daily) return null;
+      return Math.max(0, row.daily - usedToday(s, id));
+    },
+
     /** @returns {number} the HP a nap restores (B-03 `nap`: 15 % of HP max, floor; P1 `homesPlus`). */
     napHp: function (s) { return Math.floor(T().nap.hpPct * s.stats.hpMax); },
 
@@ -85,7 +99,7 @@
      * Applies a source's gain (through SR.rules.stats.add: degree bonus, Winded, the cap), counts
      * it (daily and weekly limits, classes in a track) and adds the U of S karma (+1, at most +3 a
      * day). Other karma (smoking's -1), Buzz and HP are the action's own effects and costs.
-     * @param {object=} opts { track } for a seminar
+     * @param {object=} opts { track } for a seminar; { ctx } the pipeline context (the preview's "(max)" note)
      * @returns {{ok: boolean, reason?: string, stat?: string, n?: number, karma?: number, events?: object[], deltas?: object[]}}
      */
     apply: function (s, id, opts) {
@@ -94,9 +108,12 @@
       var row = T()[id], track = id === 'seminar' ? (opts && opts.track) || 'biz' : classTrack(id);
       var stat = id === 'seminar' ? tracks()[track] : row.stat;
       var from = s.stats[stat];
-      var n = SR.rules.stats.add(s, stat, training.gain(s, id), 'train');
+      // The gain with its UI §4.3 feedback (the stamp, the Winded and maxed-out toasts), as the
+      // `stat` effect gives it (SR.rules.effects.gainStat).
+      var fb = { toasts: [], stamps: [] };
+      var n = SR.rules.effects.gainStat(s, stat, training.gain(s, id), 'train', opts && opts.ctx, fb);
       var out = { ok: true, stat: stat, n: n, karma: 0, deltas: [{ kind: 'stat', key: stat, n: n, from: from, to: s.stats[stat] }],
-        events: [{ name: 'train', payload: { id: id, stat: stat, n: n } }] };
+        events: [{ name: 'train', payload: { id: id, stat: stat, n: n } }], toasts: fb.toasts, stamps: fb.stamps };
       countToday(s, id);
       if (track && id !== 'seminar') s.edu.classes[track] = (s.edu.classes[track] || 0) + 1;
       if (row.where === 'uofs') {
@@ -164,7 +181,7 @@
   function res(r) { return r.ok ? r : { ok: false, reason: r.reason, vars: r.vars }; }
   /** Effect: ['fn', 'training.apply', 'study'] (a seminar takes the track as a second argument or params.track). */
   SR.def.fn('training.apply', function (s, params, ctx, id, track) {
-    return res(training.apply(s, id || params.id, { track: track || (params && params.track) }));
+    return res(training.apply(s, id || params.id, { track: track || (params && params.track), ctx: ctx }));
   });
   /** Condition: the source's daily limit (and a seminar's requirements). */
   SR.def.fn('training.can', function (s, params, ctx, id, track) {

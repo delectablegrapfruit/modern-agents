@@ -1,4 +1,4 @@
-// tests/node/tuning.test.cjs — owner: W1-R. SR.tuning against BALANCE.md: the 33 frozen table
+// tests/node/tuning.test.cjs — owner: W2-RulesE (W1-R in wave 1). SR.tuning against BALANCE.md: the 33 frozen table
 // names (CONTRACT §3.6), a table of values copied by hand from BALANCE (at least 80, one or more
 // from every table B-01 to B-31 that has a tuning path, including each of B-26 to B-31), and the
 // numbers BALANCE derives from its tables (slots RTP 92.25 %, scratch EV $3.00, the sleep examples,

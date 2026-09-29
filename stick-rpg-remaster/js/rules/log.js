@@ -1,4 +1,4 @@
-// js/rules/log.js — owner: W1-R. SR.rules.log: the daily log that feeds the morning headline and
+// js/rules/log.js — owner: W2-RulesE (W1-R in wave 1). SR.rules.log: the daily log that feeds the morning headline and
 // the TV news (ARCHITECTURE §6.9; BALANCE B-29). Entries are { kind, weight, vars }; at most 20 a
 // day, kept by weight. Pure: no DOM, browser API or unseeded randomness (Node-loadable).
 (function () {

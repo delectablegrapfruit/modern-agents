@@ -1,4 +1,4 @@
-// js/data/text/en-prog.js — owner: W1-R (W3-Prog in wave 3: achievements, the Advisor, the perk
+// js/data/text/en-prog.js — owner: W2-RulesE (W1-R in wave 1; W3-Prog in wave 3: achievements, the Advisor, the perk
 // card). Text: every refusal reason (reason.*), the perks (perk.*), and the toasts and stamps the
 // rules kernel raises itself (toast.stats.*, stamp.stats.*, toast.act.*). CONTRACT §7, D16, D27.
 // Voice: GDD §6.11 and UI §10 (reasons are short and specific). Pure data (Node-loadable).
@@ -37,6 +37,10 @@
     'reason.notLivingHere': "You don't live here",
     'reason.notOwned': "You don't own it",
     'reason.needFurniture': 'Need {furn}',
+    'reason.inStorage': '{furn} is in storage',
+    'reason.stackFull': "Can't carry more (max {max})",
+    'reason.notOver': 'The story is still going',
+    'reason.timedGame': 'Only in an Unlimited game',
     'reason.noSlots': 'No room left at home',
     'reason.wrongDay': 'Not today',
     'reason.notBefore': 'Not before {time}',
@@ -84,6 +88,11 @@
     'reason.notHired': 'Apply first',
     'reason.topRank': 'Top of the ladder',
     'reason.needShifts': 'Need {need} shifts at this rank (you: {have})',
+    // Every missing requirement of a promotion at once (GDD §4.6; docs/requests/W2-Money.md 3).
+    'reason.needAll': 'Need {list}',
+    'reason.part.stat': '{stat} {min} (you: {have})',
+    'reason.part.shifts': '{need} shifts (you: {have})',
+    'reason.part.rating': 'rating {need} (you: {have})',
     'reason.needRating': 'Need a rating of {need} (you: {have})',
     'reason.overtimeNotNow': 'Only right after a full shift',
     'reason.noTraining': 'Not offered here',

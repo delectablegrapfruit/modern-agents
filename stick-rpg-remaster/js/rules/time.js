@@ -1,4 +1,4 @@
-// js/rules/time.js — owner: W1-R. SR.rules.time: the clock, the one wall (an action may start only
+// js/rules/time.js — owner: W2-RulesE (W1-R in wave 1). SR.rules.time: the clock, the one wall (an action may start only
 // if now + cost ≤ 24:00), Buzz wearing off as time passes, weekdays and weeks (GDD §4.1, §4.2;
 // ARCHITECTURE §6.5; BALANCE B-01).
 // Pure: no DOM, browser API or unseeded randomness (Node-loadable).

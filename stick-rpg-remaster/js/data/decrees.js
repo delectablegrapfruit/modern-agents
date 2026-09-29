@@ -1,4 +1,4 @@
-// js/data/decrees.js — owner: W1-C. SR.def.decree: the Mayor's Office decrees (GDD §4.17; BALANCE
+// js/data/decrees.js — owner: W2-RulesC (W1-C in wave 1). SR.def.decree: the Mayor's Office decrees (GDD §4.17; BALANCE
 // B-17; P1, flag `civicPlus`). On taking office and every 7 days after, SR.rules.election offers 3
 // random eligible decrees; one picked stays active for the rest of the term, and a once-only decree
 // never returns (state.election.decreesUsed).

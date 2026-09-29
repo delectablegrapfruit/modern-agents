@@ -1,0 +1,277 @@
+<!doctype html>
+<!-- tests/sheets/exteriors-detail.html — owner: W2-Exterior. Contact sheet of the building detail
+     (js/art/exteriors-detail.js), props (js/art/props.js), brand glyphs (js/art/logos.js) and the
+     distant skyline (js/art/skyline.js): every building at zoom 0.8 / 1.0 / 1.25 by day and by
+     night with its ART_AUDIO §5.2 detail; the stateful buildings in a new game and with every
+     reacting element on (all homes owned, CEO, President, the kid's memorial, cityReacts); every
+     prop type, variant and angle at the three zooms with its sprite box; the six islands and the
+     Sky Ribbon by day and night; every glyph. Bake timings per building and zoom (mass by mass)
+     are measured against tests/perf/calibrate.js and published on window.ExteriorDetailSheet.
+     Opens from disk. Query: ?dpr=<sprite dpr> (default 1), ?night=<minute> (default 1320),
+     ?only=<section> (buildings | states | props | skyline | logos). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paper Sky · exterior detail sheet</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../../css/tokens.css">
+<style>
+  html, body { margin: 0; background: var(--paper-2); font: 600 14px system-ui, sans-serif; color: var(--ink-900); }
+  header, h2 { padding: 10px 16px 4px; margin: 0; }
+  h2 { font-size: 16px; }
+  canvas { display: block; margin: 0 8px 12px; }
+  pre { margin: 0 16px 16px; font: 12px ui-monospace, monospace; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+  <header data-id="xd-title">Exterior detail (W2-Exterior): buildings at 0.8 / 1.0 / 1.25 by day and by night; states; props; skyline; glyphs.</header>
+  <h2>Buildings by day (13:00)</h2>
+  <canvas data-id="xd-buildings"></canvas>
+  <h2>Buildings by night (lit windows and neon)</h2>
+  <canvas data-id="xd-night"></canvas>
+  <h2>States: a new game (left) and every reacting element on (right, day and night)</h2>
+  <canvas data-id="xd-states"></canvas>
+  <h2>Props at 0.8 / 1.0 / 1.25 (sprite boxes dashed)</h2>
+  <canvas data-id="xd-props"></canvas>
+  <h2>Distant islands and the Sky Ribbon (13:00 and 22:00)</h2>
+  <canvas data-id="xd-skyline"></canvas>
+  <h2>Brand glyphs</h2>
+  <canvas data-id="xd-logos"></canvas>
+  <pre data-id="xd-timings"></pre>
+
+  <script src="../../js/boot/namespace.js"></script>
+  <script src="../../js/boot/util.js"></script>
+  <script src="../../js/boot/events.js"></script>
+  <script src="../../js/core/rng.js"></script>
+  <script src="../../js/core/text.js"></script>
+  <script src="../../js/data/tuning.js"></script>
+  <script src="../../js/data/features.js"></script>
+  <script src="../../js/data/worldmap.js"></script>
+  <script src="../../js/data/text/en-world.js"></script>
+  <script src="../../js/data/text/en-conflict.js"></script>
+  <script src="../../js/render/renderer.js"></script>
+  <script src="../../js/render/buildings.js"></script>
+  <script src="../../js/render/lighting.js"></script>
+  <script src="../../js/art/palette.js"></script>
+  <script src="../../js/art/paper.js"></script>
+  <script src="../../js/art/draw.js"></script>
+  <script src="../../js/art/stick.js"></script>
+  <script src="../../js/art/portraits.js"></script>
+  <script src="../../js/art/vehicles.js"></script>
+  <script src="../../js/art/exteriors.js"></script>
+  <script src="../../js/art/exteriors-detail.js"></script>
+  <script src="../../js/art/props.js"></script>
+  <script src="../../js/art/logos.js"></script>
+  <script src="../../js/art/skyline.js"></script>
+  <script src="../perf/calibrate.js"></script>
+  <script>
+  (function () {
+    'use strict';
+    var SR = window.SR;
+    // Fakes (CONTRACT D27): sign words W2-Exterior asked W2-City for (docs/requests/W2-Exterior.md),
+    // installed only while en-world.js does not register them yet.
+    var PENDING = {
+      'place.sign.forSale': 'FOR SALE', 'place.sign.slushee': 'SLUSHEE', 'place.sign.departures': 'DEPARTURES',
+      'place.sign.skybus': 'SKY BUS', 'place.sign.ceo': 'YOUR CEO', 'place.sign.nliAd': 'WE DRAW THE LINE',
+      'place.sign.billboard.1': 'FRIES ON A STICK', 'place.sign.billboard.2': 'THINK INSIDE THE LINES',
+      'place.sign.billboard.3': 'EVERY CLOUD PAYS', 'place.sign.billboard.4': 'CASH FOR YOUR STUFF',
+      'place.sign.billboard.5': 'BRAIN FREEZE ZONE',
+    };
+    var add = {};
+    Object.keys(PENDING).forEach(function (k) { if (!SR.reg.text[k]) add[k] = PENDING[k]; });
+    if (Object.keys(add).length) SR.def.text(add);
+    SR.boot({ scene: false });
+
+    function q(name) { var m = new RegExp('[?&]' + name + '(=([^&#]*))?').exec(location.search); return m ? (m[2] === undefined ? '' : decodeURIComponent(m[2])) : null; }
+    var dpr = Number(q('dpr') || 1), nightMin = Number(q('night') || 1320), only = q('only');
+    var ZOOMS = [0.8, 1, 1.25], ZOOM_LABELS = ['0.8', '1.0', '1.25'];
+    var E = SR.art.exterior, lib = SR.render.lib, D = SR.art.draw;
+    var wm = SR.reg.worldmap.main;
+    var night = SR.render.lighting.at(nightMin, 'clear');
+    var $ = function (id) { return document.querySelector('[data-id="' + id + '"]'); };
+    var out = { ready: false, rows: [], timings: [], nights: 0, states: [], props: [], skyline: null, logos: [], calibration: null, warnings: [] };
+    window.ExteriorDetailSheet = out;
+    var warn = console.warn;
+    console.warn = function () { out.warnings.push(Array.prototype.join.call(arguments, ' ')); return warn.apply(console, arguments); };
+
+    function label(ctx, t, x, y, size) { ctx.fillStyle = lib.pal(['ui.ink-700', 'ink'], 0.3); ctx.font = '600 ' + (size || 13) + 'px system-ui, sans-serif'; ctx.fillText(t, x, y); }
+    function paperBg(cv, w, h) { cv.width = w; cv.height = h; var c = cv.getContext('2d'); c.fillStyle = lib.pal(['ui.paper-1', 'paperEdge'], 0.95); c.fillRect(0, 0, w, h); return c; }
+
+    /** The W1-G night rendition: multiply by the ambient, lit windows by the schedule, neon. */
+    function nightCell(res) {
+      var c = document.createElement('canvas');
+      c.width = res.albedo.width; c.height = res.albedo.height;
+      var x = c.getContext('2d');
+      x.drawImage(res.albedo, 0, 0);
+      x.globalCompositeOperation = 'multiply'; x.fillStyle = night.ambient; x.fillRect(0, 0, c.width, c.height);
+      x.globalCompositeOperation = 'destination-in'; x.drawImage(res.albedo, 0, 0);
+      x.globalCompositeOperation = 'lighter';
+      x.setTransform(res.scale, 0, 0, res.scale, -res.bounds[0] * res.scale, -res.bounds[1] * res.scale);
+      x.globalAlpha = night.light * 0.8;
+      x.fillStyle = lib.pal(['light.window', 'glassLit'], 0.9);
+      x.beginPath();
+      var f = SR.render.buildings.litFraction(res.id, nightMin);
+      res.windows.forEach(function (w, i) { if (lib.hash01(res.id, i, 1) < f) x.rect(w[0], w[1], w[2], w[3]); });
+      x.fill();
+      x.globalAlpha = night.light;
+      res.neon.forEach(function (n) { x.drawImage(n.sprite, n.x, n.y, n.w, n.h); });
+      return c;
+    }
+
+    /** Bakes a building step by step (as the render core does, one mass a frame) and times each step. */
+    function timedBuild(def, z) {
+      E.reset();
+      var job = E.baker(def, z, dpr), times = [], t0 = performance.now();
+      while (!job.done) { var a = performance.now(); job.step(); times.push(performance.now() - a); }
+      return { res: job.result, total: performance.now() - t0, maxStep: Math.max.apply(null, times), steps: times.length, detailStep: times[times.length - 1] };
+    }
+
+    function grid(cvId, rows, cols, cellOf) {
+      var colW = cols.map(function (c, i) { return Math.max.apply(null, rows.map(function (r) { return cellOf(r, i).width; })) + 24; });
+      var H = rows.reduce(function (a, r) { return a + Math.max.apply(null, cols.map(function (c, i) { return cellOf(r, i).height; })) + 30; }, 36);
+      var W = colW.reduce(function (a, b) { return a + b; }, 16);
+      var ctx = paperBg($(cvId), W, H);
+      cols.forEach(function (t, i) { label(ctx, t, 16 + colW.slice(0, i).reduce(function (a, b) { return a + b; }, 0), 24, 14); });
+      var y = 36;
+      rows.forEach(function (r) {
+        var x = 16, hh = 0;
+        label(ctx, r.label, 16, y + 13);
+        cols.forEach(function (c, i) { var img = cellOf(r, i); ctx.drawImage(img, x, y + 20); x += colW[i]; hh = Math.max(hh, img.height); });
+        y += hh + 30;
+      });
+    }
+
+    // ---- 1. every building at the three zooms by day and by night (a new-game state)
+    function newGameState() {
+      return { homes: { owned: ['apt'], living: 'apt' }, job: { ranks: { mcsticks: 'cook', nli: null }, office: null },
+        election: { status: 'none', path: null }, stats: { karma: 0, heat: 0 }, npc: { kid: { dead: false } }, player: { name: 'Stick', look: { acc: 'none' } } };
+    }
+    function reactState() {
+      return { homes: { owned: ['apt', 'apt2', 'mansion', 'castle', 'pent'], living: 'castle' }, job: { ranks: { mcsticks: 'cook', nli: 'ceo' }, office: 'president' },
+        election: { status: 'office', path: 'president' }, stats: { karma: 64, heat: 60 }, npc: { kid: { dead: true } }, player: { name: 'Stick', look: { acc: 'tophat' } } };
+    }
+    if (!only || only === 'buildings') {
+      SR.state = newGameState();
+      var rows = wm.buildings.map(function (b) {
+        var r = { def: b, label: b.id + ' · ' + b.exterior.archetype + ' · door ' + (b.door ? b.door.face : '-') };
+        r.cells = ZOOMS.map(function (z) { var t = timedBuild(b, z); out.timings.push({ id: b.id, zoom: z, total: t.total, maxStep: t.maxStep, steps: t.steps, detailStep: t.detailStep }); return t.res; });
+        r.nights = r.cells.map(nightCell);
+        out.nights += r.nights.length;
+        out.rows.push({ id: b.id, windows: r.cells[1].windows.length, neon: r.cells[1].neon.length, size: [r.cells[1].albedo.width, r.cells[1].albedo.height], bounds: r.cells[1].bounds });
+        return r;
+      });
+      grid('xd-buildings', rows, ZOOM_LABELS.map(function (z) { return 'zoom ' + z + ' (13:00)'; }), function (r, i) { return r.cells[i].albedo; });
+      grid('xd-night', rows, ZOOM_LABELS.map(function (z) { return 'zoom ' + z + ' (' + SR.text.time(nightMin, false) + ')'; }), function (r, i) { return r.nights[i]; });
+    }
+
+    // ---- 2. the stateful buildings: a new game against every reacting element on
+    if (!only || only === 'states') {
+      var ids = SR.art.exteriorDetail.stateful();
+      var srows = ids.map(function (id) {
+        var def = wm.buildings.filter(function (b) { return b.id === id; })[0];
+        SR.features.cityReacts = false; SR.state = newGameState(); E.reset();
+        var a = E.build(def, 0.8, dpr), ka = SR.art.exteriorDetail.stateKey(id, SR.state);
+        SR.features.cityReacts = true; SR.state = reactState(); E.reset();
+        var b = E.build(def, 0.8, dpr), kb = SR.art.exteriorDetail.stateKey(id, SR.state);
+        out.states.push({ id: id, plain: ka, reacting: kb });
+        return { label: id + ' · keys "' + ka + '" → "' + kb + '"', cells: [a.albedo, b.albedo, nightCell(b)] };
+      });
+      SR.features.cityReacts = false; SR.state = newGameState(); E.reset();
+      grid('xd-states', srows, ['new game (0.8)', 'reacting (0.8, cityReacts)', 'reacting, night'], function (r, i) { return r.cells[i]; });
+    }
+
+    // ---- 3. props: every type, variant and angle at the three zooms, with the sprite box dashed
+    if (!only || only === 'props') {
+      var P = SR.art.props, list = [];
+      P.types().forEach(function (type) {
+        var angles = type === 'bench' || type === 'shelter' ? [0, 90] : type === 'car' ? [0, 45, 90] : [0];
+        for (var v = 0; v < P.variants(type); v++) angles.forEach(function (a) { list.push({ type: type, v: v, a: a }); });
+      });
+      function propCell(p, z, state) {
+        var s = P.size(p.type, p.v, p.a), k = z * dpr, m = 6;
+        var c = document.createElement('canvas');
+        c.width = Math.ceil((s.w + 2 * m) * k); c.height = Math.ceil((s.h + 2 * m) * k);
+        var x = c.getContext('2d');
+        x.setTransform(k, 0, 0, k, (s.ax + m) * k, (s.ay + m) * k);
+        SR.state = state || newGameState();
+        P.draw(x, p.type, p.v, p.a);
+        x.setLineDash([3, 3]); x.lineWidth = 1 / k; x.strokeStyle = lib.pal(['ui.ink-300', 'sidewalk'], 0.7);
+        x.strokeRect(-s.ax, -s.ay, s.w, s.h);
+        return c;
+      }
+      var perRow = 6, prow = [];
+      for (var i = 0; i < list.length; i += perRow) prow.push(list.slice(i, i + perRow));
+      var pcells = prow.map(function (row) { return ZOOMS.map(function (z) { return row.map(function (p) { return propCell(p, z); }); }); });
+      var reactP = [{ type: 'plinth', v: 0, a: 0 }, { type: 'lamp', v: 0, a: 0 }, { type: 'shelter', v: 0, a: 0 }, { type: 'shelter', v: 0, a: 90 }];
+      SR.features.cityReacts = true;
+      var rcells = reactP.map(function (p) { return propCell(p, 1, reactState()); });
+      out.stateKeys = reactP.map(function (p) { SR.state = reactState(); var k1 = P.stateKey(p.type); SR.state = newGameState(); return { type: p.type, reacting: k1, plain: P.stateKey(p.type) }; });
+      SR.features.cityReacts = false; SR.state = newGameState();
+      var Wp = 16, Hp = 40, rowsH = [];
+      pcells.forEach(function (zs) { var h = 0, w = 16; zs.forEach(function (cs) { cs.forEach(function (c) { h = Math.max(h, c.height); w += c.width + 12; }); w += 24; }); Wp = Math.max(Wp, w); rowsH.push(h + 22); Hp += h + 22; });
+      Hp += Math.max.apply(null, rcells.map(function (c) { return c.height; })) + 40;
+      var pctx = paperBg($('xd-props'), Wp, Hp), py = 36;
+      pcells.forEach(function (zs, ri) {
+        var x = 16;
+        zs.forEach(function (cs, zi) { cs.forEach(function (c, ci) { var p = prow[ri][ci]; label(pctx, p.type + (P.variants(p.type) > 1 ? ' ' + p.v : '') + (p.a ? ' ' + p.a + '°' : '') + ' ·' + ZOOMS[zi], x, py - 4, 10); pctx.drawImage(c, x, py); x += c.width + 12; }); x += 24; });
+        py += rowsH[ri];
+      });
+      label(pctx, 'reacting (cityReacts, Heat 60, President): the statue and wanted posters', 16, py + 8, 12);
+      var rx = 16;
+      rcells.forEach(function (c) { pctx.drawImage(c, rx, py + 16); rx += c.width + 16; });
+      out.props = list.map(function (p) { return p.type + ':' + p.v + ':' + p.a; });
+    }
+
+    // ---- 4. the six distant islands and the Sky Ribbon, day and night
+    if (!only || only === 'skyline') {
+      var W = 1280, H = 1000, sky = $('xd-skyline');
+      sky.width = W * 2 + 24; sky.height = H;
+      var sctx = sky.getContext('2d');
+      [780, nightMin].forEach(function (min, k) {
+        var lit = SR.render.lighting.at(min, 'clear');
+        sctx.save();
+        sctx.translate(k * (W + 24), 0);
+        sctx.beginPath(); sctx.rect(0, 0, W, H); sctx.clip();
+        var g = sctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, lit.top); g.addColorStop(1, lit.horizon);
+        sctx.fillStyle = g; sctx.fillRect(0, 0, W, H);
+        // A zoom-0.5 view from the sheet's centre, without the sheet: all six islands, the Bus Hole
+        // (dashed) and both ribbons show.
+        var v = { x: 2560, y: 2304, zoom: 0.5, W: W, H: H, t: 3, min: min, light: lit.light, sky: lit, weather: 'clear', s: 1, ppu: 0.5 };
+        v.tx = W / 2 - v.x * v.ppu; v.ty = H / 2 - v.y * v.ppu;
+        SR.art.skyline.invalidate();
+        var pos = SR.art.skyline.draw(sctx, v, wm);
+        var hole = wm.holes[0].rect;
+        sctx.setLineDash([4, 4]); sctx.strokeStyle = lib.pal('ui.ink-300', 0.7); sctx.lineWidth = 1.5;
+        sctx.strokeRect(hole[0] * v.ppu + v.tx, hole[1] * v.ppu + v.ty, (hole[2] - hole[0]) * v.ppu, (hole[3] - hole[1]) * v.ppu);
+        sctx.setLineDash([]);
+        Object.keys(pos).forEach(function (c) { label(sctx, c, pos[c].x - 30, pos[c].y + 40, 12); });
+        if (k === 0) out.skyline = { positions: pos, stats: SR.art.skyline.stats(), cities: SR.art.skyline.cities() };
+        sctx.restore();
+      });
+    }
+
+    // ---- 5. brand glyphs
+    if (!only || only === 'logos') {
+      var names = SR.art.logos.names();
+      var lctx = paperBg($('xd-logos'), 16 + names.length * 120, 170);
+      names.forEach(function (n, i) {
+        var x = 16 + i * 120 + 50;
+        SR.art.logos.draw(lctx, n, x, 64, 72);
+        SR.art.logos.draw(lctx, n, x, 134, 36, { mono: 'light.neonPink' });
+        label(lctx, n, x - 40, 164, 12);
+      });
+      out.logos = names;
+    }
+
+    // ---- calibration and the timing table
+    var cal = window.SRCalibrate ? window.SRCalibrate.run(3) : null;
+    out.calibration = cal ? { ms: cal.ms, factor: cal.factor } : null;
+    var worst = out.timings.slice().sort(function (a, b) { return b.total - a.total; }).slice(0, 8);
+    $('xd-timings').textContent = 'Calibration: ' + (cal ? cal.ms.toFixed(1) + ' ms (factor ' + cal.factor.toFixed(2) + ')' : 'n/a') + '\n' +
+      'Slowest bakes (total / max step / detail step, ms):\n' + worst.map(function (t) { return '  ' + t.id + ' @' + t.zoom + ': ' + t.total.toFixed(2) + ' / ' + t.maxStep.toFixed(2) + ' / ' + t.detailStep.toFixed(2) + ' (' + t.steps + ' steps)'; }).join('\n');
+    out.ready = true;
+  })();
+  </script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-// js/rules/check.js — owner: W1-R. SR.rules.check: the one stat-check formula (GDD §4.3) with the
+// js/rules/check.js — owner: W2-RulesE (W1-R in wave 1). SR.rules.check: the one stat-check formula (GDD §4.3) with the
 // check modifiers of BALANCE B-28b (ARCHITECTURE §6.10), the roll, and the dotted-glob matcher
 // that price and check modifiers share. Pure: no DOM, browser API or unseeded randomness (Node-loadable).
 (function () {

@@ -1,4 +1,4 @@
-// tests/node/w1r-kit.cjs — owner: W1-R. Shared helpers for the rules-kernel suites
+// tests/node/w1r-kit.cjs — owner: W2-RulesE (W1-R in wave 1). Shared helpers for the rules-kernel suites
 // (state, act, time, stats, perks, tuning, mods): a fresh mode-`rules` context, a new-game state,
 // and the fixture actions the pipeline tests run (registered after boot under the owner 'testbld',
 // so they never collide with real building data). Not a test itself.

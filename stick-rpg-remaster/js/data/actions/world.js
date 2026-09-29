@@ -7,6 +7,9 @@
 // the `enter` event). All are involuntary (no hpAbove: they are what can take HP to 0) and free of
 // the time wall (timeRule 'free'); none is ever a card row. The damage runs W1-R's `hurt` effect
 // through SR.rules.effects.run, so Hard Landing and the HP-0 cause apply as for any hurt.
+// W2-City adds world.city (silent and free: stepping into the city runs the nomination check,
+// GDD §4.17, CONTRACT §8.10) and world.cab { door } (P1, flag `phone`: $15 and 30 min to any door,
+// GDD §4.18; at 24:00 only home, and the ride then takes no minutes: the day is already over).
 // Pure data and named functions: no DOM, no platform RNG.
 (function () {
   'use strict';
@@ -60,6 +63,29 @@
     return { events: [{ name: 'enter', payload: { building: String((params && params.building) || '') } }] };
   });
 
+  // --- the cab (GDD §4.18, B-15 cab; P1, flag `phone`) ------------------------------------------
+  function buildings() { var m = SR.reg.worldmap && SR.reg.worldmap.main; return (m && m.buildings) || []; }
+  /** @returns {string|null} the door (building id) of the home the player lives in. */
+  function homeDoorOf(s) {
+    var living = s.homes && s.homes.living, list = buildings();
+    for (var i = 0; i < list.length; i++) if (list[i].door && list[i].homes && list[i].homes.indexOf(living) >= 0) return list[i].id;
+    return null;
+  }
+  function hasDoor(id) { return buildings().some(function (b) { return b.id === id && !!b.door; }); }
+
+  // Any door while the ride fits the day; at 24:00 (or when it would not fit) only the home door.
+  SR.def.fn('world.cabOk', function (s, params) {
+    var door = params && params.door;
+    if (!door || !hasDoor(door)) return { ok: false, reason: 'reason.unavailable', vars: {} };
+    if (s.clock.min + SR.tuning.world.cab.min <= SR.tuning.time.dayEnd) return { ok: true };
+    return door === homeDoorOf(s) ? { ok: true } : { ok: false, reason: 'reason.dayOver', vars: {} };
+  });
+  // The ride's minutes: 30, or what is left of the day (none at 24:00).
+  SR.def.fn('world.cabMin', function (s) {
+    return Math.max(0, Math.min(SR.tuning.world.cab.min, SR.tuning.time.dayEnd - s.clock.min));
+  });
+  SR.def.fn('world.cabCash', function () { return SR.tuning.world.cab.cash; });
+
   SR.def.action('world.fall', {
     building: 'world', group: 'special', order: 10, label: 'act.world.fall', p: 0, timeRule: 'free',
     effects: [['record', 'falls', 1], ['daily', 'falls', 1], ['log', 'fall', {}], ['fn', 'world.fall']],
@@ -80,5 +106,18 @@
   SR.def.action('world.enter', {
     building: 'world', group: 'special', order: 50, label: 'act.world.enter', p: 0, timeRule: 'free', silent: true,
     effects: [['fn', 'world.enter']],
+  });
+  // Stepping into the city (the city scene runs it on entry): the nomination check (orig: the
+  // original checked it only there; the night checks every morning too).
+  SR.def.action('world.city', {
+    building: 'world', group: 'special', order: 60, label: 'act.world.city', p: 0, timeRule: 'free', silent: true,
+    effects: [['fn', 'election.check']],
+  });
+  // A cab ride to a door (the city places you there on success: SR.world.cab).
+  SR.def.action('world.cab', {
+    building: 'world', group: 'special', order: 70, label: 'act.world.cab', icon: 'cab', p: 1, feature: 'phone', timeRule: 'free',
+    cost: { cash: 'world.cabCash', min: 'world.cabMin' },
+    requires: [['phone'], ['fn', 'world.cabOk']],
+    effects: [],
   });
 })();

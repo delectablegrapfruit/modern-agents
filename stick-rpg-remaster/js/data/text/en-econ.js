@@ -1,4 +1,4 @@
-// js/data/text/en-econ.js — owner: W1-E. text: items, jobs, homes, furniture, stocks, ranks, the
+// js/data/text/en-econ.js — owner: W2-RulesE (W1-E in wave 1). text: items, jobs, homes, furniture, stocks, ranks, the
 // morning report's lines, and the toasts and stamps the economy rules raise (CONTRACT §7):
 // item.*, job.*, home.<tier>.*, furn.*, stock.*, rank.*, report.*, toast.jobs|training|night|
 // health|homes|stocks.*, stamp.jobs|training.*, and the night's own voicemails vm.crew.* and
@@ -261,6 +261,7 @@
     'report.event.bloodDrive': 'Blood Drive at City Hall',
     'report.eventSoon': 'This week: {event} on {weekday}',
     'report.unread': '{n} unread messages',
+    'report.unreadOne': '1 unread message',
     'report.heat': 'Heat {n}',
     'report.day365': 'A whole year! A red sports car waits on the mansion drive',
     'report.weekday.mon': 'Monday',
@@ -274,7 +275,8 @@
     'report.track.kin': 'Kinesiology',
     'report.track.thr': 'Theatre',
     // Jail (one line on the Jail Day card) and Stick General
-    'report.jail.summary': 'Interest {interest} · {msgs} messages · {days} days to go',
+    'report.jail.summary': 'Interest {interest} · unread: {msgs} · days left: {days}',
+    'report.jail.summaryMarket': 'Interest {interest} · {ticker} {arrow} {pct} % · unread: {msgs} · days left: {days}',
     'report.hospital.bill': 'Stick General bill: {money} (written off: {writtenOff})',
     'report.hospital.hp': 'Patched up to {hp}/{max} HP',
     'report.hospital.discharge': 'Discharged at {time}',
@@ -301,6 +303,7 @@
     'stamp.training.thr': 'THEATRE DEGREE',
     'toast.health.secondWind': 'Second Wind: you stay on your feet with 1 HP',
     'toast.homes.storage': 'Some furniture went into storage',
+    'toast.stocks.tip': "Today's tip: {ticker} {arrow} ({rel} reliable)",
 
     // ---------------------------------------------------------------------------------------------
     // Voicemails the night queues itself (step 11): the day-365 call and the weather alerts (P1

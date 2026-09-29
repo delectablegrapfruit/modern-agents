@@ -1,4 +1,4 @@
-// js/rules/state.js — owner: W1-R. SR.rules.state: the v1 state schema (ARCHITECTURE §6.1, frozen),
+// js/rules/state.js — owner: W2-RulesE (W1-R in wave 1). SR.rules.state: the v1 state schema (ARCHITECTURE §6.1, frozen),
 // create(opts) builds a new game and defaults() returns the fully populated default that the save
 // migration deep-fills from. Pure: no DOM, browser API or unseeded randomness (Node-loadable).
 (function () {
@@ -58,11 +58,13 @@
       furniture: { owned: {}, storage: [] },
       stocks: stocks(null),
       tip: null,
-      // The four `open` / `offer` / `match` fields are the start → :resolve records of W1-C's rules
-      // (docs/requests/W1-C.md 1): null, or today's trip offer / fight / darts match / robbery in progress.
+      // The `open` / `offer` / `match` / `card` fields are the start → :resolve records of the conflict
+      // rules (docs/requests/W1-C.md 1, W2-RulesC.md 3): null, or today's trip offer / fight / darts
+      // match / scratch card / robbery in progress.
       trade: { rep: {}, visited: {}, smuggleProfit: 0, tours: 0, demand: {}, tourDemand: {}, tourWeek: {}, buyers: [0, 0, 0, 0, 0], offer: null },
       fight: { won: 0, champion: false, ringBouts: 0, open: null },
-      casino: { points: 0, barredUntil: 0, suspicion: 0, winToday: 0, shoe: null, lastBet: 0, match: null },
+      // casino.card: the scratch card being revealed { roll, pay, tier, day } (W2-RulesC request 3).
+      casino: { points: 0, barredUntil: 0, suspicion: 0, winToday: 0, shoe: null, lastBet: 0, match: null, card: null },
       crime: { bankRobDays: [], open: null },
       daily: {
         shifts: 0,                     // the day's shifts (B-05 mondayBonus: the first shift; docs/requests/W1-E.md R2)
@@ -75,7 +77,8 @@
       weekly: { index: 0, openMic: 0, party: 0, mchollandTip: 0, bankRob: 0 },
       npc: {
         harold: { gave10: 0, bottles: 0, takeout: 0, shirt: false, branch: null, stage: 'start', hiredDay: 0, repayDay: 0 },
-        kid: { packs: 0, gumDays: 0, lastGumDay: 0, branch: null, stage: 'start', dead: false, contestDay: 0 },
+        // diedDay: the day of the tenth pack (W2-Street; McHolland's P1 walk "within 3 days of the kid's death").
+        kid: { packs: 0, gumDays: 0, lastGumDay: 0, branch: null, stage: 'start', dead: false, contestDay: 0, diedDay: 0 },
         dealer: { bought: 0, credit: null, creditEnded: false, goonsDue: false, stage: 'red', turnedInDay: 0 },
         mcholland: { stage: 'none', bribedUntil: 0 },
         crease: { stage: 'none' },
@@ -96,6 +99,7 @@
       records: {
         falls: 0, carHits: 0, fightsWon: 0, ringWins: 0, jailDays: 0, jailWorkouts: 0,
         robberies: 0, bankRobberies: 0, hospital: 0, shiftsMcsticks: 0, citiesVisited: 0, spent: 0,
+        meals: 0,                      // `eat` rule events (the pipeline counts them; W2-Pocket request 5)
       },
       history: { nw: [], str: [], int: [], cha: [], karma: [] },
       achievements: {},
@@ -180,10 +184,26 @@
     s.history = { nw: [[day, nw]], str: [[day, st.str]], int: [[day, st.int]], cha: [[day, st.cha]], karma: [[day, st.karma]] };
   }
 
+  /**
+   * The new-game wizard's roll (GDD §4.2, B-02; orig): each stat rand(1..10) plus rand(3..9) extra
+   * points to distribute. Four draws of the given stream (the wizard's; rerolls are unlimited).
+   * @param {object} rng a stream (SR.rng.create(...) or SR.rng.fx)
+   * @returns {{str: number, int: number, cha: number, extra: number}}
+   */
+  function roll(rng) {
+    var T = SR.tuning.start, r = T.statRoll, x = T.extraRoll;
+    return { str: rng.int(r[0], r[1]), int: rng.int(r[0], r[1]), cha: rng.int(r[0], r[1]), extra: rng.int(x[0], x[1]) };
+  }
+
+  /** @returns {{str: number, int: number, cha: number, extra: number}} the Fair start (7 / 7 / 7 + 6; B-02). */
+  function fair() { return SR.util.clone(SR.tuning.start.fairStart); }
+
   SR.rules.state = {
     /** The schema version of this file (ARCHITECTURE §15: v1 in waves 1-2). */
     VERSION: VERSION,
     create: create,
     defaults: defaults,
+    roll: roll,
+    fair: fair,
   };
 })();

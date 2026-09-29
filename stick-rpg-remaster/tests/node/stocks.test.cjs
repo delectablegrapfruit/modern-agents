@@ -1,4 +1,4 @@
-// tests/node/stocks.test.cjs — owner: W1-E. SR.rules.stocks (BALANCE B-10; GDD §4.9): the tick's
+// tests/node/stocks.test.cjs — owner: W2-RulesE (W1-E in wave 1). SR.rules.stocks (BALANCE B-10; GDD §4.9): the tick's
 // mean and σ over 10^5 draws, every quirk and the tip's shock (common random numbers), reverse
 // splits, the tip's reliability and draw, trades with the fee, the spread and the position cap, no
 // shorts, and the B-10 EV table reproduced by simulation.

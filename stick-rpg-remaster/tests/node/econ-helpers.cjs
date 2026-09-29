@@ -1,4 +1,4 @@
-// tests/node/econ-helpers.cjs — owner: W1-E. Shared setup for the economy and life-rules suites
+// tests/node/econ-helpers.cjs — owner: W2-RulesE (W1-E in wave 1). Shared setup for the economy and life-rules suites
 // (tests/node/{jobs,training,night,bank,stocks,homes,calendar,endgame,health,news}.test.cjs):
 // a booted rules context, fresh states, seeded contexts, feature switches and call recorders.
 // Fakes for modules that are still stubs (the election rules of W1-C, the wave-3 arcs and

@@ -1,4 +1,4 @@
-// tests/node/perks.test.cjs — owner: W1-R. The stat-milestone perks (GDD §4.14; BALANCE B-21; P1
+// tests/node/perks.test.cjs — owner: W2-RulesE (W1-R in wave 1). The stat-milestone perks (GDD §4.14; BALANCE B-21; P1
 // flag `perks`): offers appear exactly at 100 / 250 / 450 / 700, once per milestone; choose, has;
 // the perk defs and their text; perk:offered through SR.act.
 //   node tests/node/perks.test.cjs

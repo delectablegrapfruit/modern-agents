@@ -1,4 +1,4 @@
-// js/rules/stocks.js — owner: W1-E. SR.rules.stocks: the six tickers' nightly ticks with their
+// js/rules/stocks.js — owner: W2-RulesE (W1-E in wave 1). SR.rules.stocks: the six tickers' nightly ticks with their
 // quirks and the tip's shock, reverse splits, the daily tip (P1 `stockTips`) and its reliability,
 // trades with the fee, the spread and the position cap, and portfolio value (BALANCE B-10;
 // GDD §4.9). Pure: randomness only from the rng passed in.
@@ -139,6 +139,20 @@
       return s.tip;
     },
 
+    /**
+     * The chance that a source reveals today's tip (B-10 tip.sources): TV News 0.60, Mingle 0.30
+     * (1 with the Regular perk), Market Watch, the paper and Harold 1.
+     * @returns {number}
+     */
+    revealChance: function (s, source) {
+      var src = T().tip.sources;
+      if (source === 'tv') return src.tvNews;
+      if (source === 'mingle') return perk(s, 'regular') ? src.mingleRegular : src.mingle;
+      if (source === 'market') return src.marketWatch;
+      if (source === 'paper') return src.paper;
+      return 1;
+    },
+
     /** Marks today's tip as learned from a source ('tv' | 'paper' | 'market' | 'mingle' | 'harold'). @returns {boolean} */
     reveal: function (s, source) {
       if (!SR.features.stockTips || !s.tip || s.tip.day !== s.clock.day) return false;
@@ -202,4 +216,23 @@
   SR.def.fn('stocks.sell', function (s, params) { return res(stocks.sell(s, params.ticker, params.n, params.where)); });
   /** ['fn', 'stocks.reveal', 'tv']: a source reveals today's tip (the caller rolls its chance). */
   SR.def.fn('stocks.reveal', function (s, params, ctx, source) { stocks.reveal(s, source || params.source); return {}; });
+
+  /**
+   * Effect ['fn', 'stocks.maybeReveal', source] (P1 `stockTips`): a viewing, a mingle or a paper
+   * reveals today's tip with the source's chance of B-10 `tip.sources` (TV News 60 %, Mingle 30 %
+   * or 100 % with Regular, Market Watch and the Daily Fold always, Harold always) and says so in a
+   * toast. It draws nothing while the flag is off, on a day without a tip, or once the tip is
+   * known, so a P0 row that carries it (TV News) keeps the P0 random stream unchanged.
+   */
+  SR.def.fn('stocks.maybeReveal', function (s, params, ctx, source) {
+    source = source || (params && params.source);
+    if (!SR.features.stockTips || !s.tip || s.tip.day !== s.clock.day || stocks.revealed(s)) return {};
+    if (TIP_SOURCES.indexOf(source) < 0) return {};
+    var p = stocks.revealChance(s, source);
+    if (p < 1 && !((ctx && ctx.rng) || SR.rng.rules).chance(p)) return {};
+    stocks.reveal(s, source);
+    var t = s.tip;
+    return { toasts: [{ key: 'toast.stocks.tip', kind: 'info',
+      vars: { ticker: t.ticker, dir: t.dir, arrow: t.dir === 'up' ? '▲' : '▼', rel: SR.text.pct(t.reliability, 0), source: source } }] };
+  });
 })();

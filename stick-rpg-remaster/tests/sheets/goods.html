@@ -1,0 +1,105 @@
+<!doctype html>
+<!-- tests/sheets/goods.html — owner: W2-Goods. Contact sheet for the pawn shop and Fine Line
+     Furnishings interiors (ART_AUDIO §9): each room at 14:00 and at 22:00 with the proprietor's
+     poses (talk, react-happy, react-shock, work) and you, with the card's zone (x 776-1248) shaded
+     as the building scene covers it. Palette keys only; opens from disk. Reviewed against ART_AUDIO
+     §9 (pawn: ceiling fan, the gun case glinting, a mounted fish, Vinnie; Fine Line: showroom
+     spotlights, a rotating display bed, Sofia) and §1.1 (ink, three tones, paper grain). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paper Sky · goods interiors sheet</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../../css/tokens.css">
+<style>
+  body { margin: 16px; background: var(--paper-1); color: var(--ink-900); font: 13px system-ui, sans-serif; }
+  h1 { font: 900 22px "Arial Black", system-ui, sans-serif; margin: 0 0 8px; }
+  h2 { font: 800 13px system-ui, sans-serif; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-500); margin: 18px 0 6px; }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; }
+  canvas { display: block; border: 1px solid var(--paper-3); }
+  #app { display: none; }
+</style>
+</head>
+<body>
+  <h1>Goods interiors sheet · W2-Goods</h1>
+  <div id="app"><div id="stage"><canvas id="world"></canvas><canvas id="fx"></canvas><div id="ui"></div><div id="aria" role="status" aria-live="polite"></div></div></div>
+
+  <script src="../../js/boot/namespace.js"></script>
+  <script src="../../js/boot/util.js"></script>
+  <script src="../../js/boot/events.js"></script>
+  <script src="../../js/core/rng.js"></script>
+  <script src="../../js/core/loop.js"></script>
+  <script src="../../js/core/stage.js"></script>
+  <script src="../../js/core/quality.js"></script>
+  <script src="../../js/core/input.js"></script>
+  <script src="../../js/core/scenes.js"></script>
+  <script src="../../js/core/save.js"></script>
+  <script src="../../js/core/settings.js"></script>
+  <script src="../../js/core/text.js"></script>
+  <script src="../../js/core/debug.js"></script>
+  <script src="../../js/data/features.js"></script>
+  <script src="../../js/data/tuning.js"></script>
+  <script src="../../js/data/text/en-ui.js"></script>
+  <script src="../../js/data/text/en-goods.js"></script>
+  <script src="../../js/art/palette.js"></script>
+  <script src="../../js/art/paper.js"></script>
+  <script src="../../js/art/draw.js"></script>
+  <script src="../../js/art/stick.js"></script>
+  <script src="../../js/art/portraits.js"></script>
+  <script src="../../js/art/icons.js"></script>
+  <script src="../../js/art/interiors/kit.js"></script>
+  <script src="../../js/art/interiors/pawn.js"></script>
+  <script src="../../js/art/interiors/furniture.js"></script>
+  <script>
+  (function () {
+    'use strict';
+    var SR = window.SR;
+    var sheet = window.__sheet = { ready: false, errors: [] };
+    window.addEventListener('error', function (e) { sheet.errors.push(String(e.message)); });
+    SR.boot({ scene: false });
+
+    var W = 640, H = 360, K = W / 1280;
+    function section(title) {
+      var h = document.createElement('h2');
+      h.textContent = title;
+      document.body.appendChild(h);
+      var row = document.createElement('div');
+      row.className = 'row';
+      document.body.appendChild(row);
+      return row;
+    }
+    function canvas(parent, id) {
+      var c = document.createElement('canvas');
+      var dpr = window.devicePixelRatio || 1;
+      c.width = Math.round(W * dpr); c.height = Math.round(H * dpr);
+      c.style.width = W + 'px'; c.style.height = H + 'px';
+      c.setAttribute('data-id', id);
+      parent.appendChild(c);
+      var g = c.getContext('2d');
+      g.scale(dpr * K, dpr * K);
+      return g;
+    }
+    /** One room: the static layer, the frame's animation at time t, and the card's zone shaded. */
+    function room(parent, id, min, t, actors) {
+      var g = canvas(parent, 'sheet-' + id + '-' + min);
+      var st = { clock: { day: 3, min: min }, msgs: [], stats: { karma: 0 } };
+      var r = SR.art.interior(id);
+      r.drawStatic(g, st);
+      r.drawAnim(g, t, st, actors);
+      g.save(); g.globalAlpha = 0.3; g.fillStyle = SR.art.draw.color('ui.paper-0'); g.fillRect(776, 72, 472, 632); g.restore();
+    }
+
+    var pawn = section('Pawn shop · 14:00 Vinnie talks · 22:00 react-happy (a sale) · react-shock');
+    room(pawn, 'pawn', 14 * 60, 1.2, { owner: { pose: 'talk' }, you: { pose: 'idle' } });
+    room(pawn, 'pawn', 22 * 60, 2.4, { owner: { pose: 'react-happy' }, you: { pose: 'happy' } });
+    room(pawn, 'pawn', 16 * 60, 3.1, { owner: { pose: 'react-shock' }, you: { pose: 'shock' } });
+    var furn = section('Fine Line · 14:00 Sofia talks · 22:00 react-happy · the display bed turning');
+    room(furn, 'furniture', 14 * 60, 0.4, { owner: { pose: 'talk' }, you: { pose: 'idle' } });
+    room(furn, 'furniture', 22 * 60, 2.0, { owner: { pose: 'react-happy' }, you: { pose: 'happy' } });
+    room(furn, 'furniture', 10 * 60, 4.0, { owner: { pose: 'work' }, you: { pose: 'idle' } });
+    sheet.ready = true;
+  })();
+  </script>
+</body>
+</html>

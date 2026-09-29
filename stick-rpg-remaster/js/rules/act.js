@@ -1,4 +1,4 @@
-// js/rules/act.js — owner: W1-R. The action pipeline (ARCHITECTURE §6.2, §6.10; CONTRACT §8):
+// js/rules/act.js — owner: W2-RulesE (W1-R in wave 1). The action pipeline (ARCHITECTURE §6.2, §6.10; CONTRACT §8):
 // SR.rules.act.{run, preview, price} (pure forms on a state) and SR.act / SR.preview (on SR.state,
 // emitting the rule and UI events of CONTRACT §8.7 on SR.events). Still free of browser APIs.
 //
@@ -338,6 +338,7 @@
    */
   function execute(s, def, c, res) {
     var closeIncome = SR.rules.effects.trackIncome();
+    var day0 = s.clock.day, min0 = s.clock.min;
     try {
       applyCost(s, c);
       c.afterCost = snapshot(s);
@@ -345,6 +346,17 @@
       if (c.refused) return;
       arcs(s, c, res);
       if (c.refused) return;
+      // records.meals counts the `eat` rule events (the Journal's First Day "Eat something"
+      // survives a reload; docs/requests/W2-Pocket.md 5).
+      var meals = 0;
+      for (var i = 0; i < res.events.length; i++) if (res.events[i].name === 'eat') meals++;
+      if (meals && s.records) s.records.meals = (s.records.meals || 0) + meals;
+      // The weather may move at 12:00 and 18:00 as the action's time passes them (P1 `weather`;
+      // nothing is drawn while the flag is off). A night (the day advanced) rolls its own.
+      var Cal = SR.rules.calendar;
+      if (SR.features.weather && Cal && typeof Cal.intraday === 'function' && s.clock.day === day0 && s.clock.min > min0) {
+        Cal.intraday(s, min0, s.clock.min, c.rng);
+      }
       if (!c.preview && !res.down && !s.over && s.stats.hp <= 0) down(s, c, res);
     } finally {
       c.income = closeIncome();
@@ -613,8 +625,21 @@
     });
     if (s.election.status + ':' + s.election.poll !== before.election) E.emit('election:changed', { status: s.election.status, poll: s.election.poll });
     if (res.down) E.emit('player:down', { cause: res.down.cause, outcome: res.down.outcome, down: res.down });
-    if (res.over) E.emit('game:over', { reason: res.over.reason, result: s.result });
+    if (res.over && !overByReport(res)) E.emit('game:over', { reason: res.over.reason, result: s.result });
     E.emit('action:done', { id: res.id, result: res });
+  }
+
+  /**
+   * A game that ends in a night the report scene presents (a sleep's Report in Result.report, the
+   * hospital night's in Result.down.report) is announced by the report scene once the paper has
+   * been read (CONTRACT §9.2: game:over comes from SR.act or the report scene; GDD §4.7 / §4.16:
+   * the results follow the report), so SR.act does not emit game:over for it; Result.over still
+   * says so. A jail night's Report is a line on the Jail Day card, not the report scene, so its
+   * end is announced here (docs/requests/W2-Home.md 1).
+   * @returns {boolean}
+   */
+  function overByReport(res) {
+    return !!((res.report && res.report.kind !== 'jail') || (res.down && res.down.report));
   }
 
   /**

@@ -1,4 +1,4 @@
-// tests/node/stats.test.cjs — owner: W1-R. SR.rules.stats (GDD §4.2, §4.5; BALANCE B-02, B-03,
+// tests/node/stats.test.cjs — owner: W2-RulesE (W1-R in wave 1). SR.rules.stats (GDD §4.2, §4.5; BALANCE B-02, B-03,
 // B-04): HP max = 15 + STR after every STR gain and never otherwise; Winded halves gains (floor,
 // min 1); the degree bonus adds 1; the 999 cap; karma clamps after every change; Heat and Buzz
 // ranges; the karma band and tier.

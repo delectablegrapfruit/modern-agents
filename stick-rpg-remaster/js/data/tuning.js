@@ -1,4 +1,4 @@
-// js/data/tuning.js — owner: W1-R. SR.def.tuning: every BALANCE table B-01 to B-31, keyed as
+// js/data/tuning.js — owner: W2-RulesE (W1-R in wave 1). SR.def.tuning: every BALANCE table B-01 to B-31, keyed as
 // BALANCE names them (docs/CONTRACT.md §3.6), read as SR.tuning.<table>.<key>.
 // Pure data (Node-loadable). Conventions used throughout:
 // - money in dollars, time in game minutes (clock minutes since midnight), unless a key says Ms / Sec;
@@ -482,6 +482,9 @@
           rookie: { target: 160, pays: 2 }, regular: { target: 230, pays: 2 }, shark: { target: 320, pays: 3 } },
       },
       karma: { gamble: -1, dailyMax: 10 },   // orig: -1 per pull, spin or hand; max -10 a day
+      // The table chips of blackjack and roulette (GDD §2.1 "$5 / $25 / $100 chips (+$500)", §6.5;
+      // not in B-14b/c; docs/requests/W2-Night.md 5).
+      chips: [5, 25, 100, 500],
     },
 
     // ---------------------------------------------------------------------------------------------

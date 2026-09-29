@@ -1,4 +1,4 @@
-// js/rules/perks.js — owner: W1-R (W3-Prog in wave 3). SR.rules.perks: the stat-milestone perks
+// js/rules/perks.js — owner: W2-RulesE (W1-R in wave 1; W3-Prog in wave 3). SR.rules.perks: the stat-milestone perks
 // (GDD §4.14; BALANCE B-21; P1, flag `perks`). Each time STR, INT or CHA first reaches 100, 250, 450
 // or 700, an offer of that milestone's two perks waits in state.perks.pending until one is chosen.
 // Pure: no DOM, browser API or unseeded randomness (Node-loadable).

@@ -1,4 +1,4 @@
-// js/rules/night.js — owner: W1-E. SR.rules.night.run: the night, the only place the day advances.
+// js/rules/night.js — owner: W2-RulesE (W1-E in wave 1). SR.rules.night.run: the night, the only place the day advances.
 // Every nightly rule of the game is a numbered step of GDD §4.7, run in that fixed order:
 //   0 capture · 1 stocks · 2 bank · 3 income · 4 weekly · 5 election · 6 HP restore ·
 //   7 furniture · 8 the day advances · 9 meters and counters · 10 timers · 11 messages ·
@@ -35,6 +35,18 @@
   function $(n) { return SR.text.money(n); }
   /** @returns {string} a signed whole number ('+2', '-2'). */
   function signed(n) { return (n > 0 ? '+' : '') + n; }
+
+  /**
+   * The B-07 restore of a night's sleep, before the cap: floor(hpMax × (base + bed + freezer +
+   * home)) + flat - 20 with a pill, at least 0 (night step 6).
+   * @param {boolean=} pill a caffeine pill is used tonight (default: owned and the toggle on)
+   * @returns {number}
+   */
+  function restoreHp(s, pill) {
+    var T = SR.tuning.sleep, b = SR.rules.homes.sleepBonus(s);
+    if (pill === undefined) pill = s.items.pills > 0 && s.clock.pillAuto !== false;
+    return Math.max(0, Math.floor(s.stats.hpMax * (T.base + b.total)) + T.flat - (pill ? T.pill : 0));
+  }
 
   /** Adds a report line. */
   function line(R, section, icon, key, vars, weight) {
@@ -105,11 +117,13 @@
       scare: f.cityEvent === 'stockScare',
       rebound: f.rebound,
     });
-    res.movers.slice().sort(function (a, b) { return Math.abs(b.pct) - Math.abs(a.pct) || (a.ticker < b.ticker ? -1 : 1); })
-      .slice(0, MOVERS_SHOWN).forEach(function (m) {
-        line(R, 'markets', m.pct >= 0 ? 'star' : 'warning', m.pct >= 0 ? 'report.stockUp' : 'report.stockDown',
-          { ticker: m.ticker, pct: SR.text.num(Math.abs(m.pct), 1), price: SR.text.money(m.to, { cents: true }) }, Math.abs(m.pct));
-      });
+    var movers = res.movers.slice().sort(function (a, b) { return Math.abs(b.pct) - Math.abs(a.pct) || (a.ticker < b.ticker ? -1 : 1); });
+    movers.slice(0, MOVERS_SHOWN).forEach(function (m) {
+      line(R, 'markets', m.pct >= 0 ? 'star' : 'warning', m.pct >= 0 ? 'report.stockUp' : 'report.stockDown',
+        { ticker: m.ticker, pct: SR.text.num(Math.abs(m.pct), 1), price: SR.text.money(m.to, { cents: true }) }, Math.abs(m.pct));
+    });
+    // The biggest mover also goes into the jail's one-line summary (UI §5.12).
+    if (movers.length) f.topMover = { ticker: movers[0].ticker, arrow: movers[0].pct >= 0 ? '▲' : '▼', pct: SR.text.num(Math.abs(movers[0].pct), 0) };
     res.splits.forEach(function (sp) {
       line(R, 'markets', 'info', 'report.split', { ticker: sp.ticker, price: SR.text.money(sp.to, { cents: true }), n: sp.leftover, money: $(sp.paid) }, 50);
     });
@@ -146,7 +160,7 @@
           var what = x.kind === 'furniture' ? SR.text('furn.' + x.key) : x.kind === 'home' ? SR.text('home.' + x.key) : x.key;
           line(R, 'money', 'warning', 'report.seized.' + x.kind, { n: x.applied, money: $(x.applied), what: what }, 20);
         });
-        f.msgs.push({ key: 'vm.penny.default', vars: { n: d.owed, money: SR.text.money(d.owed), lien: d.lien } });
+        f.msgs.push({ key: 'vm.penny.default', vars: { n: d.owed, money: SR.text.money(d.owed), lien: d.lien, lienMoney: SR.text.money(d.lien) } });
       }
       return;
     }
@@ -216,17 +230,14 @@
 
   /** 6. HP restore (B-07); the hospital night sets HP to 50 % of HP max instead (B-31). */
   steps[6] = function restore(s, ctx, R, f) {
-    var st = s.stats, T = SR.tuning.sleep;
+    var st = s.stats;
     if (R.kind === 'hospital') {
       st.hp = Math.floor(SR.tuning.health.hospital.hpPct * st.hpMax);
       line(R, 'hospital', 'hp', 'report.hospital.hp', { hp: st.hp, max: st.hpMax }, 50);
       return;
     }
-    var b = SR.rules.homes.sleepBonus(s);
-    var restore = Math.floor(st.hpMax * (T.base + b.total)) + T.flat - (f.pill ? T.pill : 0);
-    restore = Math.max(0, restore);
     var from = st.hp;
-    st.hp = Math.min(st.hpMax, st.hp + restore);
+    st.hp = Math.min(st.hpMax, st.hp + restoreHp(s, f.pill));
     line(R, 'overnight', 'hp', 'report.hpRestored', { n: st.hp - from, hp: st.hp, max: st.hpMax }, 30);
   };
 
@@ -387,7 +398,7 @@
    * the "today" lines, the headline. Perk offers simply stay pending; the autosave (Hardcore: the
    * ironman slot) is written by the report scene through SR.save, outside the pure rules.
    */
-  steps[12] = function morning(s, ctx, R) {
+  steps[12] = function morning(s, ctx, R, f) {
     var E = SR.rules.election;
     if (E && typeof E.nominationCheck === 'function') absorb(s, R, E.nominationCheck(s));
     // A campaign day's morning: the campaign event (P1 `civicPlus`, B-17 eventChance; W1-C draws
@@ -418,11 +429,13 @@
         { event: SR.text('report.event.' + ce.id), weekday: SR.text('report.weekday.' + SR.tuning.time.weekdays[weekdayOf(ce.day)]) }, 30);
     }
     var unread = (s.msgs || []).filter(function (m) { return !m.read && !m.archived; }).length;
-    if (unread) line(R, 'today', 'messages', 'report.unread', { n: unread }, 25);
+    if (unread) line(R, 'today', 'messages', unread === 1 ? 'report.unreadOne' : 'report.unread', { n: unread }, 25);
     if (s.stats.heat > 0) line(R, 'today', 'heat', 'report.heat', { n: s.stats.heat }, 15);
     if (R.kind === 'jail' && s.jail) {
       var got = R.lines.reduce(function (a, l) { return l.key === 'report.interest' ? a + l.vars.n : a; }, 0);
-      line(R, 'jail', 'bail', 'report.jail.summary', { interest: $(got), msgs: unread, days: s.jail.daysLeft }, 50);
+      var mv = (f && f.topMover) || null;
+      line(R, 'jail', 'bail', mv ? 'report.jail.summaryMarket' : 'report.jail.summary', { interest: $(got), msgs: unread, days: s.jail.daysLeft,
+        ticker: mv ? mv.ticker : null, arrow: mv ? mv.arrow : null, pct: mv ? mv.pct : null }, 50);
     }
     R.headline = SR.rules.news.headline(s);
   };
@@ -443,6 +456,25 @@
   var night = {
     SUBSETS: SUBSETS,
     steps: steps,
+
+    /**
+     * What tonight's sleep would do, without running it (the Sleep row's preview, the report's
+     * forecast of the pill): the HP restored after the cap, the pill, and the furniture gains.
+     * @returns {{hp: number, pill: boolean, restore: number, gains: {id: string, stat: string, n: number}[]}}
+     */
+    preview: function (s) {
+      var pill = s.items.pills > 0 && s.clock.pillAuto !== false, n = restoreHp(s, pill);
+      var hp = Math.min(s.stats.hpMax, s.stats.hp + n);
+      // Step 7 runs after the restore, so Winded is judged on the restored HP.
+      var after = { stats: Object.assign({}, s.stats, { hp: hp }), edu: s.edu };
+      var gains = SR.rules.homes.nightly(s).map(function (g) {
+        var a = SR.rules.stats.gain(after, g.stat, g.n, 'furniture').applied;
+        after.stats[g.stat] += a;
+        return { id: g.id, stat: g.stat, n: a };
+      });
+      return { hp: hp - s.stats.hp, pill: pill, restore: n, gains: gains };
+    },
+    restoreHp: restoreHp,
 
     /**
      * Runs the night.

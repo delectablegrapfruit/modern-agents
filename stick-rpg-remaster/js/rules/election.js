@@ -1,4 +1,4 @@
-// js/rules/election.js — owner: W1-C. SR.rules.election: the nomination, the war chest, the seven
+// js/rules/election.js — owner: W2-RulesC (W1-C in wave 1). SR.rules.election: the nomination, the war chest, the seven
 // campaign days, the debate, election night, the office and its decrees (GDD §4.17; BALANCE B-17;
 // ARCHITECTURE §6.5). Status: none → nominated → campaign → office | lost; office → removed (a
 // karma flip); lost, removed and a lapsed offer may run again from retryFromDay.
@@ -82,13 +82,24 @@
     el.campaignDay = 0;
     el.debateDone = false;
     res.nominated = true;
-    var vars = { path: q.path, days: T().acceptWithin, day: s.clock.day + T().acceptWithin - 1 };
+    var vars = { path: q.path, days: T().acceptWithin, day: acceptBy(s) };
     res.msgs.push({ key: 'vm.board.nominated', vars: vars });
     res.log.push({ kind: 'nominated', vars: { path: q.path } });
     res.events.push(electionEvent(s));
     res.toasts.push({ key: 'toast.election.nominated', vars: vars, kind: 'reward' });
     line(res, 'ballot', 'toast.election.nominated', vars, 85);
     return res;
+  }
+
+  /**
+   * The last day the nomination can be accepted (B-17 acceptWithin: 14 days counting the day of the
+   * call; night step 5 lapses the offer in the night that ends this day), for every screen that
+   * says "accept by day …" (the Board's voicemail, City Hall, the phone).
+   * @returns {(number|null)} the day, or null when no offer is waiting
+   */
+  function acceptBy(s) {
+    var el = s.election;
+    return el && el.status === 'nominated' ? (el.nominatedDay || 0) + T().acceptWithin - 1 : null;
   }
 
   /** @returns {object|null} a war-chest tier (B-17) by index 0..2 or by its cash amount. */
@@ -505,6 +516,7 @@
     clampPoll: clampPoll,
     qualifies: qualifies,
     nominationCheck: nominationCheck,
+    acceptBy: acceptBy,
     chestTier: chestTier,
     startPoll: startPoll,
     accept: accept,

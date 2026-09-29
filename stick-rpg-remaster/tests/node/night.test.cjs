@@ -1,4 +1,4 @@
-// tests/node/night.test.cjs — owner: W1-E. SR.rules.night.run (GDD §4.7; ARCHITECTURE §6.6): the
+// tests/node/night.test.cjs — owner: W2-RulesE (W1-E in wave 1). SR.rules.night.run (GDD §4.7; ARCHITECTURE §6.6): the
 // fixed step order (every step's side effect recorded in order, with stubbed election rules, arcs
 // and encounters), the jail and hospital subsets, the market days by the ended day, the B-07 sleep
 // restore, wake times, meters and counters, timers, messages, the morning, the end of a timed game
@@ -99,7 +99,9 @@ T.section('the jail and hospital subsets');
   T.eq([s.stats.hp, s.stats.int, s.items.pills, s.clock.min], [10, 50, 2, 480], 'jail: no HP restore, no furniture gains, wake 08:00 in the cell (no pill used)');
   T.eq([s.jail.daysLeft, s.jail.served], [2, 1], 'jail: a jail day is counted');
   T.ok(log.indexOf('encounters') < 0, 'jail: no encounters are seeded');
-  T.ok(rep.lines.some((l) => l.section === 'jail' && l.key === 'report.jail.summary'), 'jail: the one-line summary');
+  const js = rep.lines.filter((l) => l.section === 'jail');
+  T.eq(js.map((l) => [l.key, l.vars.days, typeof l.vars.ticker]), [['report.jail.summaryMarket', 2, 'string']],
+    'jail: the one-line summary, with the biggest mover on a market night (UI §5.12)');
   T.eq(rep.kind, 'jail', 'the report kind');
 
   const h = H.state(SR, { clock: { day: 3 }, stats: { hp: 0, str: 25, hpMax: 40 }, furniture: { owned: { books: 1 } }, items: { pills: 2, alarm: 1 } });

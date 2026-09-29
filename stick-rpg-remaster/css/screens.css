@@ -1,2 +1,495 @@
-/* css/screens.css — owner: W2-Front. title, newgame, report, results layouts.
-   Stub (W1-K M0): empty until the owner writes it. */
+/* css/screens.css — owner: W2-Front. The front end's layouts (UI.md §2.2, §5.1-§5.4, §5.10,
+   §5.14-§5.18): the boot card and the title, the new-game wizard, the intro's captions and card, the
+   pause menu, settings, save / load, the Final Edition, the Hall of Fame, the profile and the
+   credits. No colour literals: every colour is a token of css/tokens.css. Text sizes follow
+   --ui-scale through the --tNN helpers of css/components.css; boxes grow with their text. */
+
+/* ---------------------------------------------------------------- shared */
+.front-panel {
+  position: absolute;
+  left: 160px;
+  top: 48px;
+  width: 960px;
+  max-height: 624px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-5) var(--sp-6);
+  border: var(--line);
+  border-radius: var(--r-l);
+  background: var(--paper-0);
+  box-shadow: var(--e-3);
+  color: var(--ink-900);
+}
+.front-panel--narrow { left: 240px; width: 800px; }
+.front-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); }
+.front-sub { color: var(--ink-700); }
+
+/* ---------------------------------------------------------------- the boot card (UI.md §5.1) */
+.title-screen { position: absolute; inset: 0; }
+.title-gate-wrap {
+  position: absolute;
+  inset: 0;
+  background: var(--paper-1);
+  animation: sr-fade-in var(--dur-2) var(--ease-out);
+}
+.title-gate {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-5);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-900);
+  cursor: pointer;
+}
+.title-gate-logo { flex: none; }
+.title-gate-fan { font-size: var(--t16); color: var(--ink-700); }
+.title-gate-press {
+  font-size: var(--t20);
+  font-weight: 700;
+  letter-spacing: .02em;
+  animation: front-breathe 1600ms var(--ease-inout) infinite;
+}
+@keyframes front-breathe { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+.rm .title-gate-press { animation: none; }
+
+/* ---------------------------------------------------------------- the title (UI.md §5.2) */
+.title-main { position: absolute; inset: 0; }
+.title-left {
+  position: absolute;
+  left: 48px;
+  top: 32px;
+  width: 520px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-4) var(--sp-5) var(--sp-4);
+  border: var(--line);
+  border-radius: var(--r-l);
+  background: var(--paper-0);
+  box-shadow: var(--e-2);
+}
+.title-logo { display: block; margin: 0 auto; }
+.title-menu { display: flex; flex-direction: column; gap: 2px; }
+.title-item.btn {
+  justify-content: flex-start;
+  min-height: 44px;
+  padding: 0 var(--sp-3);
+  font-family: var(--font-display);
+  font-size: var(--t24);
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: .02em;
+}
+.title-item.btn::before { content: "▸"; width: 1.1em; opacity: 0; transition: opacity var(--dur-1) var(--ease-out); }
+.title-item.btn:focus::before, .title-item.btn:hover::before { opacity: 1; }
+.title-card {
+  position: absolute;
+  right: 48px;
+  top: 40px;
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-3);
+  border: var(--line);
+  border-radius: var(--r-m);
+  background: var(--paper-0);
+  box-shadow: var(--e-2);
+}
+.title-thumb { width: 160px; height: 90px; border: var(--line); border-radius: var(--r-xs); object-fit: cover; background: var(--paper-2); }
+.title-thumb.is-empty { display: block; }
+.title-card-name { font-weight: 900; font-size: var(--t16); text-transform: uppercase; }
+.title-card-line { font-size: var(--t14); color: var(--ink-700); }
+.title-news {
+  position: absolute;
+  right: 48px;
+  top: 320px;
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border: var(--line);
+  border-radius: var(--r-m);
+  background: var(--paper-0);
+  box-shadow: var(--e-2);
+}
+.title-news-head { font-family: var(--font-display); font-size: var(--t16); font-weight: 900; text-transform: uppercase; }
+.title-news-list { display: flex; flex-direction: column; gap: 4px; font-size: var(--t14); list-style: disc; padding-left: 1.2em; }
+.title-news .btn { align-self: flex-end; }
+.title-foot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  min-height: 40px;
+  padding: 0 var(--sp-5);
+  background: var(--paper-1);
+  border-top: var(--line-thin);
+  font-size: var(--t14);
+}
+.title-fan { flex: 1 1 auto; color: var(--ink-700); }
+.title-padnote { font-weight: 700; color: var(--ink-900); }
+.title-ver { color: var(--ink-700); white-space: nowrap; }
+
+/* ---------------------------------------------------------------- the new-game wizard (UI.md §5.3) */
+.ng-card {
+  position: absolute;
+  left: 160px;
+  top: 80px;
+  width: 960px;
+  min-height: 560px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-5) var(--sp-6);
+  border: var(--line);
+  border-radius: var(--r-l);
+  background: var(--paper-0);
+  box-shadow: var(--e-3);
+}
+.ng-steps { display: flex; gap: var(--sp-2); counter-reset: ng; }
+.ng-step {
+  flex: 1;
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 4px solid var(--paper-3);
+  color: var(--ink-700);
+  font-weight: 700;
+  font-size: var(--t14);
+}
+.ng-step::before { counter-increment: ng; content: counter(ng) "  "; font-weight: 900; }
+.ng-step.is-done { border-bottom-color: var(--primary-100); }
+.ng-step.is-current { border-bottom-color: var(--primary-600); color: var(--ink-900); }
+.ng-body { flex: 1 1 auto; display: flex; flex-direction: column; gap: var(--sp-4); min-height: 360px; }
+.ng-foot { display: flex; justify-content: space-between; gap: var(--sp-3); }
+.ng-field { display: flex; flex-direction: column; gap: var(--sp-2); }
+.ng-label { font-size: var(--t16); font-weight: 900; text-transform: uppercase; letter-spacing: .02em; }
+.ng-field .seg { align-self: flex-start; }
+.ng-field .seg-opt { min-height: 40px; padding: 0 var(--sp-4); }
+.ng-note { color: var(--ink-700); font-size: var(--t14); min-height: 1.4em; }
+.ng-two { display: flex; gap: var(--sp-6); align-items: flex-start; }
+.ng-stats { flex: 1 1 auto; display: flex; flex-direction: column; gap: var(--sp-3); }
+.ng-stat { display: flex; align-items: center; gap: var(--sp-3); }
+.ng-die { flex: none; }
+.ng-stat .btn { min-width: 76px; justify-content: center; }
+.ng-stat-name { flex: 1 1 auto; font-family: var(--font-display); font-weight: 900; font-size: var(--t20); }
+.ng-stat-v { min-width: 2.2em; text-align: center; font-family: var(--font-display); font-weight: 900; font-size: var(--t24); }
+.ng-side { flex: 0 0 280px; display: flex; flex-direction: column; gap: var(--sp-2); }
+.ng-pool { font-weight: 900; font-size: var(--t20); }
+.ng-read { font-weight: 600; }
+.ng-col { flex: 1 1 auto; display: flex; flex-direction: column; gap: var(--sp-4); }
+.ng-wink { color: var(--cha-ink); font-weight: 700; }
+.ng-acc { display: flex; align-items: center; gap: var(--sp-2); }
+.ng-acc-name { min-width: 7em; text-align: center; font-weight: 700; }
+.ng-fig { flex: none; margin: 0; padding: var(--sp-2); border: var(--line-thin); border-radius: var(--r-m); background: var(--paper-1); }
+.ng-preview { display: block; }
+
+/* ---------------------------------------------------------------- the intro (UI.md §5.4) */
+.intro { position: absolute; inset: 0; pointer-events: auto; touch-action: none; }
+.intro-caption {
+  position: absolute;
+  left: 50%;
+  bottom: 40px;
+  width: max-content;
+  max-width: 1000px;
+  transform: translateX(-50%);
+  padding: var(--sp-2) var(--sp-4);
+  border-radius: var(--r-s);
+  background: var(--ink-900);
+  color: var(--paper-0);
+  font-size: var(--t20);
+  font-weight: 600;
+  text-align: center;
+}
+.intro-caption:empty { display: none; }
+.intro-caption.is-in { animation: sr-fade-in var(--dur-3) var(--ease-out); }
+.intro-skip {
+  position: absolute;
+  right: 32px;
+  bottom: 32px;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3) var(--sp-1) var(--sp-1);
+  border-radius: var(--r-pill);
+  background: var(--paper-0);
+  border: var(--line);
+  font-size: var(--t14);
+  font-weight: 700;
+}
+.intro-ring { display: block; width: 36px; height: 36px; }
+.intro-ring-svg { width: 36px; height: 36px; transform: rotate(-90deg); }
+.intro-ring-track { fill: none; stroke: var(--paper-3); stroke-width: 6; }
+.intro-ring-fill { fill: none; stroke: var(--primary-600); stroke-width: 6; stroke-linecap: round; }
+.intro-card {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max-content;
+  max-width: 1100px;
+  transform: translate(-50%, -50%) rotate(-2deg);
+  padding: var(--sp-5) var(--sp-6);
+  border: var(--line);
+  border-radius: var(--r-m);
+  background: var(--paper-0);
+  box-shadow: var(--e-3);
+  animation: sr-fade-in var(--dur-3) var(--ease-out);
+}
+.intro-card-text { font-family: var(--font-display); font-weight: 900; font-size: calc(var(--fs-32) * var(--ui-scale)); text-transform: uppercase; letter-spacing: .02em; }
+
+/* ---------------------------------------------------------------- pause (UI.md §5.10) */
+.pause-card {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-5);
+  border: var(--line);
+  border-radius: var(--r-l);
+  background: var(--paper-0);
+  box-shadow: var(--e-3);
+  transform: translate(-50%, -50%);
+  animation: sr-modal-in var(--dur-2) var(--ease-out);
+}
+.pause-day { color: var(--ink-700); font-weight: 600; }
+.pause-list { display: flex; flex-direction: column; gap: var(--sp-2); }
+.pause-item.btn { justify-content: flex-start; }
+
+/* ---------------------------------------------------------------- settings (UI.md §5.15) */
+.set-panel {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 880px;
+  height: 640px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-4) var(--sp-5);
+  border: var(--line);
+  border-radius: var(--r-l);
+  background: var(--paper-0);
+  box-shadow: var(--e-3);
+  transform: translate(-50%, -50%);
+}
+.set-head { display: flex; align-items: center; justify-content: space-between; }
+.set-body { flex: 1 1 auto; min-height: 0; padding: var(--sp-2) var(--sp-1); }
+.set-tab { display: flex; flex-direction: column; gap: var(--sp-2); }
+.set-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-3); min-height: 44px; padding: 2px 0; }
+.set-row.set-sub { padding-left: var(--sp-6); }
+.set-seg { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-3); }
+.set-label { min-width: 200px; color: var(--ink-700); font-weight: 600; font-size: var(--t14); }
+.set-ctx { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+.set-binds { display: flex; flex-direction: column; border: var(--line-thin); border-radius: var(--r-m); }
+.set-bind {
+  display: grid;
+  grid-template-columns: 200px 1fr auto 1fr auto;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 2px var(--sp-3);
+  border-bottom: var(--line-thin);
+}
+.set-bind:last-child { border-bottom: 0; }
+.set-bind-name { font-weight: 700; }
+.set-bind-keys { font-size: var(--t14); color: var(--ink-900); font-weight: 600; }
+.set-bind-note { grid-column: 1 / -1; color: var(--danger-ink); font-size: var(--t14); font-weight: 600; }
+
+/* ---------------------------------------------------------------- save / load (UI.md §5.16) */
+.sl-panel {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 840px;
+  max-height: 660px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5);
+  border: var(--line);
+  border-radius: var(--r-l);
+  background: var(--paper-0);
+  box-shadow: var(--e-3);
+  transform: translate(-50%, -50%);
+}
+.sl-head { display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap; }
+.sl-head .t-h2 { flex: 1 1 auto; }
+.sl-note { flex-basis: 100%; color: var(--ink-700); font-size: var(--t14); }
+.sl-list { display: flex; flex-direction: column; gap: var(--sp-2); min-height: 0; flex: 1 1 auto; padding: 2px; }
+.sl-card {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2);
+  border: var(--line);
+  border-radius: var(--r-m);
+  background: var(--paper-1);
+}
+.sl-thumb { flex: none; width: 160px; height: 90px; border: var(--line-thin); border-radius: var(--r-xs); object-fit: cover; background: var(--paper-2); }
+.sl-thumb.is-empty { display: block; }
+.sl-info { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.sl-name { font-family: var(--font-display); font-weight: 900; font-size: var(--t14); text-transform: uppercase; color: var(--ink-700); }
+.sl-line { font-size: var(--t14); }
+.sl-who { font-weight: 900; font-size: var(--t16); }
+.sl-broken { color: var(--danger-ink); font-weight: 700; }
+.sl-empty { color: var(--ink-700); }
+.sl-progress { color: var(--heat-ink); font-weight: 700; }
+.sl-when { color: var(--ink-700); }
+.sl-btns { flex: none; display: flex; flex-direction: column; gap: var(--sp-1); }
+.sl-more { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); border: var(--line-thin); border-radius: var(--r-m); background: var(--paper-1); }
+.sl-more-row { display: flex; align-items: flex-end; flex-wrap: wrap; gap: var(--sp-2); }
+.sl-more-row .tf { flex: 1 1 auto; }
+.sl-foot { display: flex; justify-content: space-between; gap: var(--sp-3); }
+.sl-code { width: 100%; resize: none; font-family: monospace; font-size: var(--t12); word-break: break-all; border: var(--line-thin); border-radius: var(--r-s); padding: var(--sp-2); background: var(--paper-1); color: var(--ink-900); touch-action: pan-y; }
+
+/* ---------------------------------------------------------------- the Final Edition (UI.md §5.14) */
+.res {
+  position: absolute;
+  left: 160px;
+  top: 24px;
+  width: 960px;
+  height: 672px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-4) var(--sp-6);
+  border: var(--line);
+  border-radius: var(--r-xs);
+  background: var(--newsprint);
+  box-shadow: var(--e-3);
+  color: var(--ink-900);
+  overflow: hidden;
+}
+.res-mast { display: flex; align-items: baseline; justify-content: space-between; border-bottom: 5px double var(--ink-900); padding-bottom: var(--sp-1); }
+.res-paper { font-size: calc(var(--fs-44) * var(--ui-scale)); font-weight: 900; letter-spacing: .08em; text-transform: uppercase; line-height: 1.1; }
+.res-ed { font-weight: 700; font-size: var(--t14); letter-spacing: .04em; }
+.res-head { font-size: calc(var(--fs-28) * var(--ui-scale)); font-weight: 900; line-height: 1.15; border-bottom: 2px solid var(--ink-900); padding-bottom: var(--sp-2); }
+.res-body { display: flex; gap: var(--sp-5); align-items: flex-start; }
+.res-photo { flex: none; margin: 0; }
+.res-photo-cv { display: block; border: var(--line); }
+.res-cap { font-size: var(--t12); color: var(--ink-700); margin-top: 2px; }
+.res-money { flex: 0 0 260px; display: flex; flex-direction: column; gap: var(--sp-1); }
+.res-nw { display: flex; flex-direction: column; }
+.res-nw-k { font-size: var(--t14); font-weight: 900; letter-spacing: .06em; }
+.res-nw-v { color: var(--money-ink); }
+.res-parts { display: flex; flex-direction: column; gap: 2px; font-size: var(--t14); }
+.res-part { display: flex; justify-content: space-between; gap: var(--sp-3); border-bottom: 1px dotted var(--ink-500); }
+.res-part-v { font-weight: 700; }
+.res-side { flex: 1 1 auto; display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.res-stats { font-family: var(--font-display); font-weight: 900; font-size: var(--t20); }
+.res-karma { font-weight: 700; }
+.res-life { color: var(--ink-700); font-weight: 600; }
+.res-bottom { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); min-height: 150px; }
+.res-banners { display: flex; flex-direction: column; gap: var(--sp-2); align-items: flex-start; }
+.res-banner {
+  padding: var(--sp-1) var(--sp-4);
+  border: var(--line);
+  background: var(--ink-900);
+  color: var(--paper-0);
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: var(--t20);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.res-banner--president { background: var(--primary-600); color: var(--primary-ink); }
+.res-banner--dictator { background: var(--danger); color: var(--white); }
+.res-banner--deceased { background: var(--ink-900); color: var(--paper-0); }
+.res-banner--metArtist { background: var(--focus); color: var(--ink-900); transform: rotate(-3deg); border-radius: var(--r-pill); }
+.res-stamp-slot { position: relative; min-width: 360px; min-height: 130px; display: flex; align-items: center; justify-content: center; }
+.res-stamp-slot .stamp.res-stamp { visibility: hidden; margin: 0; }
+.res-stamp-slot.is-shown .stamp.res-stamp { visibility: visible; }
+.stamp.res-stamp.is-thump { animation: front-thump 250ms var(--ease-spring); }
+@keyframes front-thump {
+  from { opacity: 0; transform: rotate(-8deg) scale(1.4); }
+  to { opacity: var(--stamp-alpha); transform: rotate(-8deg) scale(1); }
+}
+.rm .stamp.res-stamp.is-thump { animation: none; }
+.res-meta { font-weight: 700; font-size: var(--t14); }
+.res-actions { display: flex; justify-content: center; gap: var(--sp-3); margin-top: auto; }
+.res-none { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: var(--sp-5); background: var(--paper-0); border: var(--line); border-radius: var(--r-m); }
+
+/* ---------------------------------------------------------------- Hall of Fame, profile, credits (UI.md §5.18) */
+.hof-body, .prof-body { flex: 1 1 auto; min-height: 0; }
+.hof-table { width: 100%; border-collapse: collapse; font-size: var(--t14); }
+.hof-table th { text-align: left; padding: var(--sp-1) var(--sp-2); border-bottom: 2px solid var(--ink-900); font-weight: 900; }
+.hof-table td { padding: var(--sp-1) var(--sp-2); border-bottom: var(--line-thin); }
+.hof-table .hof-num, .hof-table th.hof-netWorth, .hof-table th.hof-legacy { text-align: right; }
+.hof-name { font-weight: 700; }
+.hof-empty, .prof-note { padding: var(--sp-5) 0; color: var(--ink-700); }
+.prof-count { font-weight: 700; margin-bottom: var(--sp-2); }
+.prof-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--sp-2); }
+.prof-grid--badges { grid-template-columns: repeat(2, 1fr); }
+.prof-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: var(--sp-2);
+  border: var(--line);
+  border-radius: var(--r-m);
+  background: var(--paper-0);
+  text-align: center;
+  font-size: var(--t14);
+}
+.prof-tile.is-locked { background: var(--paper-2); color: var(--ink-700); border-style: dashed; }
+.prof-tile.is-locked .prof-ico { opacity: .35; filter: grayscale(1); }
+.prof-tile-name { font-weight: 900; }
+.prof-tile-meta { color: var(--ink-700); font-size: var(--t12); }
+.prof-totals { display: grid; grid-template-columns: max-content 1fr; gap: var(--sp-2) var(--sp-6); font-size: var(--t16); }
+.prof-totals dt { color: var(--ink-700); font-weight: 600; }
+.prof-totals dd { margin: 0; font-weight: 900; }
+.credits-title { font-family: var(--font-display); font-weight: 900; font-size: var(--t20); text-transform: uppercase; }
+.credits-fan { font-weight: 700; }
+.credits-list { display: flex; flex-direction: column; gap: var(--sp-1); list-style: disc; padding-left: 1.2em; }
+.credits-classic { color: var(--ink-700); }
+.credits-version { color: var(--ink-700); font-size: var(--t14); }
+.credits-link {
+  align-self: flex-start;
+  min-height: 44px;
+  padding: 0 var(--sp-2);
+  border: 0;
+  background: transparent;
+  color: var(--primary-600);
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+/* ---------------------------------------------------------------- the touch-compact layout (UI.md §2.2) */
+/* #ui covers the whole window at uiK 0.92: panels anchor to its edges and scroll instead of the
+   1280 × 720 grid; the side cards of the title give their room to the menu. */
+.touch-compact .title-left { left: 8px; top: 8px; bottom: 48px; width: min(520px, calc(100% - 16px)); overflow-y: auto; touch-action: pan-y; }
+.touch-compact .title-card, .touch-compact .title-news { display: none; }
+.touch-compact .front-panel, .touch-compact .ng-card, .touch-compact .res {
+  left: 8px;
+  right: 8px;
+  top: 8px;
+  bottom: 8px;
+  width: auto;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  touch-action: pan-y;
+}
+.touch-compact .pause-card, .touch-compact .set-panel, .touch-compact .sl-panel {
+  width: min(880px, calc(100% - 16px));
+  max-width: calc(100% - 16px);
+  max-height: calc(100% - 16px);
+  height: auto;
+  overflow-y: auto;
+  touch-action: pan-y;
+}
+.touch-compact .pause-card { width: min(480px, calc(100% - 16px)); }
+.touch-compact .ng-two, .touch-compact .res-body { flex-wrap: wrap; }

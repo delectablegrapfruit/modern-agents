@@ -1,4 +1,4 @@
-// js/rules/crime.js — owner: W1-C. SR.rules.crime: robberies (the Hold-up), jail, bail, fines and
+// js/rules/crime.js — owner: W2-RulesC (W1-C in wave 1). SR.rules.crime: robberies (the Hold-up), jail, bail, fines and
 // the police (GDD §4.10; BALANCE B-11, B-28b; ARCHITECTURE §6.5).
 //
 // Robbery flow (the store: W2-Food's data; the bank: W2-Money's): the row runs the named fn
@@ -308,6 +308,14 @@
    */
   function jailDay(s, choice, ctx) {
     if (!s.jail) return { ok: false, reason: 'reason.notNow', vars: {} };
+    // A sentence already served (its last jail night ran outside jailDay: a debug night, the balance
+    // simulator) releases at once, with no gain and no further night, so nobody stays in a cell
+    // with daysLeft ≤ 0 (W2-RulesC).
+    if (s.jail.daysLeft <= 0) {
+      var served = release(s, false);
+      served.released = true;
+      return served;
+    }
     if (JAIL_CHOICES.indexOf(choice) < 0) return { ok: false, reason: 'reason.unavailable', vars: {} };
     var D = T().jail.day, res = partial(), rng = rng0(ctx);
     if (choice === 'hp') {

@@ -1,4 +1,4 @@
-// js/data/ranks.js — owner: W1-E. SR.def.rank: the end-of-game rank stamps of BALANCE B-18
+// js/data/ranks.js — owner: W2-RulesE (W1-E in wave 1). SR.def.rank: the end-of-game rank stamps of BALANCE B-18
 // (GDD §4.19). A def names one cell of the rank table: `tier` is its row (0 = below $0; tier t ≥ 1
 // is reached at net worth ≥ SR.tuning.endgame.ranks[t - 1]) and `column` is 'all' for the three
 // shared rows, else 'neutral' | 'good' | 'evil' (karma > +20 good, < -20 evil, otherwise neutral;

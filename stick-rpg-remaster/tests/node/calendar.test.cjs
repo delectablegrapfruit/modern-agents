@@ -1,4 +1,4 @@
-// tests/node/calendar.test.cjs — owner: W1-E. SR.rules.calendar (BALANCE B-19; GDD §3.12, §3.13):
+// tests/node/calendar.test.cjs — owner: W2-RulesE (W1-E in wave 1). SR.rules.calendar (BALANCE B-19; GDD §3.12, §3.13):
 // the weather chain's frequencies over 10^5 days (±2 % of its stationary distribution), each row's
 // transitions, the forecast's accuracy, storms, P0's constant Clear with no draws, the weekday
 // bonuses and the weekly city event.

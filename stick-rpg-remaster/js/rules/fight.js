@@ -1,4 +1,4 @@
-// js/rules/fight.js — owner: W1-C. SR.rules.fight: bar fights, the Underground Ring and Red's goons
+// js/rules/fight.js — owner: W2-RulesC (W1-C in wave 1). SR.rules.fight: bar fights, the Underground Ring and Red's goons
 // (GDD §4.12, §6.3; BALANCE B-13; ARCHITECTURE §6.5, §10), and the Quick-fight Auto policy.
 //
 // A Fight is a plain JSON object the fight engine (js/minigames/fight.js, W2-Night) plays turn by

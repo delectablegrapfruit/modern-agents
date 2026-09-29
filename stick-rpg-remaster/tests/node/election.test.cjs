@@ -1,4 +1,4 @@
-// tests/node/election.test.cjs — owner: W1-C. SR.rules.election (GDD §4.17; BALANCE B-17): the
+// tests/node/election.test.cjs — owner: W2-RulesC (W1-C in wave 1). SR.rules.election (GDD §4.17; BALANCE B-17): the
 // nomination (the requirements, the Electoral Board's call, the lapse and the retry through the
 // real night), the war chest and the starting poll (B-17's examples), the campaign actions (poll
 // maths, caps, halving, the clamp, paths, checks, the scandal), the debate and its no-show, the
@@ -8,7 +8,7 @@
 'use strict';
 const K = require('./w1c-kit.cjs');
 
-const T = K.L.suite('election (W1-C)');
+const T = K.L.suite('election (W2-RulesC)');
 const SR = K.boot();
 K.fixtures(SR);
 const E = SR.rules.election;
@@ -57,7 +57,7 @@ T.section('the Electoral Board calls; the offer lapses; another run (GDD §4.17,
     ['nominated', true, true, true], 'the morning check in the night: the voicemail, a report line, today\'s log');
   T.eq(n.election.nominatedDay, 2, 'the call comes on the morning of day 2');
   for (let d = 2; d <= 14; d++) SR.rules.night.run(n, K.ctx(SR, d), {});
-  T.eq([n.clock.day, n.election.status], [15, 'nominated'], 'still open on day 15 (the 14th day of the offer)');
+  T.eq([n.clock.day, n.election.status, E.acceptBy(n)], [15, 'nominated', 15], 'still open on day 15 (the 14th day of the offer: acceptBy)');
   SR.rules.night.run(n, K.ctx(SR, 15), {});
   T.eq([n.clock.day, n.election.status, n.election.retryFromDay], [16, 'none', 45], 'not accepted within 14 days: the offer lapses; a new run from 30 days later');
   n.clock.day = 44;
@@ -338,6 +338,59 @@ T.section('decrees (P1 civicPlus): offers of 3 eligible, once-only never return'
   T.eq([one.event, one.lines[0].key], ['scandal', 'toast.election.event.scandal'], 'one of the 12 of B-17');
   rc();
   T.eq(E.campaignMorning(campaigner(50, 3), SR.rng.create(1)).event, null, 'none while civicPlus is off');
+}
+
+T.section('a debug-assisted run from the Board\'s call to office (BUILD_PLAN §4.7, §4.14; W2-RulesC)');
+{
+  // The wave-2 exit's run with the rows of CONTRACT §8.10 through the real pipeline and the real
+  // nights: stats and money set, the castle owned; a police catch mid-campaign (jail days are
+  // campaign days); the debate on day 4; election night; the office salary.
+  const s = candidate({}, { clock: { day: 10, min: 1300 }, money: { cash: 300000, bank: 0 } });
+  let seed = 100;
+  const sleep = () => SR.rules.night.run(s, K.ctx(SR, seed++), { kind: 'sleep' });
+  const city = K.act(SR, s, 'cityCheck', {}, seed++);
+  T.eq([city.ok, s.election.status, city.msgs.map((m) => m.key), s.msgs.length], [true, 'nominated', ['vm.board.nominated'], 1],
+    'stepping into the city: the Board calls (the voicemail is delivered once)');
+  T.eq(K.act(SR, s, 'cityCheck', {}, seed++).msgs, [], 'a second step into the city calls no one');
+  T.eq([E.acceptBy(s), s.msgs[0].vars.day, s.election.nominatedDay + TE.acceptWithin - 1], [23, 23, 23],
+    'accept by day 23: the 14 days count the day of the call (acceptBy, the voicemail\'s day)');
+  const acc = K.act(SR, s, 'accept', { chest: 2 }, seed++);
+  T.eq([acc.ok, s.election.status, s.election.poll, s.election.campaignDay, s.money.cash], [true, 'campaign', 66, 1, 100000],
+    'accepted with the $200,000 chest: 30 + 5 + 6 + 25 = 66 % (B-17 example)');
+  s.clock.min = 480;
+  ['rally', 'rally', 'tvAd'].forEach((a) => T.ok(K.act(SR, s, a, {}, seed++).ok, 'day 1: ' + a));
+  const d1 = s.election.poll;
+  sleep();
+  T.eq([s.election.campaignDay, s.election.poll < d1], [2, true], 'the night: campaign day 2, the rival campaigns too');
+  s.clock.min = 600;
+  const arrest = K.act(SR, s, 'arrest', {}, seed++);
+  T.eq([arrest.ok, arrest.jailed, s.election.campaignDay, s.jail && s.jail.daysLeft], [true, { reason: 'police', days: 2 }, 3, 1],
+    'a police catch: the arrest night is campaign day 2\'s night');
+  const out = K.act(SR, s, 'jailDay', { choice: 'cha' }, seed++);
+  T.eq([out.events.some((e) => e.name === 'release'), s.jail, s.election.campaignDay, s.clock.min], [true, null, 4, 480],
+    'the jail night counts: released (the `release` event) on campaign day 4 at 08:00');
+  const pv = SR.rules.act.preview(s, 'testc.debate', {}, K.ctx(SR));
+  T.eq([pv.ok, pv.cost.min], [true, 120], 'the debate row is open on day 4 (2 h)');
+  const db = K.act(SR, s, 'debate', {}, seed++);
+  T.eq([db.ok, db.open.skin, db.open.resolve, s.clock.min], [true, 'debate', 'testc.debate:resolve', 600], 'the debate opens its Duel skin');
+  const before = s.election.poll;
+  const dr = K.act(SR, s, 'debate:resolve', { beats: [true, true, false], wins: 2, losses: 1 }, seed++);
+  T.eq([dr.ok, Math.round((s.election.poll - before) * 10) / 10, s.election.debateDone], [true, 4, true], 'two won questions, one lost: +4');
+  T.eq(K.act(SR, s, 'debate:resolve', { wins: 3, losses: 0 }, seed++).reason, 'reason.alreadyDone', 'a repeated resolve is refused');
+  const rep4 = sleep();
+  T.eq([rep4.lines.some((l) => l.key === 'report.election.noShow'), s.election.campaignDay], [false, 5], 'no no-show penalty after the debate');
+  sleep(); sleep();
+  T.eq([s.election.campaignDay, s.election.status], [7, 'campaign'], 'campaign day 7');
+  const cash = s.money.cash;
+  const night = sleep();
+  T.eq([!!night.election, night.election.won, s.election.status, s.job.office, night.lines.some((l) => l.key === 'report.election.won')],
+    [true, true, 'office', 'president', true], 'election night: the report\'s election edition, in office as President');
+  T.ok(night.election.poll + night.election.roll >= TE.win.threshold, 'won with poll + roll ≥ 50 (' + night.election.poll + ' ' + night.election.roll + ')');
+  T.eq(s.msgs.some((m) => m.key === 'vm.doodle.concede'), true, 'the rival concedes by voicemail');
+  sleep();
+  T.eq(s.money.cash - cash, TE.salary, 'the office pays $10,000 a night wherever you sleep');
+  T.eq(K.act(SR, s, 'cityCheck', {}, seed++).msgs, [], 'no new nomination while in office');
+  T.eq(E.acceptBy(s), null, 'no offer waiting: acceptBy is null');
 }
 
 T.done();

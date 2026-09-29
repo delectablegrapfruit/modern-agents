@@ -1,4 +1,4 @@
-// tests/node/jobs.test.cjs — owner: W1-E. SR.rules.jobs (BALANCE B-05; GDD §4.6): promotion gates
+// tests/node/jobs.test.cjs — owner: W2-RulesE (W1-E in wave 1). SR.rules.jobs (BALANCE B-05; GDD §4.6): promotion gates
 // at every rung (INT, CHA, shifts at rank, the rating), one rung per request, shifts (Full; Half and
 // Overtime behind `hustles`), pay and its multipliers, the Monday bonus, the rating, the weekly
 // counters and bonus, credit limits, titles, hustle skins, the CEO takeover hook, and a shift run
@@ -38,7 +38,12 @@ T.section('promotion gates at every rung');
   T.eq(J.missingReason(J.promotion(top, 'nli')).reason, 'reason.topRank', '… with its reason');
   const p = J.promotion(H.state(SR, { stats: { int: 10, cha: 10 }, job: { ranks: { nli: 'mail' }, shiftsAtRank: { nli: 1 } } }), 'nli');
   T.eq(p.missing.map((m) => m.key), ['int', 'cha', 'shifts'], 'the row lists every missing requirement');
-  T.eq(J.missingReason(p), { ok: false, reason: 'reason.needStat', vars: { stat: 'INT', min: 75, have: 10 } }, 'the first one is the reason ("Need INT 75 (you: 10)")');
+  const mr = J.missingReason(p);
+  T.eq([mr.reason, SR.text(mr.reason, mr.vars)], ['reason.needAll', 'Need INT 75 (you: 10) · CHA 25 (you: 10) · 3 shifts (you: 1)'],
+    'the reason names every missing requirement (W2-Money request 3)');
+  T.eq(mr.vars.missing, p.missing, '… and carries the list');
+  const one = J.promotion(H.state(SR, { stats: { int: 10, cha: 30 }, job: { ranks: { nli: 'mail' }, shiftsAtRank: { nli: 3 } } }), 'nli');
+  T.eq(J.missingReason(one), { ok: false, reason: 'reason.needStat', vars: { stat: 'INT', min: 75, have: 10 } }, 'one missing requirement keeps its own reason ("Need INT 75 (you: 10)")');
 
   const net = H.state(SR, { stats: { int: 40 }, job: { ranks: { nli: 'janitor' }, shiftsAtRank: { nli: 2 } }, perks: { owned: ['networker'] } });
   T.eq(J.promotion(net, 'nli').ok, false, 'Mail Room needs 3 Janitor shifts');
@@ -212,7 +217,7 @@ T.section('a shift through the action pipeline (SR.rules.act)');
   s.clock.min = 1080;
   T.eq(SR.rules.act.run(s, 'test.nliWork', { variant: 'full' }, c).ok, true, '… and can at 18:00');
   const pv = SR.rules.act.preview(s, 'test.promote', {}, c);
-  T.eq([pv.ok, pv.reason], [false, 'reason.needStat'], 'the preview of a promotion shows the first missing requirement');
+  T.eq([pv.ok, /^reason\.need(Stat|All)$/.test(pv.reason)], [false, true], 'the preview of a promotion shows the missing requirements');
   const rh = H.features(SR, { hustles: true });
   const o = H.state(SR, { clock: { min: 480 }, stats: { hp: 22 }, job: { ranks: { nli: 'janitor' } } });
   SR.rules.act.run(o, 'test.nliWork', { variant: 'full' }, c);

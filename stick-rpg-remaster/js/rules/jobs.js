@@ -1,4 +1,4 @@
-// js/rules/jobs.js — owner: W1-E. SR.rules.jobs: the job ladder (apply, promotion requirements,
+// js/rules/jobs.js — owner: W2-RulesE (W1-E in wave 1). SR.rules.jobs: the job ladder (apply, promotion requirements,
 // promote), shifts (Full; P1 Half and Overtime), pay with its multipliers, the rating, the weekly
 // NLI counters and bonus, the Monday bonus, the credit limit, titles and the CEO takeover hook
 // (BALANCE B-05; GDD §4.6). Pure. Numbers: SR.tuning.jobs (B-05, with the office's row and the
@@ -24,6 +24,13 @@
   /** @returns {object} the variant's row of B-05 shift.* ({ min, karma, counts, payMult, hp, perDay }). */
   function variantRow(variant) { return T().shift[variant]; }
   function variantOn(variant) { return variant === 'full' || !!SR.features.hustles; }
+
+  /** @returns {string} one missing requirement as a part of reason.needAll ("INT 75 (you: 61)"). */
+  function missingPart(m) {
+    if (m.key === 'shifts') return SR.text('reason.part.shifts', { need: m.need, have: m.have });
+    if (m.key === 'rating') return SR.text('reason.part.rating', { need: m.need, have: m.have });
+    return SR.text('reason.part.stat', { stat: SR.rules.conditions.label(m.key), min: m.need, have: m.have });
+  }
 
   var jobs = {
     ladder: ladder,
@@ -60,14 +67,23 @@
       return jobs.promotion(s, track);
     },
 
-    /** @returns {object} a refusal for the first missing requirement (UI copy: "Need INT 75 (you: 61)"). */
+    /**
+     * The refusal for a promotion's missing requirements (GDD §4.6: "the row lists every missing
+     * requirement"): one missing requirement gives its own reason ("Need INT 75 (you: 61)"); two
+     * or more give reason.needAll with `list`, the parts joined by " · " ("INT 75 (you: 61) · CHA 25
+     * (you: 14) · 3 shifts (you: 1)"), and `missing`, the raw list (docs/requests/W2-Money.md 3).
+     * @returns {object}
+     */
     missingReason: function (p) {
-      var m = p.missing[0];
-      if (!m) return refuse('reason.topRank');
-      if (m.key === 'top') return refuse('reason.topRank');
+      var list = (p.missing || []).filter(function (x) { return x.key !== 'top'; });
+      if (!list.length) return refuse('reason.topRank');
+      if (list.length > 1) {
+        return refuse('reason.needAll', { list: list.map(missingPart).join(' · '), missing: SR.util.clone(list) });
+      }
+      var m = list[0];
       if (m.key === 'shifts') return refuse('reason.needShifts', { need: m.need, have: m.have });
       if (m.key === 'rating') return refuse('reason.needRating', { need: m.need, have: m.have });
-      return refuse('reason.needStat', { stat: m.key.toUpperCase(), min: m.need, have: m.have });
+      return refuse('reason.needStat', { stat: SR.rules.conditions.label(m.key), min: m.need, have: m.have });
     },
 
     /**
@@ -295,11 +311,16 @@
   /** Cost: a shift's HP (Overtime -10, none with Workaholic). */
   SR.def.fn('shift.hp', function (s, params) { return jobs.shiftCost(s, (params && params.variant) || 'full').hp; });
   SR.def.fn('jobs.canWork', function (s, params, ctx, track) { return jobs.canWork(s, trackOf(params, track), (params && params.variant) || 'full', ctx); });
-  /** Effect: a shift; params.m is a hustle's result (a minigame result with `auto: true` is Auto). */
+  /**
+   * Effect: a shift; params.m is a hustle's result. A result marked Auto is Auto (no rain tips):
+   * `params.auto`, or the card's `params.hustle.auto` (the Hustle commits `{ m, hustle: result }`;
+   * docs/requests/W2-Food.md 3).
+   */
   SR.def.fn('jobs.work', function (s, params, ctx, track) {
     params = params || {};
+    var auto = !!params.auto || !!(params.hustle && params.hustle.auto);
     return res(jobs.work(s, trackOf(params, track), params.variant || 'full', params.m,
-      { hustle: typeof params.m === 'number' && !params.auto }));
+      { hustle: typeof params.m === 'number' && !auto }));
   });
   SR.def.fn('jobs.canPromote', function (s, params, ctx, track) {
     var p = jobs.promotion(s, trackOf(params, track));

@@ -1,4 +1,4 @@
-// tests/node/news.test.cjs — owner: W1-E. SR.rules.news (BALANCE B-29; ARCHITECTURE §6.9): the
+// tests/node/news.test.cjs — owner: W2-RulesE (W1-E in wave 1). SR.rules.news (BALANCE B-29; ARCHITECTURE §6.9): the
 // headline is yesterday's heaviest log entry by B-29 weight (ties: the latest) at or above
 // minWeight, else a city absurdity with a stable variant; the TV news leads with the same entry.
 //   node tests/node/news.test.cjs

@@ -1,4 +1,4 @@
-// tests/node/casino.test.cjs — owner: W1-C. SR.rules.casino (GDD §4.13; BALANCE B-14): slots RTP
+// tests/node/casino.test.cjs — owner: W2-RulesC (W1-C in wave 1). SR.rules.casino (GDD §4.13; BALANCE B-14): slots RTP
 // and hit rate computed exactly from the strips; blackjack's house edge over a fixed-seed 4 × 10⁶
 // basic-strategy hands, naturals 3:2, the split and double rules, the dealer's soft 17 and peek,
 // basic strategy, 60 hands a day, the pit boss for a non-counter and a counter; roulette's every bet
@@ -8,7 +8,7 @@
 'use strict';
 const K = require('./w1c-kit.cjs');
 
-const T = K.L.suite('casino (W1-C)');
+const T = K.L.suite('casino (W2-RulesC)');
 const SR = K.boot();
 K.fixtures(SR);
 const CA = SR.rules.casino;
@@ -280,8 +280,28 @@ T.section('the scratch card (B-14e): EV $3.00 exactly');
   const rs = K.features(SR, { shopsPlus: true });
   const s = K.state(SR, { items: { scratch: 2 }, money: { cash: 0 } });
   const r = CA.scratchRound(s, { rng: K.scripted(SR, { int: [50] }), id: 'bag.scratch' });
-  T.eq([s.items.scratch, s.money.cash, r.open.minigame, r.open.params.pay, r.open.resolve, r.events[0].payload.net, s.stats.karma],
-    [1, 100, 'scratch', 100, 'bag.scratch:resolve', 95, 0], 'scratching: one card used, the prize drawn and paid first, then the reveal; no karma');
+  T.eq([s.items.scratch, s.money.cash, r.open.minigame, r.open.params.pay, r.open.resolve, r.events, s.casino.card],
+    [1, 0, 'scratch', 100, 'bag.scratch:resolve', [], { roll: 50, pay: 100, tier: 2, day: 1 }],
+    'scratching: one card used, the prize drawn first and kept as the card in progress; nothing paid before the reveal');
+  const p = CA.scratchResolve(s);
+  T.eq([s.money.cash, p.events[0].payload.game, p.events[0].payload.net, p.events[0].payload.pay, s.casino.card, s.stats.karma],
+    [100, 'scratch', 95, 100, null, 0], 'the reveal pays the prize (income prize), raises gamble with net = prize - price; no karma');
+  T.eq([CA.scratchResolve(s).reason, s.money.cash], ['reason.notNow', 100], 'a repeated resolve pays nothing');
+  // Through the pipeline with the store's rows (W2-Food: cost { items: { scratch: 1 } }).
+  const q = K.state(SR, { items: { scratch: 2 }, money: { cash: 10 } });
+  const st = K.act(SR, q, 'scratch', {}, 3);
+  const cashDelta = st.deltas.filter((d) => d.kind === 'cash');
+  T.eq([st.ok, q.items.scratch, cashDelta, st.open.resolve, !!q.casino.card], [true, 1, [], 'testc.scratch:resolve', true],
+    'the row takes the card; its Result credits nothing (the start\'s feedback cannot spoil the reveal)');
+  const pay = q.casino.card.pay;
+  const rv = K.act(SR, q, 'scratch:resolve', { net: 999999 }, 4);
+  T.eq([rv.ok, q.money.cash, rv.events.filter((e) => e.name === 'gamble').length], [true, 10 + pay, 1], 'the resolve pays the drawn prize, never the echoed net');
+  T.eq(K.act(SR, q, 'scratch:resolve', { net: 5 }, 5).reason, 'reason.notNow', 'and only once');
+  // A card whose resolve never came is paid before the next one is drawn.
+  const lost = K.state(SR, { items: { scratch: 2 }, money: { cash: 0 } });
+  CA.scratchRound(lost, { rng: K.scripted(SR, { int: [1] }) });
+  const next = CA.scratchRound(lost, { rng: K.scripted(SR, { int: [9999] }) });
+  T.eq([lost.money.cash, next.events.length, lost.casino.card.pay], [10000, 1, 0], 'an unpaid card is paid at the next start');
   rs();
 }
 

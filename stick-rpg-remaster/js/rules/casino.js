@@ -1,4 +1,4 @@
-// js/rules/casino.js — owner: W1-C. SR.rules.casino: the Silver Lining's games and Sticky's darts
+// js/rules/casino.js — owner: W2-RulesC (W1-C in wave 1). SR.rules.casino: the Silver Lining's games and Sticky's darts
 // (GDD §4.13; BALANCE B-14; ARCHITECTURE §6.5, §10).
 //   slots      "Paper Jackpot": three 20-stop reels, the published pay table, RTP 92.25 % computed
 //              exactly from the strips (B-14a); Casino Levy and Casino Night change one line.
@@ -13,8 +13,9 @@
 // stream they are given (host.rng in the engines, ctx.rng in the named fns). The appliers change
 // the state, one round at a time (the engines call the round actions, so "the rules already applied
 // each round" when the minigame returns { net }): the named fns 'casino.slotsSpin', 'casino.bjHand',
-// 'casino.rouletteSpin', 'casino.scratch', 'casino.dartsPractice', 'casino.dartsMatchStart',
-// 'casino.dartsMatch', 'casino.vipDrink', 'casino.settle' and the condition 'casino.canPlay'.
+// 'casino.rouletteSpin', 'casino.scratch' / 'casino.scratchResolve' (the card paid at its reveal),
+// 'casino.dartsPractice', 'casino.dartsMatchStart', 'casino.dartsMatch', 'casino.vipDrink',
+// 'casino.settle' and the condition 'casino.canPlay'.
 // Every gamble round: -1 karma (orig) up to -10 a day, VIP points (P1), casino.winToday (the SLC
 // quirk and the casinoBig log), the `gamble` rule event { game, bet, net } (plus the round's facts).
 // Pure: no DOM, browser API or unseeded randomness (Node-loadable).
@@ -783,9 +784,30 @@
   }
 
   /**
+   * Pays a scratch card in progress (state.casino.card, set by scratchRound) and closes it: the
+   * prize (income 'prize'; the lien applies) and the `gamble` event { game: 'scratch', bet: price,
+   * net: prize - price, pay, roll }. No karma (B-14e). The record's roll and prize win over anything
+   * a result echoes.
+   * @returns {object|null} a partial Result, or null when no card is in progress
+   */
+  function payCard(s) {
+    var card = s.casino && s.casino.card;
+    if (!card || typeof card.pay !== 'number') return null;
+    s.casino.card = null;
+    var price = C().scratch.price;
+    if (card.pay > 0) SR.rules.effects.credit(s, 'cash', card.pay, 'prize');
+    var res = applyRound(s, 'scratch', price, 0, { pay: card.pay, roll: card.roll });
+    res.events[res.events.length - 1].payload.net = card.pay - price;
+    return res;
+  }
+
+  /**
    * Scratches a card (the named fn 'casino.scratch', P1 `shopsPlus`): uses one card from the Bag
-   * (unless the action's cost did), draws its prize now (so the reveal can't change it), credits it
-   * (income 'prize') and opens the `scratch` engine to reveal it. No karma (B-14e).
+   * (unless the action's cost did), draws its prize now (1 draw, so the reveal can't change it),
+   * keeps it as the card in progress (state.casino.card = { roll, pay, tier, day }) and opens the
+   * `scratch` engine to reveal it. The prize is paid at the reveal by 'casino.scratchResolve' (the
+   * resolve row), so the start's feedback never spoils it (docs/requests/W2-Food.md 4). A card left
+   * unpaid (a resolve that never came) is paid before the next one is drawn. No karma (B-14e).
    * @returns {object} a partial Result with `open`
    */
   function scratchRound(s, ctx) {
@@ -794,13 +816,22 @@
       if (!((s.items.scratch || 0) > 0)) return { ok: false, reason: 'reason.needItem', vars: { item: SR.rules.conditions.nameOf('item', 'scratch') } };
       s.items.scratch -= 1;
     }
-    var r = scratch(rng0(ctx)), price = C().scratch.price;
-    if (r.pay > 0) SR.rules.effects.credit(s, 'cash', r.pay, 'prize');
-    var res = applyRound(s, 'scratch', price, 0, { pay: r.pay, roll: r.roll });
-    res.events[res.events.length - 1].payload.net = r.pay - price;
+    var res = payCard(s) || partial();
+    var r = scratch(rng0(ctx));
+    s.casino.card = { roll: r.roll, pay: r.pay, tier: r.tier, day: s.clock.day };
     res.open = { minigame: 'scratch', skin: 'scratch', params: { roll: r.roll, pay: r.pay, tier: r.tier, panels: 3 },
       resolve: ctx && ctx.id ? ctx.id + ':resolve' : null };
     return res;
+  }
+
+  /**
+   * The named fn 'casino.scratchResolve' (the scratch row's '<id>:resolve'): pays the card in
+   * progress at its reveal and closes it; refused (reason.notNow) when none is in progress, so a
+   * stray or repeated resolve pays nothing (like the other resolve fns, CONTRACT §8.9).
+   * @returns {object} a partial Result
+   */
+  function scratchResolve(s) {
+    return payCard(s) || { ok: false, reason: 'reason.notNow', vars: {} };
   }
 
   /**
@@ -882,6 +913,7 @@
   SR.def.fn('casino.bjHand', function (s, params) { return bjRound(s, params); });
   SR.def.fn('casino.rouletteSpin', function (s, params, ctx) { return rouletteRound(s, params.bets, ctx); });
   SR.def.fn('casino.scratch', function (s, params, ctx) { return scratchRound(s, ctx); });
+  SR.def.fn('casino.scratchResolve', function (s) { return scratchResolve(s); });
   SR.def.fn('casino.dartsPractice', function (s, params, ctx) { return dartsPractice(s, ctx); });
   SR.def.fn('casino.dartsMatchStart', function (s, params, ctx, tier) { return dartsMatchStart(s, tier || params.tier, params.stake, ctx); });
   SR.def.fn('casino.dartsMatch', function (s, params, ctx) { return dartsMatch(s, params, ctx); });
@@ -929,6 +961,7 @@
     scratchPrize: scratchPrize,
     scratchEV: scratchEV,
     scratchRound: scratchRound,
+    scratchResolve: scratchResolve,
     darts: {
       score: dartsScore, amp: dartsAmp, params: dartsParams, wobble: wobble, autoThrows: autoThrows,
       practice: dartsPractice, matchStart: dartsMatchStart, match: dartsMatch,

@@ -1,7 +1,8 @@
 // js/data/text/en-world.js — owner: W1-W (W2-City in wave 2, W3-Park in wave 3, W4-Writing in
 // wave 4). The world's text (docs/CONTRACT.md §7): place names (place.*, including the lettering
 // of signs, place.sign.*), door prompts and tags (door.*), Pilot Ori of the Fold Rescue (ori.*),
-// the world actions' labels (act.world.*) and world toasts (toast.world.*). All original writing.
+// the world actions' labels and the city's prompts and buttons (act.world.*) and world toasts
+// (toast.world.*). All original writing.
 (function () {
   'use strict';
   var SR = window.SR;
@@ -66,6 +67,18 @@
     'place.sign.pawn': 'PAWN',
     'place.sign.bus': 'BUS DEPOT',
     'place.sign.roadEnds': 'ROAD ENDS. OBVIOUSLY.',
+    // The facades' and props' other words (W2-Exterior request 1; ART_AUDIO §5.2, §6).
+    'place.sign.forSale': 'FOR SALE',
+    'place.sign.slushee': 'SLUSHEE',
+    'place.sign.departures': 'DEPARTURES',
+    'place.sign.skybus': 'SKY BUS',
+    'place.sign.nliAd': 'WE DRAW THE LINE',
+    'place.sign.ceo': 'YOUR CEO',
+    'place.sign.billboard.1': 'FRIES ON A STICK',
+    'place.sign.billboard.2': 'THINK INSIDE THE LINES',
+    'place.sign.billboard.3': 'EVERY CLOUD PAYS',
+    'place.sign.billboard.4': 'CASH FOR YOUR STUFF',
+    'place.sign.billboard.5': 'BRAIN FREEZE ZONE',
 
     // Door prompts ("[E] Enter McSticks") and tags (GDD §3.6).
     'door.enter': 'Enter {place}',
@@ -82,6 +95,22 @@
     'act.world.enter': 'Walk in',
     'act.world.getIn': 'Get in the car',
     'act.world.getOut': 'Get out',
+    'act.world.city': 'Step into the city',
+    'act.world.cab': 'Take a cab',
+
+    // The city's prompts (UI.md §2.3 ContextPrompt), its touch buttons (UI.md §5.5) and the minimap.
+    'act.world.talk': 'Talk to {name}',
+    'act.world.look': 'Look at {name}',
+    'act.world.junker': 'the junker',
+    'act.world.car': 'Car',
+    'act.world.carAria': 'Get in or out of your car',
+    'act.world.action': 'Action',
+    'act.world.actionAria': 'Enter, talk or act here',
+    'act.world.skate': 'Skate',
+    'act.world.skateAria': 'Skate: hold on or off',
+    'act.world.minimap': 'Minimap',
+    'act.world.minimapOpen': 'Minimap: open the map',
+    'act.world.touch': 'Touch controls',
 
     // World toasts (≤ 80 characters).
     'toast.world.phew': 'Phew. Still on the paper.',
@@ -92,6 +121,9 @@
     'toast.world.carFished': 'Your car sank into the clouds. It gets towed home tonight for $100.',
     'toast.world.noCar': 'None of your cars is close enough.',
     'toast.world.noRoute': 'Can\'t find a way there on foot.',
+    'toast.world.midnight': 'Midnight. Only free things and sleep are left today. Head home.',
+    'toast.world.midnightCab': 'Midnight. Only free things and sleep are left. Walk or cab it home.',
+    'toast.world.cabRide': 'The cab drops you at {place}.',
 
     // Pilot Ori of the Fold Rescue (GDD §3.9): a line after falls 1, 2, 5, 10, 25 and 50.
     'ori.name': 'Pilot Ori',

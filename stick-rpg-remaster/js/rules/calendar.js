@@ -1,4 +1,4 @@
-// js/rules/calendar.js — owner: W1-E. SR.rules.calendar: the weekday and its bonuses (P1
+// js/rules/calendar.js — owner: W2-RulesE (W1-E in wave 1). SR.rules.calendar: the weekday and its bonuses (P1
 // `calendar`), the nightly weather roll on the Markov chain with the forecast (P1 `weather`; P0 is
 // always Clear), storms, and the weekly city event drawn on Sunday night (P1 `calendar`)
 // (BALANCE B-19; GDD §3.12, §3.13, §6.8). Pure; randomness only from the rng passed in, and none
@@ -84,6 +84,28 @@
       var other = rng.pick(others);
       w.forecast = right ? w.tomorrow : other;
       return { today: today, tomorrow: w.tomorrow, forecast: w.forecast, storm: calendar.storm(s) };
+    },
+
+    /**
+     * The intra-day weather (P1 `weather`; GDD §3.12, B-19): each time an action's time passes
+     * 12:00 or 18:00 (`weather.intraday.at`), the weather moves one step along the same chain with
+     * 30 %; any Rain sets todayHadRain. Nothing moves on a Heat Wave day (forced Clear), and with
+     * the flag off nothing is drawn. Called by the action pipeline with the clock before and after
+     * the action (same day). Draws: one per time mark passed, plus one per move.
+     * @returns {{at: number, from: string, to: string}[]} the moves
+     */
+    intraday: function (s, from, to, rng) {
+      var I = TW().intraday, out = [], w = s.world;
+      if (!SR.features.weather || !I || !(to > from) || calendar.cityEvent(s) === 'heatWave') return out;
+      rng = rng || SR.rng.rules;
+      I.at.forEach(function (at) {
+        if (!(from < at && at <= to) || !rng.chance(I.chance)) return;
+        var prev = w.weather;
+        w.weather = calendar.next(prev, rng);
+        if (w.weather === 'rain') w.todayHadRain = true;
+        out.push({ at: at, from: prev, to: w.weather });
+      });
+      return out;
     },
 
     /** @returns {string} the next state on the Markov chain from `from` (one draw). */

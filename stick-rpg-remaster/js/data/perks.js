@@ -1,4 +1,4 @@
-// js/data/perks.js — owner: W1-R (W3-Prog in wave 3). SR.def.perk: the 24 stat-milestone perks of
+// js/data/perks.js — owner: W2-RulesE (W1-R in wave 1; W3-Prog in wave 3). SR.def.perk: the 24 stat-milestone perks of
 // GDD §4.14 (P1, flag `perks`). Each milestone (a stat reaching 100, 250, 450 or 700) offers its two
 // perks; their rule values are SR.tuning.perks (BALANCE B-21), their text perk.<id>.name / .desc
 // (en-prog.js). The icon is the stat's icon (ART_AUDIO §10). Pure data (Node-loadable).

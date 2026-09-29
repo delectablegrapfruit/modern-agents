@@ -1,4 +1,4 @@
-// tests/node/crime.test.cjs — owner: W1-C. SR.rules.crime (GDD §4.10; BALANCE B-11, B-28b): the
+// tests/node/crime.test.cjs — owner: W2-RulesC (W1-C in wave 1). SR.rules.crime (GDD §4.10; BALANCE B-11, B-28b): the
 // robbery preconditions and start, the Hold-up odds by Monte Carlo (10⁵) against B-11b's reference,
 // the loot and the lose path, the bank's 14-day memory, jail length and the arrest / Jail Day /
 // release flow through the real night, bail, the Precinct fine, police stops, the interrogation,
@@ -10,7 +10,7 @@ const fs = require('fs');
 const path = require('path');
 const K = require('./w1c-kit.cjs');
 
-const T = K.L.suite('crime (W1-C)');
+const T = K.L.suite('crime (W2-RulesC)');
 const SR = K.boot();
 K.fixtures(SR);
 const C = SR.rules.crime;
@@ -318,6 +318,36 @@ T.section('through the action pipeline (named fns)');
   K.act(SR, stale, 'robStore', {}, 1);
   stale.clock.day += 1;
   T.eq(K.act(SR, stale, 'robStore:resolve', { beats: [true, true], wins: 2 }, 1).reason, 'reason.notNow', 'a robbery from an earlier day is not resolved later');
+}
+
+T.section('the game can end in jail (GDD §4.10 "jail days count toward a timed game"; W2-RulesC)');
+{
+  // Arrested on the last day of a 15-day game: the arrest night ends the game; the Result says so.
+  const s = K.state(SR, { clock: { day: 15, min: 1200 }, items: { gun: 1, ammo: 12 } }, { length: 15 });
+  K.act(SR, s, 'robStore', {}, 3);
+  const r = K.act(SR, s, 'robStore:resolve', { beats: [false, false], wins: 0, losses: 2 }, 4);
+  T.eq([r.ok, r.jailed.reason, r.over, s.over, s.result.reason, r.report.ended, !!s.jail], [true, 'store', { reason: 'time' }, true, 'time', 'time', true],
+    'the arrest night of the last day ends the game (Result.over, the report\'s `ended`)');
+  T.eq(K.act(SR, s, 'jailDay', { choice: 'str' }, 5).reason, 'reason.gameOver', 'no Jail Day after the end');
+  // Serving a sentence across the last day: a Jail Day's night ends it.
+  const j = K.state(SR, { clock: { day: 13, min: 1440 } }, { length: 15 });
+  C.jail(j, 'store', K.ctx(SR, 1));
+  const d14 = K.act(SR, j, 'jailDay', { choice: 'int' }, 5);
+  T.eq([d14.ok, d14.over, j.clock.day], [true, null, 15], 'day 14 in the cell: the game goes on');
+  const d15 = K.act(SR, j, 'jailDay', { choice: 'int' }, 6);
+  T.eq([d15.ok, d15.over, j.over, d15.report.ended], [true, { reason: 'time' }, true, 'time'], 'the night after day 15 ends the game in jail');
+  // A sentence served by jail nights run outside jailDay (a debug night, the simulator): the next
+  // Jail Day releases at once, whatever the choice, with no gain and no further night.
+  const dbg = K.state(SR, { stats: { heat: 0 } });
+  C.jail(dbg, 'police', K.ctx(SR, 1));
+  SR.rules.night.run(dbg, K.ctx(SR, 2), { kind: 'jail' });
+  const at = [dbg.clock.day, dbg.stats.str, dbg.jail.daysLeft];
+  const rel = C.jailDay(dbg, 'rest', K.ctx(SR, 3));
+  T.eq([at[2], rel.released, dbg.jail, dbg.clock.day, dbg.stats.str, dbg.stats.heat, rel.events.map((e) => e.name)], [0, true, null, at[0], at[1], 20, ['release']],
+    'daysLeft 0: released at once (no gain, no night, Heat 20)');
+  const keep = K.state(SR, { clock: { day: 15, min: 1440 }, mode: { keepPlaying: true } }, { length: 15 });
+  const kr = K.act(SR, keep, 'arrest', {}, 2);
+  T.eq([kr.ok, kr.over, keep.over], [true, null, false], 'Keep playing: the sentence goes on');
 }
 
 T.section('package hygiene: every W1-C file');

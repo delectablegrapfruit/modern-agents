@@ -1,4 +1,4 @@
-// js/data/stocks.js — owner: W1-E. SR.def.stock: the six fictional tickers of BALANCE B-10
+// js/data/stocks.js — owner: W2-RulesE (W1-E in wave 1). SR.def.stock: the six fictional tickers of BALANCE B-10
 // (GDD §4.9). A def carries the company's identity and its quirk; the numbers (start price and its
 // spread, drift μ, volatility σ, quirk sizes) live in SR.tuning.stocks and are read by
 // SR.rules.stocks at call time; a prio-20 boot hook copies start, mu and sigma onto the defs.

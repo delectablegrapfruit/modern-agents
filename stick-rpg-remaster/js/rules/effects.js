@@ -1,4 +1,4 @@
-// js/rules/effects.js — owner: W1-R. SR.rules.effects: every action effect of ARCHITECTURE §6.4
+// js/rules/effects.js — owner: W2-RulesE (W1-R in wave 1). SR.rules.effects: every action effect of ARCHITECTURE §6.4
 // (CONTRACT §8.4). An effect is an array [name, ...args] run against the state by the action
 // pipeline (js/rules/act.js), which passes a context `ctx` and the Result `res` being built.
 // Stat changes go through SR.rules.stats; money through the hard money rule and the lien.
@@ -203,7 +203,64 @@
     if (typeof r.chance === 'number' && ctx.preview && typeof ctx.chance !== 'number') ctx.chance = r.chance;
   }
 
-  function note(ctx, key) { if (ctx.notes) ctx.notes[key] = true; }
+  function note(ctx, key) { if (ctx && ctx.notes) ctx.notes[key] = true; }
+
+  /**
+   * A stat gain through SR.rules.stats.add with the feedback of UI §4.3 in res: the stamp for a
+   * gain ≥ 2 ("+2 INTELLIGENCE!"), the Winded toast, the "maxed out" toast and the preview's
+   * "(max)" note. The `stat` effect and the training rules (SR.rules.training.apply) share it, so
+   * a row gives the same feedback whichever it uses. @returns {number} the applied gain
+   */
+  function gainStat(s, key, n, src, ctx, res) {
+    var g = SR.rules.stats.gain(s, key, n, src);
+    var applied = SR.rules.stats.add(s, key, n, src);
+    if (g.capped) {
+      note(ctx, 'stat:' + key);
+      if (!hasToast(res, 'toast.stats.maxed')) res.toasts.push({ key: 'toast.stats.maxed', vars: { stat: cond().label(key), cap: SR.tuning.start.statCap }, kind: 'info' });
+    }
+    if (g.winded && n > 0 && !hasToast(res, 'toast.stats.winded')) res.toasts.push({ key: 'toast.stats.winded', vars: {}, kind: 'warning' });
+    if (applied >= STAMP_MIN_GAIN) res.stamps.push({ key: 'stamp.stats.' + key, vars: { n: applied } });
+    return applied;
+  }
+
+  /** @returns {number} the B-06 stack of an item (Infinity when it has none; food eaten on the spot has 0). */
+  function stackOf(key) {
+    var row = SR.tuning.items[key];
+    return row && row.stack > 0 ? row.stack : Infinity;
+  }
+
+  /** @returns {number} how many more of an item you can carry (B-06 stack; Infinity without one). */
+  function room(s, key) {
+    return Math.max(0, stackOf(key) - cond().count(s, key));
+  }
+
+  /**
+   * Adds (n > 0) or removes (n < 0) items: never below 0 nor above the stack; a gain cut by the
+   * stack is noted for the preview's "(max)". List items push `value` (removal takes that value
+   * first, else the newest entry). @returns {number} the change applied
+   */
+  function addItem(s, key, n, value, ctx) {
+    var cur = s.items[key];
+    if (Array.isArray(cur)) {
+      var len = cur.length;
+      if (n > 0) {
+        var fit = Math.min(n, room(s, key));
+        if (fit < n) note(ctx, 'item:' + key);
+        for (var i = 0; i < fit; i++) cur.push(value === undefined ? null : value);
+      } else {
+        for (var j = 0; j < -n && cur.length; j++) {
+          var at = value === undefined ? -1 : cur.indexOf(value);
+          cur.splice(at < 0 ? cur.length - 1 : at, 1);
+        }
+      }
+      return cur.length - len;
+    }
+    var from = Number(cur) || 0;
+    var next = SR.util.clamp(from + n, 0, stackOf(key));
+    if (next < from + n && n > 0) note(ctx, 'item:' + key);
+    s.items[key] = next;
+    return next - from;
+  }
   function hasToast(res, key) { return res.toasts.some(function (t) { return t.key === key; }); }
 
   /** Runs a nested effect list (check / chance branches) with a depth guard. */
@@ -238,37 +295,18 @@
     stat: function (s, a, ctx, res) {
       var key = a[0], n = num(s, a[1], ctx), src = a[2];
       if (SR.rules.stats.KEYS.indexOf(key) < 0) { SR.rules.stats.add(s, key, n, src); return; }
-      var g = SR.rules.stats.gain(s, key, n, src);
-      var applied = SR.rules.stats.add(s, key, n, src);
-      if (g.capped) {
-        note(ctx, 'stat:' + key);
-        if (!hasToast(res, 'toast.stats.maxed')) res.toasts.push({ key: 'toast.stats.maxed', vars: { stat: cond().label(key), cap: SR.tuning.start.statCap }, kind: 'info' });
-      }
-      if (g.winded && n > 0 && !hasToast(res, 'toast.stats.winded')) res.toasts.push({ key: 'toast.stats.winded', vars: {}, kind: 'warning' });
-      if (applied >= STAMP_MIN_GAIN) res.stamps.push({ key: 'stamp.stats.' + key, vars: { n: applied } });
+      gainStat(s, key, n, src, ctx, res);
     },
     karma: function (s, a, ctx) { SR.rules.stats.karma(s, num(s, a[0], ctx)); },
     heat: function (s, a, ctx) { SR.rules.stats.heat(s, num(s, a[0], ctx)); },
     buzz: function (s, a, ctx) { SR.rules.stats.buzz(s, num(s, a[0], ctx)); },
     /**
      * item(key, n, value): adds or removes items, never below 0 nor above the B-06 stack. List items
-     * (takeout, scraps, diplomas) push `value` n times, or remove n entries (that value first).
+     * (takeout, scraps, diplomas) push `value` n times (up to their stack, e.g. takeout 5), or
+     * remove n entries (that value first).
      */
     item: function (s, a, ctx) {
-      var key = a[0], n = Math.round(num(s, a[1] === undefined ? 1 : a[1], ctx));
-      var cur = s.items[key];
-      if (Array.isArray(cur)) {
-        if (n > 0) for (var i = 0; i < n; i++) cur.push(a[2] === undefined ? null : a[2]);
-        else for (var j = 0; j < -n && cur.length; j++) {
-          var at = a[2] === undefined ? -1 : cur.indexOf(a[2]);
-          cur.splice(at < 0 ? cur.length - 1 : at, 1);
-        }
-        return;
-      }
-      var row = SR.tuning.items[key], cap = row && row.stack > 0 ? row.stack : Infinity;
-      var next = SR.util.clamp((Number(cur) || 0) + n, 0, cap);
-      if (next < (Number(cur) || 0) + n && n > 0) note(ctx, 'item:' + key);
-      s.items[key] = next;
+      addItem(s, a[0], Math.round(num(s, a[1] === undefined ? 1 : a[1], ctx)), a[2], ctx);
     },
     flag: function (s, a) { s.flags[a[0]] = a.length > 1 ? a[1] : true; },
     time: function (s, a, ctx) { SR.rules.time.spend(s, num(s, a[0], ctx)); },
@@ -387,6 +425,55 @@
     return res;
   }
 
+  // --- named functions for purchases (every shop row that sells a Bag item; B-06) ---
+
+  /** @returns {number} n from an argument, else params.n, else 1 (a NumberField purchase passes params.n). */
+  function countArg(s, n, params, ctx) {
+    if (n === undefined || n === null) n = params && params.n !== undefined ? params.n : 1;
+    return Math.round(num(s, n, ctx));
+  }
+
+  /** @returns {object|null} the refusal for carrying n more of an item, or null when they fit. */
+  function roomRefusal(s, key, n) {
+    if (!(n >= 1)) return { ok: false, reason: 'reason.amount', vars: {} };
+    if (n <= room(s, key)) return null;
+    var item = cond().nameOf('item', key);
+    if (stackOf(key) === 1) return { ok: false, reason: 'reason.haveItem', vars: { item: item } };
+    return { ok: false, reason: 'reason.stackFull', vars: { item: item, max: stackOf(key), have: cond().count(s, key) } };
+  }
+
+  /**
+   * Condition ['fn', 'items.room', key, n]: n more of the item fit its B-06 stack (smokes and pills
+   * 99, ammo 5 at a time so refused at ≥ 95, gear 1: "Already have …"). n defaults to params.n or 1.
+   */
+  SR.def.fn('items.room', function (s, params, ctx, key, n) {
+    return roomRefusal(s, key, countArg(s, n, params, ctx)) || { ok: true };
+  });
+
+  /**
+   * Effect ['fn', 'items.buy', key, n, where, value]: puts n of an item in the Bag (refused when
+   * they don't fit, like items.room) and raises the `buy` rule event with the price actually paid
+   * (the row's cost after the B-28a modifiers). n defaults to params.n or 1; where to the action's
+   * building; value is a list item's entry (the takeout's food id).
+   */
+  SR.def.fn('items.buy', function (s, params, ctx, key, n, where, value) {
+    n = countArg(s, n, params, ctx);
+    var no = roomRefusal(s, key, n);
+    if (no) return no;
+    addItem(s, key, n, value, ctx);
+    var price = ctx && ctx.cost ? ctx.cost.cash : 0;
+    return { events: [{ name: 'buy', payload: { item: key, n: n, where: where || (ctx && ctx.def && ctx.def.building) || null, price: price } }] };
+  });
+
+  /**
+   * Effect ['fn', 'items.pillToggle']: the Bag's caffeine-pill toggle (GDD §6.4; free): flips
+   * clock.pillAuto, or sets it to params.on when given. While it is off, the night uses no pill.
+   */
+  SR.def.fn('items.pillToggle', function (s, params) {
+    s.clock.pillAuto = params && typeof params.on === 'boolean' ? params.on : s.clock.pillAuto === false;
+    return {};
+  });
+
   SR.rules.effects = {
     /** The effect names of ARCHITECTURE §6.4 (the validator checks data against them). */
     names: Object.keys(E),
@@ -397,6 +484,9 @@
     isPartial: isPartial,
     credit: credit,
     charge: charge,
+    room: room,
+    addItem: addItem,
+    gainStat: gainStat,
     INCOME: INCOME.slice(),
     trackIncome: trackIncome,
     noteIncome: noteIncome,

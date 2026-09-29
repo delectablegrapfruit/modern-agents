@@ -1,4 +1,4 @@
-// js/rules/stats.js — owner: W1-R. SR.rules.stats: stat gains (the degree bonus, Winded and the 999
+// js/rules/stats.js — owner: W2-RulesE (W1-R in wave 1). SR.rules.stats: stat gains (the degree bonus, Winded and the 999
 // cap; HP max = 15 + STR), karma, Heat, Buzz, HP, the karma band and tier (GDD §4.2, §4.5;
 // ARCHITECTURE §6.5; BALANCE B-02, B-03, B-04). Pure: no DOM, browser API or unseeded randomness.
 (function () {

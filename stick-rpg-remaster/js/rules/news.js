@@ -1,4 +1,4 @@
-// js/rules/news.js — owner: W1-E. SR.rules.news: the Daily Fold's headline from yesterday's log and
+// js/rules/news.js — owner: W2-RulesE (W1-E in wave 1). SR.rules.news: the Daily Fold's headline from yesterday's log and
 // the TV news story that leads with the same entry (BALANCE B-29; GDD §6.8; ARCHITECTURE §6.9).
 // Pure. Numbers: SR.tuning.news (B-29: weights, minWeight). The templates are text keys in
 // js/data/text/en-news.js (W2-Home): news.head.<kind> and news.head.absurd (headlines),

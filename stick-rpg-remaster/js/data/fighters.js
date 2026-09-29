@@ -1,8 +1,10 @@
-// js/data/fighters.js — owner: W1-C. SR.def.fighter: Sticky's ladder (GDD §6.3, n = 1-12; P0),
-// the Underground Ring's masked regulars (P1 `nightlife`) and Red's goons (P1 `arcs`).
+// js/data/fighters.js — owner: W2-Night (W1-C in wave 1; BUILD_PLAN §7). SR.def.fighter: Sticky's
+// ladder (GDD §6.3, n = 1-12; P0), the Underground Ring's masked regulars (P1 `nightlife`) and Red's
+// goons (P1 `arcs`).
 // A def is identity and content only: its name text key (fighter.<id>.name, en-conflict.js), the
 // palette key of its head ('fighter.<n>', ART_AUDIO §2.3), one accessory (js/art/stick.js), a quirk
-// and three taunt keys (taunt.<id>.*, en-night.js, W2-Night). The fight numbers (HP, power P, the
+// and three taunt keys (taunt.<id>.1..3 in en-night.js: 1 at the start, 2 after his first hit, 3
+// when he is nearly down; js/minigames/fight.js). The fight numbers (HP, power P, the
 // ring's scaling) are SR.tuning.fight (BALANCE B-13) and are read by SR.rules.fight; a def may
 // override them with `hp` / `P` (none does today).
 //

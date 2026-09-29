@@ -1,4 +1,4 @@
-// js/rules/homes.js — owner: W1-E. SR.rules.homes: buying, selling, moving in and letting homes,
+// js/rules/homes.js — owner: W2-RulesE (W1-E in wave 1). SR.rules.homes: buying, selling, moving in and letting homes,
 // furniture slots, tier-2 upgrades, storage, the sleep bonus, TV channels, home doors, the
 // Workstation catalogue (furniture and the sports car) and the net-worth values of homes and
 // furniture (BALANCE B-08; GDD §4.15, §4.18; ARCHITECTURE §8.4).
@@ -190,13 +190,14 @@
     usePerk: function (s) {
       var id = s.homes.living, ok = homes.perkOk(s, id);
       if (!ok.ok) return ok;
-      var p = TH()[id].perk;
-      ['str', 'int', 'cha'].forEach(function (k) { if (p[k]) SR.rules.stats.add(s, k, p[k], 'reward'); });
+      var p = TH()[id].perk, fb = { toasts: [], stamps: [] };
+      // The gains with the stat effect's feedback (the stamp for +2 and more; UI §4.3).
+      ['str', 'int', 'cha'].forEach(function (k) { if (p[k]) SR.rules.effects.gainStat(s, k, p[k], 'reward', null, fb); });
       if (p.hp) SR.rules.stats.heal(s, p.hp);
       if (p.karma) SR.rules.stats.karma(s, p.karma);
       s.daily.homePerk = (s.daily.homePerk || 0) + 1;
       if (p.every === 'week') s.weekly.party = (s.weekly.party || 0) + 1;
-      return { ok: true, perk: p.id };
+      return { ok: true, perk: p.id, toasts: fb.toasts, stamps: fb.stamps };
     },
 
     /** @returns {number} the nightly rent of a let home: 0.6 % of its price (B-08a). */
@@ -412,6 +413,24 @@
   SR.def.fn('homes.perkHere', function (s, params, ctx, id) { return homes.perkOk(s, pid(params, id, 'homeId')); });
   /** Effect: use the perk of the home you live in. */
   SR.def.fn('homes.usePerk', function (s) { return res(homes.usePerk(s)); });
+  /**
+   * Condition ['fn', 'homes.channel', 'news' | 'fitness' | 'dating' | 'market']: the TV channel can
+   * be watched in the home you live in (GDD §6.1: News with the TV; Fitness and Dating with the
+   * satellite, the P0 add-on or, with `homesPlus`, the TV's SkyDish tier; Market Watch with the
+   * SkyDish, P1 `stockTips`). The reason names the piece that is missing (or in storage).
+   */
+  SR.def.fn('homes.channel', function (s, params, ctx, channel) {
+    channel = channel || (params && params.channel);
+    var all = homes.channels(s);
+    if (!Object.prototype.hasOwnProperty.call(all, channel)) return refuse('reason.unavailable');
+    if (all[channel]) return { ok: true };
+    if (channel === 'market' && !SR.features.stockTips) return refuse('reason.featureOff');
+    var C = SR.rules.conditions, tv = C.eval(s, ['furniture', 'tv'], ctx);
+    if (!tv.ok) return tv;
+    var need = channel === 'market' || SR.features.homesPlus ? 'skydish' : 'satellite';
+    var r = C.eval(s, ['furniture', need], ctx);
+    return r.ok ? refuse('reason.unavailable') : r;
+  });
   /** Condition: the piece would fit ("Needs a free slot"). */
   SR.def.fn('homes.fits', function (s, params, ctx, id) {
     id = pid(params, id, 'piece');

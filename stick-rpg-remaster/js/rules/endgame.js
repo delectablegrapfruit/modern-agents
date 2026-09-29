@@ -1,4 +1,4 @@
-// js/rules/endgame.js — owner: W1-E. SR.rules.endgame: net worth and its breakdown, the rank stamp
+// js/rules/endgame.js — owner: W2-RulesE (W1-E in wave 1). SR.rules.endgame: net worth and its breakdown, the rank stamp
 // by karma column and net-worth tier, the banners, the legacy score, a run's results and the Hall
 // of Fame bucket of a game length (BALANCE B-18; GDD §4.19; UI §5.14). Pure.
 // Numbers: SR.tuning.endgame (B-18: net-worth weights, rank floors, legacy), SR.tuning.difficulty
@@ -115,6 +115,7 @@
         reason: reason, day: s.clock.day, length: s.mode.length, difficulty: s.mode.difficulty,
         name: s.player.name, netWorth: b.total, breakdown: b, rank: r.id, rankKey: r.key, column: r.column,
         banners: endgame.banners(s, reason), legacy: endgame.legacy(s), bucket: endgame.hofBucket(s.mode.length),
+        achievements: Object.keys(s.achievements || {}).length,
         ranked: !s.mode.cheat && !s.mode.keepPlaying,
         title: SR.rules.jobs.bestTitle(s), home: s.homes.living,
         stats: { str: s.stats.str, int: s.stats.int, cha: s.stats.cha, karma: s.stats.karma },
@@ -122,5 +123,41 @@
     },
   };
 
+  /**
+   * Retire (GDD §5: Unlimited adds Retire to the pause menu, which goes to the results; a
+   * Keep-playing run is Unlimited too): the game ends now with reason 'retire'. Through SR.act (the
+   * named fn endgame.retire) the Result carries `over` and SR.act emits game:over.
+   * @returns {{ok: boolean, reason?: string, result?: object}}
+   */
+  endgame.retire = function (s) {
+    if (s.over) return { ok: false, reason: 'reason.gameOver', vars: {} };
+    if (s.mode.length > 0 && !s.mode.keepPlaying) return { ok: false, reason: 'reason.timedGame', vars: {} };
+    s.over = true;
+    s.result = endgame.results(s, 'retire');
+    return { ok: true, result: s.result };
+  };
+
+  /**
+   * Keep playing (GDD §4.19, §5): after a timed game's results, the run continues unranked with no
+   * last day (night step 13 no longer ends it). state.result keeps the original end's results (the
+   * Hall of Fame entry is made once, from them); a later Retire records new, unranked results.
+   * Called by the results screen on the live state (the pipeline refuses actions while the game is
+   * over, so this is not an action).
+   * @returns {{ok: boolean, reason?: string}}
+   */
+  endgame.keepPlaying = function (s) {
+    if (!s.over) return { ok: false, reason: 'reason.notOver', vars: {} };
+    if (!s.result || s.result.reason !== 'time') return { ok: false, reason: 'reason.gameOver', vars: {} };
+    s.mode.keepPlaying = true;
+    s.over = false;
+    return { ok: true };
+  };
+
   SR.rules.endgame = endgame;
+
+  /** Effect ['fn', 'endgame.retire']: ends an Unlimited (or Keep-playing) game with the results. */
+  SR.def.fn('endgame.retire', function (s) {
+    var r = endgame.retire(s);
+    return r.ok ? {} : { ok: false, reason: r.reason, vars: r.vars };
+  });
 })();

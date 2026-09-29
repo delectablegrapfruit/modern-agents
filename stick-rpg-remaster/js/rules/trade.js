@@ -1,4 +1,4 @@
-// js/rules/trade.js — owner: W1-C. SR.rules.trade: the bus depot's trips (GDD §4.11; BALANCE B-12;
+// js/rules/trade.js — owner: W2-RulesC (W1-C in wave 1). SR.rules.trade: the bus depot's trips (GDD §4.11; BALANCE B-12;
 // ARCHITECTURE §6.5): smuggling on the red-eye (P0) and speaking tours (P1 `tours`), with the daily
 // demand, reputation, haggling and the vest in muggings (P1 `tours`).
 //

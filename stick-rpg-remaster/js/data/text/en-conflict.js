@@ -1,4 +1,4 @@
-// js/data/text/en-conflict.js — owner: W1-C. text: the bus cities, the fighters, the decrees, and
+// js/data/text/en-conflict.js — owner: W2-RulesC (W1-C in wave 1). text: the bus cities, the fighters, the decrees, and
 // the crime and trip outcomes (CONTRACT §7): city.*, fighter.*, decree.*, crime.*, trip.*, and the
 // toasts and stamps the conflict rules raise themselves: toast.crime|trade|fight|election.*,
 // stamp.crime|fight|election.* (D27). Numbers never appear in the prose; the vars carry them, so a

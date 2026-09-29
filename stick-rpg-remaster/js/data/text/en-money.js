@@ -1,3 +1,297 @@
-// js/data/text/en-money.js — owner: W2-Money. text: bank, NLI, shift events.
-// Stub (W1-K M0): loads without errors and registers nothing. The owner replaces the whole file.
-(function () { 'use strict'; /* stub, owner: W2-Money */ })();
+// js/data/text/en-money.js — owner: W2-Money. Text for the Bank of the 2nd Dimension and New Lines
+// Inc. (GDD §4.6, §4.8, §4.15, §6.1, §6.2): the card rows (act.bank.*, act.nli.*), Penny Wise's,
+// Bea's and Terry's greetings (greet.bank.*, greet.nli.*), the sub-screens' titles and lines
+// (sub.bank.*, sub.nli.jobs, card.bank.*, card.nli.*), the toasts (toast.bank.*, toast.nli.*),
+// Penny's robbery barks (bark.penny.*), the voicemails of Penny (loan warnings and default, W1-E R5;
+// a home bought), Bea, Gil, Frankie and Terry (promotions, the P1 takeover), and the minigame text of
+// the hustle skins `sortit`, `pitch` and `boardroom` (mg.sortit.*, mg.pitch.*, mg.boardroom.*).
+// Numbers always arrive as {vars} from SR.tuning (BALANCE B-05, B-08a, B-09); job titles are
+// en-econ.js's (job.*), home names home.<tier>. Voice: dry, deadpan, cheerfully absurd; banks and
+// corporations are fair game (GDD §6.11). Limits (CONTRACT §7): act ≤ 28, bark ≤ 60, toast ≤ 80,
+// greet ≤ 140, vm ≤ 280, card ≤ 400.
+(function () {
+  'use strict';
+  var SR = window.SR;
+
+  SR.def.text({
+    // ================================================================= the bank: card rows
+    'act.bank.deposit': 'Deposit',
+    'act.bank.withdraw': 'Withdraw',
+    'act.bank.loan': 'Get a loan',
+    'act.bank.repay': 'Repay the loan',
+    'act.bank.realestate': 'Real Estate desk',
+    'act.bank.rates': 'Interest-rate board',
+    'act.bank.cds': 'Certificates (CDs)',
+    'act.bank.rob': 'Rob the bank',
+    // the commits behind the sub-screens (never card rows)
+    'act.bank.depositNow': 'Deposit cash',
+    'act.bank.withdrawNow': 'Withdraw cash',
+    'act.bank.takeLoan': 'Take out a loan',
+    'act.bank.repayNow': 'Repay the loan',
+    'act.bank.openCd': 'Open a CD',
+    'act.bank.breakCd': 'Break a CD',
+    'act.bank.buyHome': 'Buy a home',
+    'act.bank.moveIn': 'Move in',
+    'act.bank.sellHome': 'Sell a home',
+    'act.bank.letHome': 'Let out a home',
+    'act.bank.endLet': 'End a let',
+
+    // ================================================================= Penny Wise, teller
+    'greet.bank.first': 'Welcome to the Bank of the 2nd Dimension. I am Penny Wise. Your money is safe here, and extremely well filed.',
+    'greet.bank.default': [
+      'Penny Wise, at your service. Deposits to the left, withdrawals to the left as well. We only have the one window.',
+      'Good to see you. The vault is humming, the pens are chained down, and the coffee is technically complimentary.',
+      'Next! Oh, it is you. You are always next. There is nobody else in line.',
+    ],
+    'greet.bank.morning': 'Morning. Rates were posted at eight sharp. I posted them myself. With a thumbtack.',
+    'greet.bank.late': 'We never close. Money does not sleep, and apparently neither do I.',
+    'greet.bank.rich': 'Our most valued customer! I have been told to smile more around you. Is this enough smile?',
+    'greet.bank.broke': 'Your balance is what we in banking call "aspirational". Can I interest you in a savings plan?',
+    'greet.bank.loanDue': 'Just a gentle reminder: your loan is due in {days} days. This has been a gentle reminder.',
+    'greet.bank.lien': 'Half your income still goes to the lien. Consider it a very committed savings plan.',
+    'greet.bank.frozen': 'Your credit is frozen until day {day}. We keep it in the freezer, next to the ice cream.',
+    'greet.bank.robbed': 'I recognise you. The mask was a bold choice. Please keep your hands where I can see them.',
+    'greet.bank.forgiven': 'The insurance paid out, so officially nothing happened. Unofficially, I am watching you.',
+    'greet.bank.good': 'You again! People say nice things about you. We checked. It is in your file.',
+    'greet.bank.bad': 'Please sign here, here and here. Also here. Security would like a copy.',
+    'greet.bank.rain': 'Dripping on the carpet is free. Dripping on the deposit slips is a service charge.',
+    'bark.penny.robWin': 'Take it. It is insured. I think.',
+    'bark.penny.robLose': 'Security! The alarm! The other alarm!',
+
+    // ================================================================= the bank's sub-screens
+    'sub.bank.deposit': 'Deposit',
+    'sub.bank.withdraw': 'Withdraw',
+    'sub.bank.loan': 'Loans',
+    'sub.bank.rates': 'Interest rates',
+    'sub.bank.cds': 'Certificates',
+    'sub.bank.realestate': 'Real Estate',
+
+    // balances and the amount field
+    'card.bank.cash': 'Cash',
+    'card.bank.balance': 'In the bank',
+    'card.bank.owed': 'Loan',
+    'card.bank.amount': 'Amount',
+    'card.bank.free': 'Deposits and withdrawals are free and take no time.',
+    'card.bank.depositBtn': 'Deposit {money}',
+    'card.bank.withdrawBtn': 'Withdraw {money}',
+    'card.bank.depositNote': 'Everything in the bank earns interest tonight at {pct} a day.',
+    'card.bank.withdrawNote': 'Cash in your pocket earns nothing and pays for everything.',
+    'card.bank.nothing': 'Nothing to move right now.',
+
+    // loans (GDD §4.8; B-09)
+    'card.bank.loan.limit': 'Your credit limit: {money}, set by your best job ({job}).',
+    'card.bank.loan.terms': 'One loan at a time, due in {days} days, at {pct} a day (today\'s savings rate plus {add} %), compounding every night. Partial repayments welcome.',
+    'card.bank.loan.estimate': 'Borrow {money} and leave it {days} days: about {total} to pay back at today\'s rate.',
+    'card.bank.loan.take': 'Borrow {money}',
+    'card.bank.loan.current': 'You owe {money}. {days} days left.',
+    'card.bank.loan.lastDay': 'You owe {money}. Due tonight.',
+    'card.bank.loan.repayBtn': 'Repay {money}',
+    'card.bank.loan.none': 'No loan open.',
+    'card.bank.loan.lien': 'Lien: {money}. Half of every wage, rent, salary, interest, deal, fee, loot and prize goes to it until it is paid.',
+    'card.bank.loan.frozen': 'Credit frozen until day {day} after a default.',
+    'card.bank.loan.default.standard': 'Miss the deadline and the repo men collect, in this order: the bank, your cash, CDs, stocks, furniture, then homes you do not live in. Anything left becomes a lien. Karma {karma}, HP to {hp}, credit frozen {days} days.',
+    'card.bank.loan.default.relaxed': 'Miss the deadline and the repo men collect, in this order: the bank, your cash, CDs, stocks, furniture, then homes you do not live in. Anything left becomes a lien. Karma {karma}, credit frozen {days} days.',
+    'card.bank.loan.default.hardcore': 'Miss the deadline and the collection agents come for you in person, after one last night. It is not a metaphor. The story ends there.',
+    'card.bank.loan.confirmTitle': 'Take out a loan?',
+    'card.bank.loan.confirm': 'Borrow {money} for {days} days at {pct} a day? You can repay any part of it at any time.',
+    'card.bank.loan.confirmYes': 'Borrow',
+
+    // the rate board (B-09)
+    'card.bank.rates.today': 'Today\'s savings rate',
+    'card.bank.rates.value': '{pct} a day',
+    'card.bank.rates.chart': 'The rate over the last {n} days, in % a day',
+    'card.bank.rates.tiers': 'Up to {t1}: the full rate. From {t1} to {t2}: half the rate. Above {t2}: a quarter.',
+    'card.bank.rates.cap': 'Interest is capped at {money} a night.',
+    'card.bank.rates.tonight': 'Tonight your {bank} earns {money}.',
+    'card.bank.rates.tonightCap': 'Tonight your {bank} earns {money}: the nightly cap.',
+    'card.bank.rates.loan': 'Loans cost {pct} a day, compounding.',
+    'card.bank.rates.cdLine': 'CDs lock in {pct} a day for {days} days.',
+    'card.bank.rates.up': 'Penny: "Rates this high never stay. They drift back toward {pct}. Deposit while it lasts."',
+    'card.bank.rates.down': 'Penny: "Rates this low never stay either. They drift back toward {pct}. Patience is a financial product."',
+    'card.bank.rates.mid': 'Penny: "Rates wander around {pct} and come home eventually. Like cats, but with paperwork."',
+    'card.bank.rates.seized': 'The bank has been seized by decree. It pays no interest while the decree stands.',
+
+    // certificates (P1 `homesPlus`; B-09 cd.*)
+    'card.bank.cds.intro': 'Lock at least {min} for {days} days at {pct} a day, simple interest at today\'s rate, paid when it matures.',
+    'card.bank.cds.limits': 'At most {n} open, {money} in all. Breaking one early returns the principal minus {penalty} and no interest.',
+    'card.bank.cds.open': 'Open a {money} CD',
+    'card.bank.cds.row': '{money} at {pct} a day, matures on day {day}',
+    'card.bank.cds.break': 'Break',
+    'card.bank.cds.none': 'No certificates open.',
+    'card.bank.cds.breakTitle': 'Break the CD?',
+    'card.bank.cds.breakConfirm': 'Break this CD early? You get {money} back and no interest.',
+
+    // the Real Estate desk (Paperweight Realty; GDD §4.15; B-08a)
+    'card.bank.re.intro': 'Paperweight Realty, at the bank\'s own desk. Homes can be bought in any order. Buying does not move you in.',
+    'card.bank.re.means': 'You have {cash} in cash and {bank} in the bank.',
+    'card.bank.re.price': 'Price {money}',
+    'card.bank.re.free': 'Rent-free forever',
+    'card.bank.re.slots': '{n} furniture slots',
+    'card.bank.re.sleep': 'Sleep +{pct}',
+    'card.bank.re.sleep0': 'Sleep as usual',
+    'card.bank.re.perk': 'Perk: {perk}',
+    'card.bank.re.rent': 'Lets for {money} a night',
+    'card.bank.re.castle': 'Required to run for office.',
+    'card.bank.re.status.live': 'You live here',
+    'card.bank.re.status.owned': 'Yours',
+    'card.bank.re.status.let': 'Let out',
+    'card.bank.re.status.sale': 'For sale',
+    'card.bank.re.touring': 'On tour',
+    'card.bank.re.buy': 'Buy for {money}',
+    'card.bank.re.moveIn': 'Move in',
+    'card.bank.re.sell': 'Sell for {money}',
+    'card.bank.re.let': 'Let out',
+    'card.bank.re.endLet': 'End the let',
+    'card.bank.re.storage': 'Moving in: pieces beyond its {n} slots go to storage.',
+    'card.bank.re.buyTitle': 'Buy {home}?',
+    'card.bank.re.buyConfirm': 'Buy {home} for {money}? Cash goes first, then the bank. The keys wait at its door.',
+    'card.bank.re.sellTitle': 'Sell {home}?',
+    'card.bank.re.sellConfirm': 'Sell {home} for {money}? The money goes into the bank. This is final.',
+    'card.bank.re.thumb': '{home}, from the street',
+    'card.bank.re.list': 'Properties',
+    // the interior's counter sign (js/art/interiors/bank.js)
+    'card.bank.sign': 'PLEASE WAIT',
+
+    // toasts (≤ 80)
+    'toast.bank.loan': 'Loan approved: {money}, due in {days} days.',
+    'toast.bank.repay': 'Repaid {money}. Still owed: {left}.',
+    'toast.bank.repaid': 'Loan paid off. Penny looks almost proud.',
+    'toast.bank.homeBought': '{home} is yours. Move in at its door, or right here.',
+    'toast.bank.movedIn': 'You live at {home} now.',
+    'toast.bank.sold': '{home} sold for {money}, paid into the bank.',
+    'toast.bank.let': '{home} is let out: {money} a night.',
+    'toast.bank.endLet': 'The tenants of {home} pack up and leave.',
+    'toast.bank.cdOpen': 'CD opened: {money}, matures on day {day}.',
+    'toast.bank.cdBreak': 'CD broken early: {money} back in the bank.',
+
+    // Penny's voicemails (≤ 280; night step 2 raises the loan ones, W1-E R5)
+    'vm.penny.loan5': 'Penny Wise from the bank. A friendly reminder: your loan of {money} is due in {days} days. The interest is also friendly. It visits every night.',
+    'vm.penny.loan1': 'Penny again. One day left on that loan: {money}. After tomorrow night the repo men take over, and they do not leave reminders.',
+    'vm.penny.default': 'Penny Wise. Your loan of {money} came due and the repo men have been. Still owed, as a lien on your income: {lienMoney}. Your credit is on ice for a while. I did call. Twice.',
+    'vm.penny.homeBought': 'Penny Wise, Real Estate desk. Congratulations on {home}! The deed lives in our vault now, which is honestly the safest place for anything you care about.',
+
+    // ================================================================= New Lines Inc.: card rows
+    'act.nli.apply': 'Apply for a job',
+    'act.nli.promote': 'Ask for a promotion',
+    'act.nli.work': 'Work a shift',
+    'act.nli.ladder': 'Study the job ladder',
+    'act.nli.takeover': 'Face the hostile takeover',
+
+    // ================================================================= Bea (HR), Terry (your assistant from VP up)
+    'greet.nli.visitor': 'Bea, Human Resources. We hire janitors from INT {int}. Come back after a little light reading.',
+    'greet.nli.hiring': 'Bea, Human Resources. We have a janitor opening. Great benefits. Well, a mop. It is a great mop.',
+    'greet.nli.janitor': 'The fourth floor sink is doing the thing again. Also, welcome back.',
+    'greet.nli.mail': 'Gil says the mail room has never been so sorted. Gil says a lot of things.',
+    'greet.nli.sales': 'Frankie wants the numbers by Friday. Frankie always wants the numbers by Friday.',
+    'greet.nli.exec': 'Your parking spot has your name on it now. Spelled correctly, even. We had it redone.',
+    'greet.nli.ready': 'The partners have been saying your name in meetings. In a good way, mostly. Ask me about that promotion.',
+    'greet.nli.friday': 'It is Friday. Bonus night. Everyone is suspiciously productive.',
+    'greet.nli.late': 'Burning the midnight oil? Facilities burns it too. It is in the budget.',
+    'greet.nli.default': [
+      'Bea, Human Resources. Please take a number. Any number. We have plenty.',
+      'Welcome to New Lines Inc. We make lines. New ones. Please do not ask follow-up questions.',
+    ],
+    'greet.nli.terry': [
+      'Terry, your assistant. I sharpened your pencils. All of them. Twice. Can I get you anything? Anything at all?',
+      'Your three o\'clock is at four, your four o\'clock cancelled, and I alphabetised the stapler. Welcome back.',
+    ],
+    'greet.nli.ceo': 'Good morning, boss. The board is waiting. The board is always waiting. I brought biscuits.',
+
+    // the lobby's posters (js/art/interiors/nli.js)
+    'card.nli.poster': 'ALIGN',
+    'card.nli.board': 'HIRING',
+
+    // ================================================================= the job ladder (nli.jobs)
+    'sub.nli.jobs': 'The job ladder',
+    'card.nli.intro': 'One rung per request. Each promotion needs INT, CHA from Salesperson up, and shifts at the rank below.',
+    'card.nli.jobs': 'Jobs at New Lines Inc.',
+    'card.nli.here': 'You are here',
+    'card.nli.next': 'Next',
+    'card.nli.pay': '{money} an hour, {full} a full shift',
+    'card.nli.needs': 'Needs INT {int}',
+    'card.nli.needsCha': 'Needs INT {int} and CHA {cha}',
+    'card.nli.shifts': '{n} shifts as {job}',
+    'card.nli.rating': 'a rating of {n}',
+    'card.nli.credit': 'Credit limit {money}',
+    'card.nli.missingStat': '{stat} {need} (you: {have})',
+    'card.nli.missingShifts': '{need} shifts as {job} (you: {have})',
+    'card.nli.missingRating': 'rating {need} (you: {have})',
+    'card.nli.missingTitle': 'Still missing for {job}:',
+    'card.nli.ready': 'Ready for {job}. Ask Bea.',
+    'card.nli.top': 'You run the place. There is no rung above CEO, only the sky.',
+    'card.nli.notHired': 'Not on the payroll yet.',
+    'card.nli.hiredAs': 'You work here as {job}. {shifts} shifts at this rank.',
+    'card.nli.moonlight': 'You also cook at McSticks as {job}. Nobody here needs to know.',
+    'card.nli.bonus': 'This week: {wages} in NLI wages. Friday night bonus at {pct} %: {money}.',
+    'card.nli.bonusFrom': 'From Executive up, Friday night pays a bonus of {from}-{to} % of the week\'s NLI wages.',
+
+    // toasts
+    'toast.nli.ruthless': 'Ruthless moves in the boardroom: {n} karma.',
+    'toast.nli.takeoverWon': 'The takeover fails. The board pays you {money} for your trouble.',
+    'toast.nli.takeoverLost': 'The raiders win the vote. You keep your job. Barely.',
+
+    // voicemails: the new boss calls after each rung (GDD §4.6, §6.2)
+    'vm.bea.hired': 'Bea from New Lines Inc. Welcome aboard! Your mop is in locker nine. Locker nine sticks, so kick it at the bottom. Shifts are six hours and the coffee is free, which tells you what we think of the coffee.',
+    'vm.gil.promoted': 'Gil, mail room. Heard you are joining me down here. Rules: letters go in, packages go out, nothing goes in the shredder unless it is ticking. We will get along fine.',
+    'vm.frankie.promoted': 'Frankie, sales floor. Congrats on the promotion, rookie. Here is the whole secret: smile, point at the brochure, say "synergy". I need your numbers by Friday. Every Friday. Forever.',
+    'vm.bea.exec': 'Bea again. Executive! You get a door that closes and a chair that spins. Please do not spin in the all-hands meeting. There was an incident last year and we do not talk about it.',
+    'vm.terry.vp': 'Hi! Hello! Terry here, your new assistant. I have prepared a binder about you. It is very thick. Most of it is compliments. See you in the morning, Vice President. Wow. Vice President.',
+    'vm.terry.ceo': 'Terry again. So. CEO. That is... congratulations. I was wondering, and you can totally say no, if you might want to get dinner some time. As a meeting! A dinner meeting. I will put it in the binder.',
+    'vm.bea.takeoverLost': 'Bea. The takeover vote went badly, and the raiders framed your org chart as a trophy. You keep your office. They took the good stapler. We will all need some time.',
+    'vm.terry.takeoverWon': 'Terry! We won! You held the room! The raiders left without their coats. I kept one. It is a very nice coat. Also the board sent a bonus. I put a bow on it.',
+
+    // ================================================================= Sort It (Janitor, Mail Room; P1 `hustles`)
+    'mg.sortit.title': 'Sort It',
+    'mg.sortit.subtitle.janitor': 'Night shift, fourth floor',
+    'mg.sortit.subtitle.mail': 'The mail room, Monday pile',
+    'mg.sortit.trash': 'Trash',
+    'mg.sortit.recycle': 'Recycling',
+    'mg.sortit.lost': 'Lost and found',
+    'mg.sortit.peel': 'Banana peel',
+    'mg.sortit.crumbs': 'Muffin crumbs',
+    'mg.sortit.cup': 'Paper cup',
+    'mg.sortit.can': 'Soda can',
+    'mg.sortit.keys': 'Car keys',
+    'mg.sortit.glasses': 'Reading glasses',
+    'mg.sortit.inbox': 'Inbox',
+    'mg.sortit.outbox': 'Outbox',
+    'mg.sortit.shred': 'Shredder',
+    'mg.sortit.memo': 'Memo for you',
+    'mg.sortit.invoice': 'Invoice',
+    'mg.sortit.parcel': 'Stamped parcel',
+    'mg.sortit.letter': 'Outgoing letter',
+    'mg.sortit.junk': 'Junk mail',
+    'mg.sortit.secret': 'CONFIDENTIAL',
+
+    // ================================================================= Pitch (Salesperson, Executive; P1 `hustles`)
+    'mg.pitch.title': 'The Pitch',
+    'mg.pitch.subtitle.sales': 'Sell the client on New Lines',
+    'mg.pitch.subtitle.exec': 'Pitch the quarterly vision',
+    'mg.pitch.client': 'The client',
+    'mg.pitch.hook.0': 'Warming up',
+    'mg.pitch.hook.1': 'Nodding',
+    'mg.pitch.hook.2': 'Taking notes',
+    'mg.pitch.hook.3': 'Leaning in',
+    'mg.pitch.hook.4': 'Reaching for a pen',
+    'mg.pitch.hook.5': 'SOLD',
+
+    // ================================================================= Boardroom (VP, CEO; P1 `hustles`; the takeover at double D)
+    'mg.boardroom.title': 'Boardroom',
+    'mg.boardroom.subtitle': 'Three decisions before lunch',
+    'mg.boardroom.takeover': 'Hostile takeover: every vote counts double',
+    'mg.boardroom.board': 'The board of directors',
+    'mg.boardroom.safe': 'Play it safe',
+    'mg.boardroom.bold': 'Make a bold call',
+    'mg.boardroom.ruthless': 'Be ruthless',
+    'mg.boardroom.card.1': 'Sales are flat. The board wants a plan by the time the coffee cools.',
+    'mg.boardroom.card.2': 'A rival is poaching your best people with better chairs.',
+    'mg.boardroom.card.3': 'Legal asks whether "New Lines" can trademark the concept of a line.',
+    'mg.boardroom.card.4': 'The quarterly report has a typo in the word "profit". It is a big word.',
+    'mg.boardroom.card.5': 'Marketing proposes a mascot. It is a line. It has a face now.',
+    'mg.boardroom.card.6': 'The Paper Mills want a merger. Their handshake is very firm and slightly damp.',
+    'mg.boardroom.card.7': 'An intern found a way to save a fortune. It involves fewer interns.',
+    'mg.boardroom.card.8': 'Shareholders demand growth. Straight up, ideally. Like a line.',
+    'mg.boardroom.card.9': 'The elevator is stuck between floors with the whole finance team inside.',
+    'mg.boardroom.room': 'NEW LINES INC. BOARDROOM',
+  });
+})();

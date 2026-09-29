@@ -1,4 +1,4 @@
-// tests/node/health.test.cjs — owner: W1-E. SR.rules.health (ARCHITECTURE §6.7; GDD §4.16; BALANCE
+// tests/node/health.test.cjs — owner: W2-RulesE (W1-E in wave 1). SR.rules.health (ARCHITECTURE §6.7; GDD §4.16; BALANCE
 // B-16, B-31): HP 0 → Second Wind (P1 perk, once a day), Hardcore death, or Stick General (the
 // bill with its write-off, the hospital night: HP 50 %, 12:00 the next day), and the same through
 // the action pipeline's HP-0 hook.
