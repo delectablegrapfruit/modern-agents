@@ -21,6 +21,9 @@
   // double-tap lands within ~150 ms, while aiming a new piece takes longer than this. Moving and turning still work,
   // and Classic's gravity and lock delay are never held up by it.
   const SET_GRACE_MS = 180;
+  // Classic's top out: after the piece that could not appear, this many more from the queue pile up on it, PILE_GAP
+  // seconds apart; the card comes PILE_REST seconds after the last.
+  const PILE_MORE = 3, PILE_GAP = 0.42, PILE_REST = 0.55;
 
   // Items that change the board at once (Board): one that leaves it empty is a fresh start. The rest change the piece
   // in play (Shapers, Choice, Tools) or what the next clears pay (Luck); those can be taken back until the piece sets.
@@ -425,10 +428,10 @@
     get cs() { return this.app.store.state.stats.classic; }
 
     newGame(start) {
-      const game = new Game({ w: 10, h: 20, previewCount: 3, maxHistory: 0, freeHold: false });
+      const game = new Game({ w: 10, h: 20, previewCount: 3, maxHistory: 0, freeHold: false, ceiling: true });
       this.attachGame(game, {});
       this.view.showBank = true;
-      Object.assign(this, { tetrises: 0, level: 1, lines: 0, score: 0, ms: 0, acc: 0, lockT: 0, resets: 0, over: false, paused: false, started: !!start, counted: false, mult: 1 });
+      Object.assign(this, { tetrises: 0, level: 1, lines: 0, score: 0, ms: 0, acc: 0, lockT: 0, resets: 0, over: false, paused: false, started: !!start, counted: false, mult: 1, pile: null, newBest: false });
       if (start) { this.hideCard(); L.Music.rewind(); }
       else this.showStart();
       this.renderStatus();
@@ -455,7 +458,8 @@
 
     frame(now, dt) {
       const g = this.game, p = g.piece;
-      if (this.running() && p && !g.fitsAt(p, p.rot, p.x, p.y)) { g.over = true; this.onTopout(); }
+      if (this.pile && !this.pile.done) this.pileFrame(dt);
+      else if (this.running() && p && !g.fitsAt(p, p.rot, p.x, p.y)) { g.over = true; this.onTopout(); }
       else if (this.running() && p) {
         this.ms += dt * 1000; // the game's own clock: running time only, never paused time
         if (this.ms >= 60000) this.countGame();
@@ -511,13 +515,21 @@
 
     action(act, rep) {
       if (!rep && act === 'drop' && !this.started && !this.over) { this.newGame(true); return true; }
-      // A second Space right after the drop that ended the game does not start the next one unseen.
-      if (!rep && act === 'drop' && this.over) { if (!this.settling('drop')) this.newGame(true); return true; }
+      // A second Space right after the drop that ended the game does not start the next one unseen (nor skip the top
+      // out); during the top out, Space goes straight to the card.
+      if (!rep && act === 'drop' && this.over) {
+        if (this.settling('drop')) return true;
+        if (this.pile && !this.pile.done) this.finishPile();
+        else this.newGame(true);
+        return true;
+      }
       if (!rep && act === 'pause') { this.togglePause(); return true; }
       return super.action(act, rep);
     }
 
     togglePause(force) {
+      // Pausing, leaving the tab or rolling up during the top out: it ends there, at the card (quietly when away).
+      if (this.pile && !this.pile.done) { this.finishPile({ quiet: force === true }); return; }
       if (!this.started || this.over) return;
       this.paused = force != null ? force : !this.paused;
       if (this.paused) this.showCard([h('h2', null, 'Paused'), h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => this.togglePause(false) }, 'Resume'))]);
@@ -569,16 +581,84 @@
       this.app.achieve({ mode: 'classic', r, g: this.game, score: this.score, level: this.level, lines: this.lines, tetrises: this.tetrises, ms: this.ms });
     }
 
+    /**
+     * Topped out: the game ends here, and everything it counts (score, lines, level, best, stats) is final and saved
+     * now. Then the classic top out plays out (see startPile), and the card comes after it.
+     */
     onTopout() {
       if (this.over) return;
       this.over = true;
-      const S = this.cs, best = this.score > S.best;
+      const S = this.cs;
+      this.newBest = this.score > S.best;
       S.best = Math.max(S.best, this.score);
       this.app.store.touch();
-      this.app.sound.play('fail');
-      if (this.app.settings.announcer !== false && this.app.settings.sound) L.Announcer.say(['gameover']);
+      if (this.app.saveNow) this.app.saveNow();
+      this.renderStatus();
+      this.renderControls();
+      this.startPile();
+    }
+
+    /**
+     * The classic top out: the piece that could not appear sets where it appears, over the stack, and the next few
+     * from the queue appear one after another at the same spot, each over the last. The game itself is never
+     * touched (no cells, queue or numbers change): the pile is only drawn (BoardView.pileup). Under reduced motion it
+     * is all there at once.
+     */
+    startPile() {
+      const g = this.game, steps = [];
+      const add = (type, rot, x, y) => steps.push({ color: type.color, cells: type.rots[rot].map(([cx, cy]) => [g.board.wx(x + cx), y + cy]).filter(([, cy]) => cy >= 0 && cy < g.h) });
+      if (g.piece) add(g.piece.type, g.piece.rot, g.piece.x, g.piece.y);
+      const queued = g.queue.slice(0, PILE_MORE);
+      for (const e of queued) {
+        const type = Pieces.get(e.id);
+        if (!type) continue;
+        const rot = e.rot || 0, pos = g.spawnPosition(type, rot);
+        add(type, rot, pos.x, pos.y);
+      }
+      this.pile = { steps, shown: 0, t: 0, done: false, fromQueue: steps.length - (g.piece ? 1 : 0), quietFirst: performance.now() - (this.setAt || -1e9) < 150 };
+      this.view.pileup = [];
+      this.view.queueSkip = 0;
+      if (this.reduced) { this.finishPile(); return; }
+      this.pileFrame(0);
+    }
+
+    /** One step of the pile: the next piece appears, with a soft set sound. */
+    pileStep(quiet) {
+      const P = this.pile, st = P.steps[P.shown++];
+      this.view.pileup.push({ cells: st.cells, color: st.color, t: quiet ? -1 : P.t });
+      this.view.queueSkip = Math.max(0, P.shown - (P.steps.length - P.fromQueue));
+      // The first is the piece that could not appear: when it came right as the last piece set, that set sound is its.
+      if (!quiet && !(P.shown === 1 && P.quietFirst)) this.app.sound.play('lock');
+      this.view.dirty = true;
+    }
+
+    pileFrame(dt) {
+      const P = this.pile;
+      P.t += dt;
+      while (P.shown < P.steps.length && P.t >= P.shown * PILE_GAP) this.pileStep();
+      this.view.pileT = P.t;
+      this.view.dirty = true;
+      if (P.shown >= P.steps.length && P.t >= (P.steps.length - 1) * PILE_GAP + PILE_REST) this.finishPile();
+    }
+
+    /** The top out's end, now: the whole pile, the game over sound and call (unless quiet), and the card. */
+    finishPile(o) {
+      const P = this.pile;
+      if (!P || P.done) return;
+      while (P.shown < P.steps.length) this.pileStep(true);
+      P.done = true;
+      this.view.pileT = Infinity; // every piece of it fully there
+      this.view.dirty = true;
+      if (!(o && o.quiet)) {
+        this.app.sound.play('fail');
+        if (this.app.settings.announcer !== false && this.app.settings.sound) L.Announcer.say(['gameover']);
+      }
+      this.showOverCard();
+    }
+
+    showOverCard() {
       this.showCard([
-        h('h2', null, best ? 'New best!' : 'Game over'),
+        h('h2', null, this.newBest ? 'New best!' : 'Game over'),
         h('p', null, h('span', { class: 'big' }, fmtInt(this.score)), ' points'),
         h('p', null, 'Level ' + this.level + ' · ' + this.lines + ' lines'),
         h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => this.newGame(true) }, 'Play again ', h('kbd', null, 'Space'))),
@@ -726,7 +806,7 @@
      * page shown and the window focused, and a board in play (Classic's running() and document.hasFocus()).
      */
     canRun() {
-      return this.app.tab === 'play' && !(L.Collapse && L.Collapse.on) && !UI.modalOpen() && !this.cardOpen && !document.hidden && document.hasFocus() && !!this.game && !this.game.over;
+      return this.app.tab === 'play' && !(L.Collapse && L.Collapse.on) && !UI.modalOpen() && !this.cardOpen && !this.fullView && !document.hidden && document.hasFocus() && !!this.game && !this.game.over;
     }
 
     frame(now, dt) {
@@ -734,6 +814,8 @@
       const modal = UI.modalOpen();
       if (modal && !this.modalUp) this.ctl.pause('modal');
       this.modalUp = modal;
+      // While a retired board is in full view (a window too), it is what is drawn; the board in play waits, untouched.
+      if (this.fullView) { this.fullView.frame(now, dt); return; }
       this.ctl.frame(now, dt, this.canRun());
       super.frame(now, dt);
     }
@@ -1436,7 +1518,7 @@
      * of it at that scale, a larger one is fitted in, at one device pixel a cell or more, so every row is as tall. Cached by board, stack, look and scale, so it is redrawn only when one of those
      * changed.
      */
-    thumb(id, cells, w, hh, recipe) {
+    thumb(id, cells, w, hh, recipe, tip) {
       const eq = this.app.store.state.equipped, theme = this.app.theme;
       const dpr = Math.min(3, root.devicePixelRatio || 1);
       const str = typeof cells === 'string' ? cells : Library.encodeCells(cells);
@@ -1459,13 +1541,14 @@
         this.thumbs.set(id, url);
         if (this.thumbs.size > 80) this.thumbs.delete(this.thumbs.keys().next().value);
       }
-      return h('img', { class: 'lib-thumb', src: url.src, alt: '', style: { width: url.W + 'px', height: url.H + 'px' } });
+      return h('img', { class: 'lib-thumb', src: url.src, alt: '', 'data-tip': tip || null, style: { width: url.W + 'px', height: url.H + 'px' } });
     }
 
     /**
      * The Boards window: Saved (the board in play first, then the rest by when they were last played) and Retired.
      * A saved board resumes with a click (or Enter); each has Rename, Retire and Delete. A retired one opens its
-     * summary, and can be deleted. New board shelves the one in play. One at a time: asked again, the open one stays.
+     * summary; View (or its thumbnail) shows it in full view; it can be deleted. New board shelves the one in play.
+     * One at a time: asked again, the open one stays.
      */
     openLibrary() {
       if (this.libHandle && this.libHandle.el.isConnected) return this.libHandle;
@@ -1553,16 +1636,19 @@
             s.pieces ? act('retire', 'Retire', () => this.confirmRetire(rec.id, afterGone(rec.id))) : gap(),
             act('trash', 'Delete', () => this.confirmDelete(rec.id, afterGone(rec.id)), 'del')));
       };
+      // A retired row opens its record; its thumbnail (or View) opens the board in full view.
       const retiredRow = (e) => {
         const label = e.recipe && L.Recipe ? L.Recipe.label(e.recipe) : '', short = label && L.Recipe.label(e.recipe, true);
         return h('div', { class: 'lib-row retired', 'data-id': e.id },
-        h('button', { class: 'lib-open', 'data-id': e.id, 'aria-label': e.name, onclick: () => this.openRetired(e.id, afterGone(e.id)) },
-          this.thumb(e.id, e.cells, e.w, e.h, e.recipe),
+        h('button', { class: 'lib-open', 'data-id': e.id, 'aria-label': e.name, onclick: (ev) => { if (ev.target.closest && ev.target.closest('.lib-thumb')) this.openRetiredView(e.id, ev.currentTarget); else this.openRetired(e.id, afterGone(e.id)); } },
+          this.thumb(e.id, e.cells, e.w, e.h, e.recipe, 'View'),
           h('div', { class: 'grow' }, h('div', { class: 't' }, e.name),
             h('div', { class: 'd' + (short ? ' labelled' : '') }, this.rowTags(e.recipe, e.sum && e.sum.ext, { cur: false, over: e.reason !== 'manual', ended: e.reason !== 'manual' && e.reason !== 'full' ? e.reason : null, reason: e.reason, retired: true }),
               h('span', { class: 'sz', title: label || null }, [when(e.at), Library.sizeLabel(e.w, e.h), short].filter(Boolean).join(' · ')),
               h('span', { class: 'st' }, ['Lines ' + fmtInt(e.sum.lines || 0), 'Score ' + fmtInt(e.sum.score || 0)].join(' · '))))),
-        h('div', { class: 'lib-acts' }, act('trash', 'Delete', () => this.confirmDelete(e.id, afterGone(e.id)), 'del')));
+        h('div', { class: 'lib-acts' },
+          h('button', { class: 'icon-btn fv-open', 'aria-label': 'View', 'data-tip': 'View', html: L.Icons.icon('expand'), onclick: (ev) => { ev.stopPropagation(); this.openRetiredView(e.id, ev.currentTarget); } }),
+          act('trash', 'Delete', () => this.confirmDelete(e.id, afterGone(e.id)), 'del')));
       };
       const newBtn = h('button', { class: 'btn sm primary lib-new', 'aria-label': 'New board', onclick: () => this.openNewBoard((made) => { if (made && handle && handle.el.isConnected) { tab = 'saved'; editing = null; draw(st.state.boards.cur); } }) }, ico('newBoard'), h('span', { class: 'lbl' }, 'New board'));
       const seg = h('div', { class: 'seg lib-tabs' }, [['saved', 'Saved'], ['retired', 'Retired']].map(([k, l]) =>
@@ -1609,20 +1695,39 @@
       return handle;
     }
 
-    /** A retired board's record: its name, when it lived, its summary. Read-only; it can be deleted. */
+    /** A retired record's dates (started, retired; beside its thumbnail when asked) and its summary. */
+    recordBody(e, withThumb) {
+      const day = (t) => new Date(t).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+      return [h('div', { class: 'lib-dates' }, withThumb ? this.thumb(e.id, e.cells, e.w, e.h, e.recipe) : null, h('div', null, h('div', null, h('i', null, 'Started '), day(e.sum.startedAt || e.created)), h('div', null, h('i', null, 'Retired '), day(e.at)))), this.boardSummary(e.sum, e.recipe)];
+    }
+
+    /** A retired board's record: its name, when it lived, its summary. Read-only; View shows it in full; it can be deleted. */
     openRetired(id, after) {
       const B = this.app.store.state.boards, e = Library.findRetired(B, id);
       if (!e) return;
-      const day = (t) => new Date(t).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
       // Delete asks first; only once it is done does the record close (Cancel leaves it open, where it was).
       const rec = UI.openModal({
         title: e.name, icon: 'retire', width: 420, cls: 'modal-retire',
-        body: [h('div', { class: 'lib-dates' }, this.thumb(e.id, e.cells, e.w, e.h, e.recipe), h('div', null, h('div', null, h('i', null, 'Started '), day(e.sum.startedAt || e.created)), h('div', null, h('i', null, 'Retired '), day(e.at)))), this.boardSummary(e.sum, e.recipe)],
-        buttons: [{ label: 'Delete', kind: 'danger', onClick: () => { this.confirmDelete(id, () => { rec.close(); if (after) after(); }); return false; } }, { label: 'Close', kind: 'primary' }],
+        body: this.recordBody(e, true),
+        buttons: [{ label: 'Delete', kind: 'danger', onClick: () => { this.confirmDelete(id, () => { rec.close(); if (after) after(); }); return false; } },
+          { label: 'View', kind: 'fv-view', onClick: () => { this.openRetiredView(id, rec.el.querySelector('footer .fv-view')); return false; } },
+          { label: 'Close', kind: 'primary' }],
       });
+      return rec;
     }
 
-    blocked() { return this.cardOpen; }
+    /**
+     * A retired board in full view (js/retiredview.js): at play size where the board in play is, read-only, with
+     * Previous and Next through the retired boards; Back or Esc returns, focus to `back`. One at a time.
+     */
+    openRetiredView(id, back) {
+      if (this.fullView || !Library.findRetired(this.app.store.state.boards, id)) return this.fullView || null;
+      // A record that cannot be drawn opens nothing (the view makes its first board before it opens a thing).
+      try { this.fullView = new L.RetiredView(this, id, back || document.activeElement); } catch (err) { console.warn('Lull: a retired board could not be drawn', err); return null; }
+      return this.fullView;
+    }
+
+    blocked() { return this.cardOpen || !!this.fullView; }
 
     renderStatus() {
       const s = this.game.s;
@@ -2424,7 +2529,7 @@
       if (!p.mods.length) { this.el.mods.replaceChildren(h('span', { class: 'mod-none' }, 'No wildcards')); return; }
       this.el.mods.replaceChildren(...p.mods.map((m) => {
         const M = Puzzles.MODS[m];
-        return h('button', { class: 'mod mod-' + m, 'data-mod': m, 'data-tip-title': M.name, 'data-tip': M.desc, 'data-tip-foot': modKeys(m, p.mods), 'data-tip-touch': modTouch(m, p.mods, this.settings.tapTurn) },
+        return h('button', { class: 'mod mod-' + m, 'data-mod': m, 'data-tip-title': M.name, 'data-tip': Puzzles.modDesc(p, m), 'data-tip-foot': modKeys(m, p.mods), 'data-tip-touch': modTouch(m, p.mods, this.settings.tapTurn) },
           icon(m), h('span', { class: 'n' }, M.name), h('span', { class: 's' }, MOD_SHORT[m] || M.name));
       }));
       this.fitMods();
@@ -2445,7 +2550,7 @@
       if (open || !Puzzles.MODS[m]) return;
       const M = Puzzles.MODS[m], keys = L.Touch && L.Touch.using ? modTouch(m, this.puzzle.mods, this.settings.tapTurn) : modKeys(m, this.puzzle.mods);
       const pop = h('div', { class: 'puz-pop', 'data-mod': m, role: 'note' },
-        h('div', { class: 'tip-title' }, icon(m), ' ', M.name), h('div', { class: 'tip-body' }, M.desc), keys ? h('div', { class: 'tip-foot' }, keys) : null);
+        h('div', { class: 'tip-title' }, icon(m), ' ', M.name), h('div', { class: 'tip-body' }, Puzzles.modDesc(this.puzzle, m)), keys ? h('div', { class: 'tip-foot' }, keys) : null);
       this.el.view.appendChild(pop);
       // Just under the chip, kept inside the tab.
       const v = this.el.view.getBoundingClientRect(), r = chip.getBoundingClientRect(), w = pop.offsetWidth;
@@ -2501,11 +2606,15 @@
     { kind: 'frame', id: 'hazard', test: (f) => f.presses >= 3 },
     { kind: 'skin', id: 'steel', test: (f) => f.presses >= 4 },
     { kind: 'backdrop', id: 'belt', test: (f) => f.stats.lines >= 500 },
-    { kind: 'effect', id: 'sparks', test: (f) => f.binLevel >= 4 },
+    { kind: 'effect', id: 'sparks', test: (f) => f.crateLevel >= 4 },
   ];
 
-  // What the line sounds like (existing ids only; each at most every 0.4 s, and only with the window in front).
-  const LINE_SOUNDS = { mino: 'stamp', drop: 'pack', enter: 'land', full: 'bell' };
+  // What the line sounds like (existing ids only; each at most every 0.4 s, and only with the window in front). Feeds
+  // are silent.
+  const LINE_SOUNDS = { stamp: 'stamp', mino: 'stamp', drop: 'pack', ship: 'land', full: 'bell' };
+  // The four things to build, in the chain's order.
+  const FAC_KINDS = ['stamp', 'store', 'press', 'crate'];
+  const ORDINAL = ['First', 'Second', 'Third', 'Fourth'];
 
   /** A calm "how long": <1m, 12m, 1h 12m, 2d 3h (held together: a wrap never splits one). */
   function soon(sec) {
@@ -2513,28 +2622,34 @@
     const m = Math.ceil(sec / 60);
     if (m <= 1) return sec < 45 ? '<1m' : '1m';
     if (m < 60) return m + 'm';
-    if (m < 48 * 60) return Math.floor(m / 60) + 'h' + (m % 60 ? '\u00a0' + (m % 60) + 'm' : '');
+    if (m < 48 * 60) return Math.floor(m / 60) + 'h' + (m % 60 ? ' ' + (m % 60) + 'm' : '');
     const d = Math.floor(m / 1440), hr = Math.floor((m % 1440) / 60);
-    return d + 'd' + (hr ? '\u00a0' + hr + 'h' : '');
+    return d + 'd' + (hr ? ' ' + hr + 'h' : '');
   }
 
-  // The two things to build, drawn in the icon set's manner (js/icons.js: a 16-unit grid, a 1.5 stroke, round caps and
+  // The things to build, drawn in the icon set's manner (js/icons.js: a 16-unit grid, a 1.5 stroke, round caps and
   // joins, currentColor), kept here since only the Factory uses them.
   const facSvg = (body) => '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + body + '</svg>';
   const FAC_ICONS = {
+    // A head on its beam, its ram, and a single mino under it.
+    'fac-stamp': facSvg('<path d="M2.25 2.25h11.5M8 2.25v2.5"/><rect x="5.25" y="4.75" width="5.5" height="2" rx="0.8"/><rect x="6.25" y="9.5" width="3.5" height="3.5" rx="0.8" fill="currentColor" stroke="none"/>'),
+    // A shallow tray with one row of minos.
+    'fac-store': facSvg('<path d="M2.25 7.5v5.25h11.5V7.5"/><rect x="4" y="10" width="2.25" height="1.75" rx="0.5" fill="currentColor" stroke="none"/><rect x="6.9" y="10" width="2.25" height="1.75" rx="0.5" fill="currentColor" stroke="none"/><rect x="9.8" y="10" width="2.25" height="1.75" rx="0.5" fill="currentColor" stroke="none"/>'),
     // A housing, its rod, and the ram over an open mold.
     'fac-press': facSvg('<rect x="4.75" y="1.75" width="6.5" height="2.75" rx="1"/><path d="M8 4.5v2.25M5 7.75h6M2.75 10v3.25h10.5V10"/>'),
-    // An open bin with two full rows.
-    'fac-bin': facSvg('<path d="M3.25 2.25v11.5h9.5V2.25"/><rect x="5" y="10" width="6" height="2" rx="0.6" fill="currentColor" stroke="none"/><rect x="5" y="7.25" width="6" height="2" rx="0.6" fill="currentColor" stroke="none"/>'),
+    // A crate hung from its rail, with two full rows.
+    'fac-crate': facSvg('<path d="M2.25 2.25h11.5M4.25 2.25v2M11.75 2.25v2M3.25 4.75v9h9.5v-9"/><rect x="5" y="10.25" width="6" height="1.75" rx="0.6" fill="currentColor" stroke="none"/><rect x="5" y="7.5" width="6" height="1.75" rx="0.6" fill="currentColor" stroke="none"/>'),
   };
   const facIcon = (name) => h('span', { class: 'fac-ico', html: FAC_ICONS[name] });
 
   const easeOut3 = (k) => 1 - Math.pow(1 - k, 3);
 
   /**
-   * The Factory: one slow line. The floor on its plate (presses, belt, lift, bin), a bar of figures under it with
-   * Collect at the right, and the two things to build at the bottom. The floor's parts are buttons too: a press opens
-   * its mold, the next bay builds, the bin collects. Everything it makes is minos; every four in the bin are a line.
+   * The Factory: a production chain. The floor on its plate (stamp heads, the top belt, the store, the presses, the
+   * belt, the lift and the crate), a bar of figures under it with Collect at the right, and the things to build at the
+   * bottom, in the chain's order. The floor's parts are buttons too: a head or the store points to its entry, a press
+   * opens its mold, the next head or bay builds, the crate collects. Everything it makes is minos; every four in the
+   * crate are a line.
    */
   class FactoryMode {
     constructor(app) {
@@ -2547,11 +2662,12 @@
       this.list = document.getElementById('fac-list');
       this.hots = document.getElementById('fac-hots');
       this.visible = false;
+      this.form = 'rows'; // the list: a row for each thing to build, or (a short window) a grid of cards
       this.panelAt = 0; this.tipAt = 0; this.achAt = 0; this.soundAt = {}; this.etaAt = -Infinity; this.etaV = Infinity;
       this.away = null;  // time away not yet announced: { seconds, minos }
-      this.count = null; // Lines in bin counting to a new value: { from, to, t0, dur }
+      this.count = null; // Lines in crate counting to a new value: { from, to, t0, dur }
       this.fly = null;   // collected lines on their way to the wallet
-      this.hotKey = -1; this.hotEls = [];
+      this.hotKey = ''; this.hotEls = []; this.buildEls = {};
       this.build();
     }
 
@@ -2564,23 +2680,21 @@
     /**
      * Time away (more than five seconds since the line last ran): replayed in one go, never banked for you. Timers run
      * slowly or not at all while Lull is hidden, so quiet catch-ups add up until the next return announces them. On the
-     * Factory tab nothing is announced: the new minos fade into the bin and its figure counts up.
+     * Factory tab nothing is announced: the new minos fade into the store and the crate, and its figure counts up.
      */
     catchUp(announce) {
       const f = this.f, now = Date.now();
       let res = null;
       if (now - f.lastTick > 5000 || now < f.lastTick) {
-        if (this.visible) this.view.flushLift();
-        const before = this.view.landed(f);
+        if (this.visible) this.view.flushAll();
+        const crate0 = this.view.landed(f), store0 = this.view.storeLanded(f);
         res = Factory.catchUp(f, now);
         if (res) {
           if (res.minos) this.addDayMinos(res.minos);
           if (this.visible) {
             this.away = null;
-            if (f.bin.length > before) {
-              this.view.caughtUp(before, f.bin.length);
-              if (!this.reduced) this.count = { from: before / 4, to: f.bin.length / 4, t0: performance.now(), dur: 800 };
-            }
+            this.view.caughtUp(store0, crate0, f);
+            if (f.crate.length > crate0 && !this.reduced) this.count = { from: crate0 / 4, to: f.crate.length / 4, t0: performance.now(), dur: 800 };
           } else this.away = { seconds: (this.away ? this.away.seconds : 0) + res.seconds, minos: (this.away ? this.away.minos : 0) + res.minos };
           this.afterChange();
           this.app.setBadge('factory', Factory.isFull(f));
@@ -2591,13 +2705,13 @@
         this.away = null;
         if (a.seconds > 90 && a.minos >= 4) {
           const lines = Factory.quarters(a.minos / 4);
-          toast('While you were away: ' + lines + (lines === '1' ? ' line' : ' lines') + (Factory.isFull(f) ? ' · Bin full' : ''), 'good', 5000);
+          toast('While you were away: ' + lines + (lines === '1' ? ' line' : ' lines') + (Factory.isFull(f) ? ' · Crate full' : ''), 'good', 5000);
         }
       }
       return res;
     }
 
-    /** Runs the line up to now: a catch-up after a gap, otherwise one ordinary step. */
+    /** Runs the line up to now: a catch-up after a gap, otherwise the ticks the time since the last frame holds. */
     advance() {
       const f = this.f, now = Date.now();
       // A gap found with the floor on screen (a sleep, a hide that sent no event) is caught up now.
@@ -2612,8 +2726,8 @@
       this.view.settle();
       this.catchUp(false);
       this.away = null; // the floor shows what happened
-      this.build();
       this.relayout();
+      this.build();
     }
 
     hide() {
@@ -2625,29 +2739,40 @@
     }
 
     /**
-     * The height the plate may take: the view's, less its padding, the bar and room for the whole list (two rows,
-     * whatever it holds now). It depends only on the window, never on what is built, so a purchase never moves the
-     * scene: when a row goes, the space it leaves sits at the bottom, as on the other tabs.
+     * The room the plate may take: the view's height, less its padding and the bar (left), and what the list takes in
+     * each form (listH: as it is now, or with n entries): the scene grows into whatever the list leaves, so when an
+     * entry goes, the scene takes its room.
      */
     plateRoom() {
       const el = this.el, plate = this.view.plate, stage = plate && plate.parentElement;
-      if (!plate || !el.clientHeight) return 0;
+      if (!plate || !el.clientHeight) return null;
       if (this.padW !== el.clientWidth) {
         const st = getComputedStyle(el), ls = getComputedStyle(this.list);
         this.padW = el.clientWidth; this.pad = parseFloat(st.paddingTop) + parseFloat(st.paddingBottom); this.listM = parseFloat(ls.marginTop) || 0;
       }
-      // The list's full height, taken from the rows it has (every row is the same height); until one has been seen,
-      // the stylesheet's two rows of 48 px and their borders.
-      const g = !this.list.classList.contains('hidden') && this.list.firstElementChild, n = g ? g.children.length : 0;
-      if (n) this.list2 = g.offsetHeight + (2 - n) * g.lastElementChild.offsetHeight;
-      return el.clientHeight - this.pad - (stage.offsetHeight - plate.offsetHeight) - this.listM - (this.list2 || 98);
+      const inner = el.clientHeight - this.pad, left = inner - (stage.offsetHeight - plate.offsetHeight);
+      const now = FAC_KINDS.filter((k) => Factory.nextUpgrade(this.f, k)).length;
+      // Rows: 48 each and the group's hairlines; cards: two to a row, 48 high with a 2 px gap (n entries: those left now,
+      // unless given).
+      const listH = (form, n = now) => (!n ? 0 : this.listM + (form === 'rows' ? n * 48 + 2 : Math.ceil(n / 2) * 48 + (n > 2 ? 2 : 0)));
+      // A phone on its side (the stylesheet's own test for one): the plate takes the height, the rest scrolls.
+      const sideways = !!(root.matchMedia && root.matchMedia('(hover: none) and (pointer: coarse) and (orientation: landscape) and (max-height: 520px)').matches);
+      return { left, listH, innerH: inner, sideways };
     }
 
-    /** Fits the floor to the view: on show, on a resize (app.onResize), and once more if the view was not laid out. */
+    /** Fits the floor to the view: on show, on a resize (app.onResize), after the list changes, and once more if the
+     *  view was not laid out. */
     relayout() {
       const room = this.plateRoom();
-      this.view.resize(room);
-      this.roomDirty = room <= 0;
+      this.roomDirty = !room;
+      if (!room) return;
+      const lay = L.FactoryArt.fit(this.view.boxWidth(), room);
+      this.view.resize(lay);
+      if (lay.form !== this.form) {
+        this.form = lay.form;
+        this.list.classList.toggle('cards', lay.form === 'cards');
+        this.build();
+      }
     }
 
     /** Every second while the factory is not on screen: the line keeps running, quietly. */
@@ -2667,7 +2792,7 @@
       this.onEvents(evs, true);
       this.view.render(dt, this.f, this.app.look());
       this.placeHots();
-      this.updateBin();
+      this.updateCrate();
       if (this.el.classList.contains('fac-still') !== reduced) this.el.classList.toggle('fac-still', reduced);
       if (t - this.panelAt > 250) { this.panelAt = t; this.update(); }
       if (t - this.tipAt > 1000) { this.tipAt = t; this.refreshTips(); }
@@ -2675,13 +2800,13 @@
 
     onEvents(evs, audible) {
       if (!evs.length) return;
-      let entered = false;
+      let shipped = false;
       for (const e of evs) {
-        if (e.kind === 'enter') { this.addDayMinos(e.item.n); entered = true; }
+        if (e.kind === 'ship') { this.addDayMinos(e.item.n); shipped = true; }
         if (audible) this.lineSound(LINE_SOUNDS[e.kind]);
       }
-      if (entered) this.afterChange();
-      if (evs.some((e) => e.kind === 'full' || e.kind === 'enter')) this.app.setBadge('factory', Factory.isFull(this.f));
+      if (shipped) this.afterChange();
+      if (shipped || evs.some((e) => e.kind === 'full')) this.app.setBadge('factory', Factory.isFull(this.f));
     }
 
     lineSound(id) {
@@ -2711,11 +2836,11 @@
 
     // ---- verbs --------------------------------------------------------------------------------------------------------
 
-    /** Banks every four minos in the bin as a line; the 0–3 loose ones stay. Minos still on the lift land first. */
+    /** Banks every four minos in the crate as a line; the 0–3 loose ones stay. Minos still on their way land first. */
     collect() {
       const f = this.f;
       this.view.flushLift();
-      if (f.bin.length < 4) { this.app.sound.play('blocked'); return false; }
+      if (f.crate.length < 4) { this.app.sound.play('blocked'); return false; }
       const look = this.app.look(), reduced = this.reduced, shown = this.visible ? this.displayed() : 0;
       const snap = this.visible ? this.view.snapshot(f, look) : null;
       const res = Factory.collect(f);
@@ -2736,15 +2861,16 @@
       return true;
     }
 
-    /** Builds the next press or a bigger bin; short of lines, it says so (a soft no, and the button's flash). */
+    /** Builds the next of a kind; short of lines, it says so (a soft no, and the entry's flash). */
     upgrade(kind) {
       const u = Factory.nextUpgrade(this.f, kind);
       if (!u) return false;
       if (this.store.state.lines < u.cost || !this.store.spend(u.cost)) { this.app.sound.play('blocked'); this.flashBuild(kind); return false; }
       this.flushFly();
-      this.view.flushLift();
+      if (kind === 'crate') this.view.flushLift();
       Factory.upgrade(this.f, kind);
       if (kind === 'press') this.view.builtPress(this.f.presses - 1);
+      if (kind === 'stamp') this.view.builtHead(this.f.stampers - 1);
       this.app.refreshWallet();
       this.app.sound.play('buy');
       this.afterChange();
@@ -2753,10 +2879,18 @@
     }
 
     flashBuild(kind) {
-      const b = kind === 'press' ? this.pressBtn : this.binBtn;
+      const b = this.buildEls[kind];
       if (!b || this.reduced) return;
       b.classList.remove('flash'); void b.offsetWidth; b.classList.add('flash');
       b.addEventListener('animationend', () => b.classList.remove('flash'), { once: true });
+    }
+
+    /** Keyboard focus to a kind's entry in the list (a head or the store on the floor points there). */
+    focusEntry(kind) {
+      const b = this.buildEls[kind];
+      if (!b) { this.app.sound.play('blocked'); return; }
+      b.focus({ preventScroll: true });
+      if (b.scrollIntoView) b.scrollIntoView({ block: 'nearest' });
     }
 
     /** The mold picker: any shape each time, or one chosen shape (it never changes what a press pays). */
@@ -2808,27 +2942,27 @@
 
     // ---- collected lines, on their way to the wallet ----------------------------------------------------------------
 
-    /** One label, "+11 ⦵", rises over the bin, holds, then flies into the wallet, which counts it on arrival. */
+    /** One label, "+11 ⦵", rises over the crate, holds, then flies into the wallet, which counts it on arrival. */
     flyLines(n, reduced) {
       const app = document.getElementById('app'), icon = document.getElementById('wallet-icon'), plate = this.view.plate;
       const wr = icon && icon.getBoundingClientRect();
       const again = !!this.fly;
       if (this.fly && this.fly.anim) this.fly.anim.cancel();
-      if (!this.fly) { this.fly = { el: h('div', { class: 'fac-fly', 'aria-hidden': 'true' }), n: 0, anim: null, events: [], ach: false, key: 0 }; app.appendChild(this.fly.el); }
+      if (!this.fly) { this.fly = { el: h('div', { class: 'fac-fly', 'aria-hidden': 'true' }), n: 0, anim: null, events: [], ach: false, key: '' }; app.appendChild(this.fly.el); }
       const fly = this.fly;
       fly.n += n;
       fly.key = this.view.layoutKey(this.f);
       fly.el.textContent = '+' + fmtInt(fly.n) + ' ' + LINE;
-      const a = app.getBoundingClientRect(), p = plate.getBoundingClientRect(), bin = this.view.rect('bin', 0, this.f);
+      const a = app.getBoundingClientRect(), p = plate.getBoundingClientRect(), crate = this.view.rect('crate', 0, this.f);
       const w = fly.el.offsetWidth, hgt = fly.el.offsetHeight;
-      let x = p.left + 1 + bin.x + bin.w / 2 - w / 2 - a.left;
+      let x = p.left + 1 + crate.x + crate.w / 2 - w / 2 - a.left;
       x = Math.max(p.left - a.left + 8, Math.min(p.right - a.left - w - 8, x));
-      const y = Math.max(p.top - a.top + 6, p.top + 1 + bin.y + 0.5 * this.view.cs - hgt - 10 - a.top);
+      const y = Math.max(p.top - a.top + 6, p.top + 1 + crate.y + 0.5 * this.view.cs - hgt - 10 - a.top);
       const at = (dx, dy, s) => 'translate(' + Math.round(dx) + 'px,' + Math.round(dy) + 'px) scale(' + s + ')';
       const hidden = !wr || !wr.width || L.Collapse.on || document.hidden;
       const done = () => { if (this.fly === fly) this.landFly(); };
       if (reduced || hidden) {
-        // In place: the label fades in and out over the bin; the wallet (and any achievement) counts at once.
+        // In place: the label fades in and out over the crate; the wallet (and any achievement) counts at once.
         this.fly = null;
         this.app.refreshWallet(true);
         this.landAchievements(fly);
@@ -2867,130 +3001,203 @@
 
     // ---- the page -----------------------------------------------------------------------------------------------------
 
+    /** What building the next of a kind changes, in plain words: its title, a short one for a card, and the line under
+     *  it (lines an hour, where the rate would rise). */
+    describe(kind, u) {
+      const f = this.f, ph = Factory.perHour(f), gain = (to) => '+' + Factory.quarters((to - ph) / 4) + ' lines / hour';
+      if (kind === 'stamp') {
+        const to = Math.min(u.to, Factory.demand(f));
+        return { title: ORDINAL[f.stampers] + ' stamper', short: 'Stamper', icon: 'fac-stamp', meta: to > ph ? gain(to) : u.from + ' → ' + u.to + ' minos / hour' };
+      }
+      if (kind === 'store') return { title: 'Bigger store', short: 'Store', icon: 'fac-store', meta: fmtInt(u.from) + ' → ' + fmtInt(u.to) + ' minos' };
+      if (kind === 'press') {
+        const to = Math.min(Factory.supply(f), u.to);
+        return { title: Factory.NAMES[u.n] + ' press', short: 'Press', icon: 'fac-press', meta: to > ph ? gain(to) : 'Uses ' + (u.to - u.from) + ' minos / hour' };
+      }
+      return { title: 'Bigger crate', short: 'Crate', icon: 'fac-crate', meta: u.from + ' → ' + u.to + ' lines' };
+    }
+
     /** Builds the bar, the hotspots and the list (on show, and after a purchase); update() keeps them fresh. */
     build() {
-      const f = this.f;
-      // Keyboard focus survives the rebuild: the same bay of the floor, the same row's Build (or the next thing).
-      const a = document.activeElement, upRow = a && a.closest ? a.closest('.fac-up') : null;
+      const f = this.f, cards = this.form === 'cards';
+      // Keyboard focus survives the rebuild: the same part of the floor, the same entry (or the next thing).
+      const a = document.activeElement, upEl = a && a.closest ? a.closest('.fac-up') : null;
       let keep = null;
       if (a && this.el.contains(a)) {
-        if (a.dataset.hot === 'bin') keep = '.fac-hot[data-hot=bin]';
-        else if (a.classList.contains('fac-hot')) keep = '.fac-hot[data-k="' + a.dataset.k + '"]';
-        else if (upRow) keep = '.fac-up[data-up="' + upRow.dataset.up + '"] .btn';
+        if (a.classList.contains('fac-hot')) keep = '.fac-hot[data-id="' + a.dataset.id + '"]';
+        else if (upEl) keep = '.fac-up[data-up="' + upEl.dataset.up + '"]' + (cards ? '' : ' .btn');
         else if (a === this.cBtn) keep = '#fac-collect .btn';
       }
       // The bar: three figures, and Collect.
       const stat = (label, short) => { const b = h('b'), el = h('span', { class: 'fac-stat' }, h('i', { 'data-short': short }, label), b); return { el, b }; };
-      this.sRate = stat('Lines / hour', 'Per hour'); this.sBin = stat('Lines in bin', 'In bin'); this.sFull = stat('Full in', 'Full in');
-      this.binV = document.createTextNode(''); this.binOf = h('span', { class: 'of' });
-      this.sBin.b.append(this.binV, this.binOf);
-      this.binQ = -1; this.binCap = -1; this.fullTxt = null; this.rateTxt = null;
-      this.top.replaceChildren(this.sRate.el, this.sBin.el, this.sFull.el);
+      this.sRate = stat('Lines / hour', 'Per hour'); this.sCrate = stat('Lines in crate', 'In crate'); this.sFull = stat('Full in', 'Full in');
+      this.crateV = document.createTextNode(''); this.crateOf = h('span', { class: 'of' });
+      this.sCrate.b.append(this.crateV, this.crateOf);
+      this.crateQ = -1; this.crateCap = -1; this.fullTxt = null; this.rateTxt = null; this.rateTip = null;
+      this.top.replaceChildren(this.sRate.el, this.sCrate.el, this.sFull.el);
       const preview = (on) => () => { this.view.preview = on; };
       // No tooltip: the label already says Collect, and a tip above it would sit over the rows its hover lights up
-      // (the bin's own tooltip gives the key).
+      // (the crate's own tooltip gives the key).
       this.cBtn = h('button', { class: 'btn primary', 'aria-keyshortcuts': 'C', onclick: () => this.collect(),
         onmouseenter: preview(true), onmouseleave: preview(false), onfocus: preview(true), onblur: preview(false) });
       this.cKey = null;
       this.collectEl.replaceChildren(this.cBtn);
-      // The things to build: the next press, then a bigger bin (a row goes once there is nothing left to build).
-      const row = (up, ico, title, meta, btn) => h('div', { class: 'fac-up', 'data-up': up }, facIcon(ico), h('div', { class: 'txt' }, h('div', { class: 't' }, title), h('div', { class: 'd' }, meta)), btn);
-      const buy = (kind) => (e) => { if (e.currentTarget.getAttribute('aria-disabled') === 'true') { this.app.sound.play('blocked'); return; } this.upgrade(kind); };
-      const rows = [];
-      const np = Factory.nextUpgrade(f, 'press'), nb = Factory.nextUpgrade(f, 'bin');
-      this.pressBtn = this.binBtn = null;
-      if (np) {
-        this.pressBtn = h('button', { class: 'btn sm', onclick: buy('press') }, 'Build · ' + fmtInt(np.cost) + ' ' + LINE);
-        rows.push(row('press', 'fac-press', Factory.NAMES[np.to] + ' press', '+' + Factory.quarters((3600 / Factory.CYCLE) * np.to / 4) + ' lines / hour', this.pressBtn));
+      // The things to build, in the chain's order (an entry goes once its kind is built out): a row each, with its Build
+      // button; or, in a short window, a card each, the card itself the button.
+      const buy = (kind) => (e) => { if (e.currentTarget.getAttribute('aria-disabled') === 'true') { this.app.sound.play('blocked'); this.flashBuild(kind); return; } this.upgrade(kind); };
+      const entries = [];
+      this.buildEls = {};
+      for (const kind of FAC_KINDS) {
+        const u = Factory.nextUpgrade(f, kind);
+        if (!u) continue;
+        const d = this.describe(kind, u), price = fmtInt(u.cost) + ' ' + LINE;
+        if (cards) {
+          const words = 'Build ' + d.title + ', ' + d.meta.replace(' → ', ' to ').replace(' / hour', ' an hour') + ', ' + fmtInt(u.cost) + ' lines';
+          const el = h('button', { class: 'fac-up', 'data-up': kind, 'aria-label': words, 'data-tip': words, onclick: buy(kind) },
+            facIcon(d.icon), h('span', { class: 'txt' }, h('span', { class: 't' }, d.short), h('span', { class: 'p' }, price)));
+          this.buildEls[kind] = el;
+          entries.push(el);
+        } else {
+          const btn = h('button', { class: 'btn sm', onclick: buy(kind) }, 'Build · ' + price);
+          this.buildEls[kind] = btn;
+          entries.push(h('div', { class: 'fac-up', 'data-up': kind }, facIcon(d.icon), h('div', { class: 'txt' }, h('div', { class: 't' }, d.title), h('div', { class: 'd' }, d.meta)), btn));
+        }
       }
-      if (nb) {
-        this.binBtn = h('button', { class: 'btn sm', onclick: buy('bin') }, 'Build · ' + fmtInt(nb.cost) + ' ' + LINE);
-        rows.push(row('bin', 'fac-bin', 'Bigger bin', nb.from + ' → ' + nb.to + ' lines', this.binBtn));
-      }
-      this.list.replaceChildren(...(rows.length ? [h('div', { class: 'fac-group' }, rows)] : []));
-      this.list.classList.toggle('hidden', !rows.length);
+      this.list.classList.toggle('cards', cards);
+      this.list.replaceChildren(...(entries.length ? [h('div', { class: 'fac-group' }, entries)] : []));
+      this.list.classList.toggle('hidden', !entries.length);
+      if (this.visible && !this.inBuild) { this.inBuild = true; try { this.relayout(); } finally { this.inBuild = false; } }
       this.buildHots();
       this.update();
-      this.updateBin();
+      this.updateCrate();
       if (keep) {
-        const to = this.el.querySelector(keep) || this.el.querySelector('.fac-up .btn') || this.cBtn;
+        const to = this.el.querySelector(keep) || this.el.querySelector(cards ? '.fac-up' : '.fac-up .btn') || this.cBtn;
         if (to && to.focus) to.focus({ preventScroll: true });
       }
     }
 
-    /** The floor's hotspots: every bay (a press, the next to build, or a later one) and the bin. */
+    /** The floor's hotspots, in the chain's order: the four stamp heads (built, the next to build, or later), the store,
+     *  the four bays (a press, the next to build, or later), and the crate. */
     buildHots() {
       const f = this.f, els = [];
       const hover = (kind, k) => (e) => { this.view.hover = { kind, k }; if (e.type === 'mouseenter') this.tipHot = e.currentTarget; };
       const leave = (e) => { this.view.hover = null; if (this.tipHot === e.currentTarget) this.tipHot = null; };
+      const hot = (id, kind, k, attrs, onclick) => h('button', Object.assign({ class: 'fac-hot', 'data-id': id, 'data-hot': kind, 'data-k': k,
+        onmouseenter: hover(kind, k), onmouseleave: leave, onfocus: hover(kind, k), onblur: leave, onclick }, attrs));
+      for (let j = 0; j < 4; j++) {
+        const kind = j < f.stampers ? 'head' : 'headBay';
+        els.push(hot('head' + j, kind, j, { 'aria-disabled': j > f.stampers ? 'true' : null }, () => {
+          if (j < this.f.stampers) this.focusEntry('stamp');
+          else if (j === this.f.stampers) this.upgrade('stamp');
+          else this.app.sound.play('blocked');
+        }));
+      }
+      els.push(hot('store', 'store', 0, null, () => this.focusEntry('store')));
       for (let k = 0; k < 4; k++) {
         const kind = k < f.presses ? 'press' : 'bay';
-        const b = h('button', { class: 'fac-hot', 'data-hot': kind, 'data-k': k, 'aria-disabled': k > f.presses ? 'true' : null,
-          onmouseenter: hover(kind, k), onmouseleave: leave, onfocus: hover(kind, k), onblur: leave,
-          onclick: () => {
-            if (k < this.f.presses) this.openMold(k);
-            else if (k === this.f.presses) this.upgrade('press');
-            else this.app.sound.play('blocked');
-          } });
-        els.push(b);
+        els.push(hot('press' + k, kind, k, { 'aria-disabled': k > f.presses ? 'true' : null }, () => {
+          if (k < this.f.presses) this.openMold(k);
+          else if (k === this.f.presses) this.upgrade('press');
+          else this.app.sound.play('blocked');
+        }));
       }
-      els.push(h('button', { class: 'fac-hot', 'data-hot': 'bin', 'aria-label': 'Collect', 'data-tip': 'Collect', 'data-tip-foot': 'C',
-        onmouseenter: hover('bin', 0), onmouseleave: leave, onfocus: hover('bin', 0), onblur: leave, onclick: () => this.collect() }));
+      els.push(hot('crate', 'crate', 0, { 'aria-label': 'Collect', 'data-tip': 'Collect', 'data-tip-foot': 'C' }, () => this.collect()));
       this.hotEls = els;
       this.hots.replaceChildren(...els);
-      this.hotKey = -1;
+      this.hotKey = '';
       this.view.hover = null;
       this.placeHots();
       this.refreshTips();
     }
 
-    /** Hotspots follow the scene whenever its layout changes (checked every frame; moved only then). */
+    /** Hotspots follow the scene whenever its layout changes (checked every frame; moved only then). Under a finger each
+     *  is at least 32 px square, never over its neighbours. */
     placeHots() {
       const key = this.view.layoutKey(this.f);
       if (key === this.hotKey) return;
       this.hotKey = key;
       // A label on its way to the wallet was aimed before the window changed: it lands now instead.
       if (this.fly && this.fly.key !== key) this.flushFly();
-      for (const b of this.hotEls) {
-        const r = this.view.rect(b.dataset.hot === 'bin' ? 'bin' : 'press', +b.dataset.k || 0, this.f);
-        b.style.left = Math.round(r.x) + 'px'; b.style.top = Math.round(r.y) + 'px';
-        b.style.width = Math.round(r.w) + 'px'; b.style.height = Math.round(r.h) + 'px';
+      const coarse = !!(root.matchMedia && root.matchMedia('(hover: none) and (pointer: coarse)').matches), MIN = 32;
+      const rects = this.hotEls.map((b) => this.view.rect(b.dataset.hot, +b.dataset.k || 0, this.f));
+      if (coarse) {
+        const grow = (r) => {
+          if (r.w < MIN) { r.x -= (MIN - r.w) / 2; r.w = MIN; }
+          if (r.h < MIN) { r.y -= (MIN - r.h) / 2; r.h = MIN; }
+        };
+        rects.forEach(grow);
+        // Side by side (the heads, the bays): each keeps to its half of the space between it and the next.
+        for (const [a, b] of [[0, 1], [1, 2], [2, 3], [5, 6], [6, 7], [7, 8]]) {
+          const ra = rects[a], rb = rects[b];
+          if (ra.x + ra.w > rb.x) { const mid = (ra.x + ra.w + rb.x) / 2; ra.w = mid - ra.x; rb.w -= mid - rb.x; rb.x = mid; }
+        }
+        // One above the other: the heads over the store, and the store over the bays (split halfway between them).
+        const rs = rects[4];
+        for (let j = 0; j < 4; j++) { const ra = rects[j]; if (ra.y + ra.h > rs.y) ra.h = rs.y - ra.y; }
+        const bayTop = Math.min(...[5, 6, 7, 8].map((k) => rects[k].y));
+        if (rs.y + rs.h > bayTop) {
+          const mid = (rs.y + rs.h + bayTop) / 2;
+          rs.h = mid - rs.y;
+          for (const k of [5, 6, 7, 8]) { const rb = rects[k]; if (rb.y < mid) { rb.h -= mid - rb.y; rb.y = mid; } }
+        }
+        const w = this.view.w, hgt = this.view.h;
+        for (const r of rects) { if (r.x < 0) { r.w += r.x; r.x = 0; } if (r.y < 0) { r.h += r.y; r.y = 0; } r.w = Math.min(r.w, w - r.x); r.h = Math.min(r.h, hgt - r.y); }
       }
+      this.hotEls.forEach((b, i) => {
+        // Edges rounded, not sizes, so neighbours that meet stay met and never overlap by a pixel.
+        const r = rects[i], x0 = Math.round(r.x), y0 = Math.round(r.y);
+        b.style.left = x0 + 'px'; b.style.top = y0 + 'px';
+        b.style.width = Math.round(r.x + r.w) - x0 + 'px'; b.style.height = Math.round(r.y + r.h) - y0 + 'px';
+      });
     }
 
-    /** The hotspots' names and tooltips (once a second: a press's next mino counts down). */
+    /** The hotspots' names and tooltips (once a second: a next mino counts down). */
     refreshTips() {
-      const f = this.f;
+      const f = this.f, w = Factory.waits(f), msLeft = (ticks) => ticks * Factory.TICK_MS - f.acc + 999;
       const set = (el, k, v) => { if (v == null) { if (k in el.dataset) delete el.dataset[k]; } else if (el.dataset[k] !== v) el.dataset[k] = v; };
+      const tipOf = (b, title, tip, label) => {
+        set(b, 'tipTitle', title); set(b, 'tipFoot', null);
+        if (b.dataset.tip !== tip) {
+          set(b, 'tip', tip);
+          // The app's tooltip copies its text when it opens: an open one over this part counts down with it.
+          const t = this.tipHot === b && document.querySelector('#app > .tip:not(.hidden) .tip-body');
+          if (t) t.textContent = tip;
+        }
+        if (b.getAttribute('aria-label') !== label) b.setAttribute('aria-label', label);
+      };
       for (const b of this.hotEls) {
         const kind = b.dataset.hot, k = +b.dataset.k;
-        if (kind === 'bin') continue;
-        const n = Factory.MOLDS[k], name = Factory.NAMES[n] + ' press';
-        if (kind === 'press') {
+        if (kind === 'crate') continue;
+        if (kind === 'head') {
+          const s = f.stamps[k];
+          if (!s) continue;
+          const name = ORDINAL[k] + ' stamper';
+          const tip = s.held ? (w.storeFull || this.view.flags.storeWarm ? 'Waiting: store full' : 'Waiting for room on the belt') : 'Next mino in ' + fmtClock(msLeft(Factory.STAMP_TT - s.t));
+          tipOf(b, name, tip, name + ', ' + tip.charAt(0).toLowerCase() + tip.slice(1));
+        } else if (kind === 'headBay') {
+          const name = ORDINAL[k] + ' stamper', cost = fmtInt(Factory.STAMP_COST[k]) + ' ' + LINE;
+          if (k === f.stampers) tipOf(b, name, 'Build · ' + cost, 'Build ' + name);
+          else tipOf(b, name, cost, name);
+        } else if (kind === 'store') {
+          const cap = Factory.storeCap(f), tip = fmtInt(f.store) + ' of ' + fmtInt(cap) + ' minos' + (f.store === 0 ? '\nEmpty' : f.store >= cap ? '\nFull' : '');
+          tipOf(b, 'Store', tip, 'Store, ' + fmtInt(f.store) + ' of ' + fmtInt(cap) + ' minos');
+        } else if (kind === 'press') {
           const m = f.molds[k];
           if (!m) continue;
-          const mold = m.pin < 0 ? 'Any' : Factory.shapeName(n, m.pin), formed = Math.floor(m.p * n + 1e-9);
-          // Two plain lines (the tooltip's foot is for keys): the mold, and the next mino's countdown.
-          const tip = 'Mold: ' + mold + '\n' + (m.held ? 'Waiting' : 'Next mino in ' + fmtClock(((formed + 1) / n - m.p) * Factory.CYCLE * 1000 + 999));
-          set(b, 'tipTitle', name); set(b, 'tipFoot', null);
-          if (b.dataset.tip !== tip) {
-            set(b, 'tip', tip);
-            // The app's tooltip copies its text when it opens: an open one over this press counts down with it.
-            const t = this.tipHot === b && document.querySelector('#app > .tip:not(.hidden) .tip-body');
-            if (t) t.textContent = tip;
-          }
-          if (b.getAttribute('aria-label') !== name + ', mold ' + mold) b.setAttribute('aria-label', name + ', mold ' + mold);
-        } else if (k === f.presses) {
-          set(b, 'tipTitle', name); set(b, 'tip', 'Build · ' + fmtInt(Factory.PRESS_COST[k]) + ' ' + LINE); set(b, 'tipFoot', null);
-          b.setAttribute('aria-label', 'Build ' + name);
+          const n = Factory.MOLDS[k], name = Factory.NAMES[n] + ' press', mold = m.pin < 0 ? 'Any' : Factory.shapeName(n, m.pin);
+          const next = m.got < n ? Factory.B(n, m.got) : Factory.CYCLE_T;
+          // Two plain lines (the tooltip's foot is for keys): the mold, and the next mino's countdown or what it waits for.
+          const tip = 'Mold: ' + mold + '\n' + (m.held ? 'Waiting' : w.starving.indexOf(k) >= 0 ? 'Waiting for minos' : 'Next mino in ' + fmtClock(msLeft(next - m.t)));
+          tipOf(b, name, tip, name + ', mold ' + mold);
         } else {
-          set(b, 'tipTitle', name); set(b, 'tip', fmtInt(Factory.PRESS_COST[k]) + ' ' + LINE); set(b, 'tipFoot', null);
-          b.setAttribute('aria-label', name);
+          const name = Factory.NAMES[Factory.MOLDS[k]] + ' press', cost = fmtInt(Factory.PRESS_COST[k]) + ' ' + LINE;
+          if (k === f.presses) tipOf(b, name, 'Build · ' + cost, 'Build ' + name);
+          else tipOf(b, name, cost, name);
         }
       }
     }
 
-    /** What the bin figure shows: the minos drawn in it, or a count on its way to a new value. */
+    /** What the crate figure shows: the minos drawn in it, or a count on its way to a new value. */
     displayed() {
       const c = this.count;
       if (!c) return this.view.landed(this.f) / 4;
@@ -2999,24 +3206,27 @@
       return c.from + (c.to - c.from) * easeOut3(k);
     }
 
-    /** Lines in bin, every frame (only written when it changes, so it follows the minos as they land). */
-    updateBin() {
-      const q = Math.round(this.displayed() * 4), cap = Factory.binLines(this.f.binLevel);
-      if (q === this.binQ && cap === this.binCap) return;
-      this.binQ = q; this.binCap = cap;
-      this.binV.nodeValue = Factory.quarters(q / 4);
-      this.binOf.textContent = ' / ' + cap;
+    /** Lines in crate, every frame (only written when it changes, so it follows the minos as they land). */
+    updateCrate() {
+      const q = Math.round(this.displayed() * 4), cap = Factory.crateLines(this.f.crateLevel);
+      if (q === this.crateQ && cap === this.crateCap) return;
+      this.crateQ = q; this.crateCap = cap;
+      this.crateV.nodeValue = Factory.quarters(q / 4);
+      this.crateOf.textContent = ' / ' + cap;
     }
 
     update() {
       const f = this.f, st = Factory.status(f), wallet = this.store.state.lines;
       const rate = Factory.quarters(st.perHour / 4);
       if (rate !== this.rateTxt) { this.rateTxt = rate; this.sRate.b.textContent = rate; }
+      // The rate's tooltip: both ends of the chain, in minos, so a line short of minos says why.
+      const tip = 'Stampers make ' + st.supply + ' minos an hour\nPresses use ' + st.demand + ' minos an hour';
+      if (tip !== this.rateTip) { this.rateTip = tip; this.sRate.el.dataset.tip = tip; }
       const full = st.full, fullTxt = full ? 'Now' : soon(st.toFull);
       if (fullTxt !== this.fullTxt) { this.fullTxt = fullTxt; this.sFull.b.textContent = fullTxt; }
       this.sFull.el.classList.toggle('warn', full);
-      this.sBin.el.classList.toggle('warn', full);
-      // Collect: what it pays now (every full row, those still on the lift too: it lands them first), or when the
+      this.sCrate.el.classList.toggle('warn', full);
+      // Collect: what it pays now (every whole line, those still on their way too: it lands them first), or when the
       // first line will be ready.
       const lines = st.lines;
       let key;
@@ -3033,9 +3243,9 @@
       this.cBtn.classList.toggle('full', full && lines > 0);
       if (this.cBtn.disabled && this.view.preview) this.view.preview = this.cBtn.matches(':hover, :focus-visible');
       // Build: lit when it can be afforded, otherwise a quiet "not yet".
-      const np = Factory.nextUpgrade(f, 'press'), nb = Factory.nextUpgrade(f, 'bin');
-      for (const [b, u] of [[this.pressBtn, np], [this.binBtn, nb]]) {
-        if (!b || !u) continue;
+      for (const kind of FAC_KINDS) {
+        const b = this.buildEls[kind], u = b && Factory.nextUpgrade(f, kind);
+        if (!u) continue;
         const ok = wallet >= u.cost;
         b.classList.toggle('go', ok);
         if (ok) b.removeAttribute('aria-disabled'); else b.setAttribute('aria-disabled', 'true');

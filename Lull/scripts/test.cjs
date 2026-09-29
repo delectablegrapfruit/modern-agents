@@ -560,6 +560,174 @@ test('hold in Free Play: a swap to a piece with no room is refused and changes n
   assert(c.holdPiece() && c.over, 'Classic block out');
 });
 
+// Classic (the ceiling option): the well's top row holds shapes like any other, and only a blocked spawn spot ends it.
+const classicGame = (seed) => new Game({ w: 10, h: 20, seed: seed || 1, previewCount: 3, maxHistory: 0, freeHold: false, ceiling: true });
+/** Every spot (rot, x, y) the piece in play can get to by moving, turning and lowering (never setting it). */
+function reachable(g) {
+  const p = g.piece, start = { rot: p.rot, x: p.x, y: p.y }, key = (s) => s.rot + ':' + s.x + ':' + s.y;
+  const seen = new Map([[key(start), start]]), q = [start], quiet = g.emit;
+  g.emit = () => {};
+  try {
+    while (q.length) {
+      const s = q.shift();
+      for (const op of ['L', 'R', 'D', 'CW', 'CCW', '180']) {
+        Object.assign(p, s);
+        let ok;
+        if (op === 'L') ok = g.move(-1); else if (op === 'R') ok = g.move(1);
+        else if (op === 'D') { ok = g.fitsAt(p, p.rot, p.x, p.y - 1); if (ok) p.y--; }
+        else ok = g.rotate(op === 'CW' ? 1 : op === 'CCW' ? -1 : 2);
+        const n = { rot: p.rot, x: p.x, y: p.y };
+        if (ok && !seen.has(key(n))) { seen.set(key(n), n); q.push(n); }
+      }
+    }
+  } finally { g.emit = quiet; Object.assign(p, start); }
+  return seen;
+}
+test('Classic: every shape appears with its top in the top row (the I too); puzzles and Free Play keep their spawn', () => {
+  for (const id of Pieces.TETROMINOES) {
+    const g = classicGame(); g.spawn({ id });
+    assert(!g.over && Math.max(...g.cellsOf().map(([, y]) => y)) === 19, id + ' ' + JSON.stringify(g.cellsOf()));
+    const f = new Game({ w: 10, h: 20, seed: 1, freeHold: false }), t = Pieces.get(id);
+    assert.deepStrictEqual(f.spawnPosition(t, 0), L.spawnPos ? L.spawnPos(10, 20, t, 0) : f.spawnPosition(t, 0), 'no ceiling: the plain spawn');
+  }
+  const g = classicGame(); g.spawn({ id: 'I' });
+  assert(g.rotate(1) && cellKey(g.cellsOf()) === cellKey([[5, 16], [5, 17], [5, 18], [5, 19]]), 'an I stood on end at the spawn: column 5, rows 16 to 19');
+  for (const id of Pieces.TETROMINOES.filter((i) => Pieces.get(i).kicks !== 'none')) {
+    const c = classicGame(); c.spawn({ id });
+    // (A pair, not an {x, y} object: storing a ceiling y into that shape slows the puzzle generator's spawnPos in V8.)
+    const at = [c.piece.x, c.piece.y];
+    for (let i = 0; i < 4; i++) assert(c.rotate(1), id + ' turns at the ceiling');
+    assert(c.piece.rot === 0 && c.piece.x === at[0] && c.piece.y === at[1], id + ': four turns at the ceiling come back to the start');
+  }
+});
+test('Classic: every piece, in every turn and column, can be moved and turned into the top row and set there', () => {
+  for (const id of Pieces.TETROMINOES) {
+    const t = Pieces.get(id), shapes = new Set();
+    const g = classicGame(); g.spawn({ id });
+    const seen = reachable(g);
+    for (let rot = 0; rot < 4; rot++) {
+      const b = t.rotBounds[rot], k = t.keys ? t.keys[rot] : rot;
+      if (shapes.has(k)) continue;
+      shapes.add(k);
+      for (let x = -b.minX; x <= 9 - b.maxX; x++) {
+        // Some turn of the piece puts exactly these cells there (the I and S, Z and O have twins).
+        const want = cellKey(t.rots[rot].map(([cx, cy]) => [x + cx, 19 - b.maxY + cy]));
+        const hit = [...seen.values()].some((s) => cellKey(g.cellsOf(g.piece, s.rot, s.x, s.y)) === want);
+        assert(hit, id + ' turn ' + rot + ' at column ' + x + ' cannot reach the top row');
+      }
+    }
+    // And sets there, at the left wall on a column built up to it, with the game going on (the next piece has room).
+    for (let rot = 0; rot < 4; rot++) {
+      const b = t.rotBounds[rot], x = -b.minX, y = 19 - b.maxY;
+      const cells = t.rots[rot].map(([cx, cy]) => [x + cx, y + cy]);
+      const s = classicGame(2); s.spawn({ id }); s.queue[0] = { id: 'O', rot: 0 };
+      const [sx, sy] = cells.reduce((a, c) => (c[1] < a[1] ? c : a));
+      for (let yy = 0; yy < sy; yy++) s.board.set(sx, yy, 8);
+      const target = cellKey(cells);
+      const spot = [...reachable(s).values()].find((q) => cellKey(s.cellsOf(s.piece, q.rot, q.x, q.y)) === target);
+      assert(spot, id + ' turn ' + rot + ': the spot at the top left is reachable over the stack');
+      Object.assign(s.piece, spot);
+      const r = s.lower();
+      assert(r && r.cells && cellKey(r.cells) === target && cells.every(([cx, cy]) => s.board.get(cx, cy)), id + ' turn ' + rot + ' set in the top row');
+      assert(cells.some(([, cy]) => cy === 19) && !s.over && s.piece && s.piece.type.id === 'O', id + ' turn ' + rot + ': the game goes on');
+    }
+  }
+});
+test('Classic: the game goes on while the spawn spot is free, even with the top row partly filled', () => {
+  for (const id of Pieces.TETROMINOES) {
+    const g = classicGame();
+    let tops = 0; g.on('topout', () => tops++);
+    for (let y = 0; y < 18; y++) for (let x = 0; x < 9; x++) g.board.set(x, y, 8);
+    for (const x of [0, 1, 2, 7, 8, 9]) g.board.set(x, 19, 8);
+    assert(g.spawn({ id }) && !g.over && !tops, id + ' appears');
+  }
+  // Rows 0-18 full but for one column: the I appears in the top row and sets there; then the T has nowhere to appear.
+  const g = classicGame(3);
+  let tops = 0; g.on('topout', () => tops++);
+  for (let y = 0; y < 19; y++) for (let x = 0; x < 9; x++) g.board.set(x, y, 8);
+  g.queue[0] = { id: 'I', rot: 0 }; g.queue[1] = { id: 'T', rot: 0 };
+  g.spawnNext();
+  assert(g.piece && g.piece.type.id === 'I' && !g.over && g.cellsOf().every(([, y]) => y === 19), 'the I appears in the top row: ' + JSON.stringify(g.cellsOf()));
+  assert(g.move(-1) && g.move(-1) && g.move(-1), 'and moves along it');
+  const r = g.drop();
+  assert(r && cellKey(r.cells) === cellKey([[0, 19], [1, 19], [2, 19], [3, 19]]) && !r.lines, 'and sets there');
+  assert(g.over && tops === 1 && g.piece.type.id === 'T', 'the T, a row lower, tops out');
+});
+test('Classic: a piece that cannot appear right where it appears is the game over (no nearby spot is tried)', () => {
+  for (const id of Pieces.TETROMINOES) {
+    const t = Pieces.get(id);
+    const pos = classicGame().spawnPosition(t, 0);
+    for (const [cx, cy] of t.rots[0]) {
+      const g = classicGame();
+      let tops = 0; g.on('topout', () => tops++);
+      g.board.set(pos.x + cx, pos.y + cy, 8);
+      assert(!g.spawn({ id }) && g.over && tops === 1, id + ' blocked at one cell');
+      assert(g.piece && g.piece.type.id === id && g.piece.x === pos.x && g.piece.y === pos.y && g.piece.rot === 0, id + ' stays where it appears');
+    }
+  }
+  // A held piece that cannot appear is a block out too.
+  const c = classicGame();
+  c.spawn({ id: 'O' }); while (c.move(-1));
+  c.board.set(4, 19, 8);
+  c.hold = { id: 'T', rot: 0 };
+  assert(c.holdPiece() && c.over && c.piece.type.id === 'T', 'the held T blocks out');
+});
+
+test('Classic: a T turned flat against the ceiling is not a T-spin (above the well is open); real spins still count', () => {
+  // A stack one row below the top next to the spawn, the usual shape just before a top out: turn, move, turn.
+  for (const [col, seq] of [[2, ['CW', 'L', 'CW']], [6, ['CCW', 'R', 'CCW']]]) {
+    const g = classicGame();
+    g.replacePiece({ id: 'T' });
+    for (let y = 0; y <= 18; y++) g.board.set(col, y, 8);
+    for (const s of seq) assert(s === 'L' ? g.move(-1) : s === 'R' ? g.move(1) : g.rotate(s === 'CW' ? 1 : -1), 'column ' + col + ': ' + s);
+    assert(g.piece.rot === 2 && g.cellsOf().some(([, y]) => y === 19) && !g.fitsAt(g.piece, 2, g.piece.x, g.piece.y - 1), 'the T points down, flat in the top row');
+    let r; g.on('lock', (x) => { r = x; });
+    g.lock();
+    assert(!r.mini && !r.tspin && r.score === 0, 'column ' + col + ', ' + seq.join(' ') + ': no spin, no score ' + JSON.stringify({ mini: r.mini, tspin: r.tspin, score: r.score }));
+  }
+  // Every spot in the top row a T can reach over any one column built to row 18, set right after a turn: never a spin.
+  for (let col = 0; col < 10; col++) {
+    const mk = () => { const g = classicGame(); g.replacePiece({ id: 'T' }); for (let y = 0; y <= 18; y++) g.board.set(col, y, 8); return g; };
+    const probe = mk();
+    if (!probe.fitsAt(probe.piece, probe.piece.rot, probe.piece.x, probe.piece.y)) continue; // the stack is in the spawn spot
+    for (const spot of reachable(probe).values()) {
+      if (!probe.cellsOf(probe.piece, spot.rot, spot.x, spot.y).some(([, y]) => y === 19)) continue;
+      const g = mk();
+      Object.assign(g.piece, spot, { lastRot: true, kick: 0 });
+      const r = g.lock();
+      assert(r && !r.mini && !r.tspin, 'column ' + col + ', ' + JSON.stringify(spot) + ': no spin at the ceiling');
+    }
+  }
+  // Real blocks still count, in the top row too: a T turned under an overhang in row 19 is a T-spin double.
+  let g = classicGame();
+  g.replacePiece({ id: 'T' });
+  for (let y = 0; y <= 18; y++) for (let x = y < 17 ? 1 : 0; x < 10; x++) g.board.set(x, y, 8);
+  g.board.set(4, 17, 0); for (const x of [3, 4, 5]) g.board.set(x, 18, 0);
+  g.board.set(3, 19, 8); g.board.set(5, 19, 8);
+  Object.assign(g.piece, { rot: 2, x: 3, y: 17, lastRot: true, kick: 0 });
+  let r = g.lock();
+  assert(r.tspin && r.lines === 2 && r.score > 0, 'a T-spin double under an overhang in the top row');
+  // And at the bottom of a Classic well, the same T-spin double and Mini as in Relaxed.
+  const slot = () => {
+    const c = classicGame(4);
+    const fill = (y, row) => { for (let x = 0; x < 10; x++) if (row[x] === 'X') c.board.set(x, y, 8); };
+    fill(0, 'XXX.XXXXXX');
+    fill(1, 'XX...XXXXX');
+    c.board.set(4, 2, 8);
+    c.replacePiece({ id: 'T' });
+    return c;
+  };
+  g = slot();
+  Object.assign(g.piece, { rot: 2, x: 2, y: 0, lastRot: true });
+  r = g.lock();
+  assert(r.tspin && r.lines === 2 && r.score > 0, 'a T-spin double under an overhang in Classic');
+  g = slot();
+  g.board.set(2, 0, 0); g.board.set(2, 2, 8);
+  Object.assign(g.piece, { rot: 2, x: 2, y: 0, lastRot: true, kick: 1 });
+  r = g.lock();
+  assert(r.mini && !r.tspin && r.score > 0, 'a T-spin Mini under an overhang in Classic');
+});
+
 console.log('puzzles');
 function replay(p) {
   const g = new Game({ board: Board.fromArray(p.w, p.h, p.cells, { wrap: p.wrap }), queue: p.pieces, mods: { noRotate: p.mods.includes('rigid'), heavy: p.mods.includes('heavy'), noHold: !p.mods.includes('hold') } });
@@ -686,7 +854,7 @@ test('gem puzzles need every piece: fewer never take every gem, in order or in a
     if (p.goal.type === 'gems') check(p);
   }
   // Gem puzzles with Hold are rare; these are some.
-  for (const s of ['E-2A8MPRG', 'E-2PUJ5AL', 'M-3S87VMC', 'M-3EXY2TD', 'H-49QGN36', 'HS-2BRP46L']) {
+  for (const s of ['E-5TFWL7Y', 'E-5RDPZKD', 'M-2EU4ECQ', 'M-33553G6']) {
     const p = Puzzles.generate(s);
     assert(p.mods.includes('hold'), 'Hold: ' + s);
     check(p);
@@ -694,9 +862,9 @@ test('gem puzzles need every piece: fewer never take every gem, in order or in a
   assert(seen.E >= 6 && seen.M >= 15 && seen.H >= 12 && proved > 100, 'gem puzzles turn up: ' + JSON.stringify(seen) + ', ' + proved);
 });
 test('making gem puzzles need every piece left every other puzzle exactly as it was', () => {
-  // A fingerprint of every puzzle among the first 40 seeds of each kind that was not a gem puzzle, taken before the
-  // change (these numbers were gem puzzles then; they may change, and a few now settle for lines).
-  const gems = { E: [14, 25, 38, 40], ES: [1, 11, 15], M: [3, 4, 10, 13, 14, 22, 23, 26, 27, 28, 30, 39], MS: [1, 2, 4, 17, 21, 23, 25, 26, 27, 30, 31, 34, 39], H: [9, 17, 20, 21, 22, 25, 26, 27, 32], HS: [10, 14, 16, 22, 23, 25, 38] };
+  // A fingerprint of every puzzle among the first 40 seeds of each kind that is not a gem puzzle (these numbers are),
+  // retaken whenever GEN_VERSION goes up (6: Big Minos review fixes). A change to gem puzzles alone must leave it as it is.
+  const gems = { E: [8, 9, 10, 12, 15, 20, 21, 32, 36, 37], ES: [3, 13, 18, 27, 30], M: [4, 5, 7, 14, 16, 23, 29, 32], MS: [2, 3, 13, 18, 20, 21, 30, 31, 34], H: [1, 3, 4, 7, 8, 17, 31, 33, 35, 36], HS: [3, 5, 17, 25] };
   const h = require('crypto').createHash('sha1');
   let n = 0;
   for (const d of ['E', 'M', 'H']) for (const spin of [false, true]) for (let i = 1; i <= 40; i++) {
@@ -705,7 +873,7 @@ test('making gem puzzles need every piece left every other puzzle exactly as it 
     assert.notStrictEqual(p.goal.type, 'gems', p.seed);
     n++; h.update(JSON.stringify(p));
   }
-  assert.strictEqual(n + ' ' + h.digest('hex'), '192 c6040cf70e8847a36ebcf6c8cc8058f59ae84fac');
+  assert.strictEqual(n + ' ' + h.digest('hex'), '194 67e1fc10588b4ca6b562e20da7e1f25dd2b5daa9');
 });
 test('dailies: one seed per date, the same everywhere, and every seed knows its date', () => {
   const seen = new Set();
@@ -727,6 +895,8 @@ test('the same seed builds the same puzzle', () => {
   }
 });
 const counts = { E: 250, M: 250, H: 250 };
+// Numbered seeds as they were generated (and replayed) here, for the Big Minos tests below.
+const generated = { E: new Map(), M: new Map(), H: new Map() };
 for (const d of ['E', 'M', 'H']) {
   test(Puzzles.DIFFS[d].name + ': ' + counts[d] + ' puzzles generate fast and play out through the engine', () => {
     const mods = {}; let ms = 0, worst = 0, pieces = 0;
@@ -735,6 +905,7 @@ for (const d of ['E', 'M', 'H']) {
       const p = Puzzles.generate(Puzzles.numberedSeed(d, n));
       const dt = Date.now() - t0; ms += dt; worst = Math.max(worst, dt);
       assert(p && !p.fallback, 'built ' + n);
+      generated[d].set(n, p);
       p.mods.forEach((m) => { mods[m] = (mods[m] || 0) + 1; });
       pieces += p.pieces.length;
       replay(p);
@@ -749,6 +920,171 @@ for (const d of ['E', 'M', 'H']) {
     console.log('       avg ' + avg.toFixed(1) + ' ms, worst ' + worst + ' ms, ' + (pieces / counts[d]).toFixed(1) + ' pieces each');
   });
 }
+// Big Minos: each seed draws a mix of big pieces and tetrominoes (BIG_MIX in js/puzzlegen.js). The first `want`
+// Big Minos puzzles among the numbered seeds, each replayed through the engine.
+function bigPuzzles(d, want) {
+  const out = [];
+  for (let n = 1; out.length < want; n++) {
+    let p = generated[d].get(n);
+    if (!p) {
+      p = Puzzles.generate(Puzzles.numberedSeed(d, n));
+      assert(p && !p.fallback, 'built ' + p.seed);
+      generated[d].set(n, p);
+      if (p.mods.includes('big')) replay(p);
+    }
+    if (p.mods.includes('big')) out.push(p);
+  }
+  return out;
+}
+const BIG_WANT = { E: 100, M: 60, H: 60 };
+const queueOf = (p) => p.solution.map((s) => (Pieces.get(s.id).big ? 'B' : 'r')).join('');
+test('Big Minos puzzles vary their mix: mostly a big piece or two among tetrominoes, some about half, a few all or nearly all big', () => {
+  const shares = {};
+  for (const d of ['E', 'M', 'H']) {
+    const ps = bigPuzzles(d, BIG_WANT[d]), n = ps.length, by = { sparse: 0, half: 0, all: 0 };
+    for (const p of ps) {
+      const q = queueOf(p), big = q.split('B').length - 1;
+      assert(p.pieces.every((e) => Pieces.get(e.id).big || Pieces.TETROMINOES.includes(e.id)), 'big pieces and tetrominoes: ' + p.seed);
+      assert(big >= 1, 'at least one big piece: ' + p.seed);
+      by[p.mix]++;
+      if (p.mix === 'sparse') assert(2 * big < q.length, 'sparse: fewer than half big ' + q + ' ' + p.seed);
+      else if (p.mix === 'half') assert(2 * big >= q.length && big < q.length, 'half: about half big ' + q + ' ' + p.seed);
+      else if (p.mix === 'all') assert(big >= 3 && (d === 'H' ? q[0] === 'r' && big >= 0.6 * q.length : big === q.length), 'all: all big (Hard: a tetromino first, then nearly all big) ' + q + ' ' + p.seed);
+      else assert.fail('no mix: ' + p.seed);
+      // A big piece counts where it comes late: a queue only opens with one when one also ends it.
+      assert(q[0] === 'r' || q[q.length - 1] === 'B', 'no big filler first: ' + q + ' ' + p.seed);
+      if (d === 'H') assert.notStrictEqual(p.goal.type, 'gems', 'no gems on Hard: ' + p.seed);
+    }
+    assert(by.sparse >= 0.45 * n && by.sparse <= 0.75 * n && by.half >= 0.15 * n && by.half <= 0.45 * n && by.all >= 2 && by.all <= 0.2 * n && by.sparse > by.half && by.half > by.all,
+      d + ': about 6 : 3 : 1, ' + JSON.stringify(by));
+    shares[d] = by.sparse + ' : ' + by.half + ' : ' + by.all;
+  }
+  console.log('       sparse : half : all ' + JSON.stringify(shares));
+});
+test('Big Minos: the big pieces matter — set first, as filler, they mostly leave no way through', () => {
+  // Lines and clear puzzles with tetrominoes too, played in order: the big pieces moved to the front of the queue.
+  const share = { E: 0.35, M: 0.5, H: 0.6 };
+  for (const d of ['E', 'M', 'H']) {
+    let n = 0, stuck = 0;
+    for (const p of bigPuzzles(d, BIG_WANT[d])) {
+      const q = p.solution.map((s) => ({ id: s.id, rot: s.rot })), big = q.filter((e) => Pieces.get(e.id).big);
+      if (p.goal.type === 'gems' || p.mods.includes('hold') || big.length === q.length) continue;
+      n++;
+      if (Puzzles.solvableInOrder(p, big.concat(q.filter((e) => !Pieces.get(e.id).big)), 20000) === false) stuck++;
+    }
+    assert(n >= 15 && stuck >= share[d] * n, d + ': big pieces first leave no way through in ' + stuck + ' of ' + n);
+  }
+});
+/**
+ * −log2 of the chance that a player who sets each piece, in order, on a random spot filling only holes of the band
+ * (every spot the engine's moves reach) solves a lines or clear puzzle; Infinity past `limit` positions.
+ */
+function puzzleBits(p, limit) {
+  const opts = { noRotate: p.mods.includes('rigid'), heavy: p.mods.includes('heavy'), both: true, engine: true };
+  const board = Board.fromArray(p.w, p.h, p.cells, { wrap: p.wrap });
+  const types = p.pieces.map((e) => Pieces.get(e.id)), memo = new Map();
+  let nodes = 0;
+  const go = (i, band, lines) => {
+    if (i === types.length) return Puzzles.goalMet(p, board, lines) ? 1 : 0;
+    const k = i + '|' + band.join() + '|' + board.cells.join('');
+    if (memo.has(k)) return memo.get(k);
+    if (++nodes > limit) throw puzzleBits;
+    const type = types[i];
+    const spots = Puzzles.restingStates(board, type, p.pieces[i].rot || 0, opts, (r, x, y) => type.rots[r].every(([, cy]) => band.includes(y + cy)));
+    let sum = 0;
+    for (const [r, x, y] of spots) {
+      const snap = board.snapshot();
+      board.place(type.rots[r], x, y, type.color);
+      const rows = board.fullRows();
+      board.clearRows(rows);
+      sum += go(i + 1, band.filter((b) => !rows.includes(b)).map((b) => b - rows.filter((c) => c < b).length), lines + rows.length);
+      board.restore(snap);
+    }
+    const v = spots.length ? sum / spots.length : 0;
+    memo.set(k, v);
+    return v;
+  };
+  const band = [];
+  for (let y = p.base; y < p.base + p.goal.lines; y++) band.push(y);
+  try { return -Math.log2(go(0, band, 0)); } catch (e) { if (e === puzzleBits) return Infinity; throw e; }
+}
+test('Big Minos puzzles are about as hard as the other puzzles of their difficulty', () => {
+  // Coarse: lines and clear puzzles without Hold, the first `take` of each kind. A Big Minos puzzle is harder than
+  // another puzzle about half the time (when every piece was big: 8 to 16% of the time).
+  const take = { E: 50, M: 30, H: 40 }, out = {};
+  for (const d of ['E', 'M', 'H']) {
+    const fits = (p) => p.goal.type !== 'gems' && !p.mods.includes('hold');
+    const big = bigPuzzles(d, BIG_WANT[d]).filter(fits).slice(0, take[d]);
+    const rest = [];
+    for (let n = 1; rest.length < take[d]; n++) { const p = generated[d].get(n); if (!p.mods.includes('big') && fits(p)) rest.push(p); }
+    const b = big.map((p) => puzzleBits(p, 2000)), r = rest.map((p) => puzzleBits(p, 2000));
+    let wins = 0;
+    for (const x of b) for (const y of r) wins += x > y ? 1 : x === y ? 0.5 : 0;
+    const harder = wins / (b.length * r.length);
+    out[d] = harder.toFixed(2);
+    // The common mix on its own: a big piece or two among tetrominoes.
+    const sb = big.map((p, i) => (p.mix === 'sparse' ? b[i] : null)).filter((x) => x !== null);
+    let sw = 0;
+    for (const x of sb) for (const y of r) sw += x > y ? 1 : x === y ? 0.5 : 0;
+    out[d + ' sparse'] = (sw / (sb.length * r.length)).toFixed(2);
+    assert(sb.length >= 10 && sw / (sb.length * r.length) >= 0.3 && sw / (sb.length * r.length) <= 0.7, d + ': sparse Big Minos puzzles are harder than another ' + out[d + ' sparse']);
+    assert.strictEqual(big.length, take[d], d + ': enough Big Minos puzzles');
+    assert(harder >= 0.35 && harder <= 0.65, d + ': a Big Minos puzzle is harder than another ' + (harder * 100).toFixed(0) + '% of the time');
+  }
+  console.log('       a Big Minos puzzle is harder than another: ' + JSON.stringify(out));
+});
+test('Big Minos: Easy queues vary where the big piece comes, and are seldom as short as two pieces', () => {
+  const ps = bigPuzzles('E', BIG_WANT.E), sparse = new Set(), at = new Set();
+  let short = 0, four = 0;
+  for (const p of ps) {
+    const q = queueOf(p);
+    if (p.mix === 'sparse') { sparse.add(q); at.add(q.length + ':' + q.indexOf('B')); }
+    if (q.length < 3) short++;
+    if (q.length >= 4) four++;
+  }
+  assert(sparse.size >= 2 && at.size >= 2, 'more than one sparse queue: ' + [...sparse].join(' '));
+  assert(four >= 5 && short <= 0.2 * ps.length, 'four-piece queues ' + four + ', two-piece ' + short + ' of ' + ps.length);
+});
+test('Big Minos seeds stay Big Minos, both ways too, and generate in good time', () => {
+  // Every eighth failed board from the 48th on redraws the wildcards; Big Minos is kept through that.
+  const want = { ES: 60, MS: 40, HS: 20 }, out = {};
+  for (const k of Object.keys(want)) {
+    let n = 0, ms = 0, worst = 0;
+    for (let i = 1; n < want[k]; i++) {
+      const s = Puzzles.numberedSeed(k[0], i, true);
+      if (!Puzzles.firstMods(s).includes('big')) continue;
+      n++;
+      const t0 = Date.now(), p = Puzzles.generate(s), dt = Date.now() - t0;
+      ms += dt; worst = Math.max(worst, dt);
+      assert(p && !p.fallback && p.mods.includes('big') && p.mods.includes('spin'), 'still Big Minos, both ways: ' + s + ' ' + (p && p.mods));
+      assert(!Puzzles.verify(p, true), 'needs the other turn: ' + s);
+      replay(p);
+    }
+    out[k] = (ms / n).toFixed(0) + ' ms avg, worst ' + worst;
+    assert(ms / n < 150, k + ': average ' + (ms / n).toFixed(0) + ' ms');
+  }
+  console.log('       ' + JSON.stringify(out));
+});
+test('Both Ways never comes with Heavy (a heavy piece turns only in open air, where one turn button reaches every way)', () => {
+  assert(Puzzles.MODS.spin.x.includes('heavy'));
+  let heavy = 0;
+  for (const d of ['E', 'M', 'H']) for (let i = 1; i <= 400; i++) {
+    assert(!Puzzles.firstMods(Puzzles.numberedSeed(d, i, true)).includes('heavy'), 'no Heavy on ' + Puzzles.numberedSeed(d, i, true));
+    if (Puzzles.firstMods(Puzzles.numberedSeed(d, i)).includes('heavy')) heavy++;
+  }
+  assert(heavy > 20, 'Heavy still turns up without Both Ways: ' + heavy);
+});
+test('the Big Minos note says every piece is big only when every piece is', () => {
+  const some = Puzzles.MODS.big.desc, every = 'Every piece is twice the size.';
+  let all = 0, mixed = 0;
+  for (const d of ['E', 'M', 'H']) for (const p of bigPuzzles(d, BIG_WANT[d])) {
+    const allBig = p.pieces.every((e) => Pieces.get(e.id).big);
+    assert.strictEqual(Puzzles.modDesc(p, 'big'), allBig ? every : some, p.seed);
+    if (allBig) all++; else mixed++;
+  }
+  assert(all >= 3 && mixed >= 30 && some === 'Some pieces are twice the size.', all + ' all big, ' + mixed + ' mixed');
+  assert.strictEqual(Puzzles.modDesc({ pieces: [{ id: 'T' }] }, 'fog'), Puzzles.MODS.fog.desc);
+});
 test('daily seeds change with the day', () => {
   assert.notStrictEqual(Puzzles.dailySeed('M', '2026-09-26'), Puzzles.dailySeed('M', '2026-09-27'));
   assert(Puzzles.parseSeed(Puzzles.dailySeed('H', '2026-09-26')));
@@ -756,204 +1092,381 @@ test('daily seeds change with the day', () => {
 
 console.log('factory');
 const HOUR = 3600e3;
-/** A factory `hours` back in time, caught up to now. */
-function ranFor(f, hours) { const now = Date.now(); f.lastTick = now - hours * HOUR; Factory.catchUp(f, now); return f; }
-/** A factory with presses 1…p built, each starting a fresh piece from the given seed. */
-function withPresses(p, seed) {
-  const f = Factory.create();
-  f.seed = seed; f.serial = 0; f.molds = []; f.presses = p;
-  return Factory.repair(f);
+const T = Factory.TUNE;
+/** A new factory with a fixed seed (its first piece a fixed shape too), so a run of it always makes the same line. */
+function seeded(seed) { const f = Factory.create(); f.seed = seed; f.molds[0].s = 0; f.molds[0].c = 1; return f; }
+/** Builds up to S stamp heads, P presses, store level st and crate level cr (paid for, as a player would). */
+function grow(f, S, P, st, cr) {
+  while (f.stampers < S) Factory.upgrade(f, 'stamp');
+  while (f.presses < P) Factory.upgrade(f, 'press');
+  while (f.storeLevel < st) Factory.upgrade(f, 'store');
+  while (f.crateLevel < cr) Factory.upgrade(f, 'crate');
+  return f;
 }
-const beltOk = (f) => {
-  for (let i = 1; i < f.belt.length; i++) {
-    const a = f.belt[i], b = f.belt[i - 1];
-    if (!(a.x + Factory.widthOf(a) + Factory.BELT.gap <= b.x + 1e-6)) return false;
+const sumN = (list) => list.reduce((a, it) => a + it.n, 0);
+/** Every mino made is somewhere along the chain, or collected: stamped = on the top belt + in the store + fed; fed =
+ *  in the molds + on the belt + on the lift + shipped; shipped = in the crate + collected. */
+function conserved(f) {
+  const st = f.stats, got = f.molds.reduce((a, m) => a + m.got, 0);
+  const shipped = f.crate.length + 4 * st.lines, fed = got + sumN(f.belt) + sumN(f.lift) + shipped;
+  return st.made === f.top.length + f.store + fed && st.fed === fed && st.minos === shipped;
+}
+/** The chain's limits: '' when every one holds, or what broke. */
+function limits(f) {
+  if (!(f.store >= 0 && f.store <= Factory.storeCap(f))) return 'store ' + f.store;
+  if (f.crate.length > Factory.capacity(f)) return 'crate ' + f.crate.length;
+  for (let i = 0; i < f.top.length; i++) {
+    const x = f.top[i].x;
+    if (!(x >= 0 && x <= T.TOP.len - 1)) return 'top x ' + x;
+    if (i && !(f.top[i - 1].x - x >= 2)) return 'top gap ' + f.top[i - 1].x + ' ' + x;
   }
-  return f.belt.every((it) => it.x >= 0 && it.x + Factory.widthOf(it) <= Factory.BELT.len + 1e-9);
-};
-test('a new factory: one press nearly done, a bin four columns by twelve rows, nothing else', () => {
-  const f = Factory.create();
-  assert.strictEqual(f.v, 6);
-  assert.strictEqual(f.presses, 1);
-  assert.strictEqual(f.molds.length, 1);
-  assert.strictEqual(f.molds[0].p, 0.75);
-  assert.strictEqual(Factory.capacity(f), 48);
-  assert.strictEqual(Factory.BIN_COLS[f.binLevel], 4);
-  assert.strictEqual(Factory.BIN_ROWS[f.binLevel], 12);
-  assert.strictEqual(f.bin, '');
-  assert.deepStrictEqual(f.belt, []);
-  assert(!('credits' in f) && !('crates' in f));
+  for (let i = 0; i < f.belt.length; i++) {
+    const a = f.belt[i];
+    if (!(a.x >= 0 && a.x + Factory.widthOf(a) <= T.BELT.len)) return 'belt x ' + a.x;
+    if (i && !(a.x + Factory.widthOf(a) + T.BELT.gap <= f.belt[i - 1].x)) return 'belt gap';
+  }
+  for (let i = 0; i < f.lift.length; i++) {
+    const a = f.lift[i];
+    if (!(a.y >= 0 && a.y <= T.LIFT.len)) return 'lift y ' + a.y;
+    if (i && !(a.y + Factory.widthOf(a) + T.LIFT.gap <= f.lift[i - 1].y)) return 'lift gap';
+  }
+  if (new Set(f.q).size !== f.q.length) return 'queue twice';
+  for (const k of f.q) { const m = f.molds[k]; if (!m || m.held || m.got >= T.MOLDS[k] || m.t !== Factory.B(T.MOLDS[k], m.got)) return 'queued, not waiting: ' + k; }
+  for (let k = 0; k < f.presses; k++) {
+    const m = f.molds[k], n = T.MOLDS[k];
+    if (m.got < n ? m.t > Factory.B(n, m.got) : m.t > Factory.CYCLE_T) return 'mold t ' + k;
+    if (m.held && !(m.got === n && m.t === Factory.CYCLE_T)) return 'mold held ' + k;
+  }
+  for (const s of f.stamps) if (s.held && s.t !== Factory.STAMP_TT) return 'stamp held';
+  return '';
+}
+/** A copy of the state for comparing, without the wall clock and what catch-up alone counts. */
+const bare = (f) => { const g = JSON.parse(JSON.stringify(f)); delete g.lastTick; delete g.stats.away; return g; };
+/** The same, without where each moving thing was a tick ago (repair sets that to where it is). */
+const still = (f) => JSON.parse(JSON.stringify(bare(f), (k, v) => (k === 'px' || k === 'py' ? undefined : v)));
+
+test('the factory\'s numbers: every tuning constant pinned, in one frozen block', () => {
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(T)), {
+    TICK: 0.25, MOLDS: [4, 5, 6, 7], BELT: { len: 28, speed: 0.5, gap: 1 }, TOP: { len: 26, speed: 0.5, gap: 1 }, STAMP_X: [2, 8, 15, 23],
+    STORE_COLS: 27, STORE_ROWS: [4, 8, 12], LIFT: { len: 10, speed: 0.125, gap: 1.5 }, CRATE_COLS: [4, 6, 8, 10, 12], CRATE_ROWS: [12, 16, 24, 32, 40],
+    CYCLE: 600, STAMP_T: 100, STAMP_COST: [0, 100, 300, 800], STORE_COST: [0, 120, 400], PRESS_COST: [0, 150, 450, 1200], CRATE_COST: [60, 200, 500, 1000],
+    PAY: 0.25, START_STORE: 8, START_STAMP_T: 200, START_PRESS: { got: 3, t: 1800 }, MAX_AWAY: 30 * 86400, RAW: 8,
+  });
+  assert(Object.isFrozen(T) && Object.isFrozen(T.BELT) && Object.isFrozen(T.MOLDS) && Object.isFrozen(T.START_PRESS));
+  assert.strictEqual(Factory.CRATE_ROWS, T.CRATE_ROWS, 'exported by name too');
+  assert.deepStrictEqual([Factory.TICK_MS, Factory.CYCLE_T, Factory.STAMP_TT], [250, 2400, 400]);
+  assert.deepStrictEqual(T.CRATE_ROWS.map((_, l) => Factory.crateMinos(l)), [48, 96, 192, 320, 480]);
+  assert.deepStrictEqual(T.CRATE_ROWS.map((_, l) => Factory.crateLines(l)), [12, 24, 48, 80, 120]);
+  assert(T.CRATE_ROWS.every((_, l) => Factory.crateMinos(l) % 4 === 0), 'every crate holds whole lines');
+  assert.deepStrictEqual(T.STORE_ROWS.map((_, l) => Factory.storeCapAt(l)), [108, 216, 324]);
+  // The stamp heads sit over the bays: each mino is set under its head, and the heads' centres are the bays'.
+  assert.deepStrictEqual(T.STAMP_X.map((x) => 0.75 + x + 0.5), [0, 1, 2, 3].map((k) => 0.5 + Factory.BAY_X[k] + 0.25 + (T.MOLDS[k] + 1) / 2));
+  // Every upgrade, level by level, and nothing past the top.
+  const f = Factory.create(), got = {};
+  for (const kind of ['stamp', 'store', 'press', 'crate']) {
+    got[kind] = [];
+    let u;
+    while ((u = Factory.nextUpgrade(f, kind))) { got[kind].push([u.cost, u.from, u.to]); assert(Factory.upgrade(f, kind)); }
+    assert.strictEqual(Factory.nextUpgrade(f, kind), null); assert(!Factory.upgrade(f, kind));
+  }
+  assert.deepStrictEqual(got, {
+    stamp: [[100, 36, 72], [300, 72, 108], [800, 108, 144]], store: [[120, 108, 216], [400, 216, 324]],
+    press: [[150, 24, 54], [450, 54, 90], [1200, 90, 132]], crate: [[60, 12, 24], [200, 24, 48], [500, 48, 80], [1000, 80, 120]],
+  });
+  assert.deepStrictEqual([f.stampers, f.storeLevel, f.presses, f.crateLevel, f.stamps.length, f.molds.length], [4, 2, 4, 4, 4, 4]);
+  assert.strictEqual(f.stats.spent, 1200 + 520 + 1800 + 1760);
+  assert.deepStrictEqual(f.molds.map((m) => m.pin), [-1, -1, -1, -1]);
+  const s = new L.Store();
+  s.state.lines = 99;
+  assert(!s.spend(Factory.nextUpgrade(s.state.factory, 'stamp').cost), 'short of lines');
 });
-test('rates: 24, 54, 90, 132 minos an hour — 6 to 33 lines', () => {
-  const f = Factory.create(), got = [Factory.perHour(f)];
-  for (let k = 1; k < 4; k++) { Factory.upgrade(f, 'press'); got.push(Factory.perHour(f)); }
-  assert.deepStrictEqual(got, [24, 54, 90, 132]);
+test('a new factory: one stamp head, a store of 8 of 108, one press three quarters through its first piece', () => {
+  const f = Factory.create();
+  assert.strictEqual(f.v, 7);
+  assert.deepStrictEqual([f.stampers, f.stamps[0].t, f.stamps[0].held, f.store, Factory.storeCap(f)], [1, 200, false, 8, 108]);
+  assert.deepStrictEqual([f.presses, f.molds[0].got, f.molds[0].t, f.molds[0].held], [1, 3, 1800, false]);
+  assert.deepStrictEqual([Factory.capacity(f), f.crate, f.top, f.belt, f.lift, f.q, f.acc], [48, '', [], [], [], [], 0]);
+  assert.deepStrictEqual([Factory.supply(f), Factory.demand(f), Factory.perHour(f)], [36, 24, 24]);
+  assert(conserved(f) && limits(f) === '');
+  let t = 0, ship = null, drop = null;
+  while (t < 400 && ship == null) { for (const e of Factory.step(f, 0.25)) { if (e.kind === 'ship' && ship == null) ship = t + 0.25; if (e.kind === 'drop' && drop == null) drop = t + 0.25; } t += 0.25; }
+  assert.strictEqual(drop, 150, 'the first piece drops at 150 s');
+  assert(ship > 150 + 10 / T.LIFT.speed && ship <= 330, 'and ships within 330 s (the conveyor is an 80 s ride): ' + ship);
+  const g = Factory.create();
+  Factory.step(g, 700);
+  assert(g.stats.minos >= 4, 'the self-check still holds');
+});
+test('the conveyor: a piece rides it for 80 s, so at full production it mostly carries something', () => {
+  const f = Factory.create();
+  f.lift = [{ n: 4, s: 0, c: 1, u: 1, y: 0, py: 0 }];
+  let t = 0;
+  while (f.lift.length && t < 200) { Factory.step(f, 0.25); t += 0.25; }
+  assert.strictEqual(t, 10 / T.LIFT.speed, 'from its foot to the station and shipped: ' + t + ' s');
+  assert.strictEqual(10 / T.LIFT.speed, 80);
+  // Everything built, collecting every hour: the conveyor holds a piece at least two fifths of the time.
+  const g = grow(seeded(7), 4, 4, 0, 4);
+  Factory.run(g, HOUR); Factory.collect(g, 'd');
+  let busy = 0, n = 0;
+  for (let s = 0; s < 6 * 3600; s++) { Factory.run(g, 1000); if (g.lift.length) busy++; n++; if (s % 3600 === 3599) Factory.collect(g, 'd'); }
+  assert(busy / n >= 0.4, 'aboard ' + (busy / n).toFixed(3) + ' of the time');
+});
+test('rates: 6, 9, 13.5, 18, 22.5, 27, 33 lines an hour in the natural order of building, as measured', () => {
+  const plan = [[1, 1], [1, 2], [2, 2], [2, 3], [3, 3], [3, 4], [4, 4]];
+  assert.deepStrictEqual(plan.map(([S, P]) => Factory.quarters(Factory.perHour(grow(Factory.create(), S, P, 0, 0)) / 4)), ['6', '9', '13.5', '18', '22.5', '27', '33']);
+  for (const [S, P] of plan) {
+    const f = grow(seeded(40 + S * 4 + P), S, P, 0, 4);
+    let at24 = 0;
+    for (let h = 1; h <= 48; h++) { Factory.run(f, HOUR); Factory.collect(f, 'd'); if (h === 24) at24 = f.stats.minos; }
+    const measured = (f.stats.minos - at24) / 24 / 4, want = Factory.perHour(f) / 4;
+    assert(Math.abs(measured - want) <= 0.02 * want, S + 'S ' + P + 'P: ' + measured + ' lines an hour, not ' + want);
+  }
   assert.strictEqual(Factory.quarters(54 / 4), '13.5');
-  assert.strictEqual(Factory.quarters(21 / 4), '5.25');
   assert.strictEqual(Factory.quarters(3 / 4), '0.75');
   assert.strictEqual(Factory.quarters(4800 / 4), '1,200');
-  assert.strictEqual(Factory.quarters(132 / 4), '33');
 });
-test('ten minutes: the first tetromino lands in the bin, one line (a quarter per mino)', () => {
-  const f = Factory.create();
-  ranFor(f, 600 / 3600);
-  assert.strictEqual(f.bin.length, 4);
-  assert.strictEqual(f.stats.minos, 4);
-  const res = Factory.collect(f);
-  assert.strictEqual(res.collected, 1, 'four minos pay one line');
-});
-test('a day away: the bin fills to capacity and the line waits (nothing lost, nothing more)', () => {
-  const f = ranFor(Factory.create(), 24);
-  assert.strictEqual(f.bin.length, 48);
-  assert(f.molds[0].held, 'the press holds its piece');
-  assert(Factory.isFull(f));
-  assert(f.belt.length >= 1 && f.belt.length <= 12 && beltOk(f), 'a short queue waits on the belt: ' + f.belt.length);
-  assert(f.stats.fullMs > 0);
-  assert.strictEqual(f.stats.minos, f.bin.length, 'only minos in the bin count as made');
-  assert.strictEqual(f.stats.away, 48);
-});
-test('the bin never overflows, whatever the presses make', () => {
-  for (let seed = 1; seed <= 4; seed++) {
-    for (let p = 1; p <= 4; p++) {
-      const f = withPresses(p, seed * 97 + p);
-      let now = Date.now() - 48 * HOUR;
-      f.lastTick = now;
-      for (let h = 0; h < 48; h++) { now += HOUR; Factory.catchUp(f, now); assert(f.bin.length <= Factory.capacity(f)); assert(beltOk(f)); }
-      assert(f.bin.length > Factory.capacity(f) - 7, 'it stops at most one piece short');
+test('conservation and limits, after every tick of three days of fuzz (collects, upgrades, pins, repairs)', () => {
+  for (let seed = 1; seed <= 5; seed++) {
+    const r = new RNG('fuzz' + seed), f = seeded(seed);
+    const kinds = ['stamp', 'store', 'press', 'crate'];
+    let bad = '', clock = 0, ticks = 0;
+    while (clock < 72 * HOUR && !bad) {
+      // Mostly a tick or two at a time (so every tick is checked); now and then a long gap.
+      const ms = r.next() < 0.0005 ? 60e3 + r.int(3 * HOUR) : 1 + r.int(500);
+      const before = f.acc;
+      Factory.run(f, ms); clock += ms; ticks += Math.floor((before + ms) / 250);
+      if (!conserved(f)) bad = 'conservation';
+      bad = bad || limits(f);
+      const roll = r.next();
+      if (roll < 0.0002) Factory.collect(f, 'd');
+      else if (roll < 0.0003) Factory.upgrade(f, kinds[r.int(4)]);
+      else if (roll < 0.00035) { const k = r.int(f.presses); Factory.setPin(f, k, r.next() < 0.5 ? -1 : r.int(Factory.shapes(T.MOLDS[k]).length)); }
+      else if (roll < 0.0004) { const g = still(f); if (Factory.repair(f) !== f) bad = 'repair made a new factory'; else if (!require('util').isDeepStrictEqual(still(f), g)) bad = 'repair changed a sound factory'; }
+      if (bad) bad += ' (seed ' + seed + ', ' + clock + ' ms)';
     }
+    assert(!bad, bad);
+    assert(ticks > 72 * 3600 * 4 * 0.5 && f.stats.made > 500 && f.stats.lines > 50, JSON.stringify({ ticks, made: f.stats.made, lines: f.stats.lines }));
   }
 });
-test('online steps and catch-up make exactly the same line', () => {
-  const a = withPresses(4, 1234);
-  a.binLevel = 4;
-  const b = JSON.parse(JSON.stringify(a));
-  for (let i = 0; i < 2 * 3600 / 0.25; i++) Factory.step(a, 0.25);
-  // One clock reading: two could straddle a millisecond and give catch-up a longer gap than the online run.
-  const now = Date.now();
-  b.lastTick = now - 2 * HOUR; Factory.catchUp(b, now);
-  assert.strictEqual(a.bin, b.bin);
-  assert.deepStrictEqual(a.belt, b.belt);
-  assert(a.bin.length > 100);
-});
-test('the belt: pieces keep their gap, back up when the bin is full, and flow again after collecting', () => {
-  const f = withPresses(4, 77);
-  let full = false;
-  for (let i = 0; i < 12 * 3600; i++) {
-    const evs = Factory.step(f, 1);
-    assert(beltOk(f), 'no overlap at ' + i);
-    if (evs.some((e) => e.kind === 'full')) full = true;
+test('a full crate backs the chain up in order, calmly, all the way back; Collect starts it again', () => {
+  const f = grow(seeded(6), 1, 2, 0, 0);
+  const at = {}, set = (k, on, t) => { if (!on) delete at[k]; else if (!(k in at)) at[k] = t; };
+  let fulls = 0, t = 0;
+  for (; t < 12 * 3600 * 4; t++) {
+    const evs = [];
+    if (!Factory.tick(f, evs)) break;
+    fulls += evs.filter((e) => e.kind === 'full').length;
+    const w = Factory.waits(f), bh = f.belt[0];
+    set('crate', w.crateFull, t);
+    set('belt', !!bh && bh.x + Factory.widthOf(bh) >= T.BELT.len, t);
+    set('presses', w.pressHeld.every(Boolean), t);
+    set('store', f.store === Factory.storeCap(f), t);
+    set('top', w.storeFull, t);
+    set('heads', w.stamps.every(Boolean), t);
   }
-  assert(full && Factory.isFull(f));
-  const len = f.bin.length, queue = f.belt.length;
-  Factory.step(f, 600);
-  assert.strictEqual(f.bin.length, len, 'a full bin takes nothing');
-  assert(f.belt.length >= queue);
-  const res = Factory.collect(f);
-  assert.strictEqual(res.collected, Math.floor(len / 4));
-  const evs = Factory.step(f, 60);
-  assert(evs.some((e) => e.kind === 'enter') && !Factory.isFull(f), 'the line runs again');
+  assert(t < 12 * 3600 * 4, 'it comes to rest');
+  const order = ['crate', 'belt', 'presses', 'store', 'top', 'heads'];
+  assert(order.every((k, i) => k in at && (i === 0 || at[k] >= at[order[i - 1]])), JSON.stringify(at));
+  assert.strictEqual(fulls, 1, 'full is told once');
+  const w = Factory.waits(f);
+  assert(w.crateFull && w.storeFull && !w.storeEmpty && w.stamps.every(Boolean) && w.pressHeld.every(Boolean) && !w.starving.length);
+  assert(Factory.status(f).waiting && Factory.timeToFull(f) === 0);
+  assert(conserved(f) && limits(f) === '');
+  // At rest, more time is only waiting: counted exactly, and quickly.
+  const g = bare(f), ms0 = f.stats.fullMs, t0 = Date.now();
+  Factory.run(f, 50 * HOUR);
+  assert(Date.now() - t0 < 50, 'the stall stop ends the run');
+  assert.strictEqual(f.stats.fullMs - ms0, 50 * HOUR);
+  const h = bare(f); h.stats.fullMs = g.stats.fullMs;
+  assert.deepStrictEqual(h, g, 'and nothing else changed');
+  Factory.collect(f, 'd');
+  let shipped = -1;
+  for (let i = 0; i < 60 * 4 && shipped < 0; i++) if (Factory.step(f, 0.25).some((e) => e.kind === 'ship')) shipped = i;
+  assert(shipped >= 0 && !Factory.isFull(f), 'a ship within a minute of collecting');
 });
-test('a bin that fills between collects: what three days of hourly collecting make is pinned', () => {
-  // The belt's length is how many pieces wait at a full bin, so it is part of the economy: a change of geometry that
-  // changes what a busy line makes shows up here (with a bin that never fills, only the presses count).
-  const got = [2, 4].map((p) => {
-    const f = withPresses(p, 99);
-    f.lastTick = 0;
-    let lines = 0;
-    for (let h = 1; h <= 72; h++) { Factory.catchUp(f, h * HOUR); const r = Factory.collect(f, 'd'); if (r) lines += r.collected; }
-    return [lines, f.stats.pieces, f.stats.minos];
-  });
-  assert.deepStrictEqual(got, [[794, 720, 3177], [787, 647, 3148]]);
+test('short of minos: the store empties, the presses wait their turn, first come first served', () => {
+  const f = grow(seeded(7), 1, 2, 0, 4);
+  f.store = 0; f.stats.made -= 8;
+  const fed = [0, 0], since = [null, null];
+  let sawEmpty = false, maxWait = 0, feeds = 0;
+  for (let i = 0; i < 24 * 3600 * 4; i++) {
+    const evs = [];
+    Factory.tick(f, evs);
+    for (const e of evs) if (e.kind === 'feed') { fed[e.k]++; feeds++; if (since[e.k] != null) maxWait = Math.max(maxWait, i - since[e.k]); since[e.k] = null; }
+    for (const k of f.q) if (since[k] == null) since[k] = i;
+    const w = Factory.waits(f);
+    if (w.storeEmpty) { sawEmpty = true; assert(f.store === 0 && w.starving.length === f.q.length && w.starving.every((k) => f.q.includes(k))); }
+    if (i % (4 * 3600) === 0) Factory.collect(f, 'd');
+  }
+  assert(sawEmpty && f.stats.starveMs > 12 * HOUR, 'the presses spend most of the day waiting: ' + f.stats.starveMs);
+  // Supply is the whole story: every mino stamped is used, and the two presses share them evenly (each queues once a
+  // mino, so a starving press gets one in turn).
+  assert(Math.abs(feeds - 36 * 24) <= 4, feeds + ' fed');
+  for (const n of fed) assert(Math.abs(n - feeds / 2) <= 0.1 * feeds / 2, JSON.stringify(fed));
+  assert(maxWait <= 3 * Factory.STAMP_TT, 'a queued press waits at most three stamp intervals: ' + maxWait + ' ticks');
+  assert(conserved(f) && limits(f) === '');
 });
-test('bays: sized to each press, filling the belt; every piece drops straight down from its mold', () => {
-  assert.strictEqual(Factory.BELT.len, 28);
-  assert.deepStrictEqual(Factory.BAY_X.map((x, k) => x + Factory.BAYS[k]), [5.5, 12, 19.5, 28]);
-  assert(!('BAY' in Factory));
-  const f = withPresses(4, 4242);
-  f.binLevel = 4;
-  let drops = 0;
-  for (let i = 0; i < 6 * 3600 / 0.25; i++) {
-    for (const e of Factory.step(f, 0.25)) {
-      if (e.kind !== 'drop') continue;
-      const w = Factory.widthOf(e.item);
-      assert.strictEqual(e.x, Factory.dropX(e.k, w), 'press ' + e.k + ' drops at its mold');
-      // Inside its own bay, whole cells in from the mold's edge; the belt has carried it on from there since.
-      assert(e.x >= Factory.BAY_X[e.k] + 0.25 && e.x + w <= Factory.BAY_X[e.k] + 0.25 + Factory.MOLDS[e.k] + 1);
-      assert(e.item.x >= e.x && e.item.x - e.x <= Factory.BELT.speed * 0.25 + 1e-9);
-      drops++;
+test('the store fills: four stamp heads and one press — the heads hold, and shipping goes on', () => {
+  const f = grow(seeded(8), 4, 1, 0, 4);
+  let shipsLate = 0;
+  for (let i = 0; i < 12 * 3600 * 4; i++) {
+    const evs = [];
+    Factory.tick(f, evs);
+    if (i > 8 * 3600 * 4) shipsLate += evs.filter((e) => e.kind === 'ship').length;
+    if (i % (4 * 3600) === 0) Factory.collect(f, 'd');
+  }
+  const w = Factory.waits(f);
+  assert.strictEqual(f.store, 108);
+  assert(w.storeFull && w.stamps.some(Boolean) && !w.crateFull, JSON.stringify(w));
+  assert(shipsLate >= 20, 'pieces still ship: ' + shipsLate);
+  assert(conserved(f) && limits(f) === '');
+});
+test('determinism: any slicing of the same time, and catch-up, make exactly the same line', () => {
+  const base = grow(seeded(9), 3, 4, 1, 3), runs = [];
+  const chunked = (next) => { const f = JSON.parse(JSON.stringify(base)); let left = 3 * HOUR; while (left > 0) { const ms = Math.min(left, next()); Factory.run(f, ms); left -= ms; } return f; };
+  runs.push(chunked(() => 250), chunked(() => 1000));
+  const r = new RNG('slices');
+  runs.push(chunked(() => 16 + r.int(35)));
+  const c = JSON.parse(JSON.stringify(base)), now = Date.now();
+  c.lastTick = now - 3 * HOUR;
+  const res = Factory.catchUp(c, now);
+  runs.push(c);
+  for (let i = 1; i < runs.length; i++) assert.deepStrictEqual(bare(runs[i]), bare(runs[0]), 'run ' + i);
+  assert(runs[0].stats.minos > 150 && res.minos === c.stats.minos && res.made > 0 && c.stats.away === res.minos);
+  // Online steps from the page (whole milliseconds between frames) are the same run.
+  const o = JSON.parse(JSON.stringify(base));
+  for (let t = 0; t < 3 * HOUR;) { const ms = Math.min(3 * HOUR - t, 17); Factory.step(o, ms / 1000); t += ms; }
+  assert.deepStrictEqual(bare(o), bare(runs[0]));
+});
+test('time: a clock set back makes nothing; a long gap is capped; the slowest cases are quick', () => {
+  const f = Factory.create(), now = Date.now();
+  f.lastTick = now + HOUR;
+  assert.strictEqual(Factory.catchUp(f, now), null);
+  assert.strictEqual(f.lastTick, now);
+  assert.deepStrictEqual([f.stats.minos, f.stats.made], [0, 11]);
+  const g = grow(Factory.create(), 4, 4, 2, 4);
+  g.lastTick = now - 60 * 24 * HOUR;
+  let t0 = Date.now();
+  const r = Factory.catchUp(g, now);
+  assert.strictEqual(r.seconds, 30 * 86400, 'at most thirty days are replayed');
+  assert(r.full && g.crate.length > 473 && Date.now() - t0 < 1000, 'the maxed line, quickly: ' + (Date.now() - t0) + ' ms');
+  for (const [S, P, st] of [[1, 1, 2], [1, 4, 2], [4, 1, 2]]) {
+    const w = grow(Factory.create(), S, P, st, 4);
+    w.lastTick = now - 30 * 24 * HOUR;
+    t0 = Date.now();
+    const rw = Factory.catchUp(w, now);
+    assert(rw.full && Date.now() - t0 < 1000, 'the slowest to come to rest, quickly: ' + S + 'S ' + P + 'P ' + (Date.now() - t0) + ' ms');
+  }
+  const e = grow(Factory.create(), 4, 4, 2, 4);
+  t0 = Date.now();
+  assert.strictEqual(Factory.eta(e, 1e9, 4 * 3600), Infinity);
+  assert(Date.now() - t0 < 50, 'eta over four hours: ' + (Date.now() - t0) + ' ms');
+  assert.strictEqual(Factory.eta(Factory.create(), 0), 0);
+});
+test('time to full, in closed form, is close to the line run out', () => {
+  const states = [
+    () => Factory.create(),
+    () => grow(seeded(11), 1, 2, 0, 2),
+    () => { const f = grow(seeded(12), 2, 2, 1, 3); Factory.run(f, 2 * HOUR); return f; },
+    () => grow(seeded(13), 4, 4, 2, 4),
+    () => { const f = grow(seeded(14), 1, 4, 2, 4); f.stats.made += 300 - f.store; f.store = 300; return f; },
+    () => { const f = grow(seeded(15), 3, 3, 0, 1); Factory.run(f, 1.5 * HOUR); return f; },
+  ];
+  for (const make of states) {
+    const f = make(), want = Factory.timeToFull(f);
+    let t = 0;
+    while (!Factory.isFull(f) && t < 40 * 3600 * 4) { Factory.tick(f, null); t++; }
+    const got = t / 4;
+    assert(Math.abs(got - want) <= Math.max(0.1 * got, 600), 'closed form ' + Math.round(want) + ' s, run ' + got + ' s');
+  }
+});
+test('events: a feed for every mino set, drops under the molds, ships of whole pieces, pins', () => {
+  const f = grow(seeded(16), 4, 4, 2, 4);
+  const seq = [[], [], [], []];
+  let drops = 0, ships = 0;
+  for (let i = 0; i < 6 * 3600 * 4; i++) {
+    const len = f.crate.length, evs = [];
+    Factory.tick(f, evs);
+    let added = 0;
+    for (const e of evs) {
+      if (e.kind === 'feed' || e.kind === 'mino') seq[e.k].push(e.kind[0]);
+      if (e.kind === 'drop') {
+        const w = Factory.widthOf(e.item);
+        assert.strictEqual(e.x, Factory.dropX(e.k, w), 'press ' + e.k + ' drops at its mold');
+        assert(e.x >= Factory.BAY_X[e.k] + 0.25 && e.x + w <= Factory.BAY_X[e.k] + 0.25 + T.MOLDS[e.k] + 1);
+        drops++;
+      }
+      if (e.kind === 'ship') { assert.strictEqual(f.crate.slice(len + added, len + added + e.item.n), e.item.c.toString(16).repeat(e.item.n)); added += e.item.n; ships++; }
     }
+    assert.strictEqual(f.crate.length, len + added, 'the crate grows only by what ships');
+    if (i % (4 * 3600) === 0) Factory.collect(f, 'd');
   }
-  assert(drops > 60, drops + ' drops');
+  for (const s of seq) assert(/^(fm)+f?$/.test(s.join('')), 'feed, set, feed, set …: ' + s.join('').slice(0, 40));
+  assert(drops > 100 && ships > 100, drops + ' drops, ' + ships + ' ships');
+  // A pinned press ships only its shape, once the piece in progress is out; the keyhole counts only unpinned.
+  const g = grow(seeded(17), 4, 4, 2, 4);
+  assert(Factory.setPin(g, 3, Factory.HOLE));
+  assert(!Factory.setPin(g, 1, 12) && !Factory.setPin(g, 9, 0));
+  const cur = g.molds[3].s, made7 = [];
+  for (let i = 0; i < 8 * 3600 * 4; i++) {
+    const evs = [];
+    Factory.tick(g, evs);
+    for (const e of evs) if (e.kind === 'ship' && e.item.n === 7) made7.push(e.item.s);
+    if (i % 14400 === 0) Factory.collect(g, 'd');
+  }
+  assert(made7.length >= 4 && made7[0] === cur && made7.slice(1).every((s) => s === Factory.HOLE), JSON.stringify(made7));
+  assert.strictEqual(g.stats.seen[7][Factory.HOLE], '1');
+  assert.strictEqual(g.stats.holeFree, false, 'a pinned keyhole does not count');
+  g.lift = [{ n: 7, s: Factory.HOLE, c: 1 + (Factory.HOLE % 7), u: 1, y: T.LIFT.len, py: T.LIFT.len }];
+  g.crate = '';
+  Factory.tick(g, null);
+  assert.strictEqual(g.stats.holeFree, true, 'an unpinned one does');
+  // What counts is how the shape was chosen: pinning the keyhole, then setting the press back to Any before it drops,
+  // does not make it a free one (and a free keyhole pinned in progress still is).
+  const h = grow(seeded(18), 4, 4, 2, 4);
+  assert(Factory.setPin(h, 3, Factory.HOLE));
+  let guard = 0;
+  while (h.molds[3].s !== Factory.HOLE && guard++ < 4 * 3600 * 4) { Factory.tick(h, null); if (guard % 14400 === 0) Factory.collect(h, 'd'); }
+  assert.strictEqual(h.molds[3].s, Factory.HOLE);
+  assert(Factory.setPin(h, 3, -1));
+  const holes = [];
+  for (let i = 0; i < 3600 * 4; i++) { const evs = []; Factory.tick(h, evs); for (const e of evs) if (e.kind === 'ship' && e.item.s === Factory.HOLE && e.item.n === 7) holes.push(e.item.u); if (i % 14400 === 0) Factory.collect(h, 'd'); }
+  assert(holes.length >= 1 && holes[0] === 0, 'the pinned keyhole ships as pinned: ' + holes);
+  assert.strictEqual(h.stats.holeFree, !!holes.slice(1).some((u) => u), 'only a freely chosen keyhole counts');
 });
 test('collect: whole lines only, loose minos stay, days counted once each', () => {
   const f = Factory.create();
   assert.strictEqual(Factory.collect(f), null);
-  f.bin = '1234567123456';
+  f.crate = '1234567123456';
   const r = Factory.collect(f, '2026-09-26');
-  assert.strictEqual(r.collected, 3); assert.strictEqual(r.loose, 1); assert.strictEqual(f.bin, '6');
-  assert.strictEqual(r.taken, '123456712345');
+  assert.deepStrictEqual([r.collected, r.loose, f.crate, r.taken], [3, 1, '6', '123456712345']);
   assert.strictEqual(Factory.collect(f, '2026-09-26'), null, 'three loose minos are not a line');
-  f.bin += '1111';
+  f.crate += '1111';
   Factory.collect(f, '2026-09-26');
   assert.strictEqual(f.stats.days, 1);
-  f.bin = '12341234';
+  f.crate = '12341234';
   Factory.collect(f, '2026-09-27');
   assert.deepStrictEqual([f.stats.days, f.stats.lines, f.stats.collects, f.stats.best], [2, 6, 3, 3]);
-});
-test('bins: each size up is wider and taller (columns by rows); capacity in minos, whole lines when full', () => {
-  assert.deepStrictEqual(Factory.BIN_COLS, [4, 6, 8, 10, 12]);
-  assert.deepStrictEqual(Factory.BIN_ROWS, [12, 16, 24, 32, 40]);
-  assert.deepStrictEqual(Factory.BIN_COLS.map((_, l) => Factory.binMinos(l)), [48, 96, 192, 320, 480]);
-  assert.deepStrictEqual(Factory.BIN_COLS.map((_, l) => Factory.binLines(l)), [12, 24, 48, 80, 120]);
-  for (let l = 1; l < Factory.BIN_COLS.length; l++) assert(Factory.BIN_COLS[l] > Factory.BIN_COLS[l - 1] && Factory.BIN_ROWS[l] > Factory.BIN_ROWS[l - 1]);
-  // Every capacity is whole lines, so a full bin collects to nothing loose.
-  assert(Factory.BIN_COLS.every((_, l) => Factory.binMinos(l) % 4 === 0));
-  const f = Factory.create();
   for (let l = 0; l < 5; l++) {
-    f.binLevel = l; f.belt = [];
-    f.bin = '1'.repeat(Factory.capacity(f));
+    f.crateLevel = l; f.lift = [];
+    f.crate = '1'.repeat(Factory.capacity(f));
     const st = Factory.status(f);
-    assert.deepStrictEqual([st.cap, st.lines, st.loose, st.full], [Factory.binMinos(l), Factory.binLines(l), 0, true]);
-    const r = Factory.collect(f, 'd');
-    assert.deepStrictEqual([r.collected, r.loose, f.bin], [Factory.binLines(l), 0, '']);
+    assert.deepStrictEqual([st.cap, st.lines, st.loose, st.full], [Factory.crateMinos(l), Factory.crateLines(l), 0, true]);
+    const c = Factory.collect(f, 'd');
+    assert.deepStrictEqual([c.collected, c.loose, f.crate], [Factory.crateLines(l), 0, '']);
   }
-  // Six columns: 30 minos are five rows, the last not full. Collect takes seven lines (28 minos: four rows and four of
-  // the fifth); the last two stay, loose. Pay is a quarter line a mino whatever the width.
-  f.binLevel = 1; f.bin = '123456'.repeat(5);
-  const r = Factory.collect(f, 'd');
-  assert.deepStrictEqual([r.collected, r.loose, f.bin, r.taken.length], [7, 2, '56', 28]);
-  // A wide bin fills to its capacity, a piece at a time, and then the line waits.
-  const g = withPresses(4, 31); g.binLevel = 2;
-  for (let i = 0; i < 3 * 3600; i++) Factory.step(g, 1);
-  assert(Factory.isFull(g) && g.bin.length <= 192 && g.bin.length > 192 - 7 && beltOk(g));
+  // Six columns: 30 minos are five rows, the last not full; Collect takes seven lines and leaves two.
+  f.crateLevel = 1; f.crate = '123456'.repeat(5);
+  const c = Factory.collect(f, 'd');
+  assert.deepStrictEqual([c.collected, c.loose, f.crate, c.taken.length], [7, 2, '56', 28]);
 });
-test('a bin that caps a day: what collecting twice a day for three days makes, at every size, is pinned', () => {
-  // Hours to fill: capacity / rate. This pins what a line that waits at a full bin actually makes, one press and four.
-  const got = [1, 4].map((p) => Factory.BIN_COLS.map((_, l) => {
-    const f = withPresses(p, 7 + l);
-    f.binLevel = l; f.lastTick = 0;
+test('what three days of hourly collecting make is pinned (the geometry of the chain is part of the economy)', () => {
+  const got = [[1, 1], [2, 2], [4, 4]].map(([S, P]) => {
+    const f = grow(seeded(99), S, P, 0, 1);
     let lines = 0;
-    for (let h = 12; h <= 72; h += 12) { Factory.catchUp(f, h * HOUR); const r = Factory.collect(f, 'd'); if (r) lines += r.collected; }
-    return lines;
-  }));
-  assert.deepStrictEqual(got, [[72, 144, 288, 431, 431], [67, 138, 284, 473, 716]]);
-});
-test('upgrades: exact prices, four presses and five bins at most, paid in lines', () => {
-  const f = Factory.create();
-  const costs = [];
-  let u;
-  while ((u = Factory.nextUpgrade(f, 'press'))) { costs.push(u.cost); Factory.upgrade(f, 'press'); }
-  assert.deepStrictEqual(costs, [150, 450, 1200]);
-  assert.strictEqual(f.presses, 4); assert(!Factory.upgrade(f, 'press'));
-  const bins = [];
-  while ((u = Factory.nextUpgrade(f, 'bin'))) { bins.push([u.cost, u.to]); Factory.upgrade(f, 'bin'); }
-  assert.deepStrictEqual(bins, [[60, 24], [200, 48], [500, 80], [1000, 120]]);
-  assert.strictEqual(Factory.capacity(f), 480); assert(!Factory.upgrade(f, 'bin'));
-  assert.strictEqual(f.stats.spent, 3560);
-  assert.deepStrictEqual(f.molds.map((m) => m.pin), [-1, -1, -1, -1]);
-  const s = new L.Store();
-  s.state.lines = 149;
-  assert(!s.spend(Factory.nextUpgrade(s.state.factory, 'press').cost), 'short of lines');
+    for (let h = 1; h <= 72; h++) { Factory.run(f, HOUR); const r = Factory.collect(f, 'd'); if (r) lines += r.collected; }
+    return [lines, f.stats.pieces, f.stats.minos, f.stats.made];
+  });
+  assert.deepStrictEqual(got, [[432, 432, 1728, 1851], [970, 863, 3883, 4009], [1663, 1275, 6653, 6834]]);
 });
 test('shapes: 5, 12, 35, 108, all lying flat; one heptomino has a hole', () => {
   assert.deepStrictEqual([4, 5, 6, 7].map((n) => Factory.shapes(n).length), [5, 12, 35, 108]);
@@ -963,72 +1476,52 @@ test('shapes: 5, 12, 35, 108, all lying flat; one heptomino has a hole', () => {
   assert(Factory.shapes(6).every((c) => !Factory.hasHole(c)));
   assert.deepStrictEqual(Factory.shapes(5).map((c, s) => Factory.shapeName(5, s)).sort(), ['F', 'I', 'L', 'N', 'P', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'].map((x) => x + '-pentomino'));
   assert.strictEqual(Factory.shapeName(6, 11), 'Hexomino #12');
+  assert.strictEqual(T.BELT.len, 28);
+  assert.deepStrictEqual(Factory.BAY_X.map((x, k) => x + Factory.BAYS[k]), [5.5, 12, 19.5, 28]);
 });
-test('a pinned mold makes its shape next; shapes pressed are remembered; the keyhole needs luck', () => {
-  const f = withPresses(4, 5);
-  assert(Factory.setPin(f, 3, Factory.HOLE));
-  assert(!Factory.setPin(f, 1, 12) && !Factory.setPin(f, 9, 0));
-  const cur = f.molds[3].s;
-  f.molds[3].p = 1; Factory.step(f, 0.25);
-  assert.strictEqual(f.belt.find((it) => it.n === 7).s, cur, 'the piece in progress kept its shape');
-  assert.strictEqual(f.molds[3].s, Factory.HOLE, 'the next one uses the pin');
-  f.molds[3].p = 1;
-  for (let i = 0; i < 4 * 60 * 20 && !f.belt.some((it) => it.n === 7 && it.s === Factory.HOLE); i++) Factory.step(f, 0.25);
-  const it = f.belt.find((x) => x.n === 7 && x.s === Factory.HOLE);
-  assert(it && it.u === 0, 'made on a pin');
-  f.bin = ''; f.binLevel = 4;
-  for (let i = 0; i < 400 && f.stats.seen[7][Factory.HOLE] !== '1'; i++) Factory.step(f, 1);
-  assert.strictEqual(f.stats.seen[7][Factory.HOLE], '1');
-  assert.strictEqual(f.stats.holeFree, false, 'a pinned keyhole does not count');
-  assert(Factory.seenCount(f, 7) >= 1);
-  // An unpinned one does.
-  f.belt = [{ n: 7, s: Factory.HOLE, c: 1 + (Factory.HOLE % 7), x: Factory.BELT.len - Factory.widthOf({ n: 7, s: Factory.HOLE }), u: 1 }];
-  Factory.step(f, 2);
-  assert.strictEqual(f.stats.holeFree, true);
-});
-test('the same seed makes the same line', () => {
-  const a = withPresses(3, 999), b = withPresses(3, 999);
-  const now = Date.now();
-  a.binLevel = b.binLevel = 4;
-  a.lastTick = b.lastTick = now - 10 * HOUR;
-  Factory.catchUp(a, now); Factory.catchUp(b, now);
-  assert.strictEqual(a.bin, b.bin);
-  assert(a.bin.length > 100);
-});
-test('time: a clock set back makes nothing; a long gap is capped by the bin', () => {
-  const f = Factory.create(), now = Date.now();
-  f.lastTick = now + HOUR;
-  assert.strictEqual(Factory.catchUp(f, now), null);
-  assert.strictEqual(f.lastTick, now);
-  assert.strictEqual(f.stats.minos, 0);
-  const g = withPresses(4, 3); g.binLevel = 4;
-  g.lastTick = now - 60 * 24 * HOUR;
-  const t0 = Date.now();
-  const r = Factory.catchUp(g, now);
-  assert.strictEqual(r.seconds, 30 * 86400, 'at most thirty days are replayed');
-  assert(g.bin.length <= 480 && g.bin.length > 473);
-  assert(Date.now() - t0 < 2000, 'and quickly');
-  const one = Factory.create(); one.binLevel = 4; one.lastTick = now - 30 * 24 * HOUR;
-  const t1 = Date.now();
-  Factory.catchUp(one, now);
-  assert(one.bin.length > 473 && Date.now() - t1 < 2000, 'the slowest case (one press, the biggest bin) is quick too');
-});
-test('a broken factory is repaired', () => {
-  const junk = Factory.repair({ v: 6, presses: 9, binLevel: -3, bin: 'zz12!!' + '3'.repeat(100), molds: [{ s: 999, pin: 'x' }, null], belt: [{ n: 4, s: 1, x: 50 }, { n: 9, s: 0, x: 3 }, { n: 5, s: 1, x: 34 }], stats: { minos: 'lots', seen: { 5: '1' } } });
-  assert.strictEqual(junk.presses, 4); assert.strictEqual(junk.binLevel, 0);
-  assert.strictEqual(junk.molds.length, 4);
-  assert(junk.molds.every((m, k) => m.s >= 0 && m.s < Factory.shapes(Factory.MOLDS[k]).length && m.pin === -1));
-  assert.strictEqual(junk.bin.length, 48); assert(/^[0-9a-f]+$/.test(junk.bin));
-  assert.strictEqual(junk.belt.length, 2); assert(beltOk(junk));
-  assert.strictEqual(junk.stats.minos, 0);
+test('a broken factory is repaired; any other version is a new one', () => {
+  const junk = Factory.repair({
+    v: 7, stampers: 9, storeLevel: -3, presses: 9, crateLevel: 7, acc: 9999, store: 5000, crate: 'zz12!!' + '3'.repeat(600),
+    stamps: [{ t: 999, held: true }, { t: 5, held: true }, null], top: [{ x: 30 }, { x: 24.5 }, { x: 'x' }, { x: 3.1 }, { x: 3 }],
+    molds: [{ s: 999, pin: 'x' }, null, { s: 1, got: 99, t: 5, held: true, pin: 2 }, { s: 1, got: 2, t: 2000, held: true }],
+    q: [3, 3, 1, 7, 'a'], belt: [{ n: 4, s: 1, x: 50 }, { n: 9, s: 0, x: 3 }, { n: 5, s: 1, x: 34 }],
+    lift: [{ n: 7, s: 0, y: 12 }, { n: 7, s: 1, y: 9 }, { n: 4, s: 0, y: 0 }], stats: { minos: 'lots', fullMs: Infinity, seen: { 5: '1' } },
+  });
+  assert.deepStrictEqual([junk.stampers, junk.storeLevel, junk.presses, junk.crateLevel, junk.acc], [4, 0, 4, 4, 249]);
+  assert.deepStrictEqual(junk.stamps.map((s) => [s.t, s.held]), [[400, true], [5, false], [0, false], [0, false]]);
+  assert.strictEqual(junk.store, 108);
+  assert.deepStrictEqual(junk.top.map((it) => it.x), [25, 23, 3.125, 1.125], 'on the belt, a cell apart, on its eighths');
+  assert(junk.molds.every((m, k) => m.s >= 0 && m.s < Factory.shapes(T.MOLDS[k]).length));
+  assert.deepStrictEqual([junk.molds[2].got, junk.molds[2].t, junk.molds[2].held, junk.molds[2].pin], [6, 5, false, 2]);
+  assert.deepStrictEqual([junk.molds[3].got, junk.molds[3].t, junk.molds[3].held], [2, Factory.B(7, 2), false]);
+  assert.deepStrictEqual(junk.q, [3, 1], 'the queue keeps only presses that wait, once each');
+  assert.strictEqual(junk.belt.length, 2);
+  assert.deepStrictEqual(junk.lift.map((it) => it.y), [10, 10 - Factory.widthOf(junk.lift[1]) - T.LIFT.gap], 'the lift re-spaced from the top; one with no room is gone');
+  assert.strictEqual(junk.crate.length, 480); assert(/^[0-9a-f]+$/.test(junk.crate));
+  assert.deepStrictEqual([junk.stats.minos, junk.stats.fullMs, junk.stats.starveMs], [0, 0, 0]);
   assert.strictEqual(junk.stats.seen[5], '1' + '0'.repeat(11));
   assert.strictEqual(junk.stats.seen[7].length, 108);
-  // A press marked as holding an unfinished piece would never move again; broken numbers start over.
-  const stuck = Factory.repair({ v: 6, presses: 1, molds: [{ p: 0.3, s: 1, held: true, pin: -1 }], stats: { minos: NaN, lines: -5, fullMs: Infinity } });
-  assert.strictEqual(stuck.molds[0].held, false);
-  assert.strictEqual(stuck.stats.minos, 0); assert.strictEqual(stuck.stats.lines, 0); assert.strictEqual(stuck.stats.fullMs, 0);
-  Factory.step(stuck, 1200);
-  assert(stuck.stats.minos >= 4, 'the repaired press runs');
+  assert(limits(junk) === '', limits(junk));
+  // A finished piece (or mino) that is not marked as waiting is marked, so it retries its drop instead of sticking.
+  const stuck = grow(seeded(21), 2, 2, 1, 2);
+  stuck.molds[0] = { pin: -1, s: 0, c: 1, u: 1, got: 4, t: T.CYCLE * 4, held: false };
+  stuck.stamps[1] = { t: T.STAMP_T * 4, held: false };
+  stuck.q = []; stuck.belt = []; stuck.top = [];
+  Factory.repair(stuck);
+  assert.deepStrictEqual([stuck.molds[0].held, stuck.stamps[1].held], [true, true]);
+  const shipped0 = stuck.stats.minos;
+  Factory.step(stuck, 3600);
+  assert(stuck.stats.minos > shipped0 && stuck.molds[0].t <= T.CYCLE * 4 && limits(stuck) === '', 'a repaired finished press drops and ships');
+  Factory.step(junk, 1200);
+  assert(limits(junk) === '');
+  // A good factory comes through unchanged.
+  const good = grow(seeded(20), 2, 3, 1, 2);
+  Factory.run(good, 5 * HOUR);
+  const before = still(good);
+  assert.deepStrictEqual(still(Factory.repair(good)), before);
+  // No migrations: an old save's factory starts again.
+  const v6 = Factory.repair({ v: 6, presses: 4, binLevel: 4, bin: '1'.repeat(400), molds: [], belt: [], stats: { minos: 5000 } });
+  assert.deepStrictEqual([v6.v, v6.presses, v6.crateLevel, v6.stats.minos, 'bin' in v6], [7, 1, 0, 0, false]);
   assert.strictEqual(L.loadState({ factory: null }).factory.presses, 1, 'a save without one gets a new factory');
 });
 
@@ -1079,11 +1572,22 @@ test('factory achievements: collects measured exactly', () => {
   assert.deepStrictEqual(A.check(st, { mode: 'factory', collected: 60, loose: 2 }), [], 'a sweep leaves nothing behind');
   assert.deepStrictEqual(A.check(st, { mode: 'factory', collected: 60, loose: 0 }).map((a) => a.id), ['fac_sweep']);
   assert.deepStrictEqual(A.check(st, { mode: 'factory', collected: 100, loose: 3 }).map((a) => a.id), ['fac_hundred']);
-  st.factory.stats.seen[5] = '1'.repeat(12); st.factory.binLevel = 4;
+  st.factory.stats.seen[5] = '1'.repeat(12); st.factory.crateLevel = 4;
   assert.deepStrictEqual(A.check(st, { mode: 'factory' }).map((a) => a.id).sort(), ['fac_silo', 'fac_twelve']);
+  const deep = A.LIST.find((a) => a.id === 'fac_silo');
+  assert.deepStrictEqual([deep.name, deep.desc, deep.progress(st)], ['Deep Crate', 'Build the biggest crate.', [4, 4]]);
+  st.factory.stampers = 3;
+  assert.deepStrictEqual(A.check(st, { mode: 'factory' }), [], 'three stampers are not four');
+  st.factory.stampers = 4;
+  assert.deepStrictEqual(A.check(st, { mode: 'factory' }).map((a) => a.id), ['fac_stamp']);
+  const four = A.LIST.find((a) => a.id === 'fac_stamp');
+  assert.deepStrictEqual([four.name, four.desc, four.pay, four.progress(st)], ['Four Stampers', 'Build all 4 stampers.', 150, [4, 4]]);
+  assert.strictEqual(A.LIST.find((a) => a.id === 'fac_sweep').name, 'Empty Crate');
+  assert.deepStrictEqual(['fac_10k', 'fac_mountain'].map((id) => A.LIST.find((a) => a.id === id).desc), ['Ship 10,000 minos.', 'Ship 100,000 minos.']);
   const fac = A.LIST.filter((a) => a.group === 'factory');
-  assert.strictEqual(fac.length, 13);
-  assert.deepStrictEqual([fac.filter((a) => a.tier !== 'legend').reduce((n, a) => n + a.pay, 0), fac.filter((a) => a.tier === 'legend').reduce((n, a) => n + a.pay, 0)], [1310, 5200]);
+  assert.strictEqual(fac.length, 14);
+  assert(!fac.some((a) => /bins?/i.test(a.name + ' ' + a.desc)), 'no bin left anywhere');
+  assert.deepStrictEqual([fac.filter((a) => a.tier !== 'legend').reduce((n, a) => n + a.pay, 0), fac.filter((a) => a.tier === 'legend').reduce((n, a) => n + a.pay, 0)], [1460, 5200]);
 });
 
 console.log('effects physics');
@@ -1851,7 +2355,7 @@ test('a loaded save gains missing fields and keeps its own', () => {
   assert.strictEqual(merged.settings.sound, true);
   assert.strictEqual(merged.settings.das, 230);
   assert.deepStrictEqual(merged.owned.skin, ['flat', 'gem']);
-  assert(merged.factory && merged.factory.v === 6 && merged.factory.molds.length === 1);
+  assert(merged.factory && merged.factory.v === 7 && merged.factory.molds.length === 1);
 });
 test('mute: off by default, kept by a save', () => {
   assert.strictEqual(L.defaultState().settings.muted, false);
@@ -2048,6 +2552,48 @@ console.log('board library');
     assert(Library.removeRetired(st.boards, id));
     assert.strictEqual(st.boards.retired.length, 0);
     assert(!Library.removeRetired(st.boards, id));
+  });
+  test('retire keeps the pieces a board ended with: in play (on a full board, the one that could not come in), held and next', () => {
+    const st = L.loadState({});
+    const g = played(41, 3);
+    g.holdPiece();
+    for (let y = 0; y < g.h - 2; y++) for (let x = 0; x < g.w - 1; x++) g.board.set(x, y, 8);
+    let guard = 0;
+    while (!g.over && guard++ < 50) g.drop();
+    assert(g.over && g.piece, 'the board filled up');
+    st.free = g.toJSON();
+    Library.ensure(st, 1000, rnd);
+    const e = Library.retire(st, st.boards.cur, g.toJSON(), 9000, 'full');
+    assert.deepStrictEqual(e.piece, { entry: Object.assign({}, g.piece.entry, { special: g.piece.special || null }), rot: g.piece.rot, x: g.piece.x, y: g.piece.y });
+    assert(!g.fitsAt(g.piece, e.piece.rot, e.piece.x, e.piece.y), 'the piece kept is the one with no room');
+    assert.deepStrictEqual(e.hold, g.hold);
+    assert.strictEqual(e.next.length, Library.NEXT_KEPT);
+    assert.deepStrictEqual(e.next, g.queue.slice(0, Library.NEXT_KEPT));
+    // Copies, not the game's own objects.
+    const kept = [e.hold.id, e.next[0].id];
+    g.hold.id = 'changed'; g.queue[0].id = 'changed';
+    assert.deepStrictEqual([e.hold.id, e.next[0].id], kept);
+    // Through the save and back: kept exactly; broken ones are dropped, never the record.
+    const back = L.loadState(JSON.parse(JSON.stringify(st)));
+    const B = Library.ensure(back, 9500, rnd), r = B.retired[0];
+    assert.deepStrictEqual([r.piece, r.hold, r.next, r.cells, r.reason], [e.piece, e.hold, e.next, e.cells, 'full']);
+    const odd = L.loadState({ v: 1, boards: { retired: [
+      { id: 'b7', w: 10, h: 20, piece: { entry: { id: 'T' }, rot: 0, x: 400, y: 3 }, hold: 'T', next: [{ id: 'I' }, null, { id: 5 }, { id: 'O', rot: 0 }] },
+      { id: 'b8', w: 10, h: 20, piece: { entry: {}, rot: 0, x: 3, y: 3 }, next: 'x' },
+      { id: 'b9', w: 6, h: 12 },
+    ] } });
+    const B2 = Library.ensure(odd, 1, rnd);
+    assert.deepStrictEqual(B2.retired.map((x) => [x.id, x.piece, x.hold, x.next.map((n) => n.id).join('')]), [['b7', null, null, 'IO'], ['b8', null, null, ''], ['b9', null, null, '']]);
+  });
+  test('retired pieces in a turn no piece has (a hand-edited or broken save) are dropped, never kept to be drawn', () => {
+    const odd = L.loadState({ v: 1, boards: { retired: [
+      { id: 'b1', w: 10, h: 20, reason: 'full', piece: { entry: { id: 'T' }, rot: 6, x: 4, y: 17 }, hold: { id: 'T', rot: 6 }, next: [{ id: 'I', rot: 6 }, { id: 'O', rot: 7 }, { id: 'S', rot: -1 }, { id: 'Z', rot: 1.5 }, { id: 'L', rot: 3 }, { id: 'J' }] },
+      { id: 'b2', w: 10, h: 20, reason: 'full', piece: { entry: { id: 'T', rot: 9 }, rot: 0, x: 4, y: 17 }, hold: { id: 'T', rot: 9 }, next: [{ id: 'T', rot: 7 }] },
+      { id: 'b3', w: 10, h: 20, reason: 'full', piece: { entry: { id: 'T', rot: 2 }, rot: 3, x: 4, y: 17 }, hold: { id: 'I', rot: 1 }, next: [{ id: 'T', rot: 0 }] },
+    ] } });
+    const B = Library.ensure(odd, 1, rnd);
+    assert.deepStrictEqual(B.retired.map((x) => [x.id, x.piece && x.piece.rot, x.hold && x.hold.rot, x.next.map((n) => n.id + (n.rot == null ? '' : n.rot)).join(' ')]),
+      [['b1', null, null, 'L3 J'], ['b2', null, null, ''], ['b3', 3, 1, 'T0']]);
   });
   test('delete: a shelved board goes for good; deleting the one in play leaves cur empty for a new one', () => {
     const st = L.loadState({});

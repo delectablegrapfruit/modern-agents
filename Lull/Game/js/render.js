@@ -298,6 +298,11 @@
     return c;
   }
 
+  /** How far inside its cells the i-th piece of Classic's top-out pile draws its outline (past the line's own half). */
+  function pileInset(i, s, lw) {
+    return Math.min(i * Math.max(lw + 0.5, Math.min(lw * 1.4, s * 0.1)), s * 0.34 - lw);
+  }
+
   function drawCell(ctx, skin, color, x, y, s, alpha) {
     const dpr = ctx.__dpr || 1;
     const img = cellSprite(skin, color, s * dpr, ctx.__light);
@@ -858,15 +863,37 @@
 
   // ---- piece previews -------------------------------------------------------------------------------------------------
 
-  /** Draws a piece (by queue entry) fitted and centred in a box. */
+  /** The cells of a piece as a preview draws them. */
+  function previewCells(entry) {
+    const type = Pieces.get(entry.id);
+    if (!type) return null;
+    return L.SINGLE_SPECIALS && L.SINGLE_SPECIALS.has(entry.special) ? [[0, 0]] : type.rots[entry.rot || 0];
+  }
+
+  /** The share of maxCell a piece's cells can have and still fit the box (at most 1). */
+  function fitOf(entry, box, maxCell) {
+    const cells = previewCells(entry);
+    if (!cells) return 1;
+    const b = Pieces.boundsOf(cells);
+    return Math.min(1, (box.w - 4) / b.w / maxCell, (box.h - 4) / b.h / maxCell);
+  }
+
+  /** A queue slot's box for its piece, and the largest cell there (the piece coming first is drawn largest). */
+  const queueBox = (box) => ({ x: box.x + 4, y: box.y + 4, w: box.w - 8, h: box.h - 8 });
+  const queueCell = (i, s) => (i === 0 ? s * 0.62 : s * 0.46);
+
+  /**
+   * Draws a piece (by queue entry) fitted and centred in a box, its cells at most maxCell (times look.scale, when
+   * pieces share a scale). Returns the drawn size.
+   */
   function drawPieceIn(ctx, entry, box, maxCell, look) {
     const type = Pieces.get(entry.id);
-    if (!type) return;
+    if (!type) return null;
     const special = entry.special;
     const single = L.SINGLE_SPECIALS && L.SINGLE_SPECIALS.has(special);
-    const cells = single ? [[0, 0]] : type.rots[entry.rot || 0];
+    const cells = previewCells(entry);
     const b = Pieces.boundsOf(cells);
-    const s = Math.floor(Math.min(maxCell, (box.w - 4) / b.w, (box.h - 4) / b.h));
+    const s = Math.floor(Math.min(maxCell * (look.scale || 1), (box.w - 4) / b.w, (box.h - 4) / b.h));
     const ox = box.x + (box.w - b.w * s) / 2, oy = box.y + (box.h - b.h * s) / 2;
     const color = look.color(type.color);
     for (const [cx, cy] of cells) {
@@ -875,6 +902,7 @@
       // A view part's painter (look.paint, from BoardView.trayLook) draws the tray's blocks in its own look.
       else if (!look.paint || look.paint(ctx, type.color, x, y, s, { x: cx, y: cy, cells, alpha: look.alpha }) === false) drawCell(ctx, look.skin, color, x, y, s, look.alpha);
     }
+    return { w: b.w * s, h: b.h * s, cell: s };
   }
 
   /**
@@ -945,6 +973,9 @@
     attach(game, view) {
       this.game = game;
       this.view = Object.assign({ rot: 0, fog: false, mono: false, blind: false, vanish: false, wrap: false }, view || {});
+      // Classic's top out (ClassicMode.startPile): the pieces piled up at the spawn spot, over the stack, [{ cells,
+      // color, t }] in the order they came, shown at pileT (seconds); queueSkip of them came off the Next queue.
+      this.pileup = null; this.pileT = 0; this.queueSkip = 0;
       this.fx.clear();
       this.lay = null;
       this.dirty = true;
@@ -1306,7 +1337,7 @@
         ctx.restore();
       }
 
-      if (p) {
+      if (p && !this.pileup) {
         const color = this.colorOf(p.type.color);
         if (p.special === 'drill') {
           // What goes: the drill's column (each, where the recipe drills more than one: targets).
@@ -1357,7 +1388,8 @@
       }
 
       if (this.parts.length) this.partsDraw('overPiece', ctx, now);
-      if (p && (p.special || (g.s && g.s.gold > 0))) this.ambient(p, pieceCells, now);
+      if (this.pileup) this.drawPileup(ctx, s);
+      else if (p && (p.special || (g.s && g.s.gold > 0))) this.ambient(p, pieceCells, now);
 
       drawRim(ctx, wr, look.theme);
       drawFrame(ctx, look.frame, wr, look.theme.accent, tl, look.theme);
@@ -1459,18 +1491,22 @@
       const pl = { skin: look.skin, color: (c) => (this.view.mono ? look.monoColor : look.colors[c]), t: now };
       // A 'rest' painter (Jelly) draws the trays' blocks too.
       if (this.rest) pl.paint = (c2, v, x, y, sz, at) => this.paintCell(c2, v, x, y, sz, 'tray', at);
-      // Hold (grown for a long piece: traySlot)
-      if (!g.mods.noHold) {
-        const hold = this.holdBox();
-        label('HOLD', hold.x, hold.y, hold.w);
-        tray(hold, this.holdHover);
-        if (g.hold) drawPieceIn(ctx, this.parts.length ? this.trayEntry(g.hold) : g.hold, hold, s * 0.72, Object.assign({}, pl, { alpha: g.holdLocked && !g.freeHold ? 0.35 : 1 }));
+      // A tray's piece as drawn: turned as a view part asks (trayEntry).
+      const te = (e) => (this.parts.length ? this.trayEntry(e) : e);
+      // Hold (grown for a long piece: traySlot; its piece is drawn with the queue's, below)
+      const holdB = g.mods.noHold ? null : this.holdBox();
+      if (holdB) {
+        label('HOLD', holdB.x, holdB.y, holdB.w);
+        tray(holdB, this.holdHover);
       }
+      const items = []; // the queue's pieces, drawn once every box is known
       // Next: the queue in one tray, the piece coming first and largest, the rest after a hairline.
-      const n = Math.min(g.fixed ? g.queue.length : g.previewCount, g.queue.length);
-      label('NEXT', next.x, next.y, next.w, g.fixed ? g.queue.length + ' LEFT' : null);
+      // Classic's top out takes the pieces it piles up off the queue as they come.
+      const queue = this.queueSkip ? g.queue.slice(this.queueSkip) : g.queue;
+      const n = Math.min(g.fixed ? queue.length : g.previewCount, queue.length);
+      label('NEXT', next.x, next.y, next.w, g.fixed ? queue.length + ' LEFT' : null);
       if (nextDir === 'v') {
-        const first = Math.round(s * this.slotCells(g.queue[0], 'next', 'v', 2.5)), slot = Math.round(s * 1.95);
+        const first = Math.round(s * this.slotCells(queue[0], 'next', 'v', 2.5)), slot = Math.round(s * 1.95);
         let shown = 0;
         for (let i = 0; i < n; i++) if (first + i * slot <= next.h + 1 || i === 0) shown = i + 1;
         const hh = shown ? Math.min(next.h, first + (shown - 1) * slot + Math.round(s * 0.2)) : Math.round(s * 2.5);
@@ -1478,20 +1514,90 @@
         for (let i = 0; i < shown; i++) {
           const y0 = next.y + (i ? first + (i - 1) * slot : 0), h0 = i ? slot : first;
           if (i === 1) { ctx.fillStyle = th.hair || th.line; ctx.fillRect(next.x + s * 0.4, Math.round(y0) + 0.5, next.w - s * 0.8, 1); }
-          this.drawQueueItem(ctx, g.queue[i], { x: next.x, y: y0 + (i ? s * 0.1 : s * 0.05), w: next.w, h: h0 }, i, s, pl);
+          items.push({ entry: queue[i], box: { x: next.x, y: y0 + (i ? s * 0.1 : s * 0.05), w: next.w, h: h0 }, i });
         }
       } else {
-        const first = Math.min(Math.round(s * this.slotCells(g.queue[0], 'next', 'h', 3.4)), next.w), slot = Math.round(s * 2.8);
+        const first = Math.min(Math.round(s * this.slotCells(queue[0], 'next', 'h', 3.4)), next.w), slot = Math.round(s * 2.8);
         let shown = 0;
         for (let i = 0; i < n; i++) if (first + i * slot <= next.w + 1 || i === 0) shown = i + 1;
         tray({ x: next.x, y: next.y, w: shown ? Math.min(next.w, first + (shown - 1) * slot + Math.round(s * 0.2)) : next.w, h: next.h });
         for (let i = 0; i < shown; i++) {
           const x0 = next.x + (i ? first + (i - 1) * slot : 0), w0 = i ? slot : first;
           if (i === 1) { ctx.fillStyle = th.hair || th.line; ctx.fillRect(Math.round(x0) + 0.5, next.y + s * 0.4, 1, next.h - s * 0.8); }
-          this.drawQueueItem(ctx, g.queue[i], { x: x0, y: next.y, w: w0, h: next.h }, i, s, pl);
+          items.push({ entry: queue[i], box: { x: x0, y: next.y, w: w0, h: next.h }, i });
         }
       }
+      // With big pieces in play, the held and coming pieces share one scale, so a big piece shows twice the size of a
+      // tetromino: the largest scale at which each fits its box (at least half the usual size).
+      const heldBox = holdB && g.hold ? { entry: te(g.hold), box: holdB, max: s * 0.72 } : null;
+      const shownIn = items.map((it) => ({ entry: te(it.entry), box: queueBox(it.box), max: queueCell(it.i, s) }));
+      let scale = 1;
+      if (!this.view.blind && [g.piece && g.piece.type, g.hold && Pieces.get(g.hold.id)].concat(g.queue.map((e) => Pieces.get(e.id))).some((t) => t && t.big)) {
+        for (const it of heldBox ? shownIn.concat([heldBox]) : shownIn) scale = Math.min(scale, fitOf(it.entry, it.box, it.max));
+        scale = Math.max(0.5, scale);
+      }
+      if (heldBox) drawPieceIn(ctx, heldBox.entry, holdB, s * 0.72, Object.assign({}, pl, { alpha: g.holdLocked && !g.freeHold ? 0.35 : 1, scale }));
+      this.drawnQueue = [];
+      for (const it of items) {
+        const d = this.drawQueueItem(ctx, it.entry, it.box, it.i, s, Object.assign({}, pl, { scale }));
+        if (d) this.drawnQueue.push(Object.assign({ id: it.entry.id, big: !!Pieces.get(it.entry.id).big }, d));
+      }
       if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+      ctx.restore();
+    }
+
+    /**
+     * Classic's top out: the pile's pieces a little see-through, each drawn over the stack and the ones before it,
+     * each with its own outline right after it (so a later piece's cells dim the outlines under them). Each piece's
+     * outline sits a step further inside its cells than the one before, so where their edges meet they show as
+     * separate lines, and the layers read whatever the palette. The shade behind the pile is laid once per cell.
+     * Each fades in briefly as it comes (never under reduced motion).
+     */
+    drawPileup(ctx, s) {
+      const look = this.look, light = look.theme.name === 'light';
+      const edge = light ? 'rgba(20,24,34,0.55)' : 'rgba(255,255,255,0.78)';
+      const shade = light ? 'rgba(20,24,34,0.14)' : 'rgba(0,0,0,0.3)';
+      const lw = Math.max(1.5, Math.round(s * 0.08)), o = lw / 2;
+      const pile = this.pileup.map((pc, i) => ({
+        k: this.reducedMotion || pc.t < 0 ? 1 : Math.max(0, Math.min(1, (this.pileT - pc.t) / 0.16)),
+        inset: o + pileInset(i, s, lw),
+        color: this.colorOf(pc.color), cells: pc.cells, rects: pc.cells.map(([x, y]) => this.toScreen(x, y)),
+      })).filter((pc) => pc.k > 0);
+      // Where a piece lies over a block or an earlier piece, it is see-through (what is under it shows); elsewhere
+      // nearly solid.
+      const g = this.game, under = new Set();
+      ctx.save();
+      ctx.strokeStyle = edge; ctx.lineWidth = lw; ctx.lineCap = 'round';
+      for (const pc of pile) {
+        ctx.globalAlpha = pc.k; ctx.fillStyle = shade;
+        // One path, so the shade is even where neighbouring cells' rects meet.
+        ctx.beginPath();
+        pc.cells.forEach(([cx, cy], i) => { if (!under.has(cx + ',' + cy)) { const [x, y] = pc.rects[i]; ctx.rect(x - 1, y - 1, s + 2, s + 2); } });
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        pc.cells.forEach(([cx, cy], i) => {
+          const [x, y] = pc.rects[i], over = under.has(cx + ',' + cy) || !!g.board.get(cx, cy);
+          drawCell(ctx, look.skin, pc.color, x, y, s, (over ? 0.58 : 0.9) * pc.k);
+        });
+        for (const [cx, cy] of pc.cells) under.add(cx + ',' + cy);
+        // Only the edges with no cell of its own beyond them: the shape's outline, this piece's step inside it.
+        const at = new Set(pc.rects.map(([x, y]) => Math.round(x) + ',' + Math.round(y)));
+        const has = (x, y) => at.has(Math.round(x) + ',' + Math.round(y));
+        const n = pc.inset, f = s - n;
+        ctx.globalAlpha = pc.k;
+        ctx.beginPath();
+        for (const [x, y] of pc.rects) {
+          // Where the shape goes on past a side, the line runs the inset into the next cell (it joins that cell's line
+          // there, or turns an inner corner); where it does not, it stops at the inset (an outer corner).
+          const up = has(x, y - s), dn = has(x, y + s), lf = has(x - s, y), rt = has(x + s, y);
+          const x0 = x + (lf ? -n : n), x1 = x + (rt ? s + n : f), y0 = y + (up ? -n : n), y1 = y + (dn ? s + n : f);
+          if (!up) { ctx.moveTo(x0, y + n); ctx.lineTo(x1, y + n); }
+          if (!dn) { ctx.moveTo(x0, y + f); ctx.lineTo(x1, y + f); }
+          if (!lf) { ctx.moveTo(x + n, y0); ctx.lineTo(x + n, y1); }
+          if (!rt) { ctx.moveTo(x + f, y0); ctx.lineTo(x + f, y1); }
+        }
+        ctx.stroke();
+      }
       ctx.restore();
     }
 
@@ -1504,7 +1610,7 @@
         ctx.fillText('?', box.x + box.w / 2, box.y + box.h / 2); ctx.textAlign = 'start'; ctx.textBaseline = 'top';
         return;
       }
-      drawPieceIn(ctx, this.parts.length ? this.trayEntry(entry) : entry, { x: box.x + 4, y: box.y + 4, w: box.w - 8, h: box.h - 8 }, i === 0 ? s * 0.62 : s * 0.46, Object.assign({}, pl, { alpha: i === 0 ? 1 : 0.8 }));
+      return drawPieceIn(ctx, this.parts.length ? this.trayEntry(entry) : entry, queueBox(box), queueCell(i, s), Object.assign({}, pl, { alpha: i === 0 ? 1 : 0.8 }));
     }
 
     // ---- effects hooks ---------------------------------------------------------------------------------------------

@@ -283,7 +283,8 @@ function freePlay(seed, w, h, total) {
 // ---- Classic ---------------------------------------------------------------------------------------------------------------
 
 function classic(seed) {
-  const g = new Game({ w: 10, h: 20, previewCount: 3, maxHistory: 0, freeHold: false, seed });
+  // As ClassicMode makes it (ceiling: Classic's top out and spawn flush with the ceiling).
+  const g = new Game({ w: 10, h: 20, previewCount: 3, maxHistory: 0, freeHold: false, ceiling: true, seed });
   const rng = new RNG('golden:classic:' + seed), locks = [];
   g.on('lock', (r) => locks.push([hash(g.board.cells), g.s.score, g.queue.slice(0, 3).map((e) => e.id).join(','), rOf(r)].join('|')));
   for (let i = 0; i < 1500 && !g.over && g.piece; i++) {

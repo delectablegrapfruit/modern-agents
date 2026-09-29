@@ -647,9 +647,10 @@ kbd {
 /* ==== factory ======================================================================================================== */
 
 /* The Factory reads like Play: the scene on the board's plate from the top of the view, a bar of figures under it with
-   the one action at its right, then the two things to build. One column, at most 720 wide, centred; the plate's cell
-   size follows its width, and the scene grows by whole rows into the height the bar and a full list leave
-   (js/factoryview.js, modes.js plateRoom), so what little is left sits at the bottom. Short windows scroll. */
+   the one action at its right, then the things to build. One column, at most 720 wide, centred; the plate's cell size
+   follows its width, and the scene is one of two heights, by the window alone (js/factoryview.js fit, modes.js
+   plateRoom): the tall one over a list of rows where the height allows, else the short one over a grid of cards. What
+   height is left sits at the bottom. A phone on its side shows the whole plate and scrolls the rest. */
 #view-factory { padding: 10px 12px 12px; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
 #view-factory::-webkit-scrollbar { display: none; }
 .fac-col { width: 100%; max-width: 720px; margin-inline: auto; flex: 1 0 auto; display: flex; flex-direction: column; container-type: inline-size; }
@@ -658,7 +659,7 @@ kbd {
 
 /* The plate: Play's (Board.drawPlate), in CSS. A soft pool of the accent under it, a line of light along its top. */
 .fac-plate {
-  flex: none; position: relative; height: 254px; border-radius: 16px; border: 1px solid var(--plate-line);
+  flex: none; align-self: center; width: 100%; position: relative; height: 254px; border-radius: 16px; border: 1px solid var(--plate-line);
   background: linear-gradient(color-mix(in srgb, var(--accent) 7%, transparent), transparent 50%), linear-gradient(var(--plate), var(--plate-2)), var(--plate-base);
   box-shadow: 0 12px 30px -6px var(--plate-shadow);
 }
@@ -709,6 +710,10 @@ kbd {
   .fac-stat i, .fac-stat b { overflow: hidden; text-overflow: ellipsis; }
   .fac-collect .btn { flex: 1; height: 38px; }
 }
+/* A phone's width: Lines in crate takes the widest column, so a full maxed crate's "119.75 / 120" is never cut. */
+@container (max-width: 390px) {
+  .fac-stats { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.25fr) minmax(0, 0.85fr); }
+}
 /* Narrower still (a browser window near 300 px): the figures' short names, so none is cut off. */
 @container (max-width: 330px) {
   .fac-stat:first-child { padding-left: 4px; }
@@ -742,6 +747,20 @@ kbd {
 .fac-up .btn[aria-disabled="true"] { background: var(--panel); border-color: var(--line-2); color: var(--muted); box-shadow: none; cursor: default; }
 .fac-up .btn.flash { animation: fac-flash 0.7s var(--ease-out); }
 @keyframes fac-flash { 25% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 40%, transparent); border-color: var(--warn); } }
+/* A short window: the things to build as a grid of two by two cards, each card its own button (a short name and the
+   price; the whole of it in its tooltip). Two rows of 48 and a 2 px gap: 98 px, as modes.js plateRoom counts it. */
+.fac-list.cards .fac-group { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px; padding: 0; background: none; border: 0; box-shadow: none; border-radius: 0; }
+.fac-list.cards .fac-up { grid-template-columns: 28px minmax(0, 1fr); gap: 8px; height: 48px; padding: 0 10px; margin: 0; border: 1px solid var(--line); border-radius: var(--r-md); background: linear-gradient(to bottom, var(--panel-2), var(--panel)); box-shadow: var(--hi); text-align: left; color: var(--fg); min-width: 0; transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease); }
+.fac-list.cards .fac-up + .fac-up { border-top: 1px solid var(--line); }
+.fac-list.cards .fac-up .txt { display: flex; flex-direction: column; gap: 1px; }
+.fac-list.cards .fac-up .t { font-size: 13px; }
+.fac-list.cards .fac-up .p { font-size: 11.5px; line-height: 1.3; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fac-list.cards .fac-up.go { border-color: var(--accent-line); background: var(--accent-soft); }
+.fac-list.cards .fac-up.go .p { color: var(--accent-ink); }
+@media (hover: hover) { .fac-list.cards .fac-up.go:hover { background: color-mix(in srgb, var(--accent) 24%, transparent); border-color: var(--accent); } }
+.fac-list.cards .fac-up[aria-disabled="true"] { cursor: default; }
+.fac-list.cards .fac-up:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.fac-list.cards .fac-up.flash { animation: fac-flash 0.7s var(--ease-out); }
 @media (max-width: 440px) { #view-factory { padding: 10px 8px 10px; } }
 
 /* The mold picker: Any, then every shape of the press's size in a grid that scrolls a whole row at a time. */
@@ -1248,6 +1267,34 @@ div.lib-open { cursor: default; }
   .lib-open { gap: 8px; padding-right: 2px; }
 }
 
+/* A retired board in full view (js/retiredview.js): a window laid exactly over the play view, with no frame or scrim
+   of its own, so the board sits where the board in play does, at its size; its bars take the status bar's and the
+   item bar's places. The board in play and any window under it are hidden meanwhile (never closed). */
+body.fv-open #view-play > * { visibility: hidden; }
+#modal-root .scrim.fv-under { opacity: 0; }
+#modal-root .scrim.fv-scrim { background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; padding: 0; animation: none; }
+body.fv-open header#titlebar { opacity: 0.45; }
+.modal.modal-fullview {
+  position: absolute; width: auto; max-height: none; border: 0; border-radius: 0; background: transparent; box-shadow: none;
+  overflow: visible; animation: none;
+}
+.modal-fullview > header { display: none; }
+.modal-fullview .body { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.fv-stage { touch-action: none; }
+.fv-bar .fv-title { min-width: 0; }
+.fv-bar .stats { flex: 1 1 auto; min-width: 0; }
+.fv-bar .fv-title b, .fv-bar .fv-title i { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fv-bar .fv-title i { text-transform: none; letter-spacing: 0.02em; font-size: var(--fs-xs); font-weight: 560; color: var(--muted); }
+.fv-foot { align-items: center; }
+.fv-foot .group-btn { flex: 1 1 0; }
+.fv-foot .group-btn[aria-disabled="true"] { opacity: 0.35; cursor: default; }
+@media (hover: hover) { .fv-foot .group-btn[aria-disabled="true"]:hover { background: transparent; color: var(--muted); } }
+.fv-pos { flex: none; min-width: 64px; text-align: center; color: var(--muted); font-size: var(--fs-sm); font-weight: 600; font-variant-numeric: tabular-nums; }
+.fv-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (max-width: 480px) { .fv-foot .group-btn .gl { display: inline; } }
+@media (max-width: 460px) { .fv-bar .btn.sm .lbl { display: none; } .fv-bar .btn.sm { width: 30px; padding: 0; justify-content: center; } }
+@media (max-width: 360px) { .fv-pos { min-width: 52px; } }
+
 /* New board: the size (Width and Height steppers, the empty well drawn small) always on top; four tabs (Size, Shapes,
    Modifiers, Mode) and one panel under them, of one height whichever tab is open (the tallest panel's, measured at each
    size: a panel taller than that scrolls inside itself, the footer stays); then Create. */
@@ -1607,6 +1654,10 @@ body.browser.away #app { opacity: 0.6; }
   .set-row input[type="range"]::-webkit-slider-thumb { width: 24px; height: 24px; margin-top: -10px; }
   .set-row input[type="range"]::-moz-range-thumb { width: 24px; height: 24px; }
   .switch::before { content: ""; position: absolute; inset: -12px -6px; }
+  /* A retired row's two actions (View, Delete): full-size targets side by side, apart, at any width. */
+  .lib-row.retired .lib-acts { flex-direction: row; gap: 4px; }
+  .lib-row.retired .lib-acts .icon-btn { width: 44px; height: 44px; }
+  .lib-row.retired .lib-acts .icon-btn svg { width: 18px; height: 18px; }
 }
 /* Settings' sections as one strip across the top (narrow): a button widened to 44 px keeps its icon in the middle. The
    list down the side keeps its icons in one column. */

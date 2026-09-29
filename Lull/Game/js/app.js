@@ -234,7 +234,7 @@
         const b = e.target && e.target.closest && e.target.closest('button');
         if (b && !b.closest('.modal')) setTimeout(() => b.blur(), 0);
       });
-      document.addEventListener('visibilitychange', () => { if (document.hidden) { this.pausePlay('hidden'); this.saveNow(); L.Music.stop(); } else { this.modes.factory.catchUp(true); setTimeout(() => this.announceUnheard(), 400); } });
+      document.addEventListener('visibilitychange', () => { if (document.hidden) { if (this.modes.classic) this.modes.classic.finishPile({ quiet: true }); this.pausePlay('hidden'); this.saveNow(); L.Music.stop(); } else { this.modes.factory.catchUp(true); setTimeout(() => this.announceUnheard(), 400); } });
       root.addEventListener('pagehide', () => this.saveNow());
       root.addEventListener('beforeunload', () => this.saveNow());
       root.addEventListener('resize', () => { this.onResize(); });
@@ -380,7 +380,8 @@
       if (focused && !L.Collapse.on && performance.now() - (this.lastActivity || 0) < 120000) {
         const S = this.state.stats.timeMs;
         S.total += 1000;
-        if (this.tab === 'play') {
+        // (A retired board in full view is not play: the board in play's time waits.)
+        if (this.tab === 'play' && !this.modes.play.fullView) {
           S.play += 1000;
           // The board's own Played time, while its controller says this second counts (a paused timed board does not).
           const pm = this.modes.play, bs = pm.game.s;
