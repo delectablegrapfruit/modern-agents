@@ -1,0 +1,10 @@
+# .gitignore — owner: W1-K (lead). Screenshots and test dumps are never tracked (BUILD_PLAN §1.4),
+# so the "no binary files among tracked files" check never meets them.
+shots/
+tests/visual/out/
+tests/perf/out/
+
+# The repository root ignores every tools/ directory (and Tests/Fixtures/, which also matches
+# tests/fixtures/ on case-insensitive file systems). Here both are source: re-include them.
+!/tools/
+!/tests/fixtures/

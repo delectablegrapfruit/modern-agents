@@ -1,0 +1,307 @@
+<!doctype html>
+<!-- index.html — owner: W1-K (lead). The page: the stage layers and every script of ARCHITECTURE §19
+     in the §4 order (boot → core → rules → data → world → render → art → ui → minigames → audio →
+     scenes → main). Only the lead edits this file; tests/node/load.cjs reads the script order here. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Paper Sky</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/screens.css">
+</head>
+<body>
+  <div id="app">
+    <div id="stage">
+      <canvas id="world"></canvas>
+      <canvas id="fx"></canvas>
+      <div id="ui"></div>
+      <div id="aria" role="status" aria-live="polite"></div>
+    </div>
+  </div>
+
+  <!-- boot: the namespace and registries first (ARCHITECTURE §4) -->
+  <script src="js/boot/namespace.js"></script>
+  <script src="js/boot/util.js"></script>
+  <script src="js/boot/events.js"></script>
+
+  <!-- core -->
+  <script src="js/core/rng.js"></script>
+  <script src="js/core/loop.js"></script>
+  <script src="js/core/stage.js"></script>
+  <script src="js/core/quality.js"></script>
+  <script src="js/core/input.js"></script>
+  <script src="js/core/scenes.js"></script>
+  <script src="js/core/save.js"></script>
+  <script src="js/core/settings.js"></script>
+  <script src="js/core/text.js"></script>
+  <script src="js/core/debug.js"></script>
+
+  <!-- rules (pure) -->
+  <script src="js/rules/state.js"></script>
+  <script src="js/rules/check.js"></script>
+  <script src="js/rules/conditions.js"></script>
+  <script src="js/rules/effects.js"></script>
+  <script src="js/rules/act.js"></script>
+  <script src="js/rules/time.js"></script>
+  <script src="js/rules/stats.js"></script>
+  <script src="js/rules/log.js"></script>
+  <script src="js/rules/perks.js"></script>
+  <script src="js/rules/jobs.js"></script>
+  <script src="js/rules/training.js"></script>
+  <script src="js/rules/night.js"></script>
+  <script src="js/rules/bank.js"></script>
+  <script src="js/rules/stocks.js"></script>
+  <script src="js/rules/homes.js"></script>
+  <script src="js/rules/calendar.js"></script>
+  <script src="js/rules/endgame.js"></script>
+  <script src="js/rules/health.js"></script>
+  <script src="js/rules/news.js"></script>
+  <script src="js/rules/crime.js"></script>
+  <script src="js/rules/trade.js"></script>
+  <script src="js/rules/fight.js"></script>
+  <script src="js/rules/casino.js"></script>
+  <script src="js/rules/election.js"></script>
+  <script src="js/rules/encounters.js"></script>
+  <script src="js/rules/arcs.js"></script>
+  <script src="js/rules/achievements.js"></script>
+  <script src="js/rules/advisor.js"></script>
+
+  <!-- data (pure registrations) -->
+  <script src="js/data/tuning.js"></script>
+  <script src="js/data/features.js"></script>
+  <script src="js/data/worldmap.js"></script>
+  <script src="js/data/items.js"></script>
+  <script src="js/data/jobs.js"></script>
+  <script src="js/data/homes.js"></script>
+  <script src="js/data/furniture.js"></script>
+  <script src="js/data/stocks.js"></script>
+  <script src="js/data/ranks.js"></script>
+  <script src="js/data/cities.js"></script>
+  <script src="js/data/fighters.js"></script>
+  <script src="js/data/decrees.js"></script>
+  <script src="js/data/perks.js"></script>
+  <script src="js/data/achievements.js"></script>
+  <script src="js/data/encounters.js"></script>
+  <script src="js/data/arcs.js"></script>
+  <script src="js/data/events.js"></script>
+  <script src="js/data/people.js"></script>
+  <script src="js/data/buildings/home.js"></script>
+  <script src="js/data/buildings/mcsticks.js"></script>
+  <script src="js/data/buildings/store.js"></script>
+  <script src="js/data/buildings/pawn.js"></script>
+  <script src="js/data/buildings/furniture.js"></script>
+  <script src="js/data/buildings/bank.js"></script>
+  <script src="js/data/buildings/nli.js"></script>
+  <script src="js/data/buildings/uofs.js"></script>
+  <script src="js/data/buildings/cityhall.js"></script>
+  <script src="js/data/buildings/bar.js"></script>
+  <script src="js/data/buildings/casino.js"></script>
+  <script src="js/data/buildings/bus.js"></script>
+  <script src="js/data/buildings/street.js"></script>
+  <script src="js/data/buildings/park.js"></script>
+  <script src="js/data/actions/world.js"></script>
+  <script src="js/data/actions/bag.js"></script>
+  <script src="js/data/actions/phone.js"></script>
+  <script src="js/data/actions/jail.js"></script>
+  <script src="js/data/actions/trip.js"></script>
+  <script src="js/data/actions/hospital.js"></script>
+  <script src="js/data/text/en-ui.js"></script>
+  <script src="js/data/text/en-econ.js"></script>
+  <script src="js/data/text/en-conflict.js"></script>
+  <script src="js/data/text/en-prog.js"></script>
+  <script src="js/data/text/en-world.js"></script>
+  <script src="js/data/text/en-home.js"></script>
+  <script src="js/data/text/en-news.js"></script>
+  <script src="js/data/text/en-food.js"></script>
+  <script src="js/data/text/en-goods.js"></script>
+  <script src="js/data/text/en-money.js"></script>
+  <script src="js/data/text/en-civic.js"></script>
+  <script src="js/data/text/en-night.js"></script>
+  <script src="js/data/text/en-transit.js"></script>
+  <script src="js/data/text/en-street.js"></script>
+  <script src="js/data/text/en-city.js"></script>
+  <script src="js/data/text/en-front.js"></script>
+  <script src="js/data/text/en-pocket.js"></script>
+  <script src="js/data/text/en-events.js"></script>
+  <script src="js/data/text/en-park.js"></script>
+
+  <!-- world -->
+  <script src="js/world/geometry.js"></script>
+  <script src="js/world/collision.js"></script>
+  <script src="js/world/nav.js"></script>
+  <script src="js/world/camera.js"></script>
+  <script src="js/world/player.js"></script>
+  <script src="js/world/doors.js"></script>
+  <script src="js/world/fall.js"></script>
+  <script src="js/world/world.js"></script>
+  <script src="js/world/traffic.js"></script>
+  <script src="js/world/pedestrians.js"></script>
+  <script src="js/world/streetnpcs.js"></script>
+  <script src="js/world/markers.js"></script>
+  <script src="js/world/police.js"></script>
+  <script src="js/world/weather.js"></script>
+
+  <!-- render -->
+  <script src="js/render/renderer.js"></script>
+  <script src="js/render/sky.js"></script>
+  <script src="js/render/ground.js"></script>
+  <script src="js/render/buildings.js"></script>
+  <script src="js/render/actors.js"></script>
+  <script src="js/render/lighting.js"></script>
+  <script src="js/render/shadows.js"></script>
+  <script src="js/render/weatherfx.js"></script>
+  <script src="js/render/particles.js"></script>
+  <script src="js/render/worldui.js"></script>
+  <script src="js/render/minimap.js"></script>
+  <script src="js/render/fx.js"></script>
+
+  <!-- art -->
+  <script src="js/art/palette.js"></script>
+  <script src="js/art/paper.js"></script>
+  <script src="js/art/draw.js"></script>
+  <script src="js/art/stick.js"></script>
+  <script src="js/art/portraits.js"></script>
+  <script src="js/art/vehicles.js"></script>
+  <script src="js/art/icons.js"></script>
+  <script src="js/art/logo.js"></script>
+  <script src="js/art/bible.js"></script>
+  <script src="js/art/exteriors.js"></script>
+  <script src="js/art/exteriors-detail.js"></script>
+  <script src="js/art/props.js"></script>
+  <script src="js/art/logos.js"></script>
+  <script src="js/art/skyline.js"></script>
+  <script src="js/art/interiors/kit.js"></script>
+  <script src="js/art/interiors/home.js"></script>
+  <script src="js/art/interiors/mcsticks.js"></script>
+  <script src="js/art/interiors/store.js"></script>
+  <script src="js/art/interiors/pawn.js"></script>
+  <script src="js/art/interiors/furniture.js"></script>
+  <script src="js/art/interiors/bank.js"></script>
+  <script src="js/art/interiors/nli.js"></script>
+  <script src="js/art/interiors/uofs.js"></script>
+  <script src="js/art/interiors/cityhall.js"></script>
+  <script src="js/art/interiors/bar.js"></script>
+  <script src="js/art/interiors/casino.js"></script>
+  <script src="js/art/interiors/bus.js"></script>
+  <script src="js/art/interiors/special.js"></script>
+  <script src="js/art/intro.js"></script>
+
+  <!-- ui -->
+  <script src="js/ui/dom.js"></script>
+  <script src="js/ui/components.js"></script>
+  <script src="js/ui/focus.js"></script>
+  <script src="js/ui/toast.js"></script>
+  <script src="js/ui/stamp.js"></script>
+  <script src="js/ui/modal.js"></script>
+  <script src="js/ui/hud.js"></script>
+  <script src="js/ui/card.js"></script>
+  <script src="js/ui/dialog.js"></script>
+  <script src="js/ui/tutorial.js"></script>
+  <script src="js/ui/subscreens/tv.js"></script>
+  <script src="js/ui/subscreens/messages.js"></script>
+  <script src="js/ui/subscreens/stocks.js"></script>
+  <script src="js/ui/subscreens/shop.js"></script>
+  <script src="js/ui/subscreens/furniture.js"></script>
+  <script src="js/ui/subscreens/bank.js"></script>
+  <script src="js/ui/subscreens/realestate.js"></script>
+  <script src="js/ui/subscreens/jobs.js"></script>
+  <script src="js/ui/subscreens/transcript.js"></script>
+  <script src="js/ui/subscreens/campaign.js"></script>
+  <script src="js/ui/subscreens/bus.js"></script>
+  <script src="js/ui/subscreens/mayor.js"></script>
+  <script src="js/ui/subscreens/vip.js"></script>
+  <script src="js/ui/pocket/pocket.js"></script>
+  <script src="js/ui/pocket/journal.js"></script>
+  <script src="js/ui/pocket/map.js"></script>
+  <script src="js/ui/pocket/stats.js"></script>
+  <script src="js/ui/pocket/bag.js"></script>
+  <script src="js/ui/pocket/phone.js"></script>
+  <script src="js/ui/pocket/achievements.js"></script>
+  <script src="js/ui/screens/title.js"></script>
+  <script src="js/ui/screens/newgame.js"></script>
+  <script src="js/ui/screens/pause.js"></script>
+  <script src="js/ui/screens/settings.js"></script>
+  <script src="js/ui/screens/saveload.js"></script>
+  <script src="js/ui/screens/results.js"></script>
+  <script src="js/ui/screens/halloffame.js"></script>
+  <script src="js/ui/screens/credits.js"></script>
+  <script src="js/ui/screens/profile.js"></script>
+  <script src="js/ui/screens/report.js"></script>
+  <script src="js/ui/screens/jail.js"></script>
+  <script src="js/ui/screens/hospital.js"></script>
+  <script src="js/ui/screens/perk.js"></script>
+
+  <!-- minigames -->
+  <script src="js/minigames/framework.js"></script>
+  <script src="js/minigames/shiftrush.js"></script>
+  <script src="js/minigames/timingring.js"></script>
+  <script src="js/minigames/duel.js"></script>
+  <script src="js/minigames/fight.js"></script>
+  <script src="js/minigames/darts.js"></script>
+  <script src="js/minigames/slots.js"></script>
+  <script src="js/minigames/blackjack.js"></script>
+  <script src="js/minigames/roulette.js"></script>
+  <script src="js/minigames/scratch.js"></script>
+  <script src="js/minigames/skins/orderup.js"></script>
+  <script src="js/minigames/skins/holdup.js"></script>
+  <script src="js/minigames/skins/sortit.js"></script>
+  <script src="js/minigames/skins/pitch.js"></script>
+  <script src="js/minigames/skins/boardroom.js"></script>
+  <script src="js/minigames/skins/debate.js"></script>
+  <script src="js/minigames/skins/hotwire.js"></script>
+  <script src="js/minigames/skins/interview.js"></script>
+  <script src="js/minigames/skins/interrogation.js"></script>
+  <script src="js/minigames/skins/tourhook.js"></script>
+
+  <!-- audio -->
+  <script src="js/audio/engine.js"></script>
+  <script src="js/audio/synth.js"></script>
+  <script src="js/audio/sfx.js"></script>
+  <script src="js/audio/music.js"></script>
+  <script src="js/audio/ambience.js"></script>
+  <script src="js/audio/songs/paper_sky.js"></script>
+  <script src="js/audio/songs/crossroads_strut.js"></script>
+  <script src="js/audio/songs/home_sweet_paper.js"></script>
+  <script src="js/audio/songs/streetlights.js"></script>
+  <script src="js/audio/songs/fry_day.js"></script>
+  <script src="js/audio/songs/funky_aisle.js"></script>
+  <script src="js/audio/songs/pawnbroker_blues.js"></script>
+  <script src="js/audio/songs/showroom_smooth.js"></script>
+  <script src="js/audio/songs/compound_interest.js"></script>
+  <script src="js/audio/songs/please_hold.js"></script>
+  <script src="js/audio/songs/campus_canon.js"></script>
+  <script src="js/audio/songs/last_call_shuffle.js"></script>
+  <script src="js/audio/songs/high_roller_lounge.js"></script>
+  <script src="js/audio/songs/brawl_hall.js"></script>
+  <script src="js/audio/songs/tick_tock_trouble.js"></script>
+  <script src="js/audio/songs/midnight_express.js"></script>
+  <script src="js/audio/songs/hail_to_the_stick.js"></script>
+  <script src="js/audio/songs/doing_time.js"></script>
+  <script src="js/audio/songs/waiting_room.js"></script>
+  <script src="js/audio/songs/morning_edition.js"></script>
+  <script src="js/audio/songs/final_edition.js"></script>
+  <script src="js/audio/songs/stingers.js"></script>
+
+  <!-- scenes -->
+  <script src="js/scenes/boot.js"></script>
+  <script src="js/scenes/title.js"></script>
+  <script src="js/scenes/newgame.js"></script>
+  <script src="js/scenes/intro.js"></script>
+  <script src="js/scenes/results.js"></script>
+  <script src="js/scenes/city.js"></script>
+  <script src="js/scenes/building.js"></script>
+  <script src="js/scenes/minigame.js"></script>
+  <script src="js/scenes/report.js"></script>
+  <script src="js/scenes/jail.js"></script>
+  <script src="js/scenes/hospital.js"></script>
+  <script src="js/scenes/death.js"></script>
+  <script src="js/scenes/bustrip.js"></script>
+
+  <!-- main: last -->
+  <script src="js/main.js"></script>
+</body>
+</html>
