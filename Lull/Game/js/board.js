@@ -3,8 +3,19 @@
   'use strict';
   const L = (root.Lull = root.Lull || {});
 
-  // A cell: bits 0–4 colour slot (0 = empty), bit 5 gem, bit 6 hidden (vanishing modifier).
-  const CELL = { COLOR: 31, GEM: 32, HIDDEN: 64 };
+  // A cell is 16 bits. One table, owned here: features use the names, never the numbers.
+  //   COLOR    0–31   colour slot (0 = empty; 31 is the sprout's green, drawn only in thumbnails)
+  //   GEM      32     a puzzle's gem
+  //   HIDDEN   64     set while invisible (Vanishing)
+  //   FOREIGN  128    never placed by the player: it never pays, and a row holding one is plain (js/engine.js, score)
+  //   JOIN_R   256    Jelly: joined to the cell on its right
+  //   JOIN_U   512    Jelly: joined to the cell above
+  //   ASSET    1024   Protect's sprout (also a Jelly anchor)
+  //   MOLE     2048   Protect: a mole, its slot in MOLE_SLOT (bits 12–13, SLOT_SHIFT)
+  //   FILL     16384  Battle's gap filler (always with FOREIGN)
+  //   WALL     32768  what get() returns outside the board; never stored
+  // Anything that reads a colour masks with COLOR.
+  const CELL = Object.freeze({ COLOR: 31, GEM: 32, HIDDEN: 64, FOREIGN: 128, JOIN_R: 256, JOIN_U: 512, ASSET: 1024, MOLE: 2048, MOLE_SLOT: 4096 | 8192, SLOT_SHIFT: 12, FILL: 16384, WALL: 32768, SPROUT: 31 });
 
   class Board {
     constructor(w, h, opts) {
@@ -16,8 +27,9 @@
 
     wx(x) { return this.wrap ? ((x % this.w) + this.w) % this.w : x; }
     inside(x, y) { return y >= 0 && y < this.h && (this.wrap || (x >= 0 && x < this.w)); }
+    /** The cell at (x, y); outside the board, CELL.WALL (solid, and no stored flag). */
     get(x, y) {
-      if (!this.inside(x, y)) return 255;
+      if (!this.inside(x, y)) return CELL.WALL;
       return this.cells[y * this.w + this.wx(x)];
     }
     set(x, y, v) { if (this.inside(x, y)) this.cells[y * this.w + this.wx(x)] = v; }
@@ -37,6 +49,30 @@
       return true;
     }
 
+    /** fits, for cells already placed on the board ([[x, y]], absolute; wrapped by the caller). */
+    fitsAbs(abs) {
+      const w = this.w, h = this.h, c = this.cells, wrap = this.wrap;
+      for (let i = 0; i < abs.length; i++) {
+        let x = abs[i][0];
+        const y = abs[i][1];
+        if (y < 0 || y >= h) return false;
+        if (wrap) x = ((x % w) + w) % w;
+        else if (x < 0 || x >= w) return false;
+        if (c[y * w + x]) return false;
+      }
+      return true;
+    }
+
+    /** inBounds, for absolute cells. */
+    inBoundsAbs(abs) {
+      for (let i = 0; i < abs.length; i++) {
+        const x = abs[i][0], y = abs[i][1];
+        if (y < 0 || y >= this.h) return false;
+        if (!this.wrap && (x < 0 || x >= this.w)) return false;
+      }
+      return true;
+    }
+
     /** Inside the walls, ignoring blocks (a phasing piece). */
     inBounds(cells, px, py) {
       for (let i = 0; i < cells.length; i++) {
@@ -49,6 +85,11 @@
 
     place(cells, px, py, v) {
       for (const [cx, cy] of cells) this.set(px + cx, py + cy, v);
+    }
+
+    /** Sets absolute cells to v (a piece as the engine places it: js/engine.js, absCells). */
+    placeCells(abs, v) {
+      for (let i = 0; i < abs.length; i++) this.set(abs[i][0], abs[i][1], v);
     }
 
     rowFull(y) {
@@ -78,16 +119,19 @@
       return removed;
     }
 
-    /** Every column's blocks fall to the floor, closing all holes. */
-    compact() {
+    /**
+     * Every column's blocks fall to the floor, closing all holes. fixed(v), if given, marks cells that never move: they
+     * stay where they are, and what is above them falls onto them.
+     */
+    compact(fixed) {
       for (let x = 0; x < this.w; x++) {
         let dst = 0;
         for (let y = 0; y < this.h; y++) {
           const v = this.cells[y * this.w + x];
-          if (v) {
-            if (dst !== y) { this.cells[dst * this.w + x] = v; this.cells[y * this.w + x] = 0; }
-            dst++;
-          }
+          if (!v) continue;
+          if (fixed && fixed(v)) { dst = y + 1; continue; }
+          if (dst !== y) { this.cells[dst * this.w + x] = v; this.cells[y * this.w + x] = 0; }
+          dst++;
         }
       }
     }

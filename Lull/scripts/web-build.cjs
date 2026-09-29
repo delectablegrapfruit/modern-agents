@@ -17,7 +17,8 @@ function precacheList(swSource) {
   const src = swSource || fs.readFileSync(path.join(GAME, SW), 'utf8');
   const m = src.match(/const FILES = (\[[\s\S]*?\]);/);
   if (!m) throw new Error('sw.js: no FILES list');
-  return JSON.parse(m[1]);
+  // Whole-line comments (the board options' part: markers) are not files.
+  return JSON.parse(m[1].split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n'));
 }
 
 /** Every file under Game/, relative, with forward slashes (sw.js itself left out). */

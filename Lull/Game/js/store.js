@@ -143,9 +143,29 @@
 
   function freshPuzzleDiff() { return { played: 0, solved: 0, firstTry: 0, attempts: 0, fails: 0, bestMs: 0, totalMs: 0, streak: 0, bestStreak: 0, hints: 0 }; }
 
+  // Stats a board option keeps (Protect's per level, Battle's rounds and time): each registers its defaults (a part's
+  // `stats` in js/recipe.js, or Store.addStats(def)), merged under state.stats wherever the defaults lack them.
+  const STATS = [];
+  /** Registers stats defaults ({ free: { guard: {…} } }, { battle: {…}, timeMs: { battle: 0 } }). */
+  function addStats(def) { STATS.push(def); }
+  function statDefaults() {
+    const out = {};
+    const put = (a, b) => { for (const [k, v] of Object.entries(b || {})) { if (v && typeof v === 'object' && !Array.isArray(v)) put(a[k] && typeof a[k] === 'object' ? a[k] : (a[k] = {}), v); else if (!(k in a)) a[k] = JSON.parse(JSON.stringify(v)); } };
+    for (const d of STATS) put(out, typeof d === 'function' ? d() : d);
+    if (L.Recipe) put(out, L.Recipe.stats());
+    return out;
+  }
+  /** The stats defaults with every registered one added (never over one already there). */
+  function withStats(stats) {
+    const extra = statDefaults();
+    const add = (a, b) => { for (const [k, v] of Object.entries(b)) { if (v && typeof v === 'object' && !Array.isArray(v) && a[k] && typeof a[k] === 'object') add(a[k], v); else if (!(k in a)) a[k] = v; } };
+    add(stats, extra);
+    return stats;
+  }
+
   function defaults() {
     const now = Date.now();
-    return {
+    const st = {
       v: SAVE_VERSION,
       created: now,
       lines: 0,
@@ -165,7 +185,7 @@
       },
       tab: 'play',
       free: null, // the Relaxed board in play (Game.toJSON)
-      boards: { seq: 0, cur: null, list: [], retired: [] }, // the board library (js/library.js): shelved and retired boards
+      boards: { seq: 0, cur: null, list: [], retired: [] }, // the board library (js/library.js): shelved and retired boards, the last size and recipe chosen
       achievements: {},
       // Control hints (js/hints.js): pieces and board time toward retiring them all, times each was shown, good uses
       // of each control, the ones retired for good.
@@ -187,6 +207,8 @@
       },
       history: {},
     };
+    withStats(st.stats);
+    return st;
   }
 
   /** A save as loaded: every key the defaults have, filled in where the save lacks it, keeping everything it has. */
@@ -447,6 +469,7 @@
     }
   }
 
+  Store.addStats = addStats;
   L.Store = Store;
-  Object.assign(L, { SOUNDS, loadState, ITEMS, ITEM_ORDER, FREEBIES, packOf, itemCount, ITEM_GROUPS, PALETTES, SKINS, FRAMES, BACKDROPS, EFFECTS, GHOSTS, COSMETICS, COSMETIC_LABELS, ACCENTS, SAVE_VERSION, defaultState: defaults, mergeState: merge });
+  Object.assign(L, { addStats, SOUNDS, loadState, ITEMS, ITEM_ORDER, FREEBIES, packOf, itemCount, ITEM_GROUPS, PALETTES, SKINS, FRAMES, BACKDROPS, EFFECTS, GHOSTS, COSMETICS, COSMETIC_LABELS, ACCENTS, SAVE_VERSION, defaultState: defaults, mergeState: merge });
 })(typeof globalThis !== 'undefined' ? globalThis : this);

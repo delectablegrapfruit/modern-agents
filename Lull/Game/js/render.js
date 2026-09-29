@@ -1038,9 +1038,9 @@
       if (look.prism && !look.still) look.colors = forWell(paletteColors(look.palette, now), look.theme.name);
       const wr = drawWell(ctx, look.backdrop, board, s, cols, rows, look.theme, tl);
       const p = g.piece;
-      const pieceCells = p ? g.cellsOf(p) : [];
+      const pieceCells = p ? g.absCells(p) : [];
       const gy = p ? g.ghostY(p) : null;
-      const ghostCells = p && gy != null && gy !== p.y ? g.cellsOf(p, p.rot, p.x, gy) : [];
+      const ghostCells = p && gy != null && gy !== p.y ? g.absCells(p, p.rot, p.x, gy) : [];
 
       // Fog: only what is near the piece (and where it would land) can be seen.
       let near = null;
@@ -1128,7 +1128,7 @@
           for (const y of rowsL) { const [ax, ay] = this.toScreen(0, y), [bx, by] = this.toScreen(g.w - 1, y); ctx.fillStyle = 'rgba(255,60,80,' + pulse + ')'; ctx.fillRect(Math.min(ax, bx), Math.min(ay, by) + s * 0.35, Math.abs(bx - ax) + s, s * 0.3); }
           this.alive = true;
         }
-        const overlapping = p.special === 'phase' && !g.board.fits(p.type.rots[p.rot], p.x, p.y);
+        const overlapping = p.special === 'phase' && !g.fitShape(p, p.rot, p.x, p.y);
         // Gold on the board (Free Play) gilds whatever plain piece is in play.
         const golden = !p.special && g.s && g.s.gold > 0;
         for (const [cx, cy] of pieceCells) {
@@ -1706,7 +1706,7 @@
       if (id === 'rewind') { if (fx.world) fx.world.clear(); fx.props = []; fx.texts = []; fx.movers = []; }
       if (id === 'rewind') { fx.sweep(b, '#8fd3ff', 'y', 0.55); if (!reduced) fx.text('↶', b.x + b.w / 2, b.y + b.h * 0.4, '#8fd3ff', 30); return; }
       if (!piece || id === 'settle' || id === 'trapdoor' || id === 'tornado' || id === 'flip') return;
-      const cells = g.cellsOf(piece), color = this.colorOf(piece.type.color);
+      const cells = g.absCells(piece), color = this.colorOf(piece.type.color);
       const sc = this.screenCells(cells, color), [cx, cy] = this.centerOf(cells);
       if (reduced) { fx.pop(sc, color, 0.3); return; }
       switch (id) {

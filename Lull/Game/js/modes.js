@@ -119,7 +119,7 @@
       if (this.inverted && INVERT[a]) a = INVERT[a];
       let ok = false;
       const snd = this.app.sound;
-      const prevPiece = g.piece, before = g.piece ? g.cellsOf() : null, beforeColor = g.piece ? this.view.colorOf(g.piece.type.color) : null;
+      const prevPiece = g.piece, before = g.piece ? g.absCells() : null, beforeColor = g.piece ? this.view.colorOf(g.piece.type.color) : null;
       if (this.settling(a)) return false;
       switch (a) {
         case 'moveL': ok = g.move(-1); if (ok) snd.play('move'); break;
@@ -630,15 +630,16 @@
       F.bestChain = Math.max(F.bestChain || 0, s.chain); F.bestMult = Math.max(F.bestMult || 1, s.mult);
       r.chain = s.chain;
       g.notePace(r, Date.now());
-      // Every line pays by its width (Library.scale): a line 5 wide is half a Standard line, 20 wide two.
-      const lk = Library.scale(g.w);
+      // Every row pays by the board's worth (Library.worth: its width and recipe): a line 5 wide is half a Standard
+      // line, 20 wide two. What pays and counts is r.own, the rows' own cells (a row's FOREIGN cells never pay).
+      const lk = Library.worth(g);
       if (r.lines) {
-        const paid = Pay.clear(s, r, g.w);
+        const paid = Pay.clear(s, r, g.rules);
         const pay = paid.pay;
         if (paid.golden) {
           // Gold on the board is spent one clear at a time (the last of it on a wide board pays its share).
           r.golden = true;
-          const b = this.view.lay.board, left = Pay.clearsLeft(s.gold, g.w);
+          const b = this.view.lay.board, left = Pay.clearsLeft(s.gold, g.rules);
           this.view.fx.text('GOLDEN ' + Chain.fmt(paid.goldX) + (left > 0 ? ' · ' + left + ' left' : ''), b.x + b.w / 2, b.y + b.h * 0.3, '#ffd35a', 18);
           this.app.sound.play('golden');
         }
@@ -664,24 +665,24 @@
       }
       if (r.lines) {
         // Lifetime lines and records are in Standard lines; the board's own count (s.lines) and clears stay as cleared.
-        F.lines = Library.bank(F.lines + r.lines * lk);
+        F.lines = Library.bank(F.lines + r.own * lk);
         F.clears[Math.min(5, r.lines)]++;
         if (r.banked) st.addLines(r.banked, 'play');
         this.app.refreshWallet(true);
         // A power-up for every hundred (Standard) lines on a board (counted in the save, so a rewound clear never pays twice).
-        const due = Earn.lines(st.state.earn, s.startedAt, s.lines * lk, (s.lines - r.lines) * lk);
+        const due = Earn.lines(st.state.earn, s.startedAt, s.own * lk, (s.own - r.own) * lk);
         for (let k = 0; k < due; k++) this.earnItem();
       }
       const found = Combos.detect(r, g);
       if (r.tspin) { F.tspins++; F.tspinLines += r.lines; }
       if (r.perfect) F.perfect++;
-      // Set by a piece (an item's lines are plain: never a quad), on a board at least Standard width (a narrow quad is
-      // a few pieces).
-      if (r.lines - (r.plain || 0) >= 4 && g.w >= Library.STANDARD.w) st.day().quad = 1;
+      // Set by a piece (an item's lines are plain: never a quad), on a board where the feats count (R.feats: a narrow
+      // quad is a few pieces).
+      if (r.quad && g.rules.feats) st.day().quad = 1;
       F.maxCombo = Math.max(F.maxCombo, g.s.maxCombo);
       F.maxB2B = Math.max(F.maxB2B, g.s.maxB2B);
       F.bestScore = Math.max(F.bestScore, g.s.score);
-      F.bestLines = Math.max(F.bestLines, Library.bank(g.s.lines * lk));
+      F.bestLines = Math.max(F.bestLines, Library.bank(g.s.own * lk));
       const snd = this.app.sound;
       playLockSound(snd, r);
       this.view.onLock(r, this.reduced);
@@ -706,7 +707,7 @@
       s.combos = s.combos || {};
       const k = Library.taper(st.state.boards || Library.ensure(st.state, Date.now()), id, s.combos[id]), rw = Combos.reward(c, k);
       // Its lines are Standard lines: a board narrower or wider than Standard is paid by its width, as every clear is.
-      const lines = Library.bank(rw.lines * Library.scale(g.w));
+      const lines = Library.bank(rw.lines * Library.worth(g));
       s.combos[id] = (s.combos[id] || 0) + 1;
       if (lines) { st.addLines(lines, 'combos'); s.banked = Library.bank((s.banked || 0) + lines); this.app.refreshWallet(true); }
       if (rw.boost) s.boost = { x: Math.max(rw.boost.x, s.boost ? s.boost.x : 1), left: Math.max(rw.boost.clears, s.boost ? s.boost.left : 0) };
@@ -1252,10 +1253,10 @@
 
     renderStatus() {
       const s = this.game.s;
-      const side = s.gold > 0 ? stat('Gold', String(Pay.clearsLeft(s.gold, this.game.w)), 'opt gold', 'Next clears pay ×' + Luck.GOLD_X)
+      const side = s.gold > 0 ? stat('Gold', String(Pay.clearsLeft(s.gold, this.game.rules)), 'opt gold', 'Next clears pay ×' + Luck.GOLD_X)
         : s.double ? stat('Luck', 'Double', 'opt gold', ITEMS.double.desc)
         : s.net > 0 ? stat('Luck', 'Net', 'opt boost', ITEMS.net.desc)
-        : s.boost ? stat('Boost', Chain.fmt(s.boost.x) + ' · ' + Pay.clearsLeft(s.boost.left, this.game.w), 'opt boost', 'Next ' + Pay.clearsLeft(s.boost.left, this.game.w) + ' clears pay ' + Chain.fmt(s.boost.x))
+        : s.boost ? stat('Boost', Chain.fmt(s.boost.x) + ' · ' + Pay.clearsLeft(s.boost.left, this.game.rules), 'opt boost', 'Next ' + Pay.clearsLeft(s.boost.left, this.game.rules) + ' clears pay ' + Chain.fmt(s.boost.x))
         : stat('Pieces', fmtInt(s.pieces), 'opt');
       this.status.replaceChildren(
         h('div', { class: 'stats' },
@@ -1489,7 +1490,7 @@
           // What the placement banked goes back, never past an empty wallet (lines spent since stay spent).
           const refund = Math.min(Math.round(Math.max(0, banked0 - (g.s.banked || 0)) * 100) / 100, Math.max(0, st.state.lines));
           if (refund) st.addLines(-refund, 'rewind');
-          if (res.lines) st.state.stats.free.lines = Math.max(0, Library.bank(st.state.stats.free.lines - res.lines * Library.scale(g.w)));
+          if (res.own) st.state.stats.free.lines = Math.max(0, Library.bank(st.state.stats.free.lines - res.own * Library.worth(g)));
           if (refund || res.lines) this.app.refreshWallet();
           this.hideCard();
           // The card is gone and the board under it is live: a second click or tap of the same press (a double

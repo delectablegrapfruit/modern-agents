@@ -136,11 +136,12 @@
   const PENTOMINOES = Object.keys(PENTO);
   PENTOMINOES.forEach((id, i) => add(id, PENTO[id], { color: 9 + (i % 6), family: 'pentomino', name: id.replace(/\d/, '') + '-pento' }));
 
-  /** A 2× scaled copy of a type: every cell becomes a 2×2 block (TGM's big mode). */
+  /** A 2× scaled copy of a type: every cell becomes a 2×2 block (TGM's big mode). Any type that get() knows can be doubled. */
   function bigOf(id) {
     const key = 'B' + id;
     if (TYPES[key]) return TYPES[key];
-    const base = TYPES[id];
+    const base = get(id);
+    if (!base) return null;
     const cells = [];
     for (const [x, y] of base.rots[0]) for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) cells.push([2 * x + dx, 2 * y + dy]);
     return add(key, cells, { n: base.n * 2, color: base.color, kicks: base.kicks === 'none' ? 'none' : 'big', family: 'big', big: true, name: 'Big ' + base.name });
@@ -165,15 +166,38 @@
     return customType(cells, { prefix: 'M', color: type.color, name: type.name + ' (mirror)' });
   }
 
+  // Ids that name a shape by its cells ("C:0,0;1,0", "M:…"; the board recipe's shapes add their own prefixes) are
+  // rebuilt from the id alone, so a type can always be asked for again: a save, the queue, a cache keyed by id.
+  const RESOLVERS = {};
+  /** Adds a prefix handler: get('P:…') calls fn(rest, id), which registers the type under id and returns it. */
+  function resolver(prefix, fn) { RESOLVERS[prefix] = fn; }
+  const cellsFrom = (rest) => rest.split(';').map((p) => p.split(',').map(Number));
+  resolver('C', (rest) => customType(cellsFrom(rest), { prefix: 'C' }));
+  resolver('M', (rest) => customType(cellsFrom(rest), { prefix: 'M' }));
+
+  /** The type an id names: a built-in one, 'B' + any id (doubled, recursively), or one a resolver rebuilds. */
   function get(id) {
+    if (typeof id !== 'string' || !id) return null;
     if (TYPES[id]) return TYPES[id];
-    if (id && id[0] === 'B' && TYPES[id.slice(1)]) return bigOf(id.slice(1));
-    const m = /^([CM]):(.+)$/.exec(id || '');
-    if (m) {
-      const cells = m[2].split(';').map((p) => p.split(',').map(Number));
-      return customType(cells, { prefix: m[1] });
+    const m = /^([A-Za-z]+):(.+)$/.exec(id);
+    if (m && RESOLVERS[m[1]]) {
+      return RESOLVERS[m[1]](m[2], id) || null;
     }
+    if (id[0] === 'B' && id.length > 1 && get(id.slice(1))) return bigOf(id.slice(1));
     return null;
+  }
+
+  // Types made on demand (doubled, drawn, resolved) can be dropped and rebuilt from their ids: the seven and the other
+  // built-in shapes stay.
+  const BUILTIN = new Set(Object.keys(TYPES));
+  /** Drops a type made on demand (the next get rebuilds it); built-in ones stay. Returns whether it went. */
+  function evict(id) { if (BUILTIN.has(id) || !TYPES[id]) return false; delete TYPES[id]; return true; }
+
+  /** A colour slot for a shape known by its key: one of the other shapes' slots, 9–14, the same every time. */
+  function hashColor(key) {
+    let h = 0x811c9dc5;
+    for (const ch of String(key)) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; }
+    return 9 + (h % 6);
   }
 
   // ---- polyomino tools (the factory's quality control) ----------------------------------------------------------------
@@ -239,7 +263,7 @@
   Object.assign(L, {
     Pieces: {
       COLOR, TYPES, TETROMINOES, PENTOMINOES, MIRROR,
-      get, bigOf, customType, mirrorOf, defineType, kicksFor, rotateCW, boundsOf, shapeKey,
+      get, bigOf, customType, mirrorOf, defineType, kicksFor, rotateCW, boundsOf, shapeKey, resolver, evict, hashColor, BUILTIN,
       normalize, keyOf, freeKey, isConnected, freePolyominoes,
     },
   });

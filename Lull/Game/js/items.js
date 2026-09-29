@@ -6,6 +6,14 @@
   const L = (root.Lull = root.Lull || {});
   const { CELL } = L;
 
+  // What changed with the board recipe (js/recipe.js), read from a lock result: r.quad (a quad set by a piece: R.quad
+  // rows, 4 on a Normal board) and r.own (Standard-comparable rows, what pays). A result made by hand (the tests) has
+  // neither: its own lines are lines less plain, a quad 4 of them.
+  const quadOf = (r) => (r.quad !== undefined ? !!r.quad : (r.lines || 0) - (r.plain || 0) >= 4);
+  const ownOf = (r) => (r.own !== undefined ? r.own : r.lines || 0);
+  /** A board's rules, or what a width alone implies (a number, or a board without rules: a Normal board). */
+  const lkOf = (R) => (typeof R === 'number' ? L.Library.scale(R) : R && R.lk != null ? R.lk : L.Library.worth(R));
+
   // ---- the chain multiplier -----------------------------------------------------------------------------------------
   //
   // The streak is the run of back-to-back quads and T-spins (this one included). It alone sets the multiplier: in
@@ -63,27 +71,31 @@
     return { lines: Math.floor((c.lines || 0) * f), boost: c.boost && k < 2 ? c.boost : null, score: c.score || 0 };
   }
 
-  /** The combos a lock result makes (Free Play). Keeps one counter on the board's stats: was the last clear a TSD. */
+  /**
+   * The combos a lock result makes (Free Play). Keeps one counter on the board's stats: was the last clear a TSD. The
+   * skill ones need a rated board with the feats on (no Jelly: R.noFeats); a quad is the board's (r.quad).
+   */
   function detect(r, g) {
     const s = g.s, out = [];
-    const own = (r.lines || 0) - (r.plain || 0);
+    const own = (r.lines || 0) - (r.plain || 0), quad = quadOf(r);
+    const R = g.rules, skill = !R || (!!R.rated && !R.noFeats);
     // One colour across a row is a flat I on a board 4 wide: Painted Row needs a board at least Standard width.
-    if (r.lines && g.w >= (L.Library ? L.Library.STANDARD.w : 10) && (r.removed || []).some((row) => { const c = row[0] & CELL.COLOR; return c && c !== 8 && row.every((v) => (v & CELL.COLOR) === c); })) out.push('painted');
-    if (own >= 4 && r.type === 'I' && r.fromHold && !r.special) out.push('pocket');
+    if (r.lines && (g.rules ? g.rules.wEff : g.w) >= (L.Library ? L.Library.STANDARD.w : 10) && (r.removed || []).some((row) => { const c = row[0] & CELL.COLOR; return c && c !== 8 && row.every((v) => (v & CELL.COLOR) === c); })) out.push('painted');
+    if (quad && r.type === 'I' && r.fromHold && !r.special) out.push('pocket');
     if (own && r.covered && !r.special) out.push('keyhole');
     const tsd = !!(r.tspin && own === 2);
     if (tsd && r.b2b && s.lastTsd) out.push('twinspin');
     if (r.lines) s.lastTsd = tsd;
     if (r.special === 'patch' && r.lines) out.push('patchjob');
     if (r.special === 'phase' && r.lines && r.covered) out.push('ghostline');
-    if ((r.tag === 'noodle' || r.tag === 'giant') && own >= 4) out.push('tower');
+    if ((r.tag === 'noodle' || r.tag === 'giant') && quad) out.push('tower');
     if (r.tag === 'blueprint' && own >= 3) out.push('architect');
-    if (r.tag === 'fit' && own >= 4) out.push('tailor');
+    if (r.tag === 'fit' && quad) out.push('tailor');
     if (r.double === 'won') out.push('allin');
     if ((r.netSaved || 0) >= 5) out.push('caught');
     if (r.special === 'bomb' && (r.blast || []).length >= 10) out.push('fullblast');
     if (r.special === 'blackhole' && (r.swallowed || []).length >= 20) out.push('horizon');
-    return out;
+    return skill ? out : out.filter((id) => BY_ID[id].kind !== 'skill');
   }
 
   const Combos = { LIST: COMBOS, get: (id) => BY_ID[id], reward, detect, SHARE };
@@ -102,7 +114,7 @@
     /** What gold adds over its clears, if they would have paid `pay` each. */
     goldValue(pay) { return Luck.GOLD_CLEARS * pay * (Luck.GOLD_X - 1); },
     /** Does a clear win a Double or Nothing? A quad or better, or a T-spin, set by the piece itself. */
-    doubleWins(r) { return ((r.lines || 0) - (r.plain || 0)) >= 4 || !!r.tspin; },
+    doubleWins(r) { return quadOf(r) || !!r.tspin; },
   };
 
   // ---- what a clear pays in Free Play ----------------------------------------------------------------------------------
@@ -115,19 +127,20 @@
   // its share; and a won Double or Nothing doubles at most one Standard clear's worth.
 
   const Pay = {
-    /** The chain multiplier after a lock on a board w wide. */
-    mult(g) { return Chain.mult(Chain.streak(g) * Math.min(1, L.Library.scale(g.w))); },
-    /** Gold (or a boost's clears) left, in Standard clears, as clears on a board w wide: "3 left". */
-    clearsLeft(left, w) { return left > 0 ? Math.ceil(left / L.Library.scale(w) - 1e-9) : 0; },
+    /** The chain multiplier after a lock on board g (what a row there is worth: Library.worth). */
+    mult(g) { return Chain.mult(Chain.streak(g) * Math.min(1, L.Library.worth(g))); },
+    /** Gold (or a boost's clears) left, in Standard clears, as clears on a board (its rules R, or its width): "3 left". */
+    clearsLeft(left, R) { return left > 0 ? Math.ceil(left / lkOf(R) - 1e-9) : 0; },
     /**
-     * What clear `r` pays on board state `s` (its mult already set) w wide, in Standard lines, rounded down to the
-     * hundredth; spends gold, a boost's clears and Double or Nothing from `s`. Returns { pay, golden, goldX, boost,
-     * double }.
+     * What clear `r` pays on board state `s` (its mult already set) on a board with rules R (or, a Normal board, its
+     * width), in Standard lines, rounded down to the hundredth: r.own rows at R.lk each, and one Standard line at most
+     * for a quad or T-spin. Spends gold, a boost's clears and Double or Nothing from `s`. Returns { pay, golden,
+     * goldX, boost, double }.
      */
-    clear(s, r, w) {
-      const lk = L.Library.scale(w), out = {};
-      const own = (r.lines || 0) - (r.plain || 0), difficult = own >= 4 || !!r.tspin || !!r.mini;
-      let pay = ((r.lines || 0) * lk + (difficult ? Math.min(1, lk) : 0)) * (s.mult || 1);
+    clear(s, r, R) {
+      const lk = lkOf(R), out = {};
+      const difficult = quadOf(r) || !!r.tspin || !!r.mini;
+      let pay = (ownOf(r) * lk + (difficult ? Math.min(1, lk) : 0)) * (s.mult || 1);
       /** One clear's use of something that lasts `left` Standard clears: the share of this clear it covers. */
       const use = (left) => ({ share: Math.min(1, left / lk), left: Math.max(0, Math.round((left - lk) * 1000) / 1000) });
       if (s.gold > 0) {

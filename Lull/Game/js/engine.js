@@ -3,7 +3,7 @@
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
-  const { Board, CELL, Pieces, RNG, Emitter } = L;
+  const { Board, CELL, Pieces, RNG, Emitter, Recipe } = L;
 
   const CLEAR_SCORE = [0, 100, 300, 500, 800, 1200, 1600, 2000];
   const TSPIN_SCORE = [400, 800, 1200, 1600];
@@ -28,17 +28,59 @@
   const SHAPED = new Set(['phase', 'laser']);
 
   /**
-   * A board's numbers. The h- ones count only what was done by hand (for achievements): hand is whether the stack was
+   * A board's numbers. lines is rows cleared (for show); own is the Standard-comparable rows (own cells cleared / w:
+   * what pays and counts toward records, equal to lines on a board of the default recipe); cells is cells placed.
+   * The h- ones count only what was done by hand (for achievements): hand is whether the stack was
    * built without an item that touches the pieces or the board since it was last empty; hb2b, hcombo, hquads and
    * hchain are the back-to-back streak, combo, quads in a row and chain, broken by any such item (Undo too) and
    * never fed by an item's clear; htspins counts T-spins that clear lines, htst T-spin triples and hperfect perfect
    * clears, all by hand; pace keeps [time, lines] for the last 101 pieces set by hand in a row (Game.notePace).
    */
   function freshStats() {
-    return { pieces: 0, lines: 0, score: 0, clears: [0, 0, 0, 0, 0, 0], tspins: 0, tspinLines: 0, perfect: 0, combo: -1, maxCombo: 0, b2b: -1, maxB2B: 0, holds: 0, rotations: 0, moves: 0, lowers: 0, drops: 0, byType: {}, startedAt: Date.now(), playMs: 0, items: {}, banked: 0, chain: 0, bestChain: 0, tst: 0, quadRun: 0,
+    return { pieces: 0, lines: 0, own: 0, cells: 0, score: 0, clears: [0, 0, 0, 0, 0, 0], tspins: 0, tspinLines: 0, perfect: 0, combo: -1, maxCombo: 0, b2b: -1, maxB2B: 0, holds: 0, rotations: 0, moves: 0, lowers: 0, drops: 0, byType: {}, startedAt: Date.now(), playMs: 0, items: {}, banked: 0, chain: 0, bestChain: 0, tst: 0, quadRun: 0,
       hand: true, hb2b: -1, hcombo: -1, hquads: 0, hchain: 0, bestHChain: 0, htspins: 0, htst: 0, hperfect: 0, goldRun: 0, pace: [] };
   }
   const HAND_KEYS = ['hand', 'hb2b', 'hcombo', 'hquads', 'hchain', 'goldRun', 'pace'];
+
+  /**
+   * Where the pieces come from: today's 7-bag, drawn on the game's own random stream (game.bag holds the rest of the
+   * bag). A board recipe's shapes can bring another (one per game; see Game hooks). next(game) is the next id;
+   * reroll(game, exclude) a different piece for the Reroll power-up (on Math.random: it never moves the game's stream
+   * or the bag); candidates(game) the ids Best Fit and Order Slip choose from.
+   */
+  const BAG_DEALER = {
+    next(game) {
+      if (!game.bag.length) game.bag = game.rng.shuffle(Pieces.TETROMINOES.slice());
+      return game.bag.shift();
+    },
+    reroll(game, exclude) {
+      const opts = Pieces.TETROMINOES.filter((t) => t !== exclude);
+      return opts[Math.floor(Math.random() * opts.length)];
+    },
+    candidates() { return Pieces.TETROMINOES.slice(); },
+  };
+
+  // Hooks a board recipe's parts can give a game (Recipe.engine: one extension per part, run in the parts' order). Each
+  // takes (game, board, …), so simulate() can run them on a copy of the board:
+  //   dealer            { next, reroll, candidates }: where the pieces come from (the first part that has one)
+  //   spawnAt(g, b, pos, type) -> { x, y, rot }         where a piece appears (chained)
+  //   placed(g, b, abs, p) -> abs                        the cells a piece covers (absCells: fits, ghost, lock …)
+  //   targets(g, b, kind, cells) -> cells                where bomb, blackhole, bore, patch and laser act
+  //   refuseLock(g, b, abs) -> note                      a lock that may not happen here (the piece stays)
+  //   afterPlace(g, b, abs, v, res)                      after a piece's cells are set
+  //   rows(g, b, rows) -> rows                           which full rows clear
+  //   beforeClear(g, b, res) / afterClear(g, b, res)     around a lock's (or Settle's) clear
+  //   keep(g, b, v) -> true                              a cell no item removes
+  //   roomAfter(g, b)                                    inside the "would the piece still fit" test of Settle and Trapdoor
+  //   step(g, res)                                       after a piece lock is scored, before the next piece
+  //   clean(g, b) -> bool                                is the board empty (a perfect clear; an item leaving it empty)
+  //   afterChange(g, kind)                               after settle, trapdoor, tornado, flip, bore
+  //   allow(g, itemId) -> reason                         an item refused here
+  //   snap(g) / restore(g, snap)                         kept with each Undo step
+  //   save(g) -> data                                    kept in the save (toJSON's x), given back to the part's engine()
+  //   reset(g)                                           the board was started over (resetBoard)
+  //   summary(g) -> numbers                              the board's own numbers for its summary (Library.summarize)
+  // A lock a part refuses emits 'refused' with its note. Without a hook the plain code runs, exactly as before.
 
   class Game extends Emitter {
     /**
@@ -53,6 +95,10 @@
       this.mods = Object.assign({ noRotate: false, heavy: false, noHold: false, vanish: false }, o.mods || {});
       this.previewCount = o.previewCount == null ? 5 : o.previewCount;
       this.maxHistory = o.maxHistory == null ? 30 : o.maxHistory;
+      // The board recipe (js/recipe.js): Relaxed boards carry one (the default plays exactly as boards always have);
+      // Classic and Puzzles pass none and keep the default rules.
+      const rc = o.recipe != null ? o.recipe : (o.saved && o.saved.recipe != null ? o.saved.recipe : null);
+      this.recipe = rc != null && Recipe ? Recipe.normalize(rc) : null;
       this.freeHold = o.freeHold !== false;
       // Relaxed play: a piece (spawned, held or swapped in by an item) that does not fit where it would appear is
       // fitted into the nearest open spot above the stack instead; only when there is none is the board full.
@@ -63,6 +109,7 @@
       const sv = o.saved;
       if (sv) {
         this.board = Board.fromArray(sv.w, sv.h, sv.cells, { wrap: sv.wrap });
+        this.setup(sv.x);
         this.fixed = !!sv.fixed;
         this.queue = sv.queue.map((e) => Object.assign({}, e));
         this.bag = sv.bag.slice();
@@ -87,6 +134,7 @@
         return;
       }
       this.board = o.board ? o.board.clone() : new Board(o.w || 10, o.h || 20, { wrap: o.wrap });
+      this.setup(null);
       this.fixed = !!o.queue;
       this.queue = o.queue ? o.queue.map((e) => Object.assign({ rot: 0 }, e)) : [];
       this.bag = [];
@@ -102,14 +150,45 @@
     get w() { return this.board.w; }
     get h() { return this.board.h; }
 
+    /** The rules (Recipe.rules), the recipe's extensions and their hooks, once the board (its width) is known. */
+    setup(x) {
+      this.rules = Recipe ? Recipe.rules(this.recipe || Recipe.DEFAULT, this.w) : { u: 1, copies: 1, E: 4, f: 1, lk: this.w / 10, rated: true, feats: this.w >= 10, quad: 4, undo: true, hints: true, refuse: {} };
+      if (!this.rules.undo) this.maxHistory = 0;
+      this.ext = this.recipe && Recipe ? Recipe.engine(this, x) : [];
+      const d = this.ext.find((e) => e.dealer);
+      this.dealer = d ? d.dealer : BAG_DEALER;
+      // Hooks by name, for the hot paths (no hook: the plain code runs, exactly as before).
+      this.hooks = {};
+      for (const e of this.ext) for (const k of Object.keys(e)) if (typeof e[k] === 'function') (this.hooks[k] = this.hooks[k] || []).push(e);
+    }
+
+    /** Runs every extension's hook `name` in order (game first); returns nothing. */
+    hook(name, ...args) { const hs = this.hooks[name]; if (hs) for (const e of hs) e[name](this, ...args); }
+    /** Passes v through every extension's hook `name` in order: v = call(ext, v) (an answer of undefined keeps v). */
+    chain(name, v, call) {
+      const hs = this.hooks[name];
+      if (hs) for (const e of hs) { const r = call(e, v); if (r !== undefined && r !== null) v = r; }
+      return v;
+    }
+    /** The first answer an extension's hook `name` gives (not undefined or null), or null. */
+    ask(name, ...args) {
+      const hs = this.hooks[name];
+      if (hs) for (const e of hs) { const r = e[name](this, ...args); if (r !== undefined && r !== null) return r; }
+      return null;
+    }
+
+    /** Why an item cannot be used on this board (the recipe's rules, then its parts), or null. */
+    allow(itemId) {
+      const why = this.rules.refuse && this.rules.refuse[itemId];
+      if (why) return why;
+      return this.ask('allow', itemId);
+    }
+
     // ---- queue --------------------------------------------------------------------------------------------------------
 
     fillQueue() {
       if (this.fixed) return;
-      while (this.queue.length < Math.max(6, this.previewCount + 1)) {
-        if (!this.bag.length) this.bag = this.rng.shuffle(Pieces.TETROMINOES.slice());
-        this.queue.push({ id: this.bag.shift(), rot: 0 });
-      }
+      while (this.queue.length < Math.max(6, this.previewCount + 1)) this.queue.push({ id: this.dealer.next(this), rot: 0 });
     }
 
     /** o: { soft (a failed spawn changes nothing and is not a top-out: hold swaps), from (cells of the piece in play) } */
@@ -126,13 +205,18 @@
       return this.spawn(entry, o);
     }
 
-    spawnPosition(type, rot) { return spawnPos(this.w, this.h, type, rot); }
+    /** Where a piece appears: { x, y, rot }, the recipe's parts having their say last (spawnAt, chained). */
+    spawnPosition(type, rot) {
+      const pos = spawnPos(this.w, this.h, type, rot);
+      if (!this.hooks.spawnAt) return pos;
+      return this.chain('spawnAt', Object.assign({ rot }, pos), (e, v) => e.spawnAt(this, this.board, v, type));
+    }
 
     spawn(entry, o) {
       o = o || {};
       const type = Pieces.get(entry.id);
-      const rot = entry.rot || 0;
-      const pos = this.spawnPosition(type, rot);
+      const pos = this.spawnPosition(type, entry.rot || 0);
+      const rot = pos.rot != null ? pos.rot : entry.rot || 0;
       const piece = { type, rot, x: pos.x, y: pos.y, special: entry.special || null, entry, lastRot: false };
       const place = (x, y, r) => {
         piece.x = this.board.wx(x); piece.y = y; piece.rot = r;
@@ -234,17 +318,31 @@
     passes(p) { return p.special === 'phase' || p.special === 'drill'; }
 
     fitsAt(p, rot, x, y) {
-      const cells = p.type.rots[rot];
-      if (!this.passes(p)) return this.board.fits(cells, x, y);
-      return this.board.inBounds(cells, x, y);
+      if (!this.passes(p)) return this.fitShape(p, rot, x, y);
+      if (!this.hooks.placed) return this.board.inBounds(p.type.rots[rot], x, y);
+      return this.board.inBoundsAbs(this.absCells(p, rot, x, y));
     }
 
-    cellsOf(p, rot, x, y) {
+    /** Would the piece's cells (absCells) be inside and empty there, whatever it carries (a Ghost passes; this does not)? */
+    fitShape(p, rot, x, y, board) {
+      board = board || this.board;
+      if (!this.hooks.placed) return board.fits(p.type.rots[rot], x, y);
+      return board.fitsAbs(this.absCells(p, rot, x, y, board));
+    }
+
+    /**
+     * The board cells a piece covers there: its shape's cells, wrapped, then passed through the recipe's `placed` hooks
+     * (Mirror adds the reflection). Everything that asks where a piece is uses this: fits, the ghost, lock, render.
+     */
+    absCells(p, rot, x, y, board) {
       p = p || this.piece;
       if (!p) return [];
+      board = board || this.board;
       rot = rot == null ? p.rot : rot; x = x == null ? p.x : x; y = y == null ? p.y : y;
-      return p.type.rots[rot].map(([cx, cy]) => [this.board.wx(x + cx), y + cy]);
+      const abs = p.type.rots[rot].map(([cx, cy]) => [board.wx(x + cx), y + cy]);
+      return this.hooks.placed ? this.chain('placed', abs, (e, v) => e.placed(this, board, v, p)) : abs;
     }
+    cellsOf(p, rot, x, y) { return this.absCells(p, rot, x, y); }
 
     move(dx) {
       const p = this.piece;
@@ -326,7 +424,7 @@
       }
       if (clear && this.fitsAt(p, to, p.x + ox, p.y + oy)) return [ox, oy];
       // Blocked by the stack: lift it, or slide it sideways, by the least that fits.
-      const was = new Set(this.cellsOf(p).map((c) => c.join(',')));
+      const was = new Set(p.type.rots[p.rot].map(([cx, cy]) => b.wx(p.x + cx) + ',' + (p.y + cy)));
       const covers = (dx, dy) => cells.some(([cx, cy]) => was.has(b.wx(p.x + dx + cx) + ',' + (p.y + dy + cy)));
       for (let k = 1; k < p.type.n; k++) {
         for (const [dx, dy] of [[ox - k, oy], [ox + k, oy], [ox, oy + k]]) {
@@ -360,15 +458,14 @@
       if (p.special === 'phase') return this.phaseTarget(p);
       if (p.special === 'patch') { const t = this.patchTarget(p); if (t != null) return t; }
       let y = p.y;
-      while (this.board.fits(p.type.rots[p.rot], p.x, y - 1)) y--;
+      while (this.fitShape(p, p.rot, p.x, y - 1)) y--;
       return y;
     }
 
     /** A phasing piece drops into the first gap below it where it would rest. */
     phaseTarget(p) {
-      const cells = p.type.rots[p.rot];
       for (let y = p.y; y + p.type.rotBounds[p.rot].minY >= 0; y--) {
-        if (this.board.fits(cells, p.x, y) && !this.board.fits(cells, p.x, y - 1)) return y;
+        if (this.fitShape(p, p.rot, p.x, y) && !this.fitShape(p, p.rot, p.x, y - 1)) return y;
       }
       return null;
     }
@@ -378,15 +475,22 @@
      * it); with none, it lands like any block. Returns that row, or null.
      */
     patchTarget(p) {
-      const [x, y0] = this.cellsOf(p)[0];
-      let roof = false;
+      const [x0, y0] = this.cellsOf(p)[0];
+      // Every column the patch acts in (the recipe's targets: Mirror's pair) needs its hole in the same row.
+      const cols = this.hooks.targets ? this.targets('patch', [[x0, y0]]).map(([x]) => x) : [x0];
+      const roof = cols.map(() => false);
       for (let y = this.h - 1; y >= 0; y--) {
-        const v = this.board.get(x, y);
-        if (v) { roof = true; continue; }
-        if (roof && y <= y0) return y;
+        let open = true;
+        cols.forEach((x, i) => { if (this.board.get(x, y)) { roof[i] = true; open = false; } });
+        if (open && roof.every(Boolean) && y <= y0) return y;
       }
       return null;
     }
+
+    /** Where an item acts (bomb and black hole centres, the drill's column, the patch, the laser's cells): the recipe's parts can add to them. */
+    targets(kind, cells) { return this.hooks.targets ? this.chain('targets', cells, (e, v) => e.targets(this, this.board, kind, v)) : cells; }
+    /** A cell no item removes (the recipe's `keep`: Protect's sprout). */
+    kept(v) { return !!this.hooks.keep && this.hooks.keep.some((e) => e.keep(this, this.board, v)); }
 
     drop() {
       const p = this.piece;
@@ -406,7 +510,7 @@
 
     holdPiece() {
       const p = this.piece;
-      if (!p || this.over || this.mods.noHold || (this.holdLocked && !this.freeHold)) { this.emit('blocked', 'hold'); return false; }
+      if (!p || this.over || this.mods.noHold || (this.holdLocked && !this.freeHold) || (p.entry && p.entry.received)) { this.emit('blocked', 'hold'); return false; }
       const cur = Object.assign({}, p.entry, { special: p.special || null });
       const keep = { hold: this.hold, holdLocked: this.holdLocked, queue: this.queue.map((e) => Object.assign({}, e)), bag: this.bag.slice(), rng: this.rng.state() };
       const prev = this.hold;
@@ -439,23 +543,28 @@
         queue: this.queue.map((e) => Object.assign({}, e)),
         bag: this.bag.slice(), rng: this.rng.state(),
         s: JSON.parse(JSON.stringify(this.s)),
+        x: this.hooks.snap ? this.snapExt() : null,
       });
       if (this.history.length > this.maxHistory) this.history.shift();
     }
+
+    /** Each extension's own state, kept with an Undo step: { key: snap }. */
+    snapExt() { const o = {}; for (const e of this.hooks.snap || []) o[e.key] = e.snap(this); return o; }
 
     /** Takes back the last placement; returns the lines it had cleared (so the caller can take them back too). */
     undo() {
       const h = this.history.pop();
       if (!h) return null;
-      const linesBefore = this.s.lines;
+      const linesBefore = this.s.lines, ownBefore = this.s.own || 0;
       this.board.restore(h.cells);
       this.hold = h.hold; this.holdLocked = h.holdLocked;
       this.queue = h.queue; this.bag = h.bag; this.rng = RNG.from(h.rng);
       this.s = h.s;
+      if (h.x) for (const e of this.hooks.restore || []) if (e.key in h.x) e.restore(this, h.x[e.key]);
       this.over = false;
       this.spawn(h.entry);
       this.emit('undo');
-      return { lines: linesBefore - this.s.lines };
+      return { lines: linesBefore - this.s.lines, own: ownBefore - (this.s.own || 0) };
     }
 
     lock() {
@@ -467,36 +576,45 @@
         const t = this.patchTarget(p);
         if (t != null && t !== p.y) { fell = { dist: (fell ? fell.dist : 0) + p.y - t, cells: fell ? fell.cells : this.cellsOf(p) }; p.y = t; }
       }
-      const shape = p.type.rots[p.rot];
-      if (!this.board.fits(shape, p.x, p.y)) { this.emit('blocked', 'lock'); return false; }
+      if (!this.fitShape(p, p.rot, p.x, p.y)) { this.emit('blocked', 'lock'); return false; }
+      const cells = this.absCells(p);
+      // A board's recipe can refuse a lock here (Battle: a piece must touch your board): the piece stays in play.
+      const note = this.hooks.refuseLock ? this.ask('refuseLock', this.board, cells) : null;
+      if (note) { this.emit('blocked', 'lock'); this.emit('refused', note); return false; }
       this.pushHistory();
-      const cells = this.cellsOf(p);
       const result = { type: p.type.id, color: p.type.color, special: p.special, tag: (p.entry && p.entry.tag) || null, cells, rows: [], removed: [], lines: 0, tspin: false, perfect: false, combo: 0, b2b: false, score: 0, blast: null, had: this.board.count() };
       if (fell) { result.dropDist = fell.dist; result.dropCells = fell.cells; }
       const v = p.type.color | (this.mods.vanish ? CELL.HIDDEN : 0);
 
+      result.placed = 0;
       if (p.special === 'blackhole') {
-        const [cx, cy] = cells[0];
+        const centers = this.targets('blackhole', [cells[0]]);
         result.swallowed = [];
-        for (let y = 0; y < this.h; y++) for (let x = 0; x < this.w; x++) {
-          const dx = this.board.wrap ? Math.min(Math.abs(x - cx), this.w - Math.abs(x - cx)) : x - cx;
-          if (dx * dx + (y - cy) * (y - cy) > 11) continue;
-          const old = this.board.get(x, y);
-          if (old) { result.swallowed.push([x, y, old]); this.board.set(x, y, 0); }
+        for (const [cx, cy] of centers) {
+          for (let y = 0; y < this.h; y++) for (let x = 0; x < this.w; x++) {
+            const dx = this.board.wrap ? Math.min(Math.abs(x - cx), this.w - Math.abs(x - cx)) : x - cx;
+            if (dx * dx + (y - cy) * (y - cy) > 11) continue;
+            const old = this.board.get(x, y);
+            if (old && !this.kept(old)) { result.swallowed.push([x, y, old]); this.board.set(x, y, 0); }
+          }
         }
-        result.center = [cx, cy];
+        result.center = centers[0];
+        if (centers.length > 1) result.centers = centers;
         result.cells = [];
       } else if (p.special === 'bomb') {
         // Nothing is set: the bomb goes off where it lands, clearing a 13-block diamond. What was above stays put.
-        const [cx, cy] = cells[0];
+        const centers = this.targets('bomb', [cells[0]]);
         result.blast = [];
-        for (const [dx, dy] of BOMB_PATTERN) {
-          const x = this.board.wx(cx + dx), y = cy + dy;
-          if (!this.board.inside(x, y)) continue;
-          const old = this.board.get(x, y);
-          if (old) { result.blast.push([x, y, old]); this.board.set(x, y, 0); }
+        for (const [cx, cy] of centers) {
+          for (const [dx, dy] of BOMB_PATTERN) {
+            const x = this.board.wx(cx + dx), y = cy + dy;
+            if (!this.board.inside(x, y)) continue;
+            const old = this.board.get(x, y);
+            if (old && !this.kept(old)) { result.blast.push([x, y, old]); this.board.set(x, y, 0); }
+          }
         }
-        result.center = [cx, cy];
+        result.center = centers[0];
+        if (centers.length > 1) result.centers = centers;
         result.cells = [];
       } else {
         // T-spin (guideline): the last move was a turn and three of the box's four corners are blocked. With both
@@ -515,45 +633,87 @@
         // Tucked under an overhang: a block right above one of its cells that is not its own.
         const mine = new Set(cells.map(([x, y]) => x + ',' + y));
         result.covered = cells.some(([x, y]) => !mine.has(x + ',' + (y + 1)) && y + 1 < this.h && this.board.get(x, y + 1) !== 0);
-        this.board.place(shape, p.x, p.y, v);
+        this.board.placeCells(cells, v);
+        result.placed = cells.length;
+        this.hook('afterPlace', this.board, cells, v, result);
         if (p.special === 'patch') result.patched = true;
       }
       if (p.fromHold) result.fromHold = true;
 
       let rows = this.fullRows();
       if (p.special === 'laser') {
-        // Every row the piece touches is vaporised, full or not.
-        result.laser = Array.from(new Set(cells.map(([, cy]) => cy))).filter((y) => y >= 0 && y < this.h).sort((a, b) => a - b);
+        // Every row the piece touches is vaporised, full or not (a row holding a cell no item removes is left).
+        result.laser = Array.from(new Set(this.targets('laser', cells).map(([, cy]) => cy))).filter((y) => y >= 0 && y < this.h && !this.rowKept(y)).sort((a, b) => a - b);
         rows = Array.from(new Set(rows.concat(result.laser))).sort((a, b) => a - b);
       }
-      result.rows = rows;
-      result.removed = this.board.clearRows(rows);
-      result.lines = rows.length;
+      this.clearInto(this.board, rows, result);
       this.score(result);
       this.s.pieces++;
       this.s.byType[p.type.family === 'tetromino' ? p.type.id : p.type.family] = (this.s.byType[p.type.family === 'tetromino' ? p.type.id : p.type.family] || 0) + 1;
       this.holdLocked = false;
       this.piece = null;
+      this.hook('step', result);
       this.emit('lock', result);
       if (!this.over) this.spawnNext();
       return result;
     }
 
-    fullRows() { return this.board.fullRows(); }
+    /** The rows that clear on a board: its full rows, as the recipe's parts decide (rows: Protect's bed never clears). */
+    fullRows(board) {
+      board = board || this.board;
+      const rows = board.fullRows();
+      return this.hooks.rows ? this.chain('rows', rows, (e, v) => e.rows(this, board, v)) : rows;
+    }
+
+    /**
+     * Clears rows (a lock's, Settle's) into a result: rows, removed and lines, with the recipe's beforeClear and
+     * afterClear around it (Jelly's cascades go on result.cascade). Rows holding a FOREIGN cell are plain.
+     */
+    clearInto(board, rows, result) {
+      this.hook('beforeClear', board, result);
+      result.rows = rows;
+      result.removed = board.clearRows(rows);
+      result.lines = rows.length;
+      const foreign = result.removed.filter((row) => row.some((v) => v & CELL.FOREIGN)).length;
+      if (foreign) { result.lines -= foreign; result.plain = (result.plain || 0) + foreign; }
+      this.hook('afterClear', board, result);
+      return result;
+    }
+
+    /** Does row y hold a cell no item removes? */
+    rowKept(y) {
+      if (!this.hooks.keep) return false;
+      for (let x = 0; x < this.w; x++) if (this.kept(this.board.get(x, y))) return true;
+      return false;
+    }
+
+    /** Is the board empty, as the recipe's parts see it (clean: Protect's sprout does not count)? */
+    isClean(board) {
+      board = board || this.board;
+      if (this.hooks.clean) { const r = this.ask('clean', board); if (r !== null) return !!r; }
+      return board.isEmpty();
+    }
 
     /** Drill: bores the column under the bit down to the floor. */
     bore() {
       const p = this.piece;
       this.pushHistory();
       const [x, y] = this.cellsOf(p)[0];
-      const result = { type: p.type.id, special: 'drill', cells: [], rows: [], removed: [], lines: 0, score: 0, drilled: [], bit: [x, y] };
-      for (let yy = y; yy >= 0; yy--) {
-        const old = this.board.get(x, yy);
-        if (old) { result.drilled.push([x, yy, old]); this.board.set(x, yy, 0); }
+      const result = { type: p.type.id, special: 'drill', cells: [], rows: [], removed: [], lines: 0, score: 0, drilled: [], bit: [x, y], placed: 0 };
+      for (const [bx, by] of this.targets('bore', [[x, y]])) {
+        for (let yy = by; yy >= 0; yy--) {
+          const old = this.board.get(bx, yy);
+          if (!old) continue;
+          // Down to a cell no item removes (Protect's sprout), and no further.
+          if (this.kept(old)) break;
+          result.drilled.push([bx, yy, old]); this.board.set(bx, yy, 0);
+        }
       }
       this.s.pieces++;
       this.holdLocked = false;
       this.piece = null;
+      this.hook('afterChange', 'bore');
+      this.hook('step', result);
       this.emit('lock', result);
       this.spawnNext();
       return result;
@@ -566,9 +726,20 @@
      * A Safety Net (s.net) keeps the back-to-back streak through one clear that would have ended it.
      */
     score(result) {
-      const s = this.s;
+      const s = this.s, R = this.rules;
       if (result.special && result.lines) { result.plain = (result.plain || 0) + result.lines; result.lines = 0; result.tspin = false; result.mini = false; }
+      // n: rows the piece's own lock cleared with no FOREIGN cell; c: plain rows (an item's, a FOREIGN cell's, Jelly's
+      // cascades), all in this one result. ownCells: removed cells that were not FOREIGN (a laser's empty ones too:
+      // the row goes); own = ownCells / w, Standard-comparable rows: what pays and counts toward records.
+      let ownCells = 0;
+      const count = (rows) => { for (const row of rows || []) for (let i = 0; i < row.length; i++) if (!(row[i] & CELL.FOREIGN)) ownCells++; };
+      count(result.removed);
+      let cascade = 0;
+      for (const wave of result.cascade || []) { cascade += (wave.rows || []).length; count(wave.removed); }
+      if (cascade) result.plain = (result.plain || 0) + cascade;
       const n = result.lines, c = result.plain || 0, all = n + c;
+      result.n = n; result.c = c; result.ownCells = ownCells; result.own = ownCells / this.w;
+      result.quad = n >= R.quad && !result.special;
       let pts = 0;
       if (result.tspin) {
         pts = TSPIN_SCORE[Math.min(n, 3)];
@@ -581,15 +752,15 @@
       if (c) pts += CLEAR_SCORE[Math.min(c, CLEAR_SCORE.length - 1)];
       if (all) {
         s.combo++;
-        const difficult = n >= 4 || result.tspin || result.mini;
+        const difficult = result.quad || result.tspin || result.mini;
         if (difficult) { s.b2b++; if (s.b2b > 0) { pts = Math.round(pts * 1.5); result.b2b = true; } }
         else if (s.b2b >= 0 && s.net > 0) { s.net--; result.netSaved = s.b2b + 1; }
         else s.b2b = -1;
         if (s.combo > 0) pts += 50 * s.combo;
         s.clears[Math.min(all, 5)]++;
-        if (this.board.isEmpty()) { result.perfect = true; s.perfect++; pts += 3000; }
+        if (this.isClean()) { result.perfect = true; s.perfect++; pts += 3000; }
         // Quads in a row: set by a piece (an item's lines are plain); any other clear ends it.
-        if (n >= 4) s.quadRun = (s.quadRun || 0) + 1;
+        if (result.quad) s.quadRun = (s.quadRun || 0) + 1;
         else s.quadRun = 0;
       } else {
         s.combo = -1;
@@ -601,8 +772,8 @@
       if (!hand) { s.hb2b = -1; s.hcombo = -1; s.hquads = 0; }
       else if (all) {
         s.hcombo++;
-        if (n >= 4 || result.tspin || result.mini) s.hb2b++; else s.hb2b = -1;
-        s.hquads = n >= 4 ? (s.hquads || 0) + 1 : 0;
+        if (result.quad || result.tspin || result.mini) s.hb2b++; else s.hb2b = -1;
+        s.hquads = result.quad ? (s.hquads || 0) + 1 : 0;
         if (result.tspin) { s.htspins = (s.htspins || 0) + 1; if (n >= 3) s.htst = (s.htst || 0) + 1; }
         if (result.perfect) s.hperfect = (s.hperfect || 0) + 1;
       } else s.hcombo = -1;
@@ -613,6 +784,8 @@
       s.maxCombo = Math.max(s.maxCombo, s.combo);
       s.maxB2B = Math.max(s.maxB2B, s.b2b);
       s.lines += all;
+      s.own = (s.own || 0) + result.own;
+      s.cells = (s.cells || 0) + (result.placed || 0);
       s.score += pts;
       result.lines = all;
       result.combo = Math.max(0, s.combo);
@@ -628,7 +801,7 @@
      */
     noteItem(emptied) {
       const s = this.s;
-      s.hand = !!emptied && this.board.isEmpty();
+      s.hand = !!emptied && this.isClean();
       s.hb2b = -1; s.hcombo = -1; s.hquads = 0; s.hchain = 0; s.goldRun = 0; s.pace = [];
     }
 
@@ -675,7 +848,7 @@
       if (SHAPED.has(special)) {
         // A Ghost piece or a drill bit can sit inside blocks; a piece that no longer passes through them cannot.
         const p = this.piece, next = Object.assign({}, p, { special });
-        if (!this.passes(next) && !this.board.fits(p.type.rots[p.rot], p.x, p.y)) { this.emit('blocked', 'replace'); return false; }
+        if (!this.passes(next) && !this.fitShape(p, p.rot, p.x, p.y)) { this.emit('blocked', 'replace'); return false; }
         this.piece.special = special;
         this.piece.entry = Object.assign({}, this.piece.entry, { special });
         this.emit('replace', this.piece);
@@ -685,9 +858,32 @@
     }
 
     /**
-     * Best Fit: of the seven pieces, in every turn and column, the one that fits the stack best if dropped straight
-     * down — the most lines, then the fewest new holes, then the lowest, then the flattest. The piece in play becomes
-     * it, over that spot (the ghost shows where it lands; it can still be moved). Returns the spot, or null.
+     * A piece of `type` in turn `rot`, dropped straight down at column x from the top of `board` (the board in play by
+     * default), set and cleared on a copy, with the recipe's hooks (placed, afterPlace, rows, the clear's) run on that
+     * copy. Returns { board (after), n (own rows cleared), c (plain rows), placed (cells set), y, top, abs }, or null
+     * when it does not fit at the top. The one way anything simulates a placement (Best Fit, a bot).
+     */
+    simulate(type, rot, x, board) {
+      board = board || this.board;
+      const p = { type, rot, x, y: 0, special: null, entry: { id: type.id, rot: 0 } };
+      const top = board.h - 1 - type.rotBounds[rot].maxY;
+      if (!this.fitShape(p, rot, x, top, board)) return null;
+      let y = top;
+      while (this.fitShape(p, rot, x, y - 1, board)) y--;
+      const t = board.clone(), abs = this.absCells(p, rot, x, y, t), res = { cells: abs, placed: abs.length };
+      t.placeCells(abs, type.color);
+      this.hook('afterPlace', t, abs, type.color, res);
+      this.clearInto(t, this.fullRows(t), res);
+      let c = res.plain || 0;
+      for (const wave of res.cascade || []) c += (wave.rows || []).length;
+      return { board: t, n: res.lines, c, placed: res.placed, y, top, abs, res };
+    }
+
+    /**
+     * Best Fit: of the pieces the board deals (dealer.candidates: the seven on a default board), in every turn and
+     * column, the one that fits the stack best if dropped straight down — the most lines, then the fewest new holes,
+     * then the lowest, then the flattest. The piece in play becomes it, over that spot (the ghost shows where it lands;
+     * it can still be moved). Returns the spot, or null.
      */
     bestFit() {
       const p = this.piece;
@@ -697,25 +893,21 @@
       const holes = (cells) => { let n = 0; for (let x = 0; x < W; x++) { let roof = false; for (let y = H - 1; y >= 0; y--) { if (cells[y * W + x]) roof = true; else if (roof) n++; } } return n; };
       const holes0 = holes(b.cells);
       let best = null;
-      for (const id of Pieces.TETROMINOES) {
+      for (const id of this.dealer.candidates(this)) {
         const type = Pieces.get(id), seen = new Set();
+        if (!type) continue;
         for (let rot = 0; rot < 4; rot++) {
           const cells = type.rots[rot], key = Pieces.keyOf(cells);
           if (seen.has(key)) continue;
           seen.add(key);
           const bnd = type.rotBounds[rot];
-          const top = H - 1 - bnd.maxY;
           for (let x = -bnd.minX; x <= W - 1 - bnd.maxX; x++) {
-            if (!b.fits(cells, x, top)) continue;
-            let y = top;
-            while (b.fits(cells, x, y - 1)) y--;
-            const t = b.clone();
-            t.place(cells, x, y, type.color);
-            const lines = t.fullRows().length;
-            t.clearRows(t.fullRows());
+            const sim = this.simulate(type, rot, x, b);
+            if (!sim) continue;
+            const t = sim.board, lines = sim.n + sim.c;
             const hs = heights(t.cells), bump = hs.slice(1).reduce((a, h, i) => a + Math.abs(h - hs[i]), 0);
             const cost = -lines * 1000 + (holes(t.cells) - holes0) * 60 + Math.max(...hs) * 4 + hs.reduce((a, h) => a + h, 0) * 0.5 + bump;
-            if (!best || cost < best.cost) best = { cost, id, rot, x, y, top };
+            if (!best || cost < best.cost) best = { cost, id, rot, x, y: sim.y, top: sim.top };
           }
         }
       }
@@ -743,6 +935,8 @@
     roomAfter(change) {
       const p = this.piece, before = this.board.snapshot();
       change();
+      // Whatever the recipe does after such a change happens inside the test too (Jelly's cascades).
+      this.hook('roomAfter', this.board);
       const ok = this.fitsAt(p, p.rot, p.x, p.y);
       this.board.restore(before);
       return ok;
@@ -754,13 +948,16 @@
      */
     settle() {
       if (!this.piece || this.board.isEmpty()) return null;
-      if (!this.roomAfter(() => { this.board.compact(); this.board.clearRows(this.board.fullRows()); })) return null;
+      // Cells no item removes (the recipe's keep: Protect's sprout) stay put, and what is above them lands on them.
+      const fixed = this.hooks.keep ? (v) => this.kept(v) : undefined;
+      if (!this.roomAfter(() => { this.board.compact(fixed); this.board.clearRows(this.fullRows()); })) return null;
       this.pushHistory();
       const before = this.board.snapshot(), had = this.board.count();
-      this.board.compact();
-      const rows = this.board.fullRows();
-      const result = { type: 'settle', special: 'settle', cells: [], rows, removed: this.board.clearRows(rows), lines: rows.length, score: 0, before, had };
+      this.board.compact(fixed);
+      const result = { type: 'settle', special: 'settle', cells: [], rows: [], removed: [], lines: 0, score: 0, before, had, placed: 0 };
+      this.clearInto(this.board, this.fullRows(), result);
       this.score(result);
+      this.hook('afterChange', 'settle');
       this.emit('lock', result);
       return result;
     }
@@ -783,6 +980,7 @@
         for (let y = 0; y < this.h; y++) { const v = before[y * W + from]; this.board.cells[y * W + x] = v; if (v) moves.push([from, y, x, y, v]); }
       }
       if (!this.fitsAt(p, p.rot, p.x, p.y)) { this.board.restore(before); this.history.pop(); return null; }
+      this.hook('afterChange', 'tornado');
       this.emit('tornado', moves);
       return moves;
     }
@@ -799,6 +997,7 @@
       if (!this.roomAfter(() => this.board.clearRows([0]))) return null;
       this.pushHistory();
       const row = this.board.clearRows([0])[0];
+      this.hook('afterChange', 'trapdoor');
       this.emit('trapdoor', row);
       return row;
     }
@@ -816,6 +1015,7 @@
       }
       const p = this.piece;
       if (!this.fitsAt(p, p.rot, p.x, p.y)) { this.board.restore(before); this.history.pop(); return null; }
+      this.hook('afterChange', 'flip');
       this.emit('flip', moves);
       return moves;
     }
@@ -827,6 +1027,7 @@
       this.hold = null;
       this.holdLocked = false;
       this.s = freshStats();
+      this.hook('reset');
       if (!this.piece || !this.fitsAt(this.piece, this.piece.rot, this.piece.x, this.piece.y)) {
         const e = this.piece ? this.piece.entry : this.queue.shift();
         this.fillQueue();
@@ -835,14 +1036,64 @@
       this.emit('reset');
     }
 
+    // ---- pieces given and taken (Battle's Send) ----------------------------------------------------------------------
+
+    /**
+     * Puts a piece at the front of the queue: { id, received } entries go first, in the order they came (first in,
+     * first out among received pieces). A received piece cannot be held or taken again.
+     */
+    inject(id, o) {
+      const entry = Object.assign({ id, rot: 0 }, o && o.received ? { received: true } : null);
+      let i = 0;
+      if (entry.received) while (i < this.queue.length && this.queue[i].received) i++;
+      this.queue.splice(i, 0, entry);
+      this.emit('inject', entry);
+      return entry;
+    }
+
+    /**
+     * Takes the piece in play away (its entry, special and all); the next one comes in. Refused (null, nothing
+     * changed) with no piece, a received one, or no room for the next (as a hold swap is: the same snapshot, rolled back).
+     */
+    takeCurrent() {
+      const p = this.piece;
+      if (!p || this.over || (p.entry && p.entry.received)) return null;
+      const cur = Object.assign({}, p.entry, { special: p.special || null });
+      const keep = { hold: this.hold, holdLocked: this.holdLocked, queue: this.queue.map((e) => Object.assign({}, e)), bag: this.bag.slice(), rng: this.rng.state() };
+      if (!this.spawnNext({ soft: true, from: this.absCells(p) })) {
+        Object.assign(this, { piece: p, hold: keep.hold, holdLocked: keep.holdLocked, queue: keep.queue, bag: keep.bag, rng: RNG.from(keep.rng) });
+        this.emit('noroom', 'take');
+        return null;
+      }
+      this.emit('take', cur);
+      return cur;
+    }
+
+    /** Takes the first piece of the queue away (never a received one); the queue fills up behind it. Returns its entry, or null. */
+    takeNext() {
+      const e = this.queue[0];
+      if (!e || e.received || this.fixed) return null;
+      this.queue.shift();
+      this.fillQueue();
+      this.emit('take', e);
+      return e;
+    }
+
     toJSON() {
       const p = this.piece;
-      return {
+      const out = {
         w: this.w, h: this.h, wrap: this.board.wrap, cells: this.board.toArray(), fixed: this.fixed,
         queue: this.queue, bag: this.bag, rng: this.rng.state(), hold: this.hold, holdLocked: this.holdLocked, s: this.s,
         piece: p ? Object.assign({ entry: Object.assign({}, p.entry, { special: p.special || null }), rot: p.rot, x: p.x, y: p.y },
           p.lastRot ? { lastRot: true } : null, p.kick != null ? { kick: p.kick } : null, p.fromHold ? { fromHold: true } : null) : null,
       };
+      // A Relaxed board keeps its recipe, and each part's own state (x); Classic and Puzzles have neither.
+      if (this.recipe) {
+        out.recipe = this.recipe;
+        out.x = {};
+        for (const e of this.hooks.save || []) out.x[e.key] = e.save(this);
+      }
+      return out;
     }
   }
 

@@ -2,12 +2,14 @@
 // the retired ones kept as read-only records. Plain data on the save (state.boards), no DOM: the Boards window lives in
 // js/modes.js (PlayMode), and this file is what the tests drive.
 //
-// state.boards = { seq, cur, list: [record], retired: [entry], taper: { comboId: times paid }, size: { w, h } }
-//   size: the size last chosen in the New board window (Standard, 10 x 20, until one is chosen).
+// state.boards = { seq, cur, list: [record], retired: [entry], taper: { comboId: times paid }, size: { w, h }, recipe }
+//   size, recipe: the size and board recipe (js/recipe.js) last chosen in the New board window (Standard, 10 x 20, and
+//   the default recipe until one is chosen).
 //   record: { id, name, created, touched, game, earn } — the current board's game is the save's `free` (null here);
 //           a shelved one's is its Game.toJSON() (cells, piece, hold, queue, bag, RNG state, every per-board stat).
 //           earn is the save's per-board Earn record (js/items.js), parked with the board so a milestone pays once.
-//   entry:  { id, name, created, at, reason, sum, w, h, cells } — the board's summary (summarize) and its last stack.
+//   entry:  { id, name, created, at, reason, sum, w, h, cells, recipe } — the board's summary (summarize), its last
+//           stack and its recipe, thinned (Recipe.thin).
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
@@ -25,25 +27,50 @@
 
   const STANDARD = Object.freeze({ w: 10, h: 20 });
   const LIMITS = Object.freeze({ w: Object.freeze([4, 20]), h: Object.freeze([8, 40]) });
-  /** What one line cleared on a board w wide is worth, in Standard lines. */
+  /** What one line cleared on a board w wide is worth, in Standard lines, by its size alone. */
   function scale(w) { return (typeof w === 'number' && w > 0 ? w : STANDARD.w) / STANDARD.w; }
+  /**
+   * What a row cleared on board g is worth, in Standard lines: its size and its recipe (Recipe.rules: lk = (w/10)·f,
+   * so a board of small pieces never pays more per cell than Standard). Every pay and count goes through this;
+   * scale() stays for what is about size alone. g: a Game (its rules), or a saved one ({ w, recipe }).
+   */
+  function worth(g) {
+    if (g && g.rules && typeof g.rules.lk === 'number') return g.rules.lk;
+    const w = g && typeof g.w === 'number' && g.w > 0 ? g.w : STANDARD.w;
+    return L.Recipe ? L.Recipe.rules(g && g.recipe, w).lk : scale(w);
+  }
   /** A payout in lines, rounded down to the hundredth (the wallet keeps hundredths). */
   function bank(x) { return x > 0 ? Math.floor(x * 100 + 1e-6) / 100 : 0; }
   const inRange = (v, [lo, hi]) => Number.isInteger(v) && v >= lo && v <= hi;
   /** A size a board can have: whole numbers in range. */
   function validSize(w, h) { return inRange(w, LIMITS.w) && inRange(h, LIMITS.h); }
   const clampTo = (v, [lo, hi], d) => (typeof v === 'number' && isFinite(v) ? Math.max(lo, Math.min(hi, Math.round(v))) : d);
-  /** Any { w, h } made a size a board can have (Standard where a number is missing). */
-  function clampSize(o) { o = o || {}; return { w: clampTo(o.w, LIMITS.w, STANDARD.w), h: clampTo(o.h, LIMITS.h, STANDARD.h) }; }
+  /**
+   * Any { w, h } made a size a board can have (Standard where a number is missing): with a recipe, a size a board of
+   * that recipe can have (Recipe.clampSize: its parts raise the minimums).
+   */
+  function clampSize(o, recipe) {
+    if (recipe !== undefined && L.Recipe) return L.Recipe.clampSize(o, recipe);
+    o = o || {};
+    return { w: clampTo(o.w, LIMITS.w, STANDARD.w), h: clampTo(o.h, LIMITS.h, STANDARD.h) };
+  }
   /** "12 × 24". */
   function sizeLabel(w, h) { return w + ' \u00d7 ' + h; }
 
-  function blank() { return { seq: 0, cur: null, list: [], retired: [], taper: {}, size: { w: STANDARD.w, h: STANDARD.h } }; }
+  const defaultRecipe = () => (L.Recipe ? JSON.parse(JSON.stringify(L.Recipe.DEFAULT)) : null);
+  function blank() { return { seq: 0, cur: null, list: [], retired: [], taper: {}, size: { w: STANDARD.w, h: STANDARD.h }, recipe: defaultRecipe() }; }
 
   const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
   const num = (v, d) => (typeof v === 'number' && isFinite(v) ? v : d);
-  /** A saved game that can be resumed: a size in range with a stack to match, a queue, a bag, a random stream, stats. */
-  const playable = (g) => isObj(g) && validSize(g.w, g.h) && Array.isArray(g.cells) && g.cells.length === g.w * g.h && Array.isArray(g.queue) && Array.isArray(g.bag) && g.rng != null && isObj(g.s);
+  const idOk = (e) => isObj(e) && !!L.Pieces && !!L.Pieces.get(e.id);
+  /**
+   * A saved game that can be resumed: a size in range with a stack to match, a queue, a bag, a random stream, stats;
+   * and a board recipe every part accepts (Recipe.valid), a height its recipe allows, and every piece in the queue, in
+   * hold and in play one the pieces know (Pieces.get).
+   */
+  const playable = (g) => isObj(g) && validSize(g.w, g.h) && Array.isArray(g.cells) && g.cells.length === g.w * g.h && Array.isArray(g.queue) && Array.isArray(g.bag) && g.rng != null && isObj(g.s)
+    && (!L.Recipe || (L.Recipe.valid(g) && L.Recipe.sizeOk(g.w, g.h, g.recipe)))
+    && g.queue.every(idOk) && (g.hold == null || idOk(g.hold)) && (g.piece == null || (isObj(g.piece) && idOk(g.piece.entry)));
 
   /**
    * The save's library, made whole and safe to show: only records with an id (each id once), a shelved board only if
@@ -64,6 +91,8 @@
     B.retired.forEach((e) => {
       e.sum = Object.assign(summarize({}, 0), isObj(e.sum) ? e.sum : {});
       e.cells = typeof e.cells === 'string' ? e.cells : '';
+      // A retired board's recipe is a thin copy, kept as it is (only ever shown); anything else is the default.
+      if (L.Recipe && !isObj(e.recipe)) e.recipe = L.Recipe.thin(null);
       const sz = clampSize(e);
       // A stack that does not match its size is not drawn (the record keeps its numbers).
       if (sz.w !== e.w || sz.h !== e.h || e.cells.length !== sz.w * sz.h) e.cells = '';
@@ -72,7 +101,8 @@
     });
     if (B.retired.length > MAX_RETIRED) B.retired.length = MAX_RETIRED;
     if (!isObj(B.taper)) B.taper = {};
-    B.size = clampSize(B.size);
+    B.recipe = L.Recipe ? L.Recipe.normalize(B.recipe) : null;
+    B.size = clampSize(B.size, L.Recipe ? B.recipe : undefined);
     B.seq = Math.max(num(B.seq, 0), ...B.list.concat(B.retired).map((r) => (/^b(\d+)$/.test(r.id) ? +r.id.slice(1) : 0)));
     if (typeof B.cur !== 'string' || !find(B, B.cur)) {
       const started = st.free && st.free.s && st.free.s.startedAt;
@@ -187,7 +217,10 @@
    */
   function summarize(s, now, size) {
     s = s || {};
-    return Object.assign(size ? { w: size.w, h: size.h } : {}, {
+    // A board's recipe can add its own numbers (Protect's waves, Battle's rounds): Recipe.summary, from a Game or a
+    // saved one (size is the board).
+    const ext = size && L.Recipe ? L.Recipe.summary(size) : {};
+    return Object.assign(size ? { w: size.w, h: size.h } : {}, Object.keys(ext).length ? { ext } : {}, {
       startedAt: s.startedAt || 0, life: s.startedAt ? Math.max(0, now - s.startedAt) : 0, playMs: s.playMs || 0,
       pieces: s.pieces || 0, lines: s.lines || 0, score: s.score || 0,
       quads: (s.clears && s.clears[4]) || 0, tspins: s.tspins || 0, perfect: s.perfect || 0,
@@ -199,7 +232,7 @@
 
   const CELL_CHARS = '0123456789abcdefghijklmnopqrstuv';
   /** A stack as a short string: one character per cell, its colour slot. */
-  function encodeCells(arr) { return Array.from(arr || [], (v) => CELL_CHARS[v & 31]).join(''); }
+  function encodeCells(arr) { return Array.from(arr || [], (v) => CELL_CHARS[v & L.CELL.COLOR]).join(''); }
   function decodeCells(str) { return Array.from(str || '', (c) => Math.max(0, CELL_CHARS.indexOf(c))); }
 
   /**
@@ -213,6 +246,7 @@
     const rec = B.list[i];
     B.list.splice(i, 1);
     const entry = { id: rec.id, name: rec.name, created: rec.created, at: now, reason: reason || 'manual', sum: summarize(game.s, now, game), w: game.w, h: game.h, cells: encodeCells(game.cells) };
+    if (L.Recipe) entry.recipe = L.Recipe.thin(game.recipe);
     B.retired.unshift(entry);
     if (B.retired.length > MAX_RETIRED) B.retired.length = MAX_RETIRED;
     if (B.cur === id) B.cur = null;
@@ -262,5 +296,5 @@
     return (cur ? [cur] : []).concat(B.list.filter((r) => r !== cur).sort((a, b) => (b.touched || 0) - (a.touched || 0)));
   }
 
-  L.Library = { STANDARD, LIMITS, scale, bank, validSize, clampSize, sizeLabel, playable, MAX_ACTIVE, MAX_RETIRED, NAME_MAX, ADJ, NOUN, blank, ensure, find, findRetired, current, full, cleanName, uniqueName, makeName, add, shelve, take, startNew, open, rename, summarize, encodeCells, decodeCells, retire, remove, removeRetired, newCurrent, taper, ordered };
+  L.Library = { STANDARD, LIMITS, scale, worth, bank, validSize, clampSize, sizeLabel, playable, MAX_ACTIVE, MAX_RETIRED, NAME_MAX, ADJ, NOUN, blank, ensure, find, findRetired, current, full, cleanName, uniqueName, makeName, add, shelve, take, startNew, open, rename, summarize, encodeCells, decodeCells, retire, remove, removeRetired, newCurrent, taper, ordered };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

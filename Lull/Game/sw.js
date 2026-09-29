@@ -5,7 +5,8 @@
 // site is deployed) installs beside the old one and waits: it takes over at the next launch, or at once when the page
 // asks (its quiet "Update ready" toast). The old caches go when it does.
 //
-// FILES is every file the page loads. scripts/test.cjs checks it against the files in Game/ and every one that
+// FILES is every file the page loads (the board options' files go in place of their part: lines, one part each).
+// scripts/test.cjs checks it against the files in Game/ and every one that
 // index.html, the manifest, the scripts and the stylesheet name, so a new file cannot be left out of the offline copy.
 // Unstamped (BUILD 'dev', a local server) it asks the network first and keeps what it gets, so edits show on reload.
 'use strict';
@@ -20,6 +21,7 @@ const FILES = [
   "js/icons.js",
   "js/pieces.js",
   "js/board.js",
+  "js/recipe.js",
   "js/engine.js",
   "js/items.js",
   "js/library.js",
@@ -38,6 +40,11 @@ const FILES = [
   "js/ui.js",
   "js/modes.js",
   "js/collapse.js",
+  // part:shapes
+  // part:mirror
+  // part:jelly
+  // part:protect
+  // part:battle
   "js/app.js",
   "js/webapp.js",
   "icons/icon-32.png",
