@@ -226,6 +226,14 @@ const A = require('./a11y.test.cjs');
     await t.clickUI('card-leave');
     await t.step(1);
     T.eq((await t.scenes())[0], hasResults ? 'results' : 'title', 'the results (the title until W2-Front\'s results land)');
+    // Arrested on the last day: the arrest night itself ends the game. The cell presents it (the
+    // results listener stands aside for an arrest), straight to "Read the Final Edition".
+    await arrest(0, { clock: { day: 4, min: 1440 } }, { length: 4 });
+    await P.waitForTimeout(30);
+    await t.step(1);
+    const e = await t.state();
+    T.eq([e.over, await t.scenes(), (await jail()).mode, /Read the Final Edition/.test(await K.text(t, 'card-leave'))], [true, ['jail'], 'over', true],
+      'arrested on the last day: the arrest night ends the story in the cell');
   }
 
   T.section('a resumed cell shows only its own game\'s night; one day and an unknown reason read well');

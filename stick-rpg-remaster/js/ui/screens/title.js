@@ -310,7 +310,8 @@
     function gateText() {
       if (!gatePress) return;
       var glyph = SR.ui.keyHint && typeof SR.ui.keyHint.glyph === 'function' ? SR.ui.keyHint.glyph('Pad0') : 'A';
-      gatePress.textContent = padOnly() ? text('front.gate.pad', { button: glyph }) : text('front.gate.press');
+      var line = padOnly() ? text('front.gate.pad', { button: glyph }) : text('front.gate.press');
+      if (gatePress.textContent !== line) gatePress.textContent = line;   // re-judged twice a second: write only a change
     }
     /** @returns {boolean} the stage's "turn your device" card is up (it keeps its focus and its keys). */
     function portraitUp() {

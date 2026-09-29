@@ -338,9 +338,11 @@
       SR.audio.music(null, { fade: 0 });
       return wait(150).then(function () {
         SR.audio.engine.live().trace = [];
+        // A song left within 180 s resumes where it was (read before the call: the call's first pump
+        // already moves the position on).
+        var pos = SR.audio.stats().music.resume[id] || { order: 0, step: 0 };
         SR.audio.music(id, { fade: 0, variant: o.variant });
         var start = SR.audio.stats().music.start;
-        var pos = SR.audio.stats().music.position;       // a song left within 180 s resumes where it was
         var sw = o.switchTo ? wait(o.switchAt || 1000).then(function () { SR.audio.music(id, { variant: o.switchTo }); }) : null;
         return Promise.resolve(sw).then(function () { return wait(o.ms || 4000); }).then(function () {
           var tr = SR.audio.engine.live().trace.filter(function (e) { return e.song === id; });

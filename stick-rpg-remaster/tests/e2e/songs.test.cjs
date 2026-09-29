@@ -91,8 +91,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   T.section('tempo holds on the live scheduler');
   await page.keyboard.press('KeyA');
   T.ok(await page.waitForFunction(() => SR.audio.state() === 'running', null, { timeout: 5000 }).then(() => true, () => false), 'a key unlocks the audio');
-  for (const id of ['streetlights', 'pawnbroker_blues', 'morning_edition']) {
-    const r = await E((id) => musicSheet.tempo(id, { ms: 3500 }), id);
+  // streetlights' intro is two sparse bars: 8 s reach its swung hats.
+  for (const [id, ms] of [['streetlights', 8000], ['pawnbroker_blues', 3500], ['morning_edition', 3500]]) {
+    const r = await E(([id, ms]) => musicSheet.tempo(id, { ms }), [id, ms]);
     T.ok(r.n > 10 && r.worst <= 0.001 && r.ahead > 0, id + ': ' + r.n + ' events on the step grid within 1 ms (worst ' + (r.worst * 1000).toFixed(4) +
       ' ms), each scheduled ahead (min lead ' + (r.ahead * 1000).toFixed(1) + ' ms)');
   }
@@ -127,7 +128,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   T.eq(duck, 6, 'a stinger ducks the song 6 dB');
 
   T.section('contact sheet');
-  await E(() => musicSheet.checkAll((id) => SONGS.includes(id) || id.indexOf('stingers.') === 0));
+  await E((ids) => musicSheet.checkAll((id) => ids.includes(id)), SONGS.concat(STINGERS));
   const bad = await E(() => Array.from(document.querySelectorAll('.card.fail')).map((c) => c.getAttribute('data-id')));
   T.eq(bad, [], 'no card shows a failure');
   await page.setViewportSize({ width: 1600, height: 1000 });

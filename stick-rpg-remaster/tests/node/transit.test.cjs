@@ -7,8 +7,9 @@
 //     fixed seeds (wasted, no gun, no ammo, too weak, no phone, busted, screwed, the offer), the bust
 //     threshold with Heat (and Crayonburg's "at least"), take / walk / haggle (P1), tours (P1) and
 //     "Wait for the tour bus" (P1);
-//   - jail length (base + floor(Heat / 25)), the Jail Day choices, the jail nights and the release
-//     (08:00, Heat 20), bail (P1), and a timed game that ends in jail;
+//   - jail length (base + floor(Heat / 25): store 3 or 5 on Hardcore, bank 7, bust 5, police 2), the
+//     Jail Day choices, the jail nights and the release (08:00, Heat 20), bail (P1), and a timed game
+//     that ends in jail; Sky Bus Nationalised ($0 tickets, still 00:00 only);
 //   - HP 0: the hospital bill per difficulty with the shortfall written off, the hospital night (the
 //     next day at 12:00, HP 50 %), Hardcore's death, a timed game that ends in hospital, and the
 //     discharge row.
@@ -274,6 +275,34 @@ T.section('jail: length, the Jail Day choices, the nights and the release (B-11c
   run(nb, 'testtransit.arrest');
   T.eq(json(preview(nb, 'jail.bail')).reason, 'reason.needPhone', 'bail needs a phone');
   off();
+}
+
+T.section('jail length per reason and difficulty: base + floor(Heat / 25) (B-11c; GDD §4.10, §4.16)');
+{
+  ['store', 'bank', 'bust', 'police'].forEach((reason) => {
+    SR.def.action('testtransit.arrest.' + reason, { building: 'testtransit', group: 'special', label: 'act.jail.day', p: 0, timeRule: 'free',
+      effects: [['fn', 'crime.jail', reason]] });
+  });
+  const len = (reason, heat, opts) => {
+    const s = state({ clock: { min: 1440 }, stats: { heat } }, opts);
+    return run(s, 'testtransit.arrest.' + reason).jailed.days;
+  };
+  T.eq([len('store', 0), len('bank', 0), len('bust', 0), len('police', 0)], [3, 7, 5, 2], 'bases: store 3, bank 7, bust 5, police catch 2');
+  T.eq([len('store', 24), len('store', 25), len('store', 49), len('store', 50), len('bank', 99)], [3, 4, 4, 5, 10],
+    '+ floor(Heat at arrest / 25)');
+  T.eq([len('store', 0, { difficulty: 'hardcore' }), len('store', 0, { difficulty: 'relaxed' }), len('bank', 0, { difficulty: 'hardcore' })], [5, 3, 7],
+    'the store robbery\'s base is 5 on Hardcore (orig), 3 on Relaxed; the others do not change');
+}
+
+T.section('Sky Bus Nationalised: tickets are $0 (B-12 nationalised), the red-eye still only at 00:00');
+{
+  const s = ready({ money: { cash: 0, bank: 0 }, election: { decrees: ['nationalised'] } });
+  const pv = json(preview(s, 'trip.redeye', { city: 'eraser', kind: 'smuggle' }));
+  T.eq([pv.ok, pv.cost.cash], [true, 0], 'the ticket chip reads $0 and boarding with no cash is fine');
+  const r = run(s, 'trip.redeye', { city: 'eraser', kind: 'smuggle' }, 3);
+  T.eq([r.ok, s.money.cash >= 0, s.clock.min], [true, true, 1440], 'boards for free and takes the day');
+  T.eq(json(preview(ready({ clock: { min: 60 }, election: { decrees: ['nationalised'] } }), 'trip.redeye', { city: 'eraser', kind: 'smuggle' })).reason,
+    'reason.redEye', 'a free ticket still leaves at 00:00 only');
 }
 
 T.section('the game can end in jail (a timed game; GDD §4.10 "jail days count and can end it")');

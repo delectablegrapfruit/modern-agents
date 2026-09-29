@@ -87,3 +87,18 @@ Each item: the file, the exact change, why, and what W2-Transit does meanwhile.
 - **Meanwhile:** nothing in W2-Transit's files can see the Keep-playing choice (it emits no event); the
   jail scene takes the player back after the next night.
 
+
+## 6. `js/ui/components.js` (lead; W1-D's): a detached tooltip must also drop its pending show
+
+- **Change:** in `tooltip(target, content)`, the detach function (and `hideTip(owner)`) should clear a
+  tooltip that is still *pending* for that target, not only one already shown: `hideTip(owner)` returns
+  early when `owner !== tipOwner`, and `tipOwner` is set only once the tip shows, so a hover or focus
+  less than 400 ms before a `button.update()` leaves `tipTimer` running. E.g. keep the pending target
+  (`tipPending = target` in `later()`) and in `hideTip(owner)` clear the timer when `owner === tipPending`.
+- **Why:** seen in review on the Jail Day card: hover the refused "Walk out", then serve the last day
+  (or the day that ends a timed game): the button is updated to "Walk out" (enabled) or "Read the Final
+  Edition", its old tooltip is detached, and 400 ms later the old tooltip still shows "Walk out" over it
+  (the content closure keeps the old label). Any button whose disabled reason goes away while hovered
+  can show the same stale tip.
+- **Meanwhile:** `js/scenes/jail.js` calls `SR.ui.tooltip.hide()` (which clears the pending timer) when
+  the card's mode changes; `tests/e2e/jail.test.cjs` covers it ("no stale tooltip of the refused Walk out").

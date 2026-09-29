@@ -4,8 +4,8 @@
 // ids, ART_AUDIO §7), voice (a voice-blip sfx name or a pitch factor), schedule, idle ('sit' |
 // 'stand' | 'pace': what they do at their spot; 'pace' walks the worldmap `people` path of that
 // spot), facing (degrees clockwise from north while idle), barks (text keys a person calls out when
-// you pass; P1, shown with the crowd's barks under `cityReacts`, GDD §3.11), gifts ({ item: action id }: what the Bag's Give runs while their dialog is open, GDD
-// §6.4), p }.
+// you pass; P1, with the crowd's barks under `cityReacts`, GDD §3.11), gifts ({ item: action id }:
+// what the Bag's Give runs while their dialog is open, GDD §6.4), p }.
 // Schedule rows: [weekdays, from, to, placeId, cond?]: weekdays 'all' or a list of day names or
 // indices (0 = Monday); from / to in clock minutes, from ≤ now < to (to 1440 includes 24:00; from >
 // to wraps past midnight); placeId a worldmap `spots` name (or a building id: inside, not on the

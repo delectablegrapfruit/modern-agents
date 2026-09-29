@@ -7,9 +7,11 @@
 // hour that fits the wall, below it the attempt fails and still costs the hour), the P1 Timing Ring
 // attempt behind `arcs` and its skin, the schedules and the day-1 job offer; then the game in
 // Chromium over file:// (the city's people at their spots, Red pacing, the way back after a hop,
-// barks, "[E] Talk to ...", each street dialog with its chips, the NumberField, the replies, the
-// tenth pack, the hotwire and the ring's minigame, the parked junker, the answering machine) with
-// zero console errors. Screenshots go to shots/W2-Street/ (git-ignored).
+// barks (P1, `cityReacts`), "[E] Talk to ...", each street dialog with its chips, the NumberField
+// and its exact "All I can afford", the replies, the tenth pack, the hotwire and the ring's
+// minigame (also left by a scene change or a quit), the parked junker, the answering machine, a
+// sheet that fails to open) with zero console errors. Screenshots go to shots/W2-Street/
+// (git-ignored).
 //   node tests/e2e/street.test.cjs
 'use strict';
 const path = require('path');
@@ -393,6 +395,7 @@ function rules() {
   await t.setTime(480);
   await talkTo(2090, 1180);
   T.eq([await choices(), await line()], [['street.kid.givePack', 'leave'], (await text('greet.kid.first'))[0]], 'his first ask and the pack row');
+  await t.step(40);   // the ground around a far teleport bakes over a few frames (the world is frozen under the sheet)
   await shot('dialog-kid.png');
   await t.clickUI('choice-street.kid.givePack');
   await t.step(3);

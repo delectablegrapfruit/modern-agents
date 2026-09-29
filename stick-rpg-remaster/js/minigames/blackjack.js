@@ -138,7 +138,10 @@
     function mirror() {
       var parts = [];
       var s = live();
-      host.label('status', T('mg.blackjack.handsToday', { n: Math.min(BJ().handsPerDay, (s && s.daily ? s.daily.bjHands || 0 : 0) + (r && phase !== 'bet' && phase !== 'outcome' ? 1 : 0)), max: BJ().handsPerDay }));
+      // "Hand 12 of 60 today" (UI §5.8): the hand on the felt, or the next one to be dealt; while an
+      // outcome shows, the hand just counted (never "Hand 0").
+      var played = s && s.daily ? s.daily.bjHands || 0 : 0;
+      host.label('status', T('mg.blackjack.handsToday', { n: Math.min(BJ().handsPerDay, played + (phase === 'outcome' ? 0 : 1)), max: BJ().handsPerDay }));
       host.label('info', T('mg.blackjack.bet', { money: money(bet) }));
       if (r) {
         parts.push(r.holeShown ? T('mg.blackjack.dealerHas', { total: totalText(r.dealer) }) : T('mg.blackjack.dealerShows', { card: cardName(r.up) }));

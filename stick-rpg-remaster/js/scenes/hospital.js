@@ -8,9 +8,11 @@
 // base scene, so a fall inside a dialog or a minigame is presented once that closes.
 //
 // The scene: the Stick General ward (the 'hospital' interior of js/art/interiors/special.js, you in
-// the bed) under the gag: the FLATLINED stamp over a flat line and the dirge, then the defibrillator's
-// "BZZT!" (a flash, the line jumps back to a beat), then "...JUST KIDDING", then the Stick General
-// card (js/ui/screens/hospital.js: the bill, the part written off, "Discharged at 12:00"). Its
+// the bed) under the gag: the FLATLINED stamp over a flat line, silence and the dirge, then the
+// defibrillator's "BZZT!" (a flash, the line jumps back to a beat, the ward's song starts), then
+// "...JUST KIDDING", then the Stick General card (js/ui/screens/hospital.js: the bill, the part
+// written off, "Discharged at 12:00"). On admission the player already stands outside the home door
+// ('afterHospital') as far as the world and the state go, so a save from the ward resumes there. Its
 // button runs hospital.discharge, then the Stick General edition of the report (W2-Home's `report`
 // scene, pushed with the hospital night's Report); the report scene finishes the night (its events,
 // day:started) and returns to the city outside your home door ('afterHospital'). If no report scene

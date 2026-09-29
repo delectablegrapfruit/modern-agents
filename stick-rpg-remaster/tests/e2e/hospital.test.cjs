@@ -204,6 +204,25 @@ const A = require('./a11y.test.cjs');
     T.ok((await t.scenes())[0] === 'hospital' && hz && hz.phase === 'gag' && hz.t < 0.1 && !hz.discharged,
       'the dialog closed: the hospital scene, its gag from the start', { scenes: await t.scenes(), hz });
     T.eq(await ev(() => window.SR.ui.stamp.current()), 'FLATLINED', 'with the FLATLINED stamp');
+    // Hardcore: FLATLINED waits for the dialog the same way (and the results wait for FLATLINED).
+    await t.newGame({ seed: 7, difficulty: 'hardcore' });
+    await t.goto('city');
+    await t.set({ clock: { min: 900 }, stats: { hp: 5 } });
+    await ev(() => { window.SR.ui.dialog.open({ id: 'test-dialog', name: 'card.trip.title', text: 'card.trip.home', vars: { time: '15:00' },
+      choices: [{ id: 'leave', label: 'card.trip.ok' }] }); });
+    await t.step(1);
+    const hd = await t.act('world.fall', { x: 1, y: 2 });
+    await t.step(3);
+    await P.waitForTimeout(30);
+    T.eq([hd.down && hd.down.outcome, await t.scenes()], ['death', ['city', 'dialog']], 'Hardcore, HP 0 in a dialog: nothing takes the screen yet');
+    for (let i = 0; i < 4 && (await t.scenes()).indexOf('dialog') >= 0; i++) {
+      await P.waitForTimeout(60);
+      await t.press('back');
+      await t.step(1);
+    }
+    await P.waitForTimeout(30);
+    const dz = await K.info(t, 'death');
+    T.ok((await t.scenes())[0] === 'death' && dz && dz.t < 0.1, 'the dialog closed: FLATLINED from its start', { scenes: await t.scenes(), dz });
     await t.fast(true);
   }
 
