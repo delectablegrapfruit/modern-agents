@@ -822,15 +822,37 @@
 
   // ---- piece previews -------------------------------------------------------------------------------------------------
 
-  /** Draws a piece (by queue entry) fitted and centred in a box. */
+  /** The cells of a piece as a preview draws them. */
+  function previewCells(entry) {
+    const type = Pieces.get(entry.id);
+    if (!type) return null;
+    return L.SINGLE_SPECIALS && L.SINGLE_SPECIALS.has(entry.special) ? [[0, 0]] : type.rots[entry.rot || 0];
+  }
+
+  /** The share of maxCell a piece's cells can have and still fit the box (at most 1). */
+  function fitOf(entry, box, maxCell) {
+    const cells = previewCells(entry);
+    if (!cells) return 1;
+    const b = Pieces.boundsOf(cells);
+    return Math.min(1, (box.w - 4) / b.w / maxCell, (box.h - 4) / b.h / maxCell);
+  }
+
+  /** A queue slot's box for its piece, and the largest cell there (the piece coming first is drawn largest). */
+  const queueBox = (box) => ({ x: box.x + 4, y: box.y + 4, w: box.w - 8, h: box.h - 8 });
+  const queueCell = (i, s) => (i === 0 ? s * 0.62 : s * 0.46);
+
+  /**
+   * Draws a piece (by queue entry) fitted and centred in a box, its cells at most maxCell (times look.scale, when
+   * pieces share a scale). Returns the drawn size.
+   */
   function drawPieceIn(ctx, entry, box, maxCell, look) {
     const type = Pieces.get(entry.id);
-    if (!type) return;
+    if (!type) return null;
     const special = entry.special;
     const single = L.SINGLE_SPECIALS && L.SINGLE_SPECIALS.has(special);
-    const cells = single ? [[0, 0]] : type.rots[entry.rot || 0];
+    const cells = previewCells(entry);
     const b = Pieces.boundsOf(cells);
-    const s = Math.floor(Math.min(maxCell, (box.w - 4) / b.w, (box.h - 4) / b.h));
+    const s = Math.floor(Math.min(maxCell * (look.scale || 1), (box.w - 4) / b.w, (box.h - 4) / b.h));
     const ox = box.x + (box.w - b.w * s) / 2, oy = box.y + (box.h - b.h * s) / 2;
     const color = look.color(type.color);
     for (const [cx, cy] of cells) {
@@ -838,6 +860,7 @@
       if (single) drawSpecial(ctx, special, x, y, s, look.t);
       else drawCell(ctx, look.skin, color, x, y, s, look.alpha);
     }
+    return { w: b.w * s, h: b.h * s, cell: s };
   }
 
   // ---- the board view -------------------------------------------------------------------------------------------------
@@ -1255,12 +1278,12 @@
         rr(ctx, b.x + 0.5, b.y + 0.5, b.w - 1, b.h - 1, r); ctx.stroke();
       };
       const pl = { skin: look.skin, color: (c) => (this.view.mono ? look.monoColor : look.colors[c]), t: now };
-      // Hold
+      // Hold (its piece is drawn with the queue's, below)
       if (!g.mods.noHold) {
         label('HOLD', hold.x, hold.y, hold.w);
         tray(hold, this.holdHover);
-        if (g.hold) drawPieceIn(ctx, g.hold, hold, s * 0.72, Object.assign({}, pl, { alpha: g.holdLocked && !g.freeHold ? 0.35 : 1 }));
       }
+      const items = []; // the queue's pieces, drawn once every box is known
       // Next: the queue in one tray, the piece coming first and largest, the rest after a hairline.
       const n = Math.min(g.fixed ? g.queue.length : g.previewCount, g.queue.length);
       label('NEXT', next.x, next.y, next.w, g.fixed ? g.queue.length + ' LEFT' : null);
@@ -1273,7 +1296,7 @@
         for (let i = 0; i < shown; i++) {
           const y0 = next.y + (i ? first + (i - 1) * slot : 0), h0 = i ? slot : first;
           if (i === 1) { ctx.fillStyle = th.hair || th.line; ctx.fillRect(next.x + s * 0.4, Math.round(y0) + 0.5, next.w - s * 0.8, 1); }
-          this.drawQueueItem(ctx, g.queue[i], { x: next.x, y: y0 + (i ? s * 0.1 : s * 0.05), w: next.w, h: h0 }, i, s, pl);
+          items.push({ entry: g.queue[i], box: { x: next.x, y: y0 + (i ? s * 0.1 : s * 0.05), w: next.w, h: h0 }, i });
         }
       } else {
         const first = Math.min(Math.round(s * 3.4), next.w), slot = Math.round(s * 2.8);
@@ -1283,8 +1306,23 @@
         for (let i = 0; i < shown; i++) {
           const x0 = next.x + (i ? first + (i - 1) * slot : 0), w0 = i ? slot : first;
           if (i === 1) { ctx.fillStyle = th.hair || th.line; ctx.fillRect(Math.round(x0) + 0.5, next.y + s * 0.4, 1, next.h - s * 0.8); }
-          this.drawQueueItem(ctx, g.queue[i], { x: x0, y: next.y, w: w0, h: next.h }, i, s, pl);
+          items.push({ entry: g.queue[i], box: { x: x0, y: next.y, w: w0, h: next.h }, i });
         }
+      }
+      // With big pieces in play, the held and coming pieces share one scale, so a big piece shows twice the size of a
+      // tetromino: the largest scale at which each fits its box (at least half the usual size).
+      const heldBox = !g.mods.noHold && g.hold ? { entry: g.hold, box: hold, max: s * 0.72 } : null;
+      const shownIn = items.map((it) => ({ entry: it.entry, box: queueBox(it.box), max: queueCell(it.i, s) }));
+      let scale = 1;
+      if (!this.view.blind && [g.piece && g.piece.type, g.hold && Pieces.get(g.hold.id)].concat(g.queue.map((e) => Pieces.get(e.id))).some((t) => t && t.big)) {
+        for (const it of heldBox ? shownIn.concat([heldBox]) : shownIn) scale = Math.min(scale, fitOf(it.entry, it.box, it.max));
+        scale = Math.max(0.5, scale);
+      }
+      if (heldBox) drawPieceIn(ctx, g.hold, hold, s * 0.72, Object.assign({}, pl, { alpha: g.holdLocked && !g.freeHold ? 0.35 : 1, scale }));
+      this.drawnQueue = [];
+      for (const it of items) {
+        const d = this.drawQueueItem(ctx, it.entry, it.box, it.i, s, Object.assign({}, pl, { scale }));
+        if (d) this.drawnQueue.push(Object.assign({ id: it.entry.id, big: !!Pieces.get(it.entry.id).big }, d));
       }
       if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
       ctx.restore();
@@ -1299,7 +1337,7 @@
         ctx.fillText('?', box.x + box.w / 2, box.y + box.h / 2); ctx.textAlign = 'start'; ctx.textBaseline = 'top';
         return;
       }
-      drawPieceIn(ctx, entry, { x: box.x + 4, y: box.y + 4, w: box.w - 8, h: box.h - 8 }, i === 0 ? s * 0.62 : s * 0.46, Object.assign({}, pl, { alpha: i === 0 ? 1 : 0.8 }));
+      return drawPieceIn(ctx, entry, queueBox(box), queueCell(i, s), Object.assign({}, pl, { alpha: i === 0 ? 1 : 0.8 }));
     }
 
     // ---- effects hooks ---------------------------------------------------------------------------------------------

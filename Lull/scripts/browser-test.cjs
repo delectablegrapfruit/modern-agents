@@ -1103,7 +1103,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   const spinInv = await ev(() => {
     const m = Lull.app.modes.puzzle, keep = Lull.app.settings.ccwPuzzles;
     Lull.app.settings.ccwPuzzles = true;
-    m.load('MS-5MJGQLP', {});
+    m.load('MS-2FTS5NX', {});
     const foot = document.querySelector('#puz-mods .mod-spin').dataset.tipFoot, g = m.game, r0 = g.piece.rot;
     m.action('ccw');
     const turned = (g.piece.rot - r0 + 4) % 4;
@@ -1112,6 +1112,38 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   });
   check('Both Ways + Inverted: the chip says Z turns clockwise, and it does', /invert/.test(spinInv.mods) && /Z turns clockwise/.test(spinInv.foot) && spinInv.turned === 1, JSON.stringify(spinInv));
   await ev(() => Lull.app.modes.puzzle.loadNumbered('H', 3));
+  // Big Minos: a puzzle per difficulty and mix, big pieces and tetrominoes side by side in the queue (light theme).
+  const bigSeeds = { 'E-sparse': 'E-56SQ6JX', 'E-half': 'E-574TJDJ', 'E-all': 'E-54PCEP7', 'M-sparse': 'M-2T6HF4X', 'M-half': 'M-24M44U4', 'M-all': 'M-52CC38R', 'H-sparse': 'H-3G2EMLJ', 'H-half': 'H-2V9645B', 'H-all': 'H-2UQW5HD' };
+  const bigTheme0 = await ev(() => Lull.app.settings.theme);
+  await ev(() => { Lull.app.settings.theme = 'light'; Lull.app.applySettings(); });
+  let bigQueues = 0;
+  for (const k of Object.keys(bigSeeds)) {
+    const big = await ev((s) => {
+      const m = Lull.app.modes.puzzle;
+      m.load(s, {});
+      const p = m.puzzle, chip = document.querySelector('#puz-mods .mod-big');
+      m.view.dirty = true; m.view.render(performance.now());
+      // The pieces as the queue draws them: [id, big, width, height, cell] each.
+      const drawn = (m.view.drawnQueue || []).map((d) => [d.id, d.big, d.w, d.h, d.cell]);
+      let pop = null;
+      if (chip) { chip.click(); const b = document.querySelector('.puz-pop .tip-body'); pop = b && b.textContent; chip.click(); }
+      return { mix: p.mix, kinds: p.pieces.map((e) => (Lull.Pieces.get(e.id).big ? 'B' : 'r')).join(''), tip: chip && chip.dataset.tip, pop, queue: m.game.queue.length + 1 === p.pieces.length, drawn };
+    }, bigSeeds[k]);
+    const mix = k.slice(2), allBig = !/r/.test(big.kinds), note = allBig ? 'Every piece is twice the size.' : 'Some pieces are twice the size.';
+    check('Big Minos ' + k + ' (' + big.kinds + '): the chip says "' + note + '", and big pieces' + (mix === 'all' ? '' : ' among tetrominoes') + ' in the queue',
+      big.mix === mix && big.tip === note && big.pop === note && big.queue && /B/.test(big.kinds) && (mix === 'all' || !allBig), JSON.stringify(big));
+    // In a queue of big pieces and tetrominoes, every big piece is drawn larger than any tetromino beside it.
+    const bigs = big.drawn.filter((d) => d[1]), smalls = big.drawn.filter((d) => !d[1]);
+    if (bigs.length && smalls.length) {
+      const area = (d) => d[2] * d[3];
+      check('Big Minos ' + k + ': the queue draws big pieces larger than the tetrominoes', Math.min(...bigs.map(area)) > Math.max(...smalls.map(area)), JSON.stringify(big.drawn));
+      bigQueues++;
+    }
+    await page.waitForTimeout(80);
+    await shot('26-big-' + k);
+  }
+  check('mixed Big Minos queues were measured', bigQueues >= 4, String(bigQueues));
+  await ev((t) => { Lull.app.settings.theme = t; Lull.app.applySettings(); Lull.app.modes.puzzle.loadNumbered('H', 3); }, bigTheme0);
 
   // ---- Undo: one item for Relaxed and Puzzles; a puzzle undo uses one held, or buys one at its price --------------
   console.log('puzzle undo');
@@ -1297,7 +1329,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
       progress: document.querySelector('#puz-goal .prog').textContent.length > 0,
       title: document.querySelector('#puz-title .t').textContent === p.title,
       chips: chips.length === p.mods.length && chips.every((c) => c.dataset.tip && c.dataset.tipTitle && c.querySelector('svg')),
-      spin: !!document.querySelector('#puz-mods .mod-spin') && /counter-clockwise/.test(document.querySelector('#puz-mods .mod-spin').dataset.tipFoot || ''),
+      spin: !!document.querySelector('#puz-mods .mod-spin') && /^Z turns (counter-)?clockwise/.test(document.querySelector('#puz-mods .mod-spin').dataset.tipFoot || ''),
       mods: p.mods.join(' '),
     };
   });

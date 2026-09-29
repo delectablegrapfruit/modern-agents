@@ -167,7 +167,7 @@ that single button alone cannot solve it. Wildcards:
 
 | Wildcard | |
 |---|---|
-| Big Minos | every piece is 2×2 per block, moving one cell at a time |
+| Big Minos | some pieces are twice the size, each block 2×2 cells, moving one cell at a time: usually one or two among ordinary tetrominoes, sometimes about half, now and then all or nearly all (on Hard a tetromino still comes first); the chip says whether some or every piece is big. A big piece usually comes late in the queue, so the pieces before it have to keep its space open; the queue draws them to the same scale as the tetrominoes, so they look twice the size. No gems on Hard |
 | Odd Shapes | trominoes and all twelve pentominoes |
 | Wraparound | the side walls are portals (they glow, with ⇆) |
 | Rigid | no turning; each piece arrives already facing its way |
@@ -179,7 +179,7 @@ that single button alone cannot solve it. Wildcards:
 | Blind Queue | no preview |
 | Hold | puzzles have no hold slot unless this is on — and then the queue arrives out of order, and a search proves the puzzle cannot be solved without holding |
 | Monochrome | as named |
-| Both Ways | only on `S` seeds: a spot needs Z (the other turn: counter-clockwise, clockwise under Inverted Controls) or A (half turn) |
+| Both Ways | only on `S` seeds, never with Rigid or Heavy: a spot needs Z (the other turn: counter-clockwise, clockwise under Inverted Controls) or A (half turn) |
 
 The tab reads top to bottom: a slim bar (difficulty; Daily, pressed while today's is in play and ticked once it is
 solved; Seed; History — icons alone in a narrow window), then the puzzle's card — its name (a small tick once solved), where it

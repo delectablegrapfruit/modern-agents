@@ -678,7 +678,7 @@ test('gem puzzles need every piece: fewer never take every gem, in order or in a
     if (p.goal.type === 'gems') check(p);
   }
   // Gem puzzles with Hold are rare; these are some.
-  for (const s of ['E-2A8MPRG', 'E-2PUJ5AL', 'M-3S87VMC', 'M-3EXY2TD', 'H-49QGN36', 'HS-2BRP46L']) {
+  for (const s of ['E-5TFWL7Y', 'E-5RDPZKD', 'M-2EU4ECQ', 'M-33553G6']) {
     const p = Puzzles.generate(s);
     assert(p.mods.includes('hold'), 'Hold: ' + s);
     check(p);
@@ -686,9 +686,9 @@ test('gem puzzles need every piece: fewer never take every gem, in order or in a
   assert(seen.E >= 6 && seen.M >= 15 && seen.H >= 12 && proved > 100, 'gem puzzles turn up: ' + JSON.stringify(seen) + ', ' + proved);
 });
 test('making gem puzzles need every piece left every other puzzle exactly as it was', () => {
-  // A fingerprint of every puzzle among the first 40 seeds of each kind that was not a gem puzzle, taken before the
-  // change (these numbers were gem puzzles then; they may change, and a few now settle for lines).
-  const gems = { E: [14, 25, 38, 40], ES: [1, 11, 15], M: [3, 4, 10, 13, 14, 22, 23, 26, 27, 28, 30, 39], MS: [1, 2, 4, 17, 21, 23, 25, 26, 27, 30, 31, 34, 39], H: [9, 17, 20, 21, 22, 25, 26, 27, 32], HS: [10, 14, 16, 22, 23, 25, 38] };
+  // A fingerprint of every puzzle among the first 40 seeds of each kind that is not a gem puzzle (these numbers are),
+  // retaken whenever GEN_VERSION goes up (6: Big Minos review fixes). A change to gem puzzles alone must leave it as it is.
+  const gems = { E: [8, 9, 10, 12, 15, 20, 21, 32, 36, 37], ES: [3, 13, 18, 27, 30], M: [4, 5, 7, 14, 16, 23, 29, 32], MS: [2, 3, 13, 18, 20, 21, 30, 31, 34], H: [1, 3, 4, 7, 8, 17, 31, 33, 35, 36], HS: [3, 5, 17, 25] };
   const h = require('crypto').createHash('sha1');
   let n = 0;
   for (const d of ['E', 'M', 'H']) for (const spin of [false, true]) for (let i = 1; i <= 40; i++) {
@@ -697,7 +697,7 @@ test('making gem puzzles need every piece left every other puzzle exactly as it 
     assert.notStrictEqual(p.goal.type, 'gems', p.seed);
     n++; h.update(JSON.stringify(p));
   }
-  assert.strictEqual(n + ' ' + h.digest('hex'), '192 c6040cf70e8847a36ebcf6c8cc8058f59ae84fac');
+  assert.strictEqual(n + ' ' + h.digest('hex'), '194 67e1fc10588b4ca6b562e20da7e1f25dd2b5daa9');
 });
 test('dailies: one seed per date, the same everywhere, and every seed knows its date', () => {
   const seen = new Set();
@@ -719,6 +719,8 @@ test('the same seed builds the same puzzle', () => {
   }
 });
 const counts = { E: 250, M: 250, H: 250 };
+// Numbered seeds as they were generated (and replayed) here, for the Big Minos tests below.
+const generated = { E: new Map(), M: new Map(), H: new Map() };
 for (const d of ['E', 'M', 'H']) {
   test(Puzzles.DIFFS[d].name + ': ' + counts[d] + ' puzzles generate fast and play out through the engine', () => {
     const mods = {}; let ms = 0, worst = 0, pieces = 0;
@@ -727,6 +729,7 @@ for (const d of ['E', 'M', 'H']) {
       const p = Puzzles.generate(Puzzles.numberedSeed(d, n));
       const dt = Date.now() - t0; ms += dt; worst = Math.max(worst, dt);
       assert(p && !p.fallback, 'built ' + n);
+      generated[d].set(n, p);
       p.mods.forEach((m) => { mods[m] = (mods[m] || 0) + 1; });
       pieces += p.pieces.length;
       replay(p);
@@ -741,6 +744,171 @@ for (const d of ['E', 'M', 'H']) {
     console.log('       avg ' + avg.toFixed(1) + ' ms, worst ' + worst + ' ms, ' + (pieces / counts[d]).toFixed(1) + ' pieces each');
   });
 }
+// Big Minos: each seed draws a mix of big pieces and tetrominoes (BIG_MIX in js/puzzlegen.js). The first `want`
+// Big Minos puzzles among the numbered seeds, each replayed through the engine.
+function bigPuzzles(d, want) {
+  const out = [];
+  for (let n = 1; out.length < want; n++) {
+    let p = generated[d].get(n);
+    if (!p) {
+      p = Puzzles.generate(Puzzles.numberedSeed(d, n));
+      assert(p && !p.fallback, 'built ' + p.seed);
+      generated[d].set(n, p);
+      if (p.mods.includes('big')) replay(p);
+    }
+    if (p.mods.includes('big')) out.push(p);
+  }
+  return out;
+}
+const BIG_WANT = { E: 100, M: 60, H: 60 };
+const queueOf = (p) => p.solution.map((s) => (Pieces.get(s.id).big ? 'B' : 'r')).join('');
+test('Big Minos puzzles vary their mix: mostly a big piece or two among tetrominoes, some about half, a few all or nearly all big', () => {
+  const shares = {};
+  for (const d of ['E', 'M', 'H']) {
+    const ps = bigPuzzles(d, BIG_WANT[d]), n = ps.length, by = { sparse: 0, half: 0, all: 0 };
+    for (const p of ps) {
+      const q = queueOf(p), big = q.split('B').length - 1;
+      assert(p.pieces.every((e) => Pieces.get(e.id).big || Pieces.TETROMINOES.includes(e.id)), 'big pieces and tetrominoes: ' + p.seed);
+      assert(big >= 1, 'at least one big piece: ' + p.seed);
+      by[p.mix]++;
+      if (p.mix === 'sparse') assert(2 * big < q.length, 'sparse: fewer than half big ' + q + ' ' + p.seed);
+      else if (p.mix === 'half') assert(2 * big >= q.length && big < q.length, 'half: about half big ' + q + ' ' + p.seed);
+      else if (p.mix === 'all') assert(big >= 3 && (d === 'H' ? q[0] === 'r' && big >= 0.6 * q.length : big === q.length), 'all: all big (Hard: a tetromino first, then nearly all big) ' + q + ' ' + p.seed);
+      else assert.fail('no mix: ' + p.seed);
+      // A big piece counts where it comes late: a queue only opens with one when one also ends it.
+      assert(q[0] === 'r' || q[q.length - 1] === 'B', 'no big filler first: ' + q + ' ' + p.seed);
+      if (d === 'H') assert.notStrictEqual(p.goal.type, 'gems', 'no gems on Hard: ' + p.seed);
+    }
+    assert(by.sparse >= 0.45 * n && by.sparse <= 0.75 * n && by.half >= 0.15 * n && by.half <= 0.45 * n && by.all >= 2 && by.all <= 0.2 * n && by.sparse > by.half && by.half > by.all,
+      d + ': about 6 : 3 : 1, ' + JSON.stringify(by));
+    shares[d] = by.sparse + ' : ' + by.half + ' : ' + by.all;
+  }
+  console.log('       sparse : half : all ' + JSON.stringify(shares));
+});
+test('Big Minos: the big pieces matter — set first, as filler, they mostly leave no way through', () => {
+  // Lines and clear puzzles with tetrominoes too, played in order: the big pieces moved to the front of the queue.
+  const share = { E: 0.35, M: 0.5, H: 0.6 };
+  for (const d of ['E', 'M', 'H']) {
+    let n = 0, stuck = 0;
+    for (const p of bigPuzzles(d, BIG_WANT[d])) {
+      const q = p.solution.map((s) => ({ id: s.id, rot: s.rot })), big = q.filter((e) => Pieces.get(e.id).big);
+      if (p.goal.type === 'gems' || p.mods.includes('hold') || big.length === q.length) continue;
+      n++;
+      if (Puzzles.solvableInOrder(p, big.concat(q.filter((e) => !Pieces.get(e.id).big)), 20000) === false) stuck++;
+    }
+    assert(n >= 15 && stuck >= share[d] * n, d + ': big pieces first leave no way through in ' + stuck + ' of ' + n);
+  }
+});
+/**
+ * −log2 of the chance that a player who sets each piece, in order, on a random spot filling only holes of the band
+ * (every spot the engine's moves reach) solves a lines or clear puzzle; Infinity past `limit` positions.
+ */
+function puzzleBits(p, limit) {
+  const opts = { noRotate: p.mods.includes('rigid'), heavy: p.mods.includes('heavy'), both: true, engine: true };
+  const board = Board.fromArray(p.w, p.h, p.cells, { wrap: p.wrap });
+  const types = p.pieces.map((e) => Pieces.get(e.id)), memo = new Map();
+  let nodes = 0;
+  const go = (i, band, lines) => {
+    if (i === types.length) return Puzzles.goalMet(p, board, lines) ? 1 : 0;
+    const k = i + '|' + band.join() + '|' + board.cells.join('');
+    if (memo.has(k)) return memo.get(k);
+    if (++nodes > limit) throw puzzleBits;
+    const type = types[i];
+    const spots = Puzzles.restingStates(board, type, p.pieces[i].rot || 0, opts, (r, x, y) => type.rots[r].every(([, cy]) => band.includes(y + cy)));
+    let sum = 0;
+    for (const [r, x, y] of spots) {
+      const snap = board.snapshot();
+      board.place(type.rots[r], x, y, type.color);
+      const rows = board.fullRows();
+      board.clearRows(rows);
+      sum += go(i + 1, band.filter((b) => !rows.includes(b)).map((b) => b - rows.filter((c) => c < b).length), lines + rows.length);
+      board.restore(snap);
+    }
+    const v = spots.length ? sum / spots.length : 0;
+    memo.set(k, v);
+    return v;
+  };
+  const band = [];
+  for (let y = p.base; y < p.base + p.goal.lines; y++) band.push(y);
+  try { return -Math.log2(go(0, band, 0)); } catch (e) { if (e === puzzleBits) return Infinity; throw e; }
+}
+test('Big Minos puzzles are about as hard as the other puzzles of their difficulty', () => {
+  // Coarse: lines and clear puzzles without Hold, the first `take` of each kind. A Big Minos puzzle is harder than
+  // another puzzle about half the time (when every piece was big: 8 to 16% of the time).
+  const take = { E: 50, M: 30, H: 40 }, out = {};
+  for (const d of ['E', 'M', 'H']) {
+    const fits = (p) => p.goal.type !== 'gems' && !p.mods.includes('hold');
+    const big = bigPuzzles(d, BIG_WANT[d]).filter(fits).slice(0, take[d]);
+    const rest = [];
+    for (let n = 1; rest.length < take[d]; n++) { const p = generated[d].get(n); if (!p.mods.includes('big') && fits(p)) rest.push(p); }
+    const b = big.map((p) => puzzleBits(p, 2000)), r = rest.map((p) => puzzleBits(p, 2000));
+    let wins = 0;
+    for (const x of b) for (const y of r) wins += x > y ? 1 : x === y ? 0.5 : 0;
+    const harder = wins / (b.length * r.length);
+    out[d] = harder.toFixed(2);
+    // The common mix on its own: a big piece or two among tetrominoes.
+    const sb = big.map((p, i) => (p.mix === 'sparse' ? b[i] : null)).filter((x) => x !== null);
+    let sw = 0;
+    for (const x of sb) for (const y of r) sw += x > y ? 1 : x === y ? 0.5 : 0;
+    out[d + ' sparse'] = (sw / (sb.length * r.length)).toFixed(2);
+    assert(sb.length >= 10 && sw / (sb.length * r.length) >= 0.3 && sw / (sb.length * r.length) <= 0.7, d + ': sparse Big Minos puzzles are harder than another ' + out[d + ' sparse']);
+    assert.strictEqual(big.length, take[d], d + ': enough Big Minos puzzles');
+    assert(harder >= 0.35 && harder <= 0.65, d + ': a Big Minos puzzle is harder than another ' + (harder * 100).toFixed(0) + '% of the time');
+  }
+  console.log('       a Big Minos puzzle is harder than another: ' + JSON.stringify(out));
+});
+test('Big Minos: Easy queues vary where the big piece comes, and are seldom as short as two pieces', () => {
+  const ps = bigPuzzles('E', BIG_WANT.E), sparse = new Set(), at = new Set();
+  let short = 0, four = 0;
+  for (const p of ps) {
+    const q = queueOf(p);
+    if (p.mix === 'sparse') { sparse.add(q); at.add(q.length + ':' + q.indexOf('B')); }
+    if (q.length < 3) short++;
+    if (q.length >= 4) four++;
+  }
+  assert(sparse.size >= 2 && at.size >= 2, 'more than one sparse queue: ' + [...sparse].join(' '));
+  assert(four >= 5 && short <= 0.2 * ps.length, 'four-piece queues ' + four + ', two-piece ' + short + ' of ' + ps.length);
+});
+test('Big Minos seeds stay Big Minos, both ways too, and generate in good time', () => {
+  // Every eighth failed board from the 48th on redraws the wildcards; Big Minos is kept through that.
+  const want = { ES: 60, MS: 40, HS: 20 }, out = {};
+  for (const k of Object.keys(want)) {
+    let n = 0, ms = 0, worst = 0;
+    for (let i = 1; n < want[k]; i++) {
+      const s = Puzzles.numberedSeed(k[0], i, true);
+      if (!Puzzles.firstMods(s).includes('big')) continue;
+      n++;
+      const t0 = Date.now(), p = Puzzles.generate(s), dt = Date.now() - t0;
+      ms += dt; worst = Math.max(worst, dt);
+      assert(p && !p.fallback && p.mods.includes('big') && p.mods.includes('spin'), 'still Big Minos, both ways: ' + s + ' ' + (p && p.mods));
+      assert(!Puzzles.verify(p, true), 'needs the other turn: ' + s);
+      replay(p);
+    }
+    out[k] = (ms / n).toFixed(0) + ' ms avg, worst ' + worst;
+    assert(ms / n < 150, k + ': average ' + (ms / n).toFixed(0) + ' ms');
+  }
+  console.log('       ' + JSON.stringify(out));
+});
+test('Both Ways never comes with Heavy (a heavy piece turns only in open air, where one turn button reaches every way)', () => {
+  assert(Puzzles.MODS.spin.x.includes('heavy'));
+  let heavy = 0;
+  for (const d of ['E', 'M', 'H']) for (let i = 1; i <= 400; i++) {
+    assert(!Puzzles.firstMods(Puzzles.numberedSeed(d, i, true)).includes('heavy'), 'no Heavy on ' + Puzzles.numberedSeed(d, i, true));
+    if (Puzzles.firstMods(Puzzles.numberedSeed(d, i)).includes('heavy')) heavy++;
+  }
+  assert(heavy > 20, 'Heavy still turns up without Both Ways: ' + heavy);
+});
+test('the Big Minos note says every piece is big only when every piece is', () => {
+  const some = Puzzles.MODS.big.desc, every = 'Every piece is twice the size.';
+  let all = 0, mixed = 0;
+  for (const d of ['E', 'M', 'H']) for (const p of bigPuzzles(d, BIG_WANT[d])) {
+    const allBig = p.pieces.every((e) => Pieces.get(e.id).big);
+    assert.strictEqual(Puzzles.modDesc(p, 'big'), allBig ? every : some, p.seed);
+    if (allBig) all++; else mixed++;
+  }
+  assert(all >= 3 && mixed >= 30 && some === 'Some pieces are twice the size.', all + ' all big, ' + mixed + ' mixed');
+  assert.strictEqual(Puzzles.modDesc({ pieces: [{ id: 'T' }] }, 'fog'), Puzzles.MODS.fog.desc);
+});
 test('daily seeds change with the day', () => {
   assert.notStrictEqual(Puzzles.dailySeed('M', '2026-09-26'), Puzzles.dailySeed('M', '2026-09-27'));
   assert(Puzzles.parseSeed(Puzzles.dailySeed('H', '2026-09-26')));

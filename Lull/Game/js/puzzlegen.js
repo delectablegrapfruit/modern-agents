@@ -7,7 +7,7 @@
   const L = (root.Lull = root.Lull || {});
   const { Board, CELL, Pieces, RNG, hash32, codeFromInt, intFromCode, spawnPos } = L;
 
-  const GEN_VERSION = 4;
+  const GEN_VERSION = 6;
   const GEM_GLANCE = 300, GEM_SEARCH = 2000; // positions the needs-every-piece search tries on a layout: a first look, then a long one
   // Gem puzzles must need every piece (needsEveryPiece). Once one is turned down, generate may go on to GEM_ATTEMPTS
   // attempts; after GEM_BOARDS gem boards or GEM_BUDGET search positions in all, it settles for a lines puzzle.
@@ -22,7 +22,7 @@
 
   // Wildcards. w = weight per difficulty (0 = never), x = incompatible with.
   const MODS = {
-    big:    { name: 'Big Minos', icon: '▣', desc: 'Every piece is twice the size.', w: { E: 1, M: 2, H: 2 }, x: ['odd'] },
+    big:    { name: 'Big Minos', icon: '▣', desc: 'Some pieces are twice the size.', w: { E: 1, M: 2, H: 2 }, x: ['odd'] },
     odd:    { name: 'Odd Shapes', icon: '✲', desc: 'Trominoes and pentominoes in the queue.', w: { E: 0.6, M: 2, H: 2 }, x: ['big'] },
     wrap:   { name: 'Wraparound', icon: '⇆', desc: 'The side walls are portals.', w: { E: 0.6, M: 2, H: 2 } },
     rigid:  { name: 'Rigid', icon: '⊘', desc: 'Pieces cannot turn.', w: { E: 1, M: 1.5, H: 1.5 } },
@@ -36,7 +36,7 @@
     // Puzzles have no hold slot, except with this wildcard — and then the queue comes out of order, so it is needed.
     hold:   { name: 'Hold', icon: '⇆', desc: 'Pieces arrive out of order. Hold is needed.', w: { E: 0.8, M: 1.3, H: 1.6 } },
     // Only on "S" seeds (Settings ▸ Controls ▸ Counter-clockwise puzzles): turns go both ways, and the puzzle needs it.
-    spin:   { name: 'Both Ways', icon: '↺', desc: 'Needs the other turn or a half turn.', w: { E: 0, M: 0, H: 0 }, x: ['rigid'] },
+    spin:   { name: 'Both Ways', icon: '↺', desc: 'Needs the other turn or a half turn.', w: { E: 0, M: 0, H: 0 }, x: ['rigid', 'heavy'] },
     mono:   { name: 'Monochrome', icon: '◐', desc: 'One colour for everything.', w: { E: 1, M: 1, H: 1 } },
   };
 
@@ -450,10 +450,11 @@
 
   // ---- specs ----------------------------------------------------------------------------------------------------------
 
-  function pickMods(rng, diff, spin) {
+  /** The wildcards for a seed: `spin` for both-ways seeds, the ones in `keep`, and more drawn up to the count. */
+  function pickMods(rng, diff, spin, keep) {
     const count = diff === 'E' ? (rng.chance(0.45) ? 1 : 0) : diff === 'M' ? (rng.chance(0.35) ? 2 : 1) : (rng.chance(0.4) ? 3 : 2);
-    const chosen = spin ? ['spin'] : [];
-    for (let i = 0; i < count; i++) {
+    const chosen = (spin ? ['spin'] : []).concat(keep || []);
+    for (let i = (keep || []).length; i < count; i++) {
       const pool = Object.keys(MODS).filter((id) => MODS[id].w[diff] > 0 && !chosen.includes(id) &&
         !chosen.some((c) => (MODS[c].x || []).includes(id) || (MODS[id].x || []).includes(c)));
       if (!pool.length) break;
@@ -462,30 +463,84 @@
     return chosen;
   }
 
-  function makeSpec(rng, diff, forceMods) {
+  /**
+   * Big Minos. A big piece is no harder than a small one by itself: it fills a lot of the band at once and has few
+   * places to go. What makes it count is where it comes in the queue: played first it is filler, played last the
+   * pieces before it have to keep its space open. So most Big Minos puzzles are tetrominoes with a big piece or two
+   * (sparse), some are about half big (half), and a few are all or nearly all big (all). A seed draws its mix once,
+   * by BIG_SHARE; each attempt then draws one of the mix's queues (in play order, r a tetromino and B a big piece;
+   * `hold` with the Hold wildcard) and builds on the mix's board: width, band fill (default: the difficulty's), most
+   * band rows (`cap`), the chance of a Big I (only 8 or more wide) and goal weights (default: the difficulty's); a
+   * queue written [queue, {...}] changes some of these for itself, and one listed twice is drawn twice as often (a
+   * queue that builds easily, like Easy's rB, would otherwise crowd out the rest); `spin` changes the board on
+   * both-ways seeds (Easy's sparse boards need more tucks there, or the single turn button would solve them).
+   * Tuned with a difficulty meter so that each mix is about as hard as the other puzzles of its difficulty. A queue
+   * only opens with a big piece when a big piece also ends it. Hard has no pure all-big queue: big pieces fill a
+   * Hard board too fast to leave choices, so its "all" queues open with a tetromino, which has to leave room for
+   * the big pieces after it. Hard Big Minos puzzles have no gems: their gem boards almost never prove that every
+   * piece is needed.
+   * The small pieces are the seven tetrominoes (what it was tuned with), so it does not combine with Odd Shapes.
+   */
+  const BIG_SHARE = { sparse: 6, half: 3, all: 1 };
+  const BIG_MIX = {
+    sparse: {
+      E: { q: ['rBr', 'rBrr'], w: [6, 8], fill: [0.5, 0.7], cap: 6, bi: 0.4, spin: { w: [7, 9], tuck: 0.6 } },
+      M: { q: ['rrB', 'rrBr'], w: [8, 10], fill: [0.5, 0.7], cap: 8, bi: 0.2 },
+      H: { q: ['rrrBrr', 'rrrrBr', 'rrBrB'], hold: ['rrBr', 'rBrr'], w: [8, 10], cap: 8, bi: 0.2, goal: { clear: 4, lines: 3 } },
+    },
+    half: {
+      E: { q: ['rB', 'BrB', 'BrB', ['rBB', { w: [6, 7] }], ['rBB', { w: [6, 7] }]], w: [7, 9], fill: [0.6, 0.8], cap: 6, bi: 0.4 },
+      M: { q: ['BrrB', 'rBBr'], w: [8, 10], fill: [0.5, 0.7], cap: 8, bi: 0.2 },
+      H: { q: ['rrBBBr', 'rBrBB'], hold: ['rBrB', 'BrrB'], w: [8, 10], cap: 8, bi: 0.2, goal: { clear: 4, lines: 3 } },
+    },
+    all: {
+      E: { q: ['BBB'], w: [8, 10], cap: 8, bi: 0.4 },
+      M: { q: ['BBBB'], w: [9, 10], cap: 8, bi: 0.2 },
+      H: { q: ['rBBBB', 'rBrBBB'], hold: ['rBBB', 'rBrBB'], w: [8, 10], cap: 8, bi: 0.2, goal: { clear: 4, lines: 3 } },
+    },
+  };
+
+  /**
+   * The Big Minos mix for the next run of attempts. An Easy both-ways board with one big piece among tetrominoes is
+   * still solvable with the single turn button more often than others, so after 24 tries such a seed takes the half
+   * mix, whose boards need the other turn far more often (rather than going on until its wildcards are redrawn).
+   */
+  function bigMixAt(spec, spin, attempt) {
+    return spin && spec.diff === 'E' && spec.mix === 'sparse' && attempt >= 24 ? 'half' : spec.mix;
+  }
+
+  /** A puzzle's shape: size, queue, goal. `mix` is the seed's Big Minos mix, once drawn (kept across attempts). */
+  function makeSpec(rng, diff, forceMods, mix) {
     const mods = forceMods || pickMods(rng, diff);
     const has = (m) => mods.includes(m);
     const spec = { diff, mods };
-    if (has('big')) {
-      spec.pieces = diff === 'E' ? 2 : diff === 'M' ? rng.range(2, 3) : rng.range(3, 4);
-      spec.w = rng.range(8, 10);
-    } else {
-      spec.pieces = diff === 'E' ? rng.range(3, 4) : diff === 'M' ? rng.range(4, 6) : rng.range(6, 8);
-      spec.w = diff === 'E' ? rng.range(5, 7) : diff === 'M' ? rng.range(6, 8) : rng.range(7, 10);
-    }
+    spec.pieces = diff === 'E' ? rng.range(3, 4) : diff === 'M' ? rng.range(4, 6) : rng.range(6, 8);
+    spec.w = diff === 'E' ? rng.range(5, 7) : diff === 'M' ? rng.range(6, 8) : rng.range(7, 10);
     // Hold puzzles stay short: the out-of-order queue is the puzzle (and proving hold is needed stays quick).
-    if (has('hold') && !has('big')) spec.pieces = Math.min(spec.pieces, diff === 'E' ? 3 : diff === 'M' ? 4 : 5);
+    if (has('hold')) spec.pieces = Math.min(spec.pieces, diff === 'E' ? 3 : diff === 'M' ? 4 : 5);
     spec.tuck = { E: 0.12, M: 0.45, H: 0.75 }[diff];
     spec.fill = { E: [0.55, 0.75], M: [0.45, 0.65], H: [0.4, 0.6] }[diff];
-    const gw = { E: { clear: 5, lines: 3.5, gems: 1.5 }, M: { clear: 3.5, lines: 3.5, gems: 3 }, H: { clear: 4, lines: 3, gems: 3 } }[diff];
+    spec.cap = 6;
+    let gw = { E: { clear: 5, lines: 3.5, gems: 1.5 }, M: { clear: 3.5, lines: 3.5, gems: 3 }, H: { clear: 4, lines: 3, gems: 3 } }[diff];
+    spec.pool = has('odd') ? Pieces.PENTOMINOES.concat(['I3', 'V3', 'I3', 'V3']).concat(Pieces.TETROMINOES) : Pieces.TETROMINOES.slice();
+    if (has('big')) {
+      spec.mix = mix || rng.weighted(Object.keys(BIG_SHARE), (m) => BIG_SHARE[m]);
+      const M = BIG_MIX[spec.mix][diff];
+      const one = rng.pick(has('hold') && M.hold ? M.hold : M.q);
+      const q = typeof one === 'string' ? one : one[0];
+      const P = Object.assign({}, M, typeof one === 'string' ? {} : one[1], has('spin') && M.spin ? M.spin : {});
+      spec.pieces = q.length;
+      // Built in removal order: the last piece played is lifted out first.
+      spec.bigSlots = q.split('').reverse().map((c) => c === 'B');
+      spec.w = rng.range(P.w[0], P.w[1]);
+      if (P.fill) spec.fill = P.fill;
+      if (P.tuck != null) spec.tuck = P.tuck;
+      spec.cap = P.cap;
+      if (P.goal) gw = P.goal;
+      spec.bigPool = Pieces.TETROMINOES.filter((id) => id !== 'I' || (spec.w >= 8 && rng.chance(P.bi))).map((id) => Pieces.bigOf(id).id);
+    }
     spec.goal = rng.weighted(Object.keys(gw), (g) => gw[g]);
     spec.base = spec.goal === 'clear' ? 0 : rng.range(1, diff === 'E' ? 2 : 3);
-    // The piece pool.
-    let pool;
-    if (has('big')) pool = Pieces.TETROMINOES.map((id) => Pieces.bigOf(id).id).filter((id) => id !== 'BI' || rng.chance(0.4));
-    else if (has('odd')) pool = Pieces.PENTOMINOES.concat(['I3', 'V3', 'I3', 'V3']).concat(Pieces.TETROMINOES);
-    else pool = Pieces.TETROMINOES.slice();
-    spec.pool = pool;
     return spec;
   }
 
@@ -495,13 +550,18 @@
     const opts = optsOf(spec.mods);
     const wrap = spec.mods.includes('wrap');
     const W = spec.w;
-    // Choose the pieces first: their total size and the fill fraction fix the band's height.
+    // Choose the pieces first: their total size and the fill fraction fix the band's height. (Big Minos: each slot
+    // takes a big piece or a tetromino, as its queue says, and a piece swapped in below keeps to the same kind.)
+    const poolOf = (i) => (spec.bigSlots && spec.bigSlots[i] ? spec.bigPool : spec.pool);
     const types = [];
-    for (let i = 0; i < spec.pieces; i++) types.push(Pieces.get(rng.pick(spec.pool)));
+    for (let i = 0; i < spec.pieces; i++) types.push(Pieces.get(rng.pick(poolOf(i))));
     const total = types.reduce((a, t) => a + t.size, 0);
     const f = spec.fill[0] + rng.next() * (spec.fill[1] - spec.fill[0]);
     let K = Math.max(1, Math.round(total / (W * f)));
-    K = Math.min(K, total, spec.mods.includes('big') ? 8 : 6);
+    K = Math.min(K, total, spec.cap);
+    // The band is at least as tall as each big piece lying flat, and has room for every piece.
+    for (const t of types) if (t.big) K = Math.max(K, Math.min(...t.rotBounds.map((b) => (b.w <= W ? b.h : Infinity))));
+    if (K * W < total) return null;
     const maxN = Math.max(...types.map((t) => t.n));
     const base = spec.base;
     const H = base + K + maxN + 2;
@@ -522,7 +582,7 @@
     for (let i = 0; i < types.length; i++) {
       let step = null;
       // Try the planned type first, then the rest of the pool in random order.
-      const tryTypes = [types[i]].concat(rng.shuffle(spec.pool.slice()).map((id) => Pieces.get(id)).filter((t) => t !== types[i]));
+      const tryTypes = [types[i]].concat(rng.shuffle(poolOf(i).slice()).map((id) => Pieces.get(id)).filter((t) => t !== types[i]));
       const wantTuck = rng.chance(spec.tuck);
       for (const type of tryTypes.slice(0, 5)) {
         step = removeOne(board, type, y0, y1, removedPerRow, wantTuck, opts, rng);
@@ -648,7 +708,23 @@
   }
 
   function fallbackSpec(diff, spin) {
-    return { diff, mods: spin ? ['spin'] : [], pieces: 3, w: 6, tuck: 0, fill: [0.6, 0.7], goal: 'clear', base: 0, pool: Pieces.TETROMINOES.slice() };
+    return { diff, mods: spin ? ['spin'] : [], pieces: 3, w: 6, tuck: 0, fill: [0.6, 0.7], cap: 6, goal: 'clear', base: 0, pool: Pieces.TETROMINOES.slice() };
+  }
+
+  /** A seed's first draws: its random stream, its title and the wildcards it tries first. */
+  function seedStart(parsed) {
+    const rng = new RNG(hash32('lull-puzzle:v' + GEN_VERSION + ':' + parsed.seed));
+    const title = rng.pick(ADJ) + ' ' + rng.pick(NOUN);
+    return { rng, title, mods: pickMods(rng, parsed.diff, parsed.spin) };
+  }
+
+  /**
+   * The wildcards a seed draws first. A puzzle keeps them unless a run of failed boards redraws them (Big Minos
+   * stays through a redraw).
+   */
+  function firstMods(seedStr) {
+    const parsed = parseSeed(seedStr);
+    return parsed ? seedStart(parsed).mods : null;
   }
 
   /** The puzzle for a seed like "M-3K7Q2XA". Deterministic: the same seed always gives the same puzzle. */
@@ -656,16 +732,17 @@
     const parsed = parseSeed(seedStr);
     if (!parsed) return null;
     const { diff, seed, spin } = parsed;
-    const rng = new RNG(hash32('lull-puzzle:v' + GEN_VERSION + ':' + seed));
-    const title = rng.pick(ADJ) + ' ' + rng.pick(NOUN);
-    let spec = makeSpec(rng, diff, pickMods(rng, diff, spin));
+    const { rng, title, mods } = seedStart(parsed);
+    let spec = makeSpec(rng, diff, mods);
     let gemsOnly = false;
     const gemBudget = { nodes: GEM_BUDGET, boards: GEM_BOARDS };
-    for (let attempt = 0; attempt < (gemsOnly ? GEM_ATTEMPTS : 80); attempt++) {
+    for (let attempt = 0; attempt < (gemsOnly ? GEM_ATTEMPTS : spin ? 120 : 80); attempt++) {
       // After a run of failures, loosen: keep the wildcards but try a fresh size and queue.
-      // (A gem puzzle keeps its wildcards.)
-      if (attempt && attempt % 8 === 0) spec = makeSpec(rng, diff, attempt >= 48 && !gemsOnly ? pickMods(rng, diff, spin) : spec.mods);
-      else if (attempt) spec = Object.assign(makeSpec(rng, diff, spec.mods), {});
+      // (A gem puzzle keeps its wildcards, and a Big Minos seed keeps Big Minos.)
+      if (attempt && attempt % 8 === 0) {
+        const redraw = attempt >= 48 && !gemsOnly;
+        spec = makeSpec(rng, diff, redraw ? pickMods(rng, diff, spin, spec.mods.includes('big') ? ['big'] : []) : spec.mods, bigMixAt(spec, spin, attempt));
+      } else if (attempt) spec = makeSpec(rng, diff, spec.mods, spec.mix);
       // Once a gem puzzle was turned down for a shortcut, the next boards stay gem puzzles.
       if (gemsOnly && spec.goal !== 'gems') Object.assign(spec, { goal: 'gems', base: spec.base || 1 });
       const built = build(spec, rng);
@@ -678,8 +755,9 @@
       }
       const targets = verify(puzzle);
       if (!targets) continue;
-      // A both-ways puzzle has to need it: no way through with the single turn button alone (late tries let that go).
-      if (spin && attempt < (gemsOnly ? GEM_ATTEMPTS - 16 : 64) && verify(puzzle, true)) continue;
+      // A both-ways puzzle has to need it: no way through with the single turn button alone (the last tries let that
+      // go; a both-ways seed gets 40 more tries than another before they come).
+      if (spin && attempt < (gemsOnly ? GEM_ATTEMPTS - 16 : 104) && verify(puzzle, true)) continue;
       if (spec.mods.includes('hold')) {
         const q = requireHold(puzzle, rng);
         if (!q) continue;
@@ -756,7 +834,8 @@
   function layoutsFor(puzzle, built) {
     const clean = Board.fromArray(puzzle.w, puzzle.h, puzzle.cells.map((v) => v & ~CELL.GEM), { wrap: puzzle.wrap });
     const { spots, n } = built.gems;
-    // Big Minos puzzles have only a few pieces: the search is quick whatever they spare.
+    // Easy and Medium Big Minos puzzles have only a few pieces: the search is quick whatever they spare. (Hard ones
+    // have no gems.)
     const spare = puzzle.mods.includes('big') ? Infinity : GEM_SPARE[puzzle.diff];
     return { clean, layouts: gemLayouts(clean, spots, n, puzzle.diff === 'E' ? 2 : 3, spare, built.steps) };
   }
@@ -822,6 +901,7 @@
       pieces: steps.map((s) => ({ id: s.id, rot: s.rot })),
       solution: steps.map((s) => ({ id: s.id, r: s.r, x: s.x, y: s.y, rot: s.rot })),
       tucks: steps.filter((s) => !s.straight).length,
+      ...(spec.mix ? { mix: spec.mix } : {}), // Big Minos: 'sparse', 'half' or 'all'
     };
   }
 
@@ -831,5 +911,11 @@
     return 'Clear ' + p.goal.lines + ' line' + (p.goal.lines === 1 ? '' : 's');
   }
 
-  L.Puzzles = { DIFFS, MODS, GOALS, generate, verify, reach, goalStates, goalMet, parseSeed, numberedSeed, dailySeed, dailyDateOf, randomSeed, goalText, GEN_VERSION, SEEDS_PER_DIFF, restingStates, solvableInOrder, winsEarly, primaryTurn };
+  /** A wildcard's note for this puzzle: Big Minos says whether every piece is big or only some. */
+  function modDesc(p, m) {
+    if (m === 'big' && p.pieces.every((e) => Pieces.get(e.id).big)) return 'Every piece is twice the size.';
+    return MODS[m].desc;
+  }
+
+  L.Puzzles = { DIFFS, MODS, GOALS, generate, firstMods, modDesc, verify, reach, goalStates, goalMet, parseSeed, numberedSeed, dailySeed, dailyDateOf, randomSeed, goalText, GEN_VERSION, SEEDS_PER_DIFF, restingStates, solvableInOrder, winsEarly, primaryTurn };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

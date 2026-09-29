@@ -2042,7 +2042,7 @@
       if (!p.mods.length) { this.el.mods.replaceChildren(h('span', { class: 'mod-none' }, 'No wildcards')); return; }
       this.el.mods.replaceChildren(...p.mods.map((m) => {
         const M = Puzzles.MODS[m];
-        return h('button', { class: 'mod mod-' + m, 'data-mod': m, 'data-tip-title': M.name, 'data-tip': M.desc, 'data-tip-foot': modKeys(m, p.mods), 'data-tip-touch': modTouch(m, p.mods, this.settings.tapTurn) },
+        return h('button', { class: 'mod mod-' + m, 'data-mod': m, 'data-tip-title': M.name, 'data-tip': Puzzles.modDesc(p, m), 'data-tip-foot': modKeys(m, p.mods), 'data-tip-touch': modTouch(m, p.mods, this.settings.tapTurn) },
           icon(m), h('span', { class: 'n' }, M.name), h('span', { class: 's' }, MOD_SHORT[m] || M.name));
       }));
       this.fitMods();
@@ -2063,7 +2063,7 @@
       if (open || !Puzzles.MODS[m]) return;
       const M = Puzzles.MODS[m], keys = L.Touch && L.Touch.using ? modTouch(m, this.puzzle.mods, this.settings.tapTurn) : modKeys(m, this.puzzle.mods);
       const pop = h('div', { class: 'puz-pop', 'data-mod': m, role: 'note' },
-        h('div', { class: 'tip-title' }, icon(m), ' ', M.name), h('div', { class: 'tip-body' }, M.desc), keys ? h('div', { class: 'tip-foot' }, keys) : null);
+        h('div', { class: 'tip-title' }, icon(m), ' ', M.name), h('div', { class: 'tip-body' }, Puzzles.modDesc(this.puzzle, m)), keys ? h('div', { class: 'tip-foot' }, keys) : null);
       this.el.view.appendChild(pop);
       // Just under the chip, kept inside the tab.
       const v = this.el.view.getBoundingClientRect(), r = chip.getBoundingClientRect(), w = pop.offsetWidth;
