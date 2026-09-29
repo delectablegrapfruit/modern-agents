@@ -24,7 +24,11 @@ Open `index.html` in a browser. It is one self-contained file with no build step
 | Curator profile | Reputation first, then the list of ten |
 | You | Your posts, tried record and saved picks |
 | Open-in settings | A default app for each medium |
-| Compose | Post, ask, or say how a pick landed |
+| Share | Paste a link; Vouch matches it and builds the card. A note is optional |
+
+## Posts are embeds
+
+Most posts are a link and nothing else. Paste a link from any app and Vouch turns it into a card for the work. A note is optional, like a tweet. Asks are the exception: they need words, and people answer with picks.
 
 ## How "Open in" works
 
