@@ -4,9 +4,9 @@
 // confirm. Over a minigame (the loop opens it when a hidden tab comes back) it offers only Resume and
 // Settings: the round's own panel handles leaving. Esc / Start / B resume; the Esc that closes Settings
 // or Save / Load (it fires `back`, then `pause`) leaves the menu up (docs/requests/W2-Pocket.md 4).
-// Retire ends the run with its results (GDD §5): the world.retire row when it exists (it calls the
-// named fn endgame.retire through SR.act, which emits game:over), else the rule itself and the same
-// game:over; the results follow once the menu is gone (js/scenes/results.js).
+// Retire ends the run with its results (GDD §5): the world.retire row (W2-City; it calls the named fn
+// endgame.retire through SR.act, which emits game:over); the results follow once the menu is gone
+// (js/scenes/results.js). Without that row the item is not offered.
 // Suspend & quit writes the suspend slot (Hardcore: its ironman slot) and returns to the title; Quit
 // to title leaves the game without a save (the last save stays; a Hardcore run's debounced ironman
 // write lands first, B-16). Either way no game runs afterwards (SR.ui.saveload.quit).
@@ -64,20 +64,19 @@
       .then(function (ok) { if (ok) toTitle(); });
   }
 
-  /** Retire (GDD §5): through world.retire when it exists, else the rule and the same game:over. */
+  /** @returns {boolean} the world.retire row exists (W2-City; it runs the named fn endgame.retire). */
+  function canRetire() { return !!(SR.reg.action['world.retire'] && typeof SR.act === 'function'); }
+
+  /**
+   * Retire (GDD §5) through SR.act('world.retire'): the pipeline sets Result.over and emits game:over
+   * (CONTRACT §9.2). The menu never changes the state or raises game:over itself (D27).
+   */
   function retire() {
     SR.ui.confirm({ id: 'pause-retire', title: 'ui.pause.retireTitle', text: 'ui.pause.retireText', yes: 'ui.pause.retire', danger: true })
       .then(function (ok) {
-        if (!ok || !running()) return;
-        var s = SR.state;
-        if (SR.reg.action['world.retire'] && typeof SR.act === 'function') {
-          var r = SR.act('world.retire', {});
-          if (!r || !r.ok) { SR.ui.toast({ key: r && r.reason ? r.reason : 'ui.refused', vars: r && r.vars, kind: 'warning' }); return; }
-        } else {
-          var res = SR.rules.endgame.retire(s);
-          if (!res.ok) { SR.ui.toast({ key: res.reason || 'ui.refused', kind: 'warning' }); return; }
-          SR.events.emit('game:over', { reason: 'retire', result: s.result });
-        }
+        if (!ok || !running() || !canRetire()) return;
+        var r = SR.act('world.retire', {});
+        if (!r || !r.ok) { SR.ui.toast({ key: r && r.reason ? r.reason : 'ui.refused', vars: r && r.vars, kind: 'warning' }); return; }
         close();
       });
   }
@@ -89,7 +88,7 @@
     if (!hardcore()) list.push({ id: 'save', label: 'ui.pause.save', run: function () { SR.scenes.push('saveload', { mode: 'save' }); } });
     list.push({ id: 'load', label: 'ui.pause.load', run: function () { SR.scenes.push('saveload', { mode: 'load' }); } });
     list.push({ id: 'suspend', label: 'ui.pause.suspend', run: function (ev) { suspendQuit(ev && ev.currentTarget); } });
-    if (unlimited()) list.push({ id: 'retire', label: 'ui.pause.retire', run: retire });
+    if (unlimited() && canRetire()) list.push({ id: 'retire', label: 'ui.pause.retire', run: retire });
     list.push({ id: 'quit', label: 'ui.pause.quit', variant: 'danger', run: quit });
     return list;
   }

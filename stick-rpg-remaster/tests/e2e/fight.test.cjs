@@ -372,6 +372,30 @@ const K = require('./night-kit.cjs');
   await k.closed();
 
   // ------------------------------------------------------------------------------------------
+  T.section('150 % text (UI §8): the move bar grows upward and nothing is clipped');
+  await E(() => { SR.debug.feature('nightlife', true); SR.settings.set('access.textScale', 1.5); });
+  await atBar({ stats: { str: 60 } });
+  await k.row('bar.fight');
+  await t.step(2);
+  const lay = await E(() => {
+    const area = document.querySelector('[data-id="mg-canvas"]').getBoundingClientRect();
+    const inside = (r, o) => r.left >= o.left - 1 && r.right <= o.right + 1 && r.top >= o.top - 1 && r.bottom <= o.bottom + 1;
+    const btns = Array.from(document.querySelectorAll('[data-id="mg-fight-moves"] button')), bad = [];
+    btns.forEach((b) => {
+      const br = b.getBoundingClientRect();
+      if (!inside(br, area)) bad.push(b.getAttribute('data-id'));
+      b.querySelectorAll('*').forEach((c) => { if (!c.children.length && c.textContent.trim() && !inside(c.getBoundingClientRect(), br)) bad.push(b.getAttribute('data-id') + ': ' + c.textContent); });
+    });
+    const froze = document.querySelector('[data-id="mg-fight-froze"]').getBoundingClientRect();
+    const bar = document.querySelector('[data-id="mg-fight-moves"]').getBoundingClientRect();
+    return { n: btns.length, bad, frozeAbove: froze.bottom <= bar.top, grew: bar.height };
+  });
+  T.ok(lay.n === 7 && !lay.bad.length && lay.frozeAbove, 'seven moves at 150 %: every button and chip inside the play area, "(it froze)" above the bar', lay);
+  await key('Digit' + ((await entries()).indexOf('run') + 1));
+  await k.closed();
+  await E(() => { SR.settings.set('access.textScale', 1); SR.debug.feature('nightlife', false); });
+
+  // ------------------------------------------------------------------------------------------
   T.section('no console errors');
   T.eq(t.errors(), [], 'zero console errors, page errors or failed requests');
   await t.close();
