@@ -30,7 +30,7 @@
   /**
    * A board's numbers. The h- ones count only what was done by hand (for achievements): hand is whether the stack was
    * built without an item that touches the pieces or the board since it was last empty; hb2b, hcombo, hquads and
-   * hchain are the back-to-back streak, combo, quads in a row and chain, broken by any such item (Rewind too) and
+   * hchain are the back-to-back streak, combo, quads in a row and chain, broken by any such item (Undo too) and
    * never fed by an item's clear; htspins counts T-spins that clear lines, htst T-spin triples and hperfect perfect
    * clears, all by hand; pace keeps [time, lines] for the last 101 pieces set by hand in a row (Game.notePace).
    */
@@ -624,7 +624,7 @@
     /**
      * An item that touches the pieces or the board was used (Free Play calls this; Luck items do not count): every
      * hand streak ends, and the stack is no longer built by hand — unless the item acted on the board at once
-     * (emptied: a Board item — Settle, Trapdoor, Rewind …) and left it empty, a fresh start.
+     * (emptied: a Board item — Settle, Trapdoor, Undo …) and left it empty, a fresh start.
      */
     noteItem(emptied) {
       const s = this.s;

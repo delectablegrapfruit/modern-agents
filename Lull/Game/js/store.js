@@ -22,7 +22,8 @@
   // the Shop) — and given free by the daily gift and, now and then, by play (js/items.js: Gifts, Earn; rarity weights
   // those draws: common 8, uncommon 3, rare 1). Shapers change the piece in play; Choice picks which piece it is;
   // Tools turn it into something that acts where it lands; Board items act on the board at once; Luck changes what
-  // the next clears pay, and nothing else.
+  // the next clears pay, and nothing else. One of them is also the Puzzles tab's: Undo (id 'rewind') is one count
+  // shared by both, bought one at a time and given free as a pack (`pack`: every free grant gives that many).
   const ITEMS = {
     reroll:    { group: 'shape', name: 'Reroll', icon: '⟳', price: 15, rarity: 'common', desc: 'Swap the piece in play for a different one.' },
     mirror:    { group: 'shape', name: 'Mirror', icon: '⇋', price: 15, rarity: 'common', desc: 'Flip the piece in play: J and L, S and Z swap.' },
@@ -40,7 +41,7 @@
     laser:     { group: 'tool', name: 'Laser', icon: '↯', price: 65, rarity: 'rare', desc: 'Clears every row the piece touches, full or not.' },
     blackhole: { group: 'tool', name: 'Black Hole', icon: '◎', price: 90, rarity: 'rare', desc: 'Swallows everything within three blocks of where it sets.' },
     flip:      { group: 'board', name: 'Mirror World', icon: '⇄', price: 20, rarity: 'common', desc: 'Flips the whole board left to right.' },
-    rewind:    { group: 'board', name: 'Rewind', icon: '↶', price: 25, rarity: 'common', desc: 'Take back your last placement, and the lines it cleared.' },
+    rewind:    { group: 'board', name: 'Undo', plural: 'Undos', icon: '↶', price: 5, pack: 5, rarity: 'common', desc: 'Take back your last placement, and the lines it cleared. Puzzles use it too.' },
     trapdoor:  { group: 'board', name: 'Trapdoor', icon: '⤓', price: 40, rarity: 'uncommon', desc: 'The bottom row falls away, whatever it holds.' },
     tornado:   { group: 'board', name: 'Tornado', icon: '◌', price: 60, rarity: 'rare', desc: 'Shuffles the columns, holes and all.' },
     settle:    { group: 'board', name: 'Settle', icon: '⤋', price: 70, rarity: 'rare', desc: 'Every block falls straight down, closing every hole. Full rows clear.' },
@@ -49,6 +50,16 @@
     net:       { group: 'luck', name: 'Safety Net', icon: '⊔', price: 60, rarity: 'rare', desc: 'Keeps your back-to-back streak through one ordinary clear.' },
   };
   const ITEM_ORDER = ITEM_GROUPS.flatMap((g) => Object.keys(ITEMS).filter((id) => ITEMS[id].group === g.id));
+  /** How many one free grant of a power-up gives (the gift, play): its pack, or one. */
+  const packOf = (id) => (ITEMS[id] && ITEMS[id].pack) || 1;
+  /** A power-up in a quantity, in words: "Undo", "5 Undos". */
+  const itemCount = (id, n) => { const it = ITEMS[id]; return n > 1 ? n + ' ' + (it.plural || it.name + 's') : it.name; };
+
+  // Freebies: things the daily gift can hold beside power-ups, kept apart from the item bar (state.freebies[key]).
+  // A free hint is a puzzle hint at no cost; it still halves the reward.
+  const FREEBIES = {
+    'free-hint': { key: 'hint', name: 'Hint', icon: 'hint', rarity: 'uncommon', desc: 'One puzzle hint at no cost. Still halves the reward.' },
+  };
 
   // Colour slots: 1 I, 2 O, 3 T, 4 S, 5 Z, 6 J, 7 L, 8 garbage, 9–14 other shapes, 15 custom. Every palette keeps the
   // seven pieces apart by hue (or, for the one-hue palettes, by clear steps of value), and reads on both wells: the light
@@ -139,6 +150,7 @@
       created: now,
       lines: 0,
       inventory: Object.fromEntries(ITEM_ORDER.map((k) => [k, 0])),
+      freebies: { hint: 0 }, // free things the daily gift gave (FREEBIES): puzzle hints at no cost
       owned: { palette: ['classic'], skin: ['flat'], frame: ['hairline'], backdrop: ['none', 'grid'], effect: ['fade'], ghost: ['outline', 'off'], sound: ['soft'] },
       equipped: { palette: 'classic', skin: 'flat', frame: 'hairline', backdrop: 'grid', effect: 'fade', ghost: 'outline', sound: 'soft' },
       settings: {
@@ -322,16 +334,16 @@
     }
 
     /**
-     * The daily gift (Relaxed tab): three power-ups, 24 hours after the last one was opened (js/items.js, Gifts).
-     * The draw is fixed by the save and how many gifts it has opened; the claim is booked and saved at once.
-     * Returns the ids, or null (not ready yet).
+     * The daily gift (Relaxed tab): three different entries — power-ups, or a freebie — 24 hours after the last one
+     * was opened (js/items.js, Gifts). The draw is fixed by the save and how many gifts it has opened; the claim is
+     * booked and saved at once. Returns the ids, or null (not ready yet).
      */
     openGift(now) {
       const st = this.state;
       now = now == null ? Date.now() : now;
       if (!L.Gifts || !L.Gifts.ready(st, now)) return null;
       const ids = L.Gifts.forClaim(st.created, st.gift.n || 0);
-      for (const id of ids) this.grantItem(id, 1);
+      for (const id of ids) this.grant(id);
       st.gift.at = now; st.gift.n = (st.gift.n || 0) + 1;
       st.gift.log.unshift({ at: now, ids });
       if (st.gift.log.length > 14) st.gift.log.length = 14;
@@ -339,24 +351,52 @@
       return ids;
     }
 
-    /** Buys a power-up with lines (the Relaxed tab's item bar). */
+    /** The inventory or the freebies changed: every place that shows a count (both tabs' Undo) redraws. */
+    itemsChanged() { this.touch(); this.emit('items'); }
+
+    /** Buys a power-up with lines (the Relaxed tab's item bar, and Puzzles' Undo): one at a time, never a pack. */
     buyItem(id, qty) {
       qty = qty || 1;
       const it = ITEMS[id];
       if (!it || !this.spend(it.price * qty)) return false;
       this.state.inventory[id] = (this.state.inventory[id] || 0) + qty;
       this.state.stats.items.bought[id] = (this.state.stats.items.bought[id] || 0) + qty;
-      this.touch();
+      this.itemsChanged();
       return true;
     }
 
+    /** Gives power-ups free (qty; by default the item's pack). */
     grantItem(id, qty) {
-      if (!ITEMS[id]) return;
-      qty = qty || 1;
+      if (!ITEMS[id]) return 0;
+      qty = qty || packOf(id);
       this.state.inventory[id] = (this.state.inventory[id] || 0) + qty;
       const got = this.state.stats.items.got;
       got[id] = (got[id] || 0) + qty;
-      this.touch();
+      this.itemsChanged();
+      return qty;
+    }
+
+    /** One free entry of the gift or of play: a power-up's pack (Undo: five), or a freebie. Returns how many. */
+    grant(id) {
+      const f = FREEBIES[id];
+      if (!f) return this.grantItem(id);
+      const fb = this.state.freebies = this.state.freebies || {};
+      fb[f.key] = (fb[f.key] || 0) + 1;
+      const got = this.state.stats.items.got;
+      got[id] = (got[id] || 0) + 1;
+      this.itemsChanged();
+      return 1;
+    }
+
+    /** Spends a freebie (a free hint: key 'hint'); false when there is none. */
+    useFreebie(key) {
+      const fb = this.state.freebies;
+      if (!fb || !(fb[key] > 0)) return false;
+      fb[key]--;
+      const id = Object.keys(FREEBIES).find((k) => FREEBIES[k].key === key), used = this.state.stats.items.used;
+      if (id) used[id] = (used[id] || 0) + 1;
+      this.itemsChanged();
+      return true;
     }
 
     useItem(id) {
@@ -364,8 +404,18 @@
       if (!inv[id]) return false;
       inv[id]--;
       this.state.stats.items.used[id] = (this.state.stats.items.used[id] || 0) + 1;
-      this.touch();
+      this.itemsChanged();
       return true;
+    }
+
+    /**
+     * Uses one held, or buys one at its price and uses it at once (Puzzles' Undo: the price is on the button, so no
+     * question). Returns 'held', 'bought', or false (none held and the wallet short: nothing changes).
+     */
+    useOrBuy(id) {
+      if (this.state.inventory[id] > 0) return this.useItem(id) ? 'held' : false;
+      if (!this.buyItem(id)) return false;
+      return this.useItem(id) ? 'bought' : false;
     }
 
     owns(kind, id) { return this.state.owned[kind].includes(id); }
@@ -398,5 +448,5 @@
   }
 
   L.Store = Store;
-  Object.assign(L, { SOUNDS, loadState, ITEMS, ITEM_ORDER, ITEM_GROUPS, PALETTES, SKINS, FRAMES, BACKDROPS, EFFECTS, GHOSTS, COSMETICS, COSMETIC_LABELS, ACCENTS, SAVE_VERSION, defaultState: defaults, mergeState: merge });
+  Object.assign(L, { SOUNDS, loadState, ITEMS, ITEM_ORDER, FREEBIES, packOf, itemCount, ITEM_GROUPS, PALETTES, SKINS, FRAMES, BACKDROPS, EFFECTS, GHOSTS, COSMETICS, COSMETIC_LABELS, ACCENTS, SAVE_VERSION, defaultState: defaults, mergeState: merge });
 })(typeof globalThis !== 'undefined' ? globalThis : this);

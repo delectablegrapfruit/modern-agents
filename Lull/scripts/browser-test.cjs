@@ -337,13 +337,16 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   // in the book — and, found for the first time ever, a power-up comes with it.
   await ev(() => { delete Lull.app.store.state.combos.patchjob; });
   const bag0 = await ev(() => Object.values(Lull.app.store.state.inventory).reduce((a, b) => a + b, 0));
+  const got0 = await ev(() => Object.assign({}, Lull.app.store.state.stats.items.got));
   const pj = await scene(['XXXX.XXXXX', 'XXXXXXXXX.'], 'O', 'patch', 4, 12);
   await page.waitForTimeout(250);
   await shot('16-patch-job');
   await page.waitForTimeout(1100);
   const pjAfter = await ev(() => { const m = Lull.app.modes.play, g = m.game; return { found: Object.keys(g.s.combos || {}), book: Object.keys(Lull.app.store.state.combos || {}), texts: m.view.fx.texts.map((t) => t.str), bag: Object.values(Lull.app.store.state.inventory).reduce((a, b) => a + b, 0), toast: [...document.querySelectorAll('.toast')].map((t) => t.textContent).join() }; });
   check('a Patch into a covered hole that completes the row is Patch Job: paid, called out, in the book', pj.lines === 1 && pj.gained === 3 && pjAfter.found.includes('patchjob') && pjAfter.book.includes('patchjob') && pjAfter.texts.includes('Patch Job'), JSON.stringify({ pj, pjAfter }));
-  check('  found for the first time: a power-up comes with it', pjAfter.bag === bag0 + 1 && pjAfter.toast.length > 0, JSON.stringify({ bag0, pjAfter }));
+  // One entry, drawn from the power-ups: one of it, or an Undo's pack of five.
+  const earned = await ev((g0) => { const got = Lull.app.store.state.stats.items.got; return Object.keys(got).filter((k) => (got[k] || 0) !== (g0[k] || 0)).map((k) => [k, got[k] - (g0[k] || 0), Lull.packOf(k)]); }, got0);
+  check('  found for the first time: a power-up comes with it (an Undo as five)', earned.length === 1 && earned[0][2] === earned[0][1] && pjAfter.bag === bag0 + earned[0][1] && pjAfter.toast.length > 0, JSON.stringify({ bag0, earned, pjAfter }));
   const pj2 = await scene(['XXXX.XXXXX', 'XXXXXXXXX.'], 'O', 'patch', 4, 12);
   check('the second time on one board pays half', pj2.gained === 2 && (await ev(() => Lull.app.modes.play.game.s.combos.patchjob)) === 2, JSON.stringify(pj2));
   const rew = await ev(() => {
@@ -422,25 +425,66 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await shot('18-gift-opening');
   await page.waitForTimeout(900);
   await shot('18-gift');
-  const gift = await ev(() => ({ cards: [...document.querySelectorAll('.modal-gift .gift-card b')].map((b) => b.textContent), inv: Object.values(Lull.app.store.state.inventory).reduce((a, b) => a + b, 0), at: Lull.app.store.state.gift.at, now: Date.now(), ready: !!document.querySelector('#gift-btn.ready'), tip: document.getElementById('gift-btn').dataset.tip }));
-  check('it turns over three power-ups, already in the bag, the claim booked', gift.cards.length === 3 && new Set(gift.cards).size === 3 && gift.inv === inv0 + 3 && Math.abs(gift.now - gift.at) < 5000, JSON.stringify(gift));
+  const gift = await ev(() => { const ids = Lull.app.store.state.gift.log[0].ids; return { ids, gain: ids.reduce((a, id) => a + (Lull.FREEBIES[id] ? 0 : Lull.packOf(id)), 0), cards: [...document.querySelectorAll('.modal-gift .gift-card b')].map((b) => b.textContent), inv: Object.values(Lull.app.store.state.inventory).reduce((a, b) => a + b, 0), at: Lull.app.store.state.gift.at, now: Date.now(), ready: !!document.querySelector('#gift-btn.ready'), tip: document.getElementById('gift-btn').dataset.tip }; });
+  check('it turns over three different entries, already in the bag, the claim booked', gift.cards.length === 3 && new Set(gift.cards).size === 3 && gift.ids.length === 3 && gift.inv === inv0 + gift.gain && Math.abs(gift.now - gift.at) < 5000, JSON.stringify(gift));
   check('once opened, the button says how long until the next one (24 hours on)', !gift.ready && /^Next gift in (23h 59m|24h 0m|1d 0h)$/.test(gift.tip), gift.tip);
   await page.click('.modal-gift footer .btn.primary');
   await page.click('#gift-btn');
   const twice = await ev(() => ({ modal: !!document.querySelector('.modal-gift'), inv: Object.values(Lull.app.store.state.inventory).reduce((a, b) => a + b, 0), toast: [...document.querySelectorAll('.toast')].map((t) => t.textContent).join() }));
-  check('not again within 24 hours: a quiet note of when, nothing more', !twice.modal && twice.inv === inv0 + 3 && /Next gift in/.test(twice.toast), JSON.stringify(twice));
+  check('not again within 24 hours: a quiet note of when, nothing more', !twice.modal && twice.inv === inv0 + gift.gain && /Next gift in/.test(twice.toast), JSON.stringify(twice));
   await ev(() => Lull.app.saveNow());
   await page.reload();
   await page.waitForTimeout(400);
   await ev(() => { for (const k of ['play', 'puzzle', 'classic']) Lull.app.modes[k].setGrace = 0; });
   const reloaded = await ev(() => ({ ready: !!document.querySelector('#gift-btn.ready'), inv: Object.values(Lull.app.store.state.inventory).reduce((a, b) => a + b, 0), again: Lull.app.store.openGift(Date.now()) }));
-  check('nor by reopening Lull', !reloaded.ready && reloaded.inv === inv0 + 3 && reloaded.again === null, JSON.stringify(reloaded));
+  check('nor by reopening Lull', !reloaded.ready && reloaded.inv === inv0 + gift.gain && reloaded.again === null, JSON.stringify(reloaded));
   await page.click('#wallet');
   await page.click('.tabs button[data-tab="play"]');
   check('nor by switching tabs', !(await page.isVisible('#gift-btn.ready')));
   const later = await ev(() => { const st = Lull.app.store.state; st.gift.at -= 24 * 3600e3; Lull.app.modes.play.renderGift(); return !!document.querySelector('#gift-btn.ready'); });
   check('24 hours after the claim, it is waiting again', later);
   await ev(() => { const st = Lull.app.store.state; st.gift.at = Date.now(); Lull.app.modes.play.renderGift(); });
+  // A gift holding a free hint and an Undo pack (the draw forced): each card says what it is.
+  const forced = await ev(() => {
+    const G = Lull.Gifts, keep = G.forClaim, st = Lull.app.store.state;
+    G.forClaim = () => ['free-hint', 'rewind', 'bomb'];
+    st.gift.at = null;
+    const before = { undo: st.inventory.rewind || 0, bomb: st.inventory.bomb || 0, hint: st.freebies.hint || 0 };
+    Lull.app.modes.play.openGift();
+    G.forClaim = keep;
+    return { before, after: { undo: st.inventory.rewind, bomb: st.inventory.bomb, hint: st.freebies.hint } };
+  });
+  await page.waitForTimeout(1500);
+  await shot('18-gift-freebies');
+  const cardsF = await ev(() => [...document.querySelectorAll('.modal-gift .gift-card')].map((c) => ({ id: c.dataset.gift, name: c.querySelector('b').textContent, rarity: c.className.replace('gift-card ', ''), small: c.querySelector('small') ? c.querySelector('small').textContent : null, tip: c.dataset.tip, tipTitle: c.dataset.tipTitle, icon: c.querySelector('.gi').innerHTML })));
+  const icons = await ev(() => { const as = (k) => { const d = document.createElement('span'); d.innerHTML = Lull.Icons.icon(k); return d.innerHTML; }; return { hint: as('hint'), undo: as('undo') }; });
+  const [cH, cU, cB] = cardsF;
+  check('the gift\'s free hint card: the hint icon, named Hint, uncommon, and what it does', cH && cH.id === 'free-hint' && cH.name === 'Hint' && cH.icon === icons.hint && /uncommon/.test(cH.rarity) && cH.small === 'uncommon' && cH.tip === 'One puzzle hint at no cost. Still halves the reward.', JSON.stringify(cH));
+  check('the Undo card says it is five, with the Undo icon', cU && cU.name === '5 Undos' && cU.tipTitle === '5 Undos' && cU.icon === icons.undo && cB && cB.name === 'Bomb', JSON.stringify(cardsF));
+  check('the gift gave five Undos, a Bomb and a free hint', forced.after.undo === forced.before.undo + 5 && forced.after.bomb === forced.before.bomb + 1 && forced.after.hint === forced.before.hint + 1, JSON.stringify(forced));
+  const giftFit = await ev(() => [...document.querySelectorAll('.modal-gift .gift-face')].every((f) => f.scrollHeight <= f.clientHeight + 1 && f.scrollWidth <= f.clientWidth + 1));
+  check('the gift cards fit their words', giftFit);
+  await page.click('.modal-gift footer .btn.primary');
+  await ev(() => { const st = Lull.app.store.state; st.gift.at = Date.now(); Lull.app.modes.play.renderGift(); });
+  // With the system's reduced motion (every animation off), the cards are shown at rest, not left unturned.
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await ev(() => { const G = Lull.Gifts, keep = G.forClaim; G.forClaim = () => ['free-hint', 'rewind', 'bomb']; Lull.app.store.state.gift.at = null; Lull.app.modes.play.openGift(); G.forClaim = keep; });
+  await page.waitForTimeout(400);
+  const stillCards = await ev(() => [...document.querySelectorAll('.modal-gift .gift-card')].map((c) => { const cs = getComputedStyle(c); return cs.opacity + '/' + cs.transform; }));
+  await shot('18-gift-reduced-motion');
+  check('under the system\'s reduced motion the gift cards show, at rest', stillCards.length === 3 && stillCards.every((c) => c === '1/none'), JSON.stringify(stillCards));
+  await page.click('.modal-gift footer .btn.primary');
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await ev(() => { const st = Lull.app.store.state; st.gift.at = Date.now(); Lull.app.modes.play.renderGift(); });
+  // An Undo earned in play (the draw forced) comes as its pack of five, and the note says so.
+  const earnU = await ev(() => {
+    const G = Lull.Gifts, keep = G.draw, st = Lull.app.store.state, n0 = st.inventory.rewind || 0, g0 = st.stats.items.got.rewind || 0;
+    document.querySelectorAll('.toast').forEach((t) => t.remove());
+    G.draw = () => ['rewind'];
+    try { Lull.app.modes.play.earnItem(); } finally { G.draw = keep; }
+    return { gained: st.inventory.rewind - n0, got: (st.stats.items.got.rewind || 0) - g0, toast: [...document.querySelectorAll('.toast')].map((t) => t.textContent).join('|') };
+  });
+  check('an Undo earned in play is five, and the note says 5 Undos', earnU.gained === 5 && earnU.got === 5 && /5 Undos/.test(earnU.toast), JSON.stringify(earnU));
 
   // ---- mouse only ---------------------------------------------------------------------------------------------------
   console.log('mouse');
@@ -1069,6 +1113,162 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   check('Both Ways + Inverted: the chip says Z turns clockwise, and it does', /invert/.test(spinInv.mods) && /Z turns clockwise/.test(spinInv.foot) && spinInv.turned === 1, JSON.stringify(spinInv));
   await ev(() => Lull.app.modes.puzzle.loadNumbered('H', 3));
 
+  // ---- Undo: one item for Relaxed and Puzzles; a puzzle undo uses one held, or buys one at its price --------------
+  console.log('puzzle undo');
+  {
+    const U = await ev(() => ({ price: Lull.ITEMS.rewind.price, name: Lull.ITEMS.rewind.name }));
+    check('the Undo item: 5 lines, named Undo', U.price === 5 && U.name === 'Undo', JSON.stringify(U));
+    // Sets the wallet and the Undos held, then plays a piece of a fresh puzzle (no redraw asked for: the tab must follow).
+    const setup = (a) => ev(([lines, held, drops]) => {
+      const m = Lull.app.modes.puzzle, st = Lull.app.store;
+      while (Lull.UI.modalOpen()) Lull.UI.closeTopModal();
+      m.loadNumbered('H', 3);
+      st.state.lines = lines; st.state.inventory.rewind = held; st.itemsChanged(); Lull.app.refreshWallet();
+      for (let i = 0; i < drops; i++) m.action('drop');
+      return true;
+    }, a);
+    const read = () => ev(() => {
+      const m = Lull.app.modes.puzzle, S = Lull.app.store.state, b = document.getElementById('puz-undo');
+      return { pieces: m.game.s.pieces, lines: S.lines, wallet: document.getElementById('wallet-n').textContent, held: S.inventory.rewind, used: S.stats.items.used.rewind || 0, bought: S.stats.items.bought.rewind || 0, undos: (S.puzzle.current || {}).undos || 0, cnt: b.querySelector('.cnt') ? b.querySelector('.cnt').textContent : null, gem: b.querySelector('.gem') ? b.querySelector('.gem').textContent : null, tip: b.dataset.tip, aria: b.getAttribute('aria-label'), card: m.cardOpen };
+    });
+    await setup([100, 2, 1]);
+    const a0 = await read();
+    check('holding Undos, the button shows how many (tooltip and label too)', a0.cnt === '2' && a0.gem === null && a0.tip === '2 Undos held' && a0.aria === 'Undo, 2 held', JSON.stringify(a0));
+    await page.click('#puz-undo');
+    const a1 = await read();
+    check('a puzzle undo uses a held Undo first: no lines spent, counted as used, the count goes down', a1.pieces === 0 && a1.held === 1 && a1.lines === 100 && a1.used === a0.used + 1 && a1.bought === a0.bought && a1.undos === a0.undos + 1 && a1.cnt === '1', JSON.stringify(a1));
+    await setup([100, 0, 1]);
+    const b0 = await read();
+    check('none held: the button shows the price, as Hint does', b0.cnt === null && b0.gem === '⦵5' && /^Buys one for 5 /.test(b0.tip) && b0.aria === 'Undo, costs 5 lines', JSON.stringify(b0));
+    await shot('29-undo-price');
+    await page.click('#puz-undo');
+    const b1 = await read();
+    check('none held: the undo buys one for 5 lines and uses it at once (no question), the wallet follows', b1.pieces === 0 && b1.lines === 95 && b1.wallet === '95' && b1.held === 0 && b1.bought === b0.bought + 1 && b1.used === b0.used + 1 && b1.undos === b0.undos + 1 && !(await ev(() => Lull.UI.modalOpen())), JSON.stringify(b1));
+    await setup([4, 0, 1]);
+    const c0 = await read();
+    await page.click('#puz-undo');
+    const c1 = await read();
+    const toastC = await ev(() => [...document.querySelectorAll('.toast')].map((t) => t.textContent).join('|'));
+    check('none held and under 5 lines: refused with a note, nothing changes', /Not enough lines/.test(toastC) && c1.pieces === 1 && c1.lines === 4 && c1.held === 0 && c1.bought === c0.bought && c1.used === c0.used && c1.undos === c0.undos, JSON.stringify({ c0, c1, toastC }));
+    // Nothing to take back: no charge.
+    await setup([50, 0, 0]);
+    await ev(() => Lull.app.modes.puzzle.undo());
+    check('with nothing to take back, an undo costs nothing', (await read()).lines === 50);
+    // The not-yet card's Undo pays the same way, and says so.
+    await setup([50, 0, 0]);
+    await ev(() => { const m = Lull.app.modes.puzzle; let guard = 0; while (m.game.piece && !m.cardOpen && guard++ < 30) m.action('drop'); });
+    const d0 = await ev(() => { const b = document.getElementById('puz-card-undo'); return b && { gem: b.querySelector('.gem') && b.querySelector('.gem').textContent, aria: b.getAttribute('aria-label'), pieces: Lull.app.modes.puzzle.game.s.pieces }; });
+    await shot('29-undo-card-price');
+    await page.click('#puz-card-undo');
+    const d1 = await read();
+    check('the not-yet card\'s Undo shows the price and pays it', d0 && d0.gem === '⦵5' && d0.aria === 'Undo, costs 5 lines' && d1.lines === 45 && !d1.card && d1.pieces === d0.pieces - 1, JSON.stringify({ d0, d1 }));
+    // The not-yet card stays up across tabs; its Undo follows the shared count, so it never shows one held that is gone.
+    await setup([50, 1, 0]);
+    await ev(() => { const m = Lull.app.modes.puzzle; let guard = 0; while (m.game.piece && !m.cardOpen && guard++ < 30) m.action('drop'); });
+    const cardUndo = () => ev(() => { const b = document.getElementById('puz-card-undo'); return b && { cnt: b.querySelector('.cnt') && b.querySelector('.cnt').textContent, gem: b.querySelector('.gem') && b.querySelector('.gem').textContent, aria: b.getAttribute('aria-label'), visible: !document.getElementById('puz-overlay').classList.contains('hidden') }; });
+    const k0 = await cardUndo();
+    await page.click('.tabs button[data-tab="play"]');
+    await ev(() => Lull.app.store.useItem('rewind'));
+    await page.click('.tabs button[data-tab="puzzle"]');
+    const k1 = await cardUndo();
+    check('an Undo used in Relaxed while the not-yet card is up: its Undo shows the price again', k0 && k0.cnt === '1' && k1 && k1.visible && k1.cnt === null && k1.gem === '⦵5' && k1.aria === 'Undo, costs 5 lines', JSON.stringify({ k0, k1 }));
+    await ev(() => Lull.app.store.grant('rewind'));
+    const k2 = await cardUndo();
+    check('  and five given: it shows five held', k2 && k2.cnt === '5' && k2.gem === null && k2.aria === 'Undo, 5 held', JSON.stringify(k2));
+    const k3 = await read();
+    await page.click('#puz-card-undo');
+    const k4 = await read();
+    check('  its Undo then uses a held one, no lines spent', k4.lines === k3.lines && k4.held === 4 && k4.bought === k3.bought && !k4.card, JSON.stringify({ k3, k4 }));
+    // Keys: Backspace pays once per press, however long it is held (the system's repeats undo nothing); ⌘Z too.
+    await setup([50, 0, 3]);
+    const e0 = await read();
+    await page.keyboard.down('Backspace');
+    await ev(() => { for (let i = 0; i < 6; i++) window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Backspace', key: 'Backspace', repeat: true, bubbles: true })); });
+    await page.waitForTimeout(400);
+    await page.keyboard.up('Backspace');
+    const e1 = await read();
+    check('a held Backspace undoes once and pays once', e1.pieces === e0.pieces - 1 && e1.lines === 45 && e1.bought === e0.bought + 1, JSON.stringify({ e0, e1 }));
+    await ev(() => { for (let i = 0; i < 4; i++) window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyZ', key: 'z', ctrlKey: true, repeat: i > 0, bubbles: true })); });
+    const e2 = await read();
+    check('so does a held ⌘Z', e2.pieces === e1.pieces - 1 && e2.lines === 40, JSON.stringify(e2));
+    await page.keyboard.press('KeyU');
+    const e3 = await read();
+    check('and U', e3.pieces === e2.pieces - 1 && e3.lines === 35, JSON.stringify(e3));
+    // Shared with Relaxed: one given there shows here at once, one used here shows there, and back.
+    await setup([50, 0, 1]);
+    await ev(() => Lull.app.store.grant('rewind'));
+    const f0 = await read();
+    check('Undos given in Relaxed (a pack of five) show on the puzzle button at once', f0.cnt === '5', JSON.stringify(f0));
+    await page.click('#puz-undo');
+    await page.click('.tabs button[data-tab="play"]');
+    const badge = await ev(() => { const S = Lull.app.store.state, el = document.querySelector('#itembar .group-btn[data-group="board"] .n'); return { badge: el ? el.textContent : null, tot: Object.keys(Lull.ITEMS).filter((id) => Lull.ITEMS[id].group === 'board').reduce((a, id) => a + (S.inventory[id] || 0), 0) }; });
+    check('the Relaxed bar\'s Board count follows an Undo used in Puzzles, with nothing opened', badge.badge === String(badge.tot) && badge.tot >= 4, JSON.stringify(badge));
+    await ev(() => { const m = Lull.app.modes.play; m.hideCard(); if (m.game.over) m.newBoard(); m.game.board.cells.fill(0); if (!m.game.piece) m.game.spawnNext(); });
+    await page.click('#itembar .group-btn[data-group="board"]');
+    const f1 = await ev(() => { const b = document.querySelector('.item-tray [data-item="rewind"]'); return b && { n: b.querySelector('.n').textContent, name: b.querySelector('.il').textContent, icon: (() => { const d = document.createElement('span'); d.innerHTML = Lull.Icons.icon('undo'); return b.querySelector('.ii').innerHTML === d.innerHTML && d.innerHTML === document.querySelector('#puz-undo .pz-i').innerHTML; })() }; });
+    check('one used in Puzzles leaves four in the Relaxed tray, named Undo, with the puzzle button\'s icon', f1 && f1.n === '4' && f1.name === 'Undo' && f1.icon, JSON.stringify(f1));
+    await shot('29-relaxed-undo-tray');
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Space');
+    await page.click('#itembar .group-btn[data-group="board"]');
+    await page.click('.item-tray [data-item="rewind"]');
+    await page.click('.tabs button[data-tab="puzzle"]');
+    const f2 = await read();
+    check('one used in Relaxed leaves three on the puzzle button', f2.cnt === '3' && f2.held === 3, JSON.stringify(f2));
+    // An Undo bought in Relaxed (with none held, Buy & use) is the same item: stats count it once, as bought and used.
+    await ev(() => { const st = Lull.app.store; st.state.inventory.rewind = 0; st.itemsChanged(); });
+    await page.click('.tabs button[data-tab="play"]');
+    await page.keyboard.press('Space');
+    await page.click('#itembar .group-btn[data-group="board"]');
+    const g0 = await ev(() => ({ n: document.querySelector('.item-tray [data-item="rewind"] .n').textContent, bought: Lull.app.store.state.stats.items.bought.rewind, lines: Lull.app.store.state.lines }));
+    await page.click('.item-tray [data-item="rewind"]');
+    const ask = await ev(() => { const b = document.querySelector('.modal footer .btn.primary'); return b ? b.textContent : null; });
+    await page.click('.modal footer .btn.primary');
+    const g1 = await ev(() => ({ bought: Lull.app.store.state.stats.items.bought.rewind, lines: Lull.app.store.state.lines }));
+    check('Relaxed, none held: the tray shows 5 and Buy & use asks once, for 5', g0.n === '⦵5' && /Buy & use · 5/.test(ask) && g1.bought === g0.bought + 1 && g1.lines === g0.lines - 5, JSON.stringify({ g0, ask, g1 }));
+    await page.click('.tabs button[data-tab="puzzle"]');
+
+    // A free hint (from the gift) goes before lines, and still halves the reward.
+    const h0 = await ev(() => {
+      const m = Lull.app.modes.puzzle, st = Lull.app.store;
+      while (Lull.UI.modalOpen()) Lull.UI.closeTopModal();
+      let n = 700; while (m.ps.solved[Lull.Puzzles.numberedSeed('E', n, m.spin)]) n++;
+      m.loadNumbered('E', n);
+      st.state.lines = 50; st.state.freebies.hint = 0; st.grant('free-hint'); Lull.app.refreshWallet();
+      const b = document.getElementById('puz-hint');
+      return { held: st.state.freebies.hint, label: b.textContent, tip: b.dataset.tip, aria: b.getAttribute('aria-label') };
+    });
+    const hTwo = await ev(() => {
+      const st = Lull.app.store, keep = st.state.freebies.hint;
+      st.state.freebies.hint = 0; st.itemsChanged();
+      const paid = document.getElementById('puz-hint').getAttribute('aria-label');
+      st.state.freebies.hint = 2; st.itemsChanged();
+      const b = document.getElementById('puz-hint'), two = { label: b.textContent, tip: b.dataset.tip, aria: b.getAttribute('aria-label') };
+      st.state.freebies.hint = keep; st.itemsChanged();
+      return { paid, two };
+    });
+    check('the Hint label says its cost as a cost, and two free hints as two', /^Hint, costs \d+ lines$/.test(hTwo.paid) && /2 free/.test(hTwo.two.label) && hTwo.two.tip === 'Hint · 2 free' && hTwo.two.aria === 'Hint, 2 free', JSON.stringify(hTwo));
+    check('a free hint held: the Hint button says free instead of its price', h0.held === 1 && /free/.test(h0.label) && !/⦵/.test(h0.label) && h0.tip === 'Hint · free' && h0.aria === 'Hint, free', JSON.stringify(h0));
+    await shot('29-hint-free');
+    await page.click('#puz-hint');
+    const hAsk = await ev(() => { const b = document.querySelector('.modal footer .btn.primary'); return b ? b.textContent : null; });
+    await shot('29-hint-free-confirm');
+    await page.click('.modal footer .btn.primary');
+    const h1 = await ev(() => {
+      const m = Lull.app.modes.puzzle, S = Lull.app.store.state, P = S.stats.lines.puzzles;
+      const out = { lines: S.lines, held: S.freebies.hint, on: !!(m.ps.current && m.ps.current.hint), used: S.stats.items.used['free-hint'] || 0 };
+      m.solved();
+      const R = Lull.Puzzles.DIFFS.E.reward;
+      out.paid = S.stats.lines.puzzles - P; out.want = Math.ceil(Math.round(R * 1.5) / 2);
+      out.label = [...document.querySelectorAll('#puz-overlay .bs .l')].map((l) => l.textContent).join('|');
+      return out;
+    });
+    check('the free hint is used before lines: Show · free, nothing spent, and the reward is still halved', hAsk === 'Show · free' && h1.lines === 50 && h1.held === 0 && h1.on && h1.used >= 1 && h1.paid === h1.want && /hints ½/.test(h1.label), JSON.stringify({ hAsk, h1 }));
+    const h2 = await ev(() => { const m = Lull.app.modes.puzzle; m.next(); const b = document.getElementById('puz-hint'); return { gem: b.querySelector('.gem') && b.querySelector('.gem').textContent, cost: { E: 10, M: 20, H: 35 }[m.puzzle.diff] }; });
+    check('with none left, Hint shows its price again', h2.gem === '⦵' + h2.cost, JSON.stringify(h2));
+    await ev(() => { while (Lull.UI.modalOpen()) Lull.UI.closeTopModal(); Lull.app.modes.puzzle.loadNumbered('H', 3); });
+  }
+
   // ---- the Puzzles tab's layout: what it shows, that it fits, and that nothing moves the board -----------------------
   console.log('puzzle tab');
   const boardBox = () => ev(() => { const r = document.getElementById('cv-puzzle').getBoundingClientRect(); return [r.x, r.y, r.width, r.height].map(Math.round).join(','); });
@@ -1678,6 +1878,16 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
       if (tab === 'play' || tab === 'classic') check(w + '×' + hgt + ' ' + tab + ' status bar shows everything', await ev((t) => { const b = document.getElementById(t === 'play' ? 'play-status' : 'classic-status'); return b.scrollWidth <= b.clientWidth + 1; }, tab));
       check(w + '×' + hgt + ' ' + tab + ' fits', !overflow);
       if (tab === 'puzzle') check(w + '×' + hgt + ' puzzle card and wildcards fit', await ev(() => ['view-puzzle', 'puz-card', 'puz-mods', 'puz-actions'].every((id) => { const el = document.getElementById(id); return el.scrollWidth <= el.clientWidth + 1 && el.scrollHeight <= el.clientHeight + 1; })));
+      // The action bar with its widest words: prices (none held), then counts (25 Undos, 2 free hints): one line, inside.
+      if (tab === 'puzzle') for (const [held, free] of [[0, 0], [25, 2]]) {
+        const bar = await ev(([u, f]) => {
+          const st = Lull.app.store; st.state.inventory.rewind = u; st.state.freebies.hint = f; st.itemsChanged();
+          const a = document.getElementById('puz-actions'), r = a.getBoundingClientRect();
+          const btns = [...a.querySelectorAll('.btn')].map((b) => { const q = b.getBoundingClientRect(); return { id: b.id, h: Math.round(q.height), in: q.left >= r.left - 0.5 && q.right <= r.right + 0.5, fits: b.scrollWidth <= b.clientWidth + 1 }; });
+          return { over: a.scrollWidth > a.clientWidth + 1, btns, ok: btns.every((b) => b.in && b.fits && b.h === btns[0].h) };
+        }, [held, free]);
+        check(w + '×' + hgt + ' the puzzle actions fit on one line, ' + (held ? 'with counts' : 'with prices'), !bar.over && bar.ok, JSON.stringify(bar));
+      }
       await shot('70-' + w + 'x' + hgt + '-' + tab);
     }
   }
@@ -1826,6 +2036,20 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   });
   check('a full board offers Boards and Retire', top.over && /Board full/.test(top.text) && top.btns.includes('Boards') && top.btns.includes('Retire'), JSON.stringify(top.btns));
   await shot('77-topout');
+  // The Board full card's Undo follows the shared count (used or given in Puzzles or by a gift), shown as Puzzles shows
+  // it: none held, its price (scripts/undo-test.cjs pays it every way there is).
+  const topU = await ev(() => {
+    const m = Lull.app.modes.play, st = Lull.app.store, F = st.state.stats.free, t0 = F.topouts, keep = st.state.inventory.rewind || 0;
+    const btn = () => { const b = document.getElementById('topout-undo'); return b && { text: b.textContent, cnt: b.querySelector('.cnt') && b.querySelector('.cnt').textContent, gem: b.querySelector('.gem') && b.querySelector('.gem').textContent, aria: b.getAttribute('aria-label'), icon: !!b.querySelector('svg') }; };
+    st.state.inventory.rewind = 3; st.itemsChanged(); const three = btn();
+    st.state.inventory.rewind = 0; st.itemsChanged(); const none = btn();
+    st.grant('rewind'); const five = btn();
+    const btns = Array.from(document.querySelectorAll('#play-overlay .card button')).map((b) => b.textContent);
+    return { three, none, five, btns, topouts: F.topouts - t0, keep };
+  });
+  check('the Board full card\'s Undo follows the shared count: 3, the price (5) at 0, 5 when given', topU.three && topU.three.cnt === '3' && topU.three.aria === 'Undo, 3 held' && topU.three.text === 'Undo3' && topU.three.icon && topU.none && topU.none.cnt === null && topU.none.gem === '⦵5' && topU.none.aria === 'Undo, costs 5 lines' && topU.five && topU.five.cnt === '5' && topU.btns.includes('Boards') && topU.btns.includes('Retire') && topU.topouts === 0, JSON.stringify(topU));
+  await shot('77-topout-undo');
+  await ev((n) => { const st = Lull.app.store; st.state.inventory.rewind = n; st.itemsChanged(); }, topU.keep);
   const topN0 = await ev(() => ({ r: Lull.app.store.state.boards.retired.length, cur: Lull.app.store.state.boards.cur }));
   await page.click('#play-overlay .btn.primary');
   const topRet = await ev(() => { const B = Lull.app.store.state.boards; return { r: B.retired.length, reason: B.retired[0].reason, cur: B.cur, n: B.list.length, over: Lull.app.modes.play.game.over, card: !document.getElementById('play-overlay').classList.contains('hidden') }; });
@@ -3065,6 +3289,8 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await require('./touch-test.cjs')({ browser, check, PAGE, OUT });
   // ---- what the device can do: a phone, a desktop browser, the app, a tablet with a trackpad (device-test.cjs) -------
   await require('./device-test.cjs')({ browser, check, PAGE, OUT });
+  // ---- Undo is 5 everywhere; the Board full card's Undo; the result cards on the smallest phone (undo-test.cjs) --------
+  await require('./undo-test.cjs')({ browser, check, PAGE, OUT });
   // The Home Screen web app, served over http as it is deployed: offline, updates, full screen (web-browser-test.cjs).
   console.log('web app');
   await require('./web-browser-test.cjs')({ browser, check, OUT });

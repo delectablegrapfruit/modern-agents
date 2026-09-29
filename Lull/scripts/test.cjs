@@ -1616,8 +1616,31 @@ console.log('power-ups');
     assert(Math.max(...common.map((id) => L.ITEMS[id].price)) <= Math.min(...rare.map((id) => L.ITEMS[id].price)), 'common ones cost no more than rare ones');
   });
 
-  test('the daily gift: three different power-ups, common ones far more often', () => {
+  test('the daily gift: three different entries (power-ups and a free hint), common ones far more often', () => {
     for (const id of L.ITEM_ORDER) assert(Gifts.weight(id) > 0, id);
+    // The gift's pool: every power-up, then the free hint (uncommon); what play earns is the power-ups alone.
+    assert.deepStrictEqual(Gifts.pool(), L.ITEM_ORDER.concat(['free-hint']));
+    assert.strictEqual(Gifts.weight('free-hint'), Gifts.RARITY.uncommon);
+    assert.strictEqual(L.FREEBIES['free-hint'].key, 'hint');
+    {
+      const rg = new RNG(11), M = 30000, gpool = Gifts.pool(), gtot = gpool.reduce((a, id) => a + Gifts.weight(id), 0);
+      let hints = 0, firstHint = 0, earnedHint = 0;
+      for (let i = 0; i < M; i++) {
+        const g = Gifts.draw(() => rg.next(), 3, gpool);
+        assert(g.length === 3 && new Set(g).size === 3 && g.every((id) => gpool.includes(id)), g.join());
+        if (g.includes('free-hint')) hints++;
+        if (g[0] === 'free-hint') firstHint++;
+        if (Gifts.draw(() => rg.next(), 1)[0] === 'free-hint') earnedHint++;
+      }
+      const p = Gifts.weight('free-hint') / gtot;
+      assert(Math.abs(firstHint / M - p) < 4 * Math.sqrt(p * (1 - p) / M), 'first pick ' + (firstHint / M).toFixed(4) + ' vs ' + p.toFixed(4));
+      assert(hints / M > 2 * p && hints / M < 3.5 * p, 'in about one gift in ' + Math.round(M / hints) + ' (p ' + p.toFixed(4) + ')');
+      assert.strictEqual(earnedHint, 0, 'play never earns a free hint');
+      // Some claim of a save gives it, the same on every asking.
+      const n = [...Array(200).keys()].find((k) => Gifts.forClaim(77, k).includes('free-hint'));
+      assert(n != null && Gifts.forClaim(77, n).includes('free-hint') && new Set(Gifts.forClaim(77, n)).size === 3);
+      assert.deepStrictEqual(Gifts.forClaim(77, n), Gifts.forClaim(77, n));
+    }
     const rng = new RNG(9), N = 60000;
     let common = 0, rare = 0;
     for (let i = 0; i < N; i++) {
@@ -1642,9 +1665,9 @@ console.log('power-ups');
     s.state = L.defaultState();
     const t0 = new Date(2026, 8, 27, 23, 30).getTime();
     assert(Gifts.ready(s.state, t0) && Gifts.left(s.state, t0) === 0, 'the first one is waiting');
-    const inv0 = inv(s.state);
+    const inv0 = inv(s.state), give = (ids) => ids.reduce((a, id) => a + (L.FREEBIES[id] ? 0 : L.packOf(id)), 0);
     const got = s.openGift(t0);
-    assert(got && got.length === 3 && inv(s.state) === inv0 + 3);
+    assert(got && got.length === 3 && new Set(got).size === 3 && inv(s.state) === inv0 + give(got), JSON.stringify(got));
     assert.strictEqual(s.openGift(t0 + 1 * H), null, 'past midnight is not enough');
     assert.strictEqual(s.openGift(t0 + 24 * H - 60e3), null, 'a minute short');
     assert.strictEqual(Gifts.left(s.state, t0 + 20 * H), 4 * H, 'the tooltip counts down from the claim');
@@ -1669,6 +1692,77 @@ console.log('power-ups');
     fwd.state = L.defaultState();
     assert(fwd.openGift(t0 + 1000 * H));
     assert.strictEqual(fwd.openGift(t0 + 1 * H), null);
+  });
+
+  test('the gift gives an Undo as a pack of five and a free hint into the freebies; the log keeps the ids', () => {
+    const at = (want) => { for (let c = 1; c < 500; c++) if (Gifts.forClaim(c, 0).includes(want)) return c; return null; };
+    const cu = at('rewind'), ch = at('free-hint');
+    assert(cu != null && ch != null);
+    const a = new L.Store(); a.state = L.loadState({ created: cu });
+    const ids = a.openGift(1e12);
+    assert.strictEqual(a.state.inventory.rewind, 5, 'five Undos');
+    assert.strictEqual(a.state.stats.items.got.rewind, 5);
+    assert.deepStrictEqual(a.state.gift.log[0].ids, ids);
+    const b = new L.Store(); b.state = L.loadState({ created: ch });
+    assert.strictEqual(b.state.freebies.hint, 0, 'a fresh save holds no free hint');
+    const idsB = b.openGift(1e12);
+    assert.strictEqual(b.state.freebies.hint, 1, 'one free hint');
+    assert.strictEqual(b.state.stats.items.got['free-hint'], 1);
+    assert(!('free-hint' in b.state.inventory), 'never in the item bar');
+    assert.strictEqual(inv(b.state), idsB.filter((id) => id !== 'free-hint').reduce((n, id) => n + L.packOf(id), 0));
+    assert(b.useFreebie('hint') && !b.useFreebie('hint') && b.state.freebies.hint === 0 && b.state.stats.items.used['free-hint'] === 1);
+  });
+
+  test('Undo: one item for Relaxed and Puzzles, 5 lines, common, five to every free grant and one to a purchase', () => {
+    const U = L.ITEMS.rewind;
+    assert(U.name === 'Undo' && U.price === 5 && U.pack === 5 && U.rarity === 'common', JSON.stringify(U));
+    assert.strictEqual(L.packOf('rewind'), 5);
+    assert.strictEqual(L.packOf('bomb'), 1);
+    assert.strictEqual(L.itemCount('rewind', 5), '5 Undos');
+    assert.strictEqual(L.itemCount('rewind', 1), 'Undo');
+    const s = new L.Store();
+    assert.strictEqual(s.grant('rewind'), 5, 'a free one (gift, play) is a pack');
+    assert.strictEqual(s.grantItem('rewind'), 5, 'and grantItem gives the pack by default');
+    assert.strictEqual(s.state.inventory.rewind, 10);
+    assert.strictEqual(s.grant('bomb'), 1);
+    s.state.lines = 12;
+    assert(s.buyItem('rewind') && s.state.inventory.rewind === 11 && s.state.lines === 7 && s.state.stats.items.bought.rewind === 1, 'bought one at a time');
+    // Puzzles' way: use one held, else buy one and use it at once; short of lines, nothing changes.
+    const p = new L.Store();
+    p.state.lines = 9; p.state.inventory.rewind = 1;
+    assert.strictEqual(p.useOrBuy('rewind'), 'held');
+    assert(p.state.inventory.rewind === 0 && p.state.lines === 9 && p.state.stats.items.used.rewind === 1);
+    assert.strictEqual(p.useOrBuy('rewind'), 'bought');
+    assert(p.state.inventory.rewind === 0 && p.state.lines === 4 && p.state.stats.items.used.rewind === 2 && p.state.stats.items.bought.rewind === 1);
+    const snap = JSON.stringify(p.state);
+    assert.strictEqual(p.useOrBuy('rewind'), false);
+    assert.strictEqual(JSON.stringify(p.state), snap, 'refused: nothing changes');
+    // Every change to the counts is announced, so both tabs redraw them.
+    let heard = 0; p.on('items', () => heard++);
+    p.state.lines = 5; p.useOrBuy('rewind'); p.grant('free-hint'); p.useFreebie('hint');
+    assert(heard >= 3, heard + ' announcements');
+  });
+
+  test('Undo is 5 everywhere: one price, and every way of buying one reads it', () => {
+    assert.strictEqual(L.ITEMS.rewind.price, 5);
+    // Both ways the store sells one (the Relaxed tray's Buy & use; the puzzle and Board full buttons) take exactly 5.
+    for (const lines of [5, 6, 50, 1234]) {
+      const a = new L.Store(); a.state.lines = lines;
+      assert(a.buyItem('rewind') && a.state.lines === lines - 5, 'buyItem at ' + lines);
+      const b = new L.Store(); b.state.lines = lines;
+      assert(b.useOrBuy('rewind') === 'bought' && b.state.lines === lines - 5, 'useOrBuy at ' + lines);
+    }
+    // The game prices an Undo only by ITEMS.rewind.price: no number of its own in the shared button, the Board full
+    // card's undo or the puzzle undo, and no other price (a hint's, by difficulty) in them.
+    const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'Game', 'js', 'modes.js'), 'utf8');
+    const body = (start, end) => { const i = src.indexOf(start); assert(i >= 0, start); const j = src.indexOf(end, i); assert(j > i, start); return src.slice(i, j); };
+    for (const [start, end] of [['function undoButton(', '\n  }\n'], ['    topoutUndo() {', '\n    }\n'], ['    undo() {', '\n    }\n']]) {
+      const b = body(start, end);
+      assert(/ITEMS\.rewind\b/.test(b) && /\bit\.price\b/.test(b), start + ' reads ITEMS.rewind.price');
+      assert(!/DIFF_COST|\bcost\b|price\s*[:=]|\bspend\(|\blines\s*(?:[-+]=?|[<>]=?)\s*\d/.test(b), start + ' has no price of its own');
+    }
+    assert(/undoBtn\(attrs, label\) \{\s*return undoButton\(/.test(src), 'the puzzle buttons are the shared Undo button');
+    assert(/undoButton\(this\.app\.store, \{ class: 'btn', id: 'topout-undo', onclick: \(\) => this\.topoutUndo\(\) \}/.test(src), 'so is the Board full card\'s');
   });
 
   test('power-ups earned in play: one per hundred lines on a board, never twice for a rewound clear, never backwards', () => {

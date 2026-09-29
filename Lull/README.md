@@ -25,7 +25,13 @@ line more, and the back-to-back streak multiplies it: an eighth for each quad or
 pay past eight in a row and stops at ×2.5 (twenty in a row) — a quad on a full streak pays 12.5 (pay is kept to the hundredth, rounded down). The *chain* — the streak
 plus the combo, the number to be proud of — is counted apart and shown beside the multiplier (`Chain 16 · ×1.75`).
 A piece that has no room where it appears (a new one, one swapped in from hold, or one an item makes) is fitted into the nearest open spot above the stack it could get to — beside a tall column, stood on end, in another turn — never down inside the stack. Only when it fits nowhere is the board full; a hold swap or an item with no room is just refused (a short note says so, nothing is used up).
-A full board just ends that board; the lines stay yours. The ⦵ glyph is a cleared line running into a small black hole; in the wallet it is drawn large, a dark disc in a thin glowing ring. Everywhere else it is one character, `L.LINE` (U+29B5, never an emoji), drawn by a one-glyph font of the page's own (`scripts/line-glyph.py`) that is first in every font list and in the canvas fonts, so text, prices, toasts and the boards all show the same shape. Retiring a board (Boards ▸ Retire, or Retire when it fills up) shows its whole life: how long it
+A full board just ends that board; the lines stay yours. Its Board full card shows the board's numbers (they scroll on
+a short screen, the cut edge fading while there is more; the buttons always show) with Undo — there whenever a placement
+can be taken back, with how many Undos you hold or its price, paid as in Puzzles: one held is used, with none one is
+bought for 5 ⦵ and used at once, short of lines a note says Not enough lines — then Boards and Retire. An Undo also
+takes back what that placement banked, so buying one needs the 5 and those lines (the wallet never goes below 0); and
+like a set piece, an Undo that closes a card starts the set grace, so a double click does not drop the piece it
+brought back. The ⦵ glyph is a cleared line running into a small black hole; in the wallet it is drawn large, a dark disc in a thin glowing ring. Everywhere else it is one character, `L.LINE` (U+29B5, never an emoji), drawn by a one-glyph font of the page's own (`scripts/line-glyph.py`) that is first in every font list and in the canvas fonts, so text, prices, toasts and the boards all show the same shape. Retiring a board (Boards ▸ Retire, or Retire when it fills up) shows its whole life: how long it
 lived and was played, pieces, lines, score, quads, T-spins, perfect clears, best combo and back-to-back, holds and
 every power-up used on it; Stats ▸ Free Play keeps the last boards.
 
@@ -37,7 +43,7 @@ on whole screen pixels so it stays crisp; cached and redrawn only when the stack
 play and where it was (a T turned into its slot still spins, an I brought out of hold is still one), hold, the queue, the bag and the random stream (it goes on with the same pieces it would have
 dealt), score, lines, chain and multiplier, gold, boosts and Luck, per-board stats and play time; the one in play is
 shelved as it stands. A power-up still waiting to be taken back is kept as used when you switch (the take-back ends
-there, as when the piece sets), and the Rewind history stays behind, as it does across a reload. New board shelves the
+there, as when the piece sets), and the Undo history stays behind, as it does across a reload. New board shelves the
 one in play and starts an empty board with its own seed (never the old board's queue); it is off when the library
 holds 12 (it says Library full; retire or delete one).
 New board first asks for a size (below); on a board nothing has been done on (no piece set, no power-up used: gold,
@@ -135,8 +141,11 @@ too, and so does the pointer leaving the window (Settings ▸ Controls ▸ Pause
 carries on.
 
 **Puzzles** — procedurally generated, infinite, short, in Easy, Medium and Hard. Each has a seed (`M-3K7Q2XA`): the
-same seed is the same puzzle for everyone, so it can be shared, replayed or retried (R) as often as you like; Undo is
-free. Every puzzle is built backwards from a solution — rows are filled solid, pieces are lifted out only where they
+same seed is the same puzzle for everyone, so it can be shared, replayed or retried (R) as often as you like (Retry is
+free). Undo takes back the last piece for one Undo, the power-up shared with Free Play: one you hold is used, and with
+none it buys one for its price, 5 ⦵ (the one price of an Undo, everywhere), and uses it at once (the price is on the button, so it never asks; short of lines, a
+note says Not enough lines and nothing changes). Only an undo that happens is paid for, once — ⌫, U or ⌘Z held down
+undo once. Every puzzle is built backwards from a solution — rows are filled solid, pieces are lifted out only where they
 could have been flown in and set, and the result is played forward on the real rules before it is kept — so every seed
 is solvable, and Hard ones need tucks and spins. Goals: clear the board, clear N lines over bedrock, or clear the gems.
 Every puzzle takes every piece: the board and the lines hold exactly the pieces' cells, and one gem sits in a row only the
@@ -176,10 +185,12 @@ The tab reads top to bottom: a slim bar (difficulty; Daily, pressed while today'
 solved; Seed; History — icons alone in a narrow window), then the puzzle's card — its name (a small tick once solved), where it
 comes from (number, Daily date or seed) and piece count, the seed (click to copy) and the star; the goal with how far along
 it is (lines, gems or blocks left, and a thin meter); a chip per wildcard, each with its own icon (hover, or click for a
-note that stays; Both Ways is tinted and names Z and A) — then the board, and a bar of Undo, Retry, Hint (with its price) and
+note that stays; Both Ways is tinted and names Z and A) — then the board, and a bar of Undo (with how many Undos you hold, or its price), Retry, Hint (with its price, or *free*
+while the daily gift's free hint is held — a free hint goes before lines and still halves the reward) and
 Skip, which turns into Next once solved. Every row has a fixed height and chips shorten (then drop to icons) rather
 than wrap, so no puzzle and no state moves the board. Solving brings a small card with the time, tries and pay; a
-board that runs out shows how far it got, with Undo and Retry. Play a seed reads a seed as it is typed (difficulty,
+board that runs out shows how far it got, with Undo (its count or price, paid the same way) and Retry (on a phone as
+small as 320 × 568 both cards tighten so their buttons show: a smaller ring, and Solved without its tick). Play a seed reads a seed as it is typed (difficulty,
 both ways, solved, which Daily) and refuses a bad one in place; History has counts on its tabs and marks the puzzle in
 play. History, and Stats ▸ Puzzles, end with one quiet line — "37 of 12,884,901,888 puzzles solved" (doubled with
 Counter-clockwise puzzles on); each difficulty button's tooltip gives its own share of 4,294,967,296.
@@ -227,23 +238,27 @@ clicking it asks once (its name and a Buy & use button with the price) — dimme
 | Shapers | Reroll (15, common: a different piece), Mirror (15, common: J and L, S and Z swap), Pebble (20, common: a single block), Noodle (25, uncommon: a six-long rod), Giant (30, uncommon: twice the size), Blueprint (100, rare: draw your own, up to six blocks) |
 | Choice | Pick of Three (20, common: play one of the next three now; this piece takes its place in line), Best Fit (45, uncommon: the piece becomes whichever of the seven fits the stack best, right over its spot), Order Slip (35, rare: choose the piece in play) |
 | Tools | Patch (20, common: one block that drops into the highest covered hole in its column), Ghost (50, uncommon: passes through blocks into the first gap below where it fits), Drill (40, uncommon: bores out its column), Bomb (45, uncommon: clears a 13-block diamond where it lands), Laser (65, rare: clears every row it touches, full or not), Black Hole (90, rare: swallows everything within three blocks) |
-| Board | Mirror World (20, common: flips the board left to right), Rewind (25, common: takes back the last placement and its lines), Trapdoor (40, uncommon: the bottom row falls away, whatever it holds), Tornado (60, rare: shuffles the columns, holes and all), Settle (70, rare: every block falls straight down; full rows clear) |
+| Board | Mirror World (20, common: flips the board left to right), Undo (5, common: takes back the last placement and its lines; one item with Puzzles' Undo, the count shared, and every free one comes as a pack of 5), Trapdoor (40, uncommon: the bottom row falls away, whatever it holds), Tornado (60, rare: shuffles the columns, holes and all), Settle (70, rare: every block falls straight down; full rows clear) |
 | Luck | Golden Piece (35, uncommon: the next five clears pay ×3), Double or Nothing (30, uncommon: the next clear pays double if it is a quad or a T-spin, nothing if it is less), Safety Net (60, rare: keeps the back-to-back streak through one ordinary clear) |
 
 Nothing here is about a clock — Free Play has none — so they are about choice and shape: which piece, what it
 becomes, what the stack looks like after, what the next clear is worth. Tools and Shapers change the piece in play
 (the ghost shows where a Patch, Ghost or Bomb will act); press the same one again before the piece is set and the old
-piece, the queue and the item come back. Board items act at once and can be rewound. Lines a power-up clears are plain
+piece, the queue and the item come back. Board items act at once and can be undone (with an Undo). Lines a power-up clears are plain
 lines: they pay and keep the combo going, but are never a quad or a T-spin and never add a back-to-back link (a
 Tornado only rearranges — every row keeps its count, so it never clears). Every one of them, Luck aside, puts
 power-ups on the board for the achievements.
 
 *Getting them.* Bought with lines in the tray; free from the daily gift; and, modestly, from play: one for every hundred
-lines cleared on a board (counted in the save, outside the board, so a Rewind and a replayed clear never pay twice) and one the first time each combo is ever found. Free ones are drawn by rarity
-(common 8, uncommon 3, rare 1).
+lines cleared on a board (counted in the save, outside the board, so an Undo and a replayed clear never pay twice) and one the first time each combo is ever found. Free ones are drawn by rarity
+(common 8, uncommon 3, rare 1), and a free Undo is always 5 of them (bought, it is one at a time, and always for 5 ⦵:
+the tray's Buy & use, the Board full card, the puzzle bar and card, the keys and a finger all pay the same).
 
 **Daily gift** — the small wrapped box in the Relaxed tab's status bar glows while a gift is waiting: three different
-power-ups, drawn by rarity, so about two thirds of what it gives is common and one in fourteen rare. It comes again 24
+things, drawn by rarity from the power-ups (an Undo comes as 5) and one puzzle freebie, a free hint (uncommon: one hint
+at no cost, which still halves the reward; the Puzzles tab uses it before lines), so nearly six in ten of what it gives
+are common, about one in thirteen rare, and one gift in ten holds a free hint. What play earns is power-ups alone. Its
+cards say what each is (5 Undos; Hint, with the hint icon). It comes again 24
 hours after it was last opened — the time since, not the date; its tooltip counts down. The claim time is booked in the
 save as it opens, and the draw is fixed by the save and how many gifts it has opened, so reopening Lull or switching
 tabs never re-rolls it or opens it twice. A clock turned back never opens it early: the next one is still 24 hours
@@ -347,8 +362,8 @@ gimme — the easiest is a quad with no power-ups on the board (15 ⦵) — and 
 few items used along the way (a test plays both, at a relaxed piece every three seconds).
 
 *Free Play has no clock and a bag of power-ups*, so nearly anything there could be bought or waited out (an Order
-Slip for every I, a laser for every row, a Settle for every perfect clear, Rewind for every slip). So its skill ones
-say **no power-ups on the board**: no power-up that touches the pieces or the board — Rewind included — during the
+Slip for every I, a laser for every row, a Settle for every perfect clear, an Undo for every slip). So its skill ones
+say **no power-ups on the board**: no power-up that touches the pieces or the board — Undo included — during the
 feat, nor since the board was last empty (an empty board, however it got that way, is a fresh start; Luck never counts
 against it, and one taken back before its piece is set never happened). Each description says it in those words; the
 exact rule is said once, in the (i) beside the Free Play header. (The code calls this play *by hand*.) Its score ones
@@ -373,7 +388,7 @@ played. Thirty-two are legendary (800–5,000 ⦵): a chain of 20 with no power-
 quads in a row, five gold clears on a chain of 20, ten perfect clears or 5,000 lines on one board, a million
 without items; Classic level 25, a 15-combo, 40 lines in 50 s, level 20 without hold, a Classic million; every
 wildcard on Hard, a Daily thirty days in a row, a hundred first-try solves in a row; a hundred hours or a hundred days
-with Lull, everything the shop sells, a million lines earned (rewound lines aside, since a rewound clear replayed would count
+with Lull, everything the shop sells, a million lines earned (undone lines aside, since an undone clear replayed would count
 twice); all 108 heptominoes or 100,000 minos
 pressed — and *Lull*, every other one. They read the stats below plus a few kept for them: the
 board's hand counts (`freshStats` in `js/engine.js`: whether there are power-ups on the board, and the back-to-back,
@@ -385,7 +400,7 @@ lines, so a quick restart is not a game), and the
 day log's quad (set by a piece: a laser or a Tornado is not one) / tetris / Hard puzzle / Dailies. Lifetime ones are also checked once a minute.
 
 **Stats** — lines by source and day (play, combos, puzzles …), combos found, clears, T-spins, combos, pieces per minute, inputs per piece, puzzle solves
-and first-try rates by difficulty and wildcard, factory output and shapes pressed, power-ups bought, given and used, time by mode.
+and first-try rates by difficulty and wildcard, factory output and shapes pressed, power-ups bought, given and used (and free hints given and used), time by mode.
 
 ## Keys
 
@@ -489,7 +504,7 @@ four seconds. What counts as struggling, read from real input (`js/hints.js`):
 | `C holds` (`Click HOLD to swap`) | a Hold puzzle failed, or retried two pieces in, without holding once |
 | `← → swapped` | Inverted Controls: three fresh presses into a wall the piece could leave the other way |
 | `← → move · ↑ turns` | four keys that do nothing on a board within 8 s (WASD, say) |
-| `Right-click turns` | eight clicked pieces in a row never turned, or two clicked pieces undone or rewound within 5 s |
+| `Right-click turns` | eight clicked pieces in a row never turned, or two clicked pieces undone within 5 s |
 
 Never two at once: a hint waits for a calm moment (no card or window open; in Classic only paused, before it starts,
 or at level 4 or lower with the stack at most 5 high) and gives up after 15 s; 45 s between any two, 4 minutes before
@@ -512,9 +527,10 @@ cd Lull && swift run          # the same, straight from the package
 open Lull/Game/index.html     # any browser, any OS (saves to localStorage)
 
 node Lull/scripts/test.cjs            # game logic: 750 puzzles replayed through the engine, turns, items, factory, board library, save
-node Lull/scripts/browser-test.cjs    # the page played in headless Chromium (needs Playwright), then touch- and device-test
+node Lull/scripts/browser-test.cjs    # the page played in headless Chromium (needs Playwright), then touch-, device- and undo-test
 node Lull/scripts/touch-test.cjs      # an emulated phone played with real touches: gestures, layout, 44 px targets
 node Lull/scripts/device-test.cjs     # what a phone, a desktop browser, the app and a tablet with a trackpad are offered
+node Lull/scripts/undo-test.cjs       # every way of buying an Undo charges 5; the Board full and puzzle cards fit, down to 320 x 568
 node Lull/scripts/audio-render.cjs out/   # every sound and a minute of music rendered offline: WAVs, peak, loudness, brightness
 node Lull/scripts/audio-render.cjs out/ --harmony   # every pack's pitched sounds in every section: notes found, share in its key, A/B mixes
 
@@ -586,7 +602,7 @@ The address is shown on the `pages` job and under Settings ▸ Pages.
 |---|---|
 | `Game/` | the game: `index.html`, `manifest.webmanifest`, `sw.js` (the offline copy), `icons/` (the Home Screen icons), `css/`, and `js/` — `webapp` (the Home Screen app: the worker, its updates, lasting storage), `icons` (the one SVG icon set), `pieces` (SRS tetrominoes, pentominoes, big and custom shapes, polyomino enumeration), `board`, `engine` (the floating-piece rules and every item), `items` (the chain multiplier, combos, Luck, the daily gift, power-ups earned in play), `library` (the Relaxed board library: shelved and retired boards, names, caps), `puzzlegen` (seeds, wildcards, reverse construction, reachability search, forward verification), `factory` (presses, the belt, the bin, one step for play and time away, save repair), `store` (save, catalog, stats), `achievements`, `fxphysics` (the item effects' blocks, debris and dust: gravity, bounces, spirals, fixed pools), `render` (canvas: skins, frames, effects, item animations, rotated views), `factoryview` (the factory floor, drawn like the board), `hints` (control hints: the struggle signals, their limits and retirement), `touch` (the touch gestures: a pure reader of fingers, and the page's touch helpers), `webapp` (the Home Screen web app: the offline copy's registration and updates), `collapse` (the window rolled up into its title bar, and the parade of pieces along it), `modes`, `ui`, `app` |
 | `Sources/Lull/` | the macOS shell: a borderless `NSPanel` (floating, all Spaces, edge-resizable, draggable by the page's title bar) around a transparent `WKWebView`, a blur for the Glass background, the save file, the ⌥⌘L hot key, and a self-test CI runs |
-| `scripts/` | `make-app.sh`, `icon.swift`, `line-glyph.py` (builds the line glyph's font into `lull.css`), `test.cjs`, `browser-test.cjs`, `audio-render.cjs` (renders and measures the synthesized audio offline), `pitch.cjs` (finds the notes in a render, to check sound effects are in the music's key), `splice-voice.py` (cuts the announcer's lines from a recording), `web-build.cjs` (the site as deployed), `web-icons.cjs` (the Home Screen icons), `web-test.cjs` and `web-browser-test.cjs` (the web app's tests, run by the two above), `touch-test.cjs` (an emulated phone played with gestures, run by browser-test), `device-test.cjs` (what each device is offered in Settings and the bar, and live changes; run by browser-test), `sizes-test.cjs` (board sizes: the New board window, every extreme size, pay by width, layout; run by browser-test) |
+| `scripts/` | `make-app.sh`, `icon.swift`, `line-glyph.py` (builds the line glyph's font into `lull.css`), `test.cjs`, `browser-test.cjs`, `audio-render.cjs` (renders and measures the synthesized audio offline), `pitch.cjs` (finds the notes in a render, to check sound effects are in the music's key), `splice-voice.py` (cuts the announcer's lines from a recording), `web-build.cjs` (the site as deployed), `web-icons.cjs` (the Home Screen icons), `web-test.cjs` and `web-browser-test.cjs` (the web app's tests, run by the two above), `touch-test.cjs` (an emulated phone played with gestures, run by browser-test), `device-test.cjs` (what each device is offered in Settings and the bar, and live changes; run by browser-test), `sizes-test.cjs` (board sizes: the New board window, every extreme size, pay by width, layout; run by browser-test), `undo-test.cjs` (every way of buying an Undo, and the cards that offer it at every size; run by browser-test) |
 
 ## Credits
 

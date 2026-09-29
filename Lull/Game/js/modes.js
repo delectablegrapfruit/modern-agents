@@ -2,7 +2,7 @@
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
-  const { Game, Board, CELL, Pieces, Puzzles, Factory, Render, UI, ITEMS, ITEM_ORDER, ITEM_GROUPS, Chain, Combos, Luck, Pay, Gifts, Earn, Library, fmt, fmtInt, fmtLines, fmtClock, fmtDuration, dateKey } = L;
+  const { Game, Board, CELL, Pieces, Puzzles, Factory, Render, UI, ITEMS, ITEM_ORDER, ITEM_GROUPS, FREEBIES, itemCount, Chain, Combos, Luck, Pay, Gifts, Earn, Library, fmt, fmtInt, fmtLines, fmtClock, fmtDuration, dateKey } = L;
   const { h, toast } = UI;
   const ico = UI.icon;
   const { LINE } = L;
@@ -27,6 +27,18 @@
   const ACTS_NOW = new Set(['settle', 'flip', 'trapdoor', 'tornado', 'rewind']);
   // Tools: the piece in play turns into one.
   const SPECIALS = new Set(['patch', 'phase', 'drill', 'bomb', 'laser', 'blackhole']);
+
+  /**
+   * An Undo button, the same wherever it is (the Board full card, the puzzle bar and card): how many Undos are held,
+   * or, with none, the one price of one (ITEMS.rewind.price, as Hint shows its price). Its tooltip and label say the
+   * same in words; foot is its key, where it has one.
+   */
+  function undoButton(store, attrs, glyph, label, foot) {
+    const it = ITEMS.rewind, n = store.state.inventory.rewind || 0;
+    const says = n ? n + ' ' + (n > 1 ? it.plural : it.name) + ' held' : 'Buys one for ' + fmtInt(it.price) + ' ' + LINE;
+    return h('button', Object.assign({ 'aria-label': 'Undo, ' + (n ? n + ' held' : 'costs ' + fmtInt(it.price) + ' lines'), 'data-tip-title': 'Undo', 'data-tip': says }, foot ? { 'data-tip-foot': foot } : null, attrs),
+      glyph, label ? h('span', { class: 'lbl' }, label) : null, n ? h('span', { class: 'cnt' }, String(n)) : h('span', { class: 'gem' }, LINE + fmtInt(it.price)));
+  }
 
   // A small wrapped box, drawn (never an emoji).
   const GIFT_ICON = L.Icons.icon('gift');
@@ -339,8 +351,8 @@
       return ok;
     }
 
-    showCard(content) {
-      this.overlay.replaceChildren(h('div', { class: 'card' }, content));
+    showCard(content, cls) {
+      this.overlay.replaceChildren(h('div', { class: 'card' + (cls ? ' ' + cls : '') }, content));
       this.overlay.classList.remove('hidden');
     }
     hideCard() { this.overlay.classList.add('hidden'); this.overlay.replaceChildren(); }
@@ -586,6 +598,9 @@
       this.renderItems();
       this.renderStatus();
       if (game.over) this.onTopout(true);
+      // Undo is shared with Puzzles: one bought or used there (or given) shows here at once, on the bar and on a
+      // Board full card that is up (redrawn silently, so it is not counted as another top-out).
+      app.store.on('items', () => { this.renderItems(); if (this.cardOpen && this.game.over) this.onTopout(true); });
     }
 
     snapshot() { this.lastS = { holds: this.game.s.holds, rotations: this.game.s.rotations, moves: this.game.s.moves, lowers: this.game.s.lowers, drops: this.game.s.drops }; }
@@ -706,15 +721,19 @@
       if (first) setTimeout(() => this.earnItem(), 900 + i * 300);
     }
 
-    /** A power-up earned in play (js/items.js, Earn): drawn by rarity, into the bag, with a quiet toast. */
+    /** A power-up earned in play (js/items.js, Earn): drawn by rarity from the power-ups, into the bag (an Undo as its pack), with a quiet toast. */
     earnItem() {
       const id = Gifts.draw(Math.random, 1)[0];
       if (!id) return;
-      this.app.store.grantItem(id, 1);
-      toast(ITEMS[id].name, 'good', 2200, 'item-' + id);
+      const n = this.app.store.grant(id);
+      toast(itemCount(id, n), 'good', 2200, 'item-' + id);
       this.renderItems();
     }
 
+    /**
+     * The Board full card: the board's numbers, and Undo (whenever there is a placement to take back: how many are held,
+     * or the price), Boards and Retire. The numbers scroll on a short screen; the buttons always show.
+     */
     onTopout(silent) {
       const g = this.game, F = this.app.store.state.stats.free;
       if (!silent) { F.topouts++; this.app.store.touch(); }
@@ -722,10 +741,49 @@
         h('h2', null, 'Board full'),
         this.boardSummary(Library.summarize(g.s, Date.now())),
         h('div', { class: 'row' },
-          g.history.length && this.app.store.state.inventory.rewind ? h('button', { class: 'btn', onclick: () => { this.hideCard(); this.useItem('rewind'); } }, ico('item-rewind'), 'Rewind · ' + this.app.store.state.inventory.rewind) : null,
+          g.history.length ? undoButton(this.app.store, { class: 'btn', id: 'topout-undo', onclick: () => this.topoutUndo() }, ico('item-rewind'), ITEMS.rewind.name) : null,
           h('button', { class: 'btn', onclick: () => this.openLibrary() }, ico('boards'), 'Boards'),
           h('button', { class: 'btn primary', onclick: () => this.newBoard('full') }, ico('retire'), 'Retire')),
-      ]);
+      ], 'topout');
+      this.fadeEdges(this.overlay.querySelector('.board-sum'));
+    }
+
+    /**
+     * The Board full card's Undo, paid as the puzzle Undo is: one held is used; with none, one is bought at its price
+     * and used at once (the price is on the button, so no question); with none and too few lines, nothing happens but a
+     * note.
+     */
+    topoutUndo() {
+      const st = this.app.store, it = ITEMS.rewind;
+      if (!this.game.history.length) return;
+      if (!(st.state.inventory.rewind > 0)) {
+        if (st.state.lines < it.price + this.rewindRefund()) { toast('Not enough lines', 'bad'); this.app.sound.play('error'); return; }
+        if (!st.buyItem('rewind')) return;
+        this.app.refreshWallet();
+      }
+      this.apply('rewind');
+    }
+
+    /** A scrolling list's cut edges fade (fade-t, fade-b) while there is more that way, as the card resizes too. */
+    fadeEdges(el) {
+      if (this.edgesRO) { this.edgesRO.disconnect(); this.edgesRO = null; }
+      if (!el) return;
+      const edges = () => {
+        el.classList.toggle('fade-t', el.scrollTop > 1);
+        el.classList.toggle('fade-b', el.scrollTop + el.clientHeight < el.scrollHeight - 1);
+      };
+      edges();
+      el.addEventListener('scroll', edges, { passive: true });
+      if (root.ResizeObserver) { this.edgesRO = new ResizeObserver(edges); this.edgesRO.observe(el); }
+    }
+
+    /**
+     * The lines an Undo takes back from the wallet: what the last placement banked. A bought Undo needs its price and
+     * these, or the wallet would go below zero.
+     */
+    rewindRefund() {
+      const g = this.game, last = g && g.history[g.history.length - 1];
+      return last ? Math.round(Math.max(0, (g.s.banked || 0) - (last.s.banked || 0)) * 100) / 100 : 0;
     }
 
     /**
@@ -1228,8 +1286,9 @@
     }
 
     /**
-     * Opens the gift: the three items are booked and saved first (so closing early loses nothing), then turned over
-     * one after another. Not ready yet: a quiet note of how long until it is.
+     * Opens the gift: the three entries are booked and saved first (so closing early loses nothing), then turned over
+     * one after another — a power-up (an Undo says it is five), or a free puzzle hint. Not ready yet: a quiet note of
+     * how long until it is.
      */
     openGift() {
       const st = this.app.store;
@@ -1239,9 +1298,9 @@
         return;
       }
       const cards = ids.map((id, i) => {
-        const it = ITEMS[id];
-        return h('div', { class: 'gift-card ' + it.rarity, style: { animationDelay: (0.25 + i * 0.35) + 's' }, 'data-tip-title': it.name, 'data-tip': it.desc },
-          h('div', { class: 'gift-face' }, h('span', { class: 'gi', html: L.Icons.icon('item-' + id) }), h('b', null, it.name), it.rarity !== 'common' ? h('small', null, it.rarity) : null));
+        const free = FREEBIES[id], it = free || ITEMS[id], name = free ? it.name : itemCount(id, L.packOf(id));
+        return h('div', { class: 'gift-card ' + it.rarity, 'data-gift': id, style: { animationDelay: (0.25 + i * 0.35) + 's' }, 'data-tip-title': name, 'data-tip': it.desc },
+          h('div', { class: 'gift-face' }, h('span', { class: 'gi', html: L.Icons.icon(free ? it.icon : 'item-' + id) }), h('b', null, name), it.rarity !== 'common' ? h('small', null, it.rarity) : null));
       });
       UI.openModal({ title: 'Daily gift', icon: 'gift', width: 340, cls: 'modal-gift' + (this.reduced ? ' still' : ''), body: h('div', { class: 'gift-cards' }, cards), buttons: [{ label: 'Keep', kind: 'primary' }] });
       ids.forEach((_, i) => setTimeout(() => this.app.sound.play('combo', 3 + i * 2), 350 + i * 350));
@@ -1315,7 +1374,11 @@
       if (!this.game.piece && id !== 'rewind') { toast('No piece in play', 'bad'); return; }
       if (!st.state.inventory[id]) {
         if (st.state.lines < it.price) { toast(it.name + ' · ' + fmtInt(it.price) + ' ' + LINE, 'bad'); this.app.sound.play('error'); return; }
+        // An Undo also takes back what the last placement banked: the wallet must cover both.
+        const short = () => id === 'rewind' && st.state.lines < it.price + this.rewindRefund();
+        if (short()) { toast('Not enough lines', 'bad'); this.app.sound.play('error'); return; }
         UI.confirm(it.name, h('p', null, it.desc), 'Buy & use · ' + fmtInt(it.price) + ' ' + LINE, () => {
+          if (short()) { toast('Not enough lines', 'bad'); this.app.sound.play('error'); return; }
           if (st.buyItem(id)) { this.app.refreshWallet(); this.apply(id); }
         }, 'primary', 'item-' + id);
         return;
@@ -1421,15 +1484,17 @@
         case 'rewind': {
           const banked0 = g.s.banked || 0;
           const res = g.undo();
-          if (!res) { toast('Nothing to rewind', 'bad'); return; }
+          if (!res) { toast('Nothing to undo', 'bad'); return; }
           if (this.app.hints) this.app.hints.undo();
-          const refund = Math.max(0, banked0 - (g.s.banked || 0));
+          // What the placement banked goes back, never past an empty wallet (lines spent since stay spent).
+          const refund = Math.min(Math.round(Math.max(0, banked0 - (g.s.banked || 0)) * 100) / 100, Math.max(0, st.state.lines));
           if (refund) st.addLines(-refund, 'rewind');
-          if (res.lines) {
-            st.state.stats.free.lines = Math.max(0, Library.bank(st.state.stats.free.lines - res.lines * Library.scale(g.w)));
-            this.app.refreshWallet();
-          }
+          if (res.lines) st.state.stats.free.lines = Math.max(0, Library.bank(st.state.stats.free.lines - res.lines * Library.scale(g.w)));
+          if (refund || res.lines) this.app.refreshWallet();
           this.hideCard();
+          // The card is gone and the board under it is live: a second click or tap of the same press (a double
+          // click) must not drop the piece just brought back, as after a set (see SET_GRACE_MS).
+          this.setAt = performance.now();
           this.snapshot();
           done();
           break;
@@ -1493,6 +1558,13 @@
       }
       this.renderDiff();
       this.renderNav();
+      // Undos are shared with Relaxed, and a free hint comes from its gift: counts shown here follow both.
+      // The failed card's Undo, if it is up (it stays up across tabs), is redrawn too, so it never shows a stale count.
+      app.store.on('items', () => {
+        this.renderActions();
+        const b = this.overlay.querySelector('#puz-card-undo');
+        if (b) b.replaceWith(this.undoBtn({ class: 'btn', id: 'puz-card-undo' }, 'Undo'));
+      });
     }
 
     get ps() { return this.app.store.state.puzzle; }
@@ -1710,21 +1782,30 @@
         h('h2', null, why),
         prog.text ? h('p', null, prog.text) : null,
         h('div', { class: 'row' },
-          h('button', { class: 'btn', onclick: () => this.undo() }, icon('undo'), 'Undo'),
+          this.undoBtn({ class: 'btn', id: 'puz-card-undo' }, 'Undo'),
           h('button', { class: 'btn primary', onclick: () => this.retry() }, icon('retry'), 'Retry'))));
     }
 
     retry() { if (this.app.hints && !this.done && this.game && this.game.s.pieces >= 2) this.app.hints.attemptEnded(this); this.hideCard(); this.start(); this.renderHead(); }
 
+    /**
+     * Takes back the last piece, for one Undo (the power-up 'rewind', shared with Relaxed): one held is used; with none,
+     * one is bought at its price and used at once (the price is on the button, so no question); with none and too few
+     * lines, nothing happens but a note. Only an undo that happens is paid for, once.
+     */
     undo() {
-      if (this.done) return false;
+      if (this.done || !this.game || !this.game.history.length) return false;
+      const st = this.app.store, it = ITEMS.rewind;
+      if (!(st.state.inventory.rewind > 0) && st.state.lines < it.price) { toast('Not enough lines', 'bad'); this.app.sound.play('error'); return false; }
       const res = this.game.undo();
       if (!res) return false;
+      if (st.useOrBuy('rewind') === 'bought') this.app.refreshWallet();
       if (this.app.hints) this.app.hints.undo();
       if (this.ps.current) this.ps.current.undos = (this.ps.current.undos || 0) + 1;
       this.lines -= res.lines;
       this.failedShown = false;
       this.hideCard();
+      this.setAt = performance.now(); // a second click of the press that took it back does not set the piece (SET_GRACE_MS)
       this.updateHint();
       this.renderGoal();
       this.renderActions();
@@ -1822,11 +1903,15 @@
       handle = UI.openModal({ title: 'Puzzle history', width: 520, cls: 'modal-hist', body: h('div', { class: 'hist-wrap' }, h('div', { class: 'hist-head' }, seg), list, h('p', { class: 'hist-foot' }, this.volume())), onClose: () => this.renderSaveBtn() });
     }
 
+    /** A hint for this puzzle: a free one the gift gave goes first, then lines. Either way it halves the reward. */
     buyHint() {
-      const cost = DIFF_COST[this.puzzle.diff];
-      if (this.ps.current && this.ps.current.hint) { this.updateHint(true); return; }
-      UI.confirm('Hint?', 'Halves the reward.', 'Show · ' + cost + ' ' + LINE, () => {
-        if (!this.app.store.spend(cost)) { toast('Not enough lines', 'bad'); return; }
+      if (!this.puzzle || this.done || !this.ps.current) return;
+      const cost = DIFF_COST[this.puzzle.diff], st = this.app.store;
+      if (this.ps.current.hint) { this.updateHint(true); return; }
+      const free = () => (st.state.freebies && st.state.freebies.hint) > 0;
+      UI.confirm('Hint?', 'Halves the reward.', free() ? 'Show · free' : 'Show · ' + cost + ' ' + LINE, () => {
+        if (!this.ps.current || this.ps.current.hint || this.done) return;
+        if (!(free() ? st.useFreebie('hint') : st.spend(cost))) { toast('Not enough lines', 'bad'); return; }
         this.ps.current.hint = true;
         this.pstats[this.puzzle.diff].hints++;
         this.app.refreshWallet();
@@ -2003,17 +2088,26 @@
       this.el.mods.querySelectorAll('[aria-expanded]').forEach((b) => b.removeAttribute('aria-expanded'));
     }
 
+    /**
+     * An Undo button (the action bar's, the not-yet card's): how many Undos are held, or, with none, the price of one
+     * (as Hint shows its price). Its tooltip and label say the same in words.
+     */
+    undoBtn(attrs, label) {
+      return undoButton(this.app.store, Object.assign({ onclick: () => this.undo() }, attrs), icon('undo'), label, '⌫');
+    }
+
     renderActions() {
       if (!this.puzzle) return;
       const cost = DIFF_COST[this.puzzle.diff];
       const hinted = this.ps.current && this.ps.current.hint;
+      const freeHints = (this.app.store.state.freebies && this.app.store.state.freebies.hint) || 0;
       this.el.actions.replaceChildren(
         h('div', { class: 'grp' },
-          h('button', { class: 'btn', id: 'puz-undo', disabled: !this.game || !this.game.history.length || this.done, 'aria-label': 'Undo', 'data-tip': 'Undo', 'data-tip-foot': '⌫', onclick: () => this.undo() }, icon('undo'), h('span', { class: 'lbl' }, 'Undo')),
+          this.undoBtn({ class: 'btn', id: 'puz-undo', disabled: !this.game || !this.game.history.length || this.done }, 'Undo'),
           h('button', { class: 'btn', id: 'puz-retry', 'aria-label': 'Retry', 'data-tip': 'Retry', 'data-tip-foot': 'R', onclick: () => this.retry() }, icon('retry'), h('span', { class: 'lbl' }, 'Retry'))),
         h('div', { class: 'grp' },
-          h('button', { class: 'btn' + (hinted ? ' on' : ''), id: 'puz-hint', disabled: this.done, 'aria-label': hinted ? 'Hints on' : 'Hint', 'aria-pressed': String(!!hinted), 'data-tip': hinted ? 'Hints on' : 'Hint', 'data-tip-foot': 'H', onclick: () => this.buyHint() },
-            icon('hint'), h('span', { class: 'lbl' }, hinted ? 'Hints on' : 'Hint'), hinted ? null : h('span', { class: 'gem' }, LINE + cost)),
+          h('button', { class: 'btn' + (hinted ? ' on' : ''), id: 'puz-hint', disabled: this.done, 'aria-label': hinted ? 'Hints on' : freeHints ? (freeHints > 1 ? 'Hint, ' + freeHints + ' free' : 'Hint, free') : 'Hint, costs ' + cost + ' lines', 'aria-pressed': String(!!hinted), 'data-tip': hinted ? 'Hints on' : freeHints ? 'Hint · ' + (freeHints > 1 ? freeHints + ' free' : 'free') : 'Hint', 'data-tip-foot': 'H', onclick: () => this.buyHint() },
+            icon('hint'), h('span', { class: 'lbl' }, hinted ? 'Hints on' : 'Hint'), hinted ? null : freeHints ? h('span', { class: 'cnt free' }, freeHints > 1 ? freeHints + ' free' : 'free') : h('span', { class: 'gem' }, LINE + cost)),
           h('button', { class: 'btn' + (this.done ? ' primary' : ''), id: 'puz-next', 'aria-label': this.done ? 'Next' : 'Skip', 'data-tip': this.done ? 'Next' : 'Skip', 'data-tip-foot': 'N', onclick: () => this.next() }, h('span', { class: 'lbl' }, this.done ? 'Next' : 'Skip'), icon(this.done ? 'next' : 'skip'))));
     }
   }

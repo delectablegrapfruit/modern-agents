@@ -214,7 +214,8 @@
         if (L.Collapse.on && !((e.metaKey || e.ctrlKey) && (/^Digit[1-9]$/.test(e.code) || e.code === 'Comma')) && !(e.key === 'Escape' && native.available)) return;
         if ((e.metaKey || e.ctrlKey) && /^Digit[1-9]$/.test(e.code) && VIEWS[Number(e.code.slice(5)) - 1]) { this.setTab(VIEWS[Number(e.code.slice(5)) - 1]); e.preventDefault(); return; }
         if ((e.metaKey || e.ctrlKey) && e.code === 'Comma') { this.openSettings(); e.preventDefault(); return; }
-        if ((e.metaKey || e.ctrlKey) && e.code === 'KeyZ' && this.tab === 'puzzle') { this.modes.puzzle.undo(); e.preventDefault(); return; }
+        // ⌘Z undoes like ⌫: once per press (each undo costs an Undo, so a held key never repeats it).
+        if ((e.metaKey || e.ctrlKey) && e.code === 'KeyZ' && this.tab === 'puzzle') { if (!e.repeat) this.modes.puzzle.undo(); e.preventDefault(); return; }
         if (e.key === 'Escape' && this.tab === 'play' && this.modes.play.closeTray()) { e.preventDefault(); return; }
         if (e.key === 'Escape' && native.available) { this.saveNow(); native.post('hide'); return; }
         if (this.tab === 'factory' && !e.metaKey && !e.ctrlKey && this.modes.factory.key(e)) { e.preventDefault(); return; }

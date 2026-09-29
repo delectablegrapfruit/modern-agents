@@ -157,24 +157,31 @@
 
   // ---- the daily gift ---------------------------------------------------------------------------------------------------
   //
-  // Three different power-ups, drawn by rarity (common 8, uncommon 3, rare 1): about two thirds of what it gives is
-  // common. It can be opened again 24 hours after it was last opened — the time since, not the date. The claim time is
-  // booked in the save as it opens; a clock turned back never opens it early (the next one is still 24 hours after the
-  // booked time, however far back the clock went), and the draw is fixed by the save and the number of gifts opened,
-  // so reopening Lull or switching tabs never re-rolls it.
+  // Three different entries, drawn by rarity (common 8, uncommon 3, rare 1): the power-ups (Undo comes as its pack of
+  // five) and one freebie, a free puzzle hint (store.js, FREEBIES). Nearly six in ten of what it gives is common, about
+  // one in thirteen rare, and one gift in ten holds a free hint. It can be opened again 24 hours after it was last
+  // opened — the time since, not the date. The claim time is booked in the save as it opens; a clock turned back never
+  // opens it early (the next one is still 24 hours after the booked time, however far back the clock went), and the
+  // draw is fixed by the save and the number of gifts opened, so reopening Lull or switching tabs never re-rolls it.
+  // What play earns is drawn from the power-ups alone.
 
   const RARITY = { common: 8, uncommon: 3, rare: 1 };
   const DAY_MS = 24 * 3600e3;
   const Gifts = {
     COUNT: 3, RARITY, WAIT: DAY_MS,
-    /** An item's weight in any draw (0: never given). */
+    /** An entry's weight in any draw (0: never given): a power-up or a freebie. */
     weight(id) {
-      const it = L.ITEMS && L.ITEMS[id];
+      const it = (L.ITEMS && L.ITEMS[id]) || (L.FREEBIES && L.FREEBIES[id]);
       return it ? RARITY[it.rarity] || 0 : 0;
     },
-    /** n different items (three by default), drawn by weight from a random source (a function returning [0, 1)). */
-    draw(rand, n) {
-      const pool = (L.ITEM_ORDER || []).map((id) => [id, Gifts.weight(id)]).filter(([, w]) => w > 0), out = [];
+    /** What the daily gift draws from: every power-up, then the freebies. */
+    pool() { return (L.ITEM_ORDER || []).concat(Object.keys(L.FREEBIES || {})); },
+    /**
+     * n different entries (three by default), drawn by weight from a random source (a function returning [0, 1)), out
+     * of `ids` (by default the power-ups alone, as play earns them).
+     */
+    draw(rand, n, ids) {
+      const pool = (ids || L.ITEM_ORDER || []).map((id) => [id, Gifts.weight(id)]).filter(([, w]) => w > 0), out = [];
       while (out.length < (n || Gifts.COUNT) && pool.length) {
         const tot = pool.reduce((a, [, w]) => a + w, 0);
         let t = rand() * tot, k = 0;
@@ -185,7 +192,7 @@
       return out;
     },
     /** The nth gift for one save: the same every time it is asked for. */
-    forClaim(seed, n) { const rng = new L.RNG('lull:gift:' + seed + ':' + n); return Gifts.draw(() => rng.next()); },
+    forClaim(seed, n) { const rng = new L.RNG('lull:gift:' + seed + ':' + n); return Gifts.draw(() => rng.next(), Gifts.COUNT, Gifts.pool()); },
     /** When the next gift can be opened (ms since the epoch); 0 when there has never been one. */
     nextAt(state) { const at = state.gift && state.gift.at; return at == null ? 0 : at + DAY_MS; },
     /** Can the gift be opened at `now`? Only 24 hours or more after the last claim, by the clock of that claim. */
@@ -197,8 +204,9 @@
   // ---- earned in play ---------------------------------------------------------------------------------------------------
   //
   // Beside the gift, play brings a few: one power-up for every hundred lines cleared on a board, and one the first time
-  // each combo is ever found. The board's count is kept in the save, outside the board (so a Rewind and a replayed
-  // clear never pay twice), and starts from the lines a board already has when it is first seen.
+  // each combo is ever found (drawn from the power-ups alone; an Undo comes as its pack). The board's count is kept in
+  // the save, outside the board (so an Undo and a replayed clear never pay twice), and starts from the lines a board
+  // already has when it is first seen.
 
   const Earn = {
     EVERY: 100,

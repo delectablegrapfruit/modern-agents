@@ -103,7 +103,6 @@
     'item-laser': svg('<rect x="1.25" y="5.75" width="4" height="4.5" rx="1"/><path d="M5.25 8h9"/><path d="M8.5 5.25l1 1.25M11.5 5.25l1 1.25M8.5 10.75l1-1.25M11.5 10.75l1-1.25" stroke-width="1.2"/>'),
     'item-blackhole': svg('<circle cx="8" cy="8" r="1.6"/><path d="M9.6 8a4.1 4.1 0 0 1-6.3 3.45M6.4 8a4.1 4.1 0 0 1 6.3-3.45M12.9 4.6a5.9 5.9 0 0 1-.95 8.05M3.1 11.4a5.9 5.9 0 0 1 .95-8.05"/>'),
     'item-flip': svg('<path d="M2.25 5.25h11M10.5 2.5l2.75 2.75L10.5 8M13.75 10.75h-11M5.5 8l-2.75 2.75L5.5 13.5"/>'),
-    'item-rewind': svg('<path d="M7.75 3.75v8.5L2 8z"/><path d="M14 3.75v8.5L8.25 8z"/>'),
     'item-trapdoor': svg('<rect x="1.75" y="1.75" width="12.5" height="7.5" rx="1.5"/><path d="M1.75 11.25l3.5 3M14.25 11.25l-3.5 3M5.25 5.5h5.5"/>'),
     'item-tornado': svg('<path d="M1.75 2.75h12.5M3.25 5.75h9.5M5 8.75h6.5M6.75 11.75h3.5M8.25 14.25h.5"/>'),
     'item-settle': svg('<path d="M4.5 1.75v6.5M2.5 6.25l2 2 2-2M11.5 1.75v6.5M9.5 6.25l2 2 2-2M1.75 11h12.5M1.75 14h12.5"/>'),
@@ -130,6 +129,9 @@
     'goal-lines': svg('<path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/>'),
     'goal-gems': svg('<path d="M8 2l4.9 6L8 14 3.1 8z" fill="currentColor" stroke="none"/>'),
   };
+
+  // Undo (the power-up 'rewind') is one item in Relaxed and Puzzles, so it has one icon: the Puzzles tab's Undo arrow.
+  I['item-rewind'] = I.undo;
 
   /** An icon by name, as markup; an unknown name draws nothing rather than a stray glyph. */
   function icon(name) { return I[name] || ''; }

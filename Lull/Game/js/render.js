@@ -1702,7 +1702,7 @@
       if (!this.lay) this.layout();
       const g = this.game, s = this.lay.s, fx = this.fx, b = this.lay.board;
       this.dirty = true;
-      // A rewind takes back what the last item did, its show included.
+      // An Undo takes back what the last item did, its show included.
       if (id === 'rewind') { if (fx.world) fx.world.clear(); fx.props = []; fx.texts = []; fx.movers = []; }
       if (id === 'rewind') { fx.sweep(b, '#8fd3ff', 'y', 0.55); if (!reduced) fx.text('↶', b.x + b.w / 2, b.y + b.h * 0.4, '#8fd3ff', 30); return; }
       if (!piece || id === 'settle' || id === 'trapdoor' || id === 'tornado' || id === 'flip') return;

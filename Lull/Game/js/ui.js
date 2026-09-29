@@ -737,10 +737,12 @@
     } else {
       const got = S.items.got, bought = S.items.bought, used = S.items.used;
       els.push(h('div', { class: 'kpis' }, kpi(fmtInt(S.lines.spent), 'Lines spent'), kpi(fmtInt(S.cosmetics.bought), 'Cosmetics'),
-        kpi(fmtInt(Object.values(used).reduce((a, b) => a + b, 0)), 'Power-ups used'), kpi(fmtInt(S.lines.rewound), 'Lines rewound')));
+        kpi(fmtInt(ITEM_ORDER.reduce((a, id) => a + (used[id] || 0), 0)), 'Power-ups used'), kpi(fmtInt(S.lines.rewound), 'Lines undone')));
       els.push(h('h4', null, 'Power-ups'), h('table', { class: 'st cols' },
         h('tr', null, h('th', null, ''), h('th', null, 'Bought'), h('th', null, 'Given'), h('th', null, 'Used'), h('th', null, 'Have')),
-        ITEM_ORDER.map((id) => h('tr', null, h('td', null, icon('item-' + id), ITEMS[id].name), h('td', null, fmtInt(bought[id] || 0)), h('td', null, fmtInt(got[id] || 0)), h('td', null, fmtInt(used[id] || 0)), h('td', null, fmtInt(st.inventory[id] || 0))))));
+        ITEM_ORDER.map((id) => h('tr', null, h('td', null, icon('item-' + id), ITEMS[id].name), h('td', null, fmtInt(bought[id] || 0)), h('td', null, fmtInt(got[id] || 0)), h('td', null, fmtInt(used[id] || 0)), h('td', null, fmtInt(st.inventory[id] || 0)))),
+        // Free hints from the daily gift: given and used, never bought.
+        Object.keys(L.FREEBIES).map((id) => { const f = L.FREEBIES[id]; return h('tr', null, h('td', null, icon(f.icon), 'Free ' + f.name.toLowerCase()), h('td', null, '—'), h('td', null, fmtInt(got[id] || 0)), h('td', null, fmtInt(used[id] || 0)), h('td', null, fmtInt((st.freebies || {})[f.key] || 0))); })));
       const ownedRows = Object.keys(COSMETICS).map((k) => [COSMETIC_LABELS[k], st.owned[k].length + ' / ' + Object.keys(COSMETICS[k]).length]);
       els.push(h('h4', null, 'Collection'), table(ownedRows));
     }

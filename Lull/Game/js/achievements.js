@@ -24,7 +24,7 @@
   const LIST = [
     // Free Play — per board, per piece. Relaxed play has no clock and a bag of power-ups, so almost anything could be
     // waited out: the skill ones count only what was done by hand — "no power-ups on the board" (no item that touches the pieces or the
-    // board — Rewind included — during the feat, or since the board was last empty; Luck items never count against
+    // board — Undo included — during the feat, or since the board was last empty; Luck items never count against
     // it: see freshStats in js/engine.js), the score ones only boards without a single item, and a few ask for pace.
     { id: 'quad', group: 'play', name: 'Four at Once', desc: 'Clear 4 lines with one piece. No power-ups on the board.', pay: 15, on: 'play', test: (s, e) => e.r.lines >= 4 && e.r.hand },
     { id: 'tsd', group: 'play', name: 'Twist', desc: 'Clear 2 lines with a T-spin. No power-ups on the board.', pay: 25, on: 'play', test: (s, e) => e.r.tspin && e.r.lines === 2 && e.r.hand },
@@ -176,7 +176,7 @@
   const itemCombos = (g) => (L.Combos ? L.Combos.LIST.filter((c) => c.kind === 'item' && (g.s.combos || {})[c.id]).length : 0);
   const combosAll = () => (L.Combos ? L.Combos.LIST.length : 1);
   const combosFound = (s) => (L.Combos ? L.Combos.LIST.filter((c) => (s.combos || {})[c.id]).length : 0);
-  /** Lines earned for the Lifetime ones, less what Rewind took back (replaying a clear would count it twice). */
+  /** Lines earned for the Lifetime ones, less what an Undo took back (replaying a clear would count it twice). */
   const earned = (s) => Math.max(0, s.stats.lines.earned - s.stats.lines.rewound);
 
   function fseen(s, n) { return L.Factory ? L.Factory.seenCount(s.factory, n) : 0; }

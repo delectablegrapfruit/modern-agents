@@ -181,7 +181,7 @@
       if (!this.over && e.holdMod && !e.holds) this.raise('hold', e.mouse ? 'mouse' : e.touch ? 'touch' : null, now);
     }
 
-    /** An undo (or Rewind): a clicked piece taken back at once was probably not meant to go there. */
+    /** An undo (Puzzles or Relaxed): a clicked piece taken back at once was probably not meant to go there. */
     undo(now) {
       const c = this.c, p = c.lastPlace;
       c.lastPlace = null;
