@@ -655,7 +655,7 @@
         kpi(fmtInt(S.lines.earned), 'Lines earned'),
         kpi(fmtInt(S.free.lines), 'Lines cleared'),
         kpi(fmtInt(solvedAll), 'Puzzles solved'),
-        kpi(count(st.factory.stats.minos), 'Minos made'),
+        kpi(count(st.factory.stats.minos), 'Minos shipped'),
         kpi(fmtDuration(S.timeMs.total), 'Time played'),
         kpi(fmtInt(S.sessions), 'Sessions'),
         kpi(fmtInt(S.days || 0), 'Days played')));
@@ -719,8 +719,8 @@
     } else if (sub === 'factory') {
       const f = st.factory, fs = f.stats;
       els.push(h('div', { class: 'kpis three' },
-        kpi(fmtInt(fs.lines), 'Lines collected'), kpi(fmtInt(fs.minos), 'Minos made'), kpi(fmtInt(fs.pieces), 'Pieces'),
-        kpi(fmtInt(fs.collects), 'Collects'), kpi(fmtInt(fs.best), 'Best collect'), kpi(fmtInt(fs.days), 'Days collected')));
+        kpi(fmtInt(fs.lines), 'Lines collected'), kpi(fmtInt(fs.minos), 'Minos shipped'), kpi(fmtInt(fs.made), 'Minos stamped'),
+        kpi(fmtInt(fs.pieces), 'Pieces'), kpi(fmtInt(fs.collects), 'Collects'), kpi(fmtInt(fs.best), 'Best collect')));
       els.push(h('h4', null, 'Minos by press'), hbars(Factory.MOLDS.map((n, k) => [Factory.NAMES[n], (fs.byPress[k] || 0) * n]))); // byPress counts pieces
       // Every shape of each size: the ones pressed first, in colour; the rest a quiet fill.
       for (const n of [5, 6, 7]) {
@@ -730,7 +730,8 @@
           h('div', { class: 'catalog sm' }, order.map((s) => h('div', { class: 'fac-shape', title: Factory.shapeName(n, s) }, L.FactoryArt.shapeCanvas(look, list[s], 26, look.colors[1 + (s % 7)], seen[s] === '1', 0.18)))));
       }
       const rows = [
-        ['Minos made away', fmtInt(fs.away)], ['Time full', fmtDuration(fs.fullMs)],
+        ['Days collected', fmtInt(fs.days)], ['Minos shipped away', fmtInt(fs.away)],
+        ['Time crate full', fmtDuration(fs.fullMs)], ['Time short of minos', fmtDuration(fs.starveMs)],
         ['Lines spent', fmtInt(fs.spent)], ['Time watched', fmtDuration(S.timeMs.factory)],
       ];
       els.push(h('h4', null, 'Totals'), table(rows));
