@@ -1,0 +1,107 @@
+# tools/banned.txt — owner: W1-Q. Strings that must not appear in the shipped game: the original's
+# product, place, person, rank, channel, screen and message strings, plus near echoes
+# (BUILD_PLAN Appendix A). Checked by `node tools/shingles.cjs --banned` over js/**, css/**,
+# index.html and README.md.
+#
+# Format: one entry per line; `#` starts a comment line; blank lines are ignored. A line holding
+# only a list marker switches the list for the lines below it; a marker followed by text is a
+# one-line entry of that list.
+#   [substring]  case-insensitive substrings (the default list)
+#   [word]       case-insensitive whole words (a word boundary is any character outside A-Z a-z 0-9 _)
+#   [upper]      case-sensitive whole words (ordinary prose may still say "genius")
+#   [only-in]    `term: where, where` — a case-insensitive substring allowed only in the named text
+#                keys (the value of that key in js/data/text/*.js) or root-relative files
+#
+# Kept on purpose (not banned): the names of GDD §1.3, the "(it froze)" joke button and the phrase
+# "JUST KIDDING" of the hospital gag.
+
+[substring]
+StickNews
+Stick News
+Drunken Darts
+YOU DIED
+McSlave
+Coma-Snooze
+Snooze Master
+SnoozeMaster
+Behemoth-Vision
+Behemoth Vision
+Circuit-Breaker
+Circuit Breaker 5000
+Byte-Brick
+StickChoice
+Stick-Choice
+Stick-o-pedia
+Stickopedia
+Stickannica
+XGenica
+Stick-Fitness
+Deep Freeze
+Suds'n'Bubbles
+Suds n Bubbles
+Fizz & Bubbles
+Fizz & Chips
+Super Slots 3000
+Lucky Stick 3000
+Stickman Master Builders
+United Nations of Stick
+League of Stick Nations
+HEYZEUS
+CHEATER!!!
+Know When to Draw the Line
+Uber Bar
+Funkadelic Grape
+Biznitchin
+Supafly Orange
+Narcotics of the World
+Your safety is our concern
+Pure Energy
+WUSS
+GIRL SCOUT
+BOY SCOUT
+GOOD SAMARITAN
+EXTRAORDINARILY GOOD
+EXTRAORDINARILY EVIL
+SELFLESS MILLIONAIRE
+PHILANTHROPIST
+APOSTLE
+MR. DOG
+JUVENILE DELINQUENT
+WHITE COLLAR CRIMINAL
+PETTY CRIMINAL
+CAR JACKER
+DRUG LORD
+UNDENIABLY WICKED
+GENUINE HELLRAISER
+SEED OF EVIL
+MR. NATAS
+MULTIMILLIONAIRE
+DEMI GOD
+DEMIGOD
+BILLIONAIRE GOD
+UTTER FAILURE
+Taquisha
+DJ Beefstick
+
+# The original's tickers and the names from its voicemails (fictional cities and new names replace them).
+[word]
+XGS
+FSY
+DYC
+MLG
+SR2
+SAR
+Brooklyn
+Detroit
+Camden
+Richard
+Stuart
+Debbie
+
+# The original's rank stamps (the perk is Mastermind and the karma tier Angelic).
+[upper]
+GENIUS
+SAINT
+
+# The fan note ("Fan remaster. Not affiliated with or endorsed by XGen Studios.") and the README.
+[only-in] XGen: ui.fanNote, README.md

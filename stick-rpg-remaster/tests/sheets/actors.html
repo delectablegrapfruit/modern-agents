@@ -1,0 +1,206 @@
+<!doctype html>
+<!-- tests/sheets/actors.html — owner: W1-A. Contact sheet for the actors: every clip of ART_AUDIO §7
+     in the four city facings and the side view, the walk cycle, all 10 karma bands on each side,
+     every named person's look (city, side view, portraits 32 / 56 / 96 / 176), the fight ladder, the
+     pedestrian looks, every accessory, the 8 vehicle types plus the Fold Rescue plane in 8
+     directions, and the performance measurement of BUILD_PLAN §3.6 (one city character ≤ 0.08 ms,
+     one portrait ≤ 0.5 ms, scaled by a local calibration factor). Opens from disk. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paper Sky · actors sheet</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../../css/tokens.css">
+<style>
+  body { margin: 16px; background: var(--paper-1); color: var(--ink-900); font: 13px system-ui, sans-serif; }
+  h1 { font: 900 22px "Arial Black", system-ui, sans-serif; margin: 0 0 8px; }
+  h2 { font: 800 13px system-ui, sans-serif; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-500); margin: 18px 0 6px; }
+  canvas { display: block; border: 1px solid var(--paper-3); }
+  pre { font-size: 12px; background: var(--paper-0); border: 1px solid var(--paper-3); padding: 8px; }
+  #app { display: none; }
+</style>
+</head>
+<body>
+  <h1>Actors sheet · W1-A</h1>
+  <div id="app"><div id="stage"><canvas id="world"></canvas><canvas id="fx"></canvas><div id="ui"></div><div id="aria" role="status" aria-live="polite"></div></div></div>
+
+  <script src="../../js/boot/namespace.js"></script>
+  <script src="../../js/boot/util.js"></script>
+  <script src="../../js/boot/events.js"></script>
+  <script src="../../js/core/rng.js"></script>
+  <script src="../../js/core/loop.js"></script>
+  <script src="../../js/core/stage.js"></script>
+  <script src="../../js/core/quality.js"></script>
+  <script src="../../js/core/input.js"></script>
+  <script src="../../js/core/scenes.js"></script>
+  <script src="../../js/core/save.js"></script>
+  <script src="../../js/core/settings.js"></script>
+  <script src="../../js/core/text.js"></script>
+  <script src="../../js/core/debug.js"></script>
+  <script src="../../js/data/features.js"></script>
+  <script src="../../js/data/fighters.js"></script>
+  <script src="../../js/data/text/en-ui.js"></script>
+  <script src="../../js/art/palette.js"></script>
+  <script src="../../js/art/paper.js"></script>
+  <script src="../../js/art/draw.js"></script>
+  <script src="../../js/art/stick.js"></script>
+  <script src="../../js/art/portraits.js"></script>
+  <script src="../../js/art/vehicles.js"></script>
+  <script src="../../js/art/icons.js"></script>
+  <script src="../../js/art/logo.js"></script>
+  <script src="../../js/art/bible.js"></script>
+  <script src="../../js/art/interiors/kit.js"></script>
+  <script src="art-sheet.js"></script>
+  <script>
+  (function () {
+    'use strict';
+    var SR = window.SR, A = window.ArtSheet;
+    A.boot();
+    var S = SR.art.stick;
+    var FACINGS = ['down', 'right', 'up', 'left'];
+
+    // 1. every clip: the four city facings and the side view
+    A.section('Clips × facings (city: down, right, up, left · side view)');
+    var names = Object.keys(S.clips);
+    var perRow = 4, cw = 320, ch = 124;
+    var cg = A.canvas(document.body, perRow * cw, Math.ceil(names.length / perRow) * ch, 'sheet-clips');
+    A.paper(cg, perRow * cw, Math.ceil(names.length / perRow) * ch);
+    names.forEach(function (n, i) {
+      var x = (i % perRow) * cw, y = Math.floor(i / perRow) * ch;
+      var c = S.clips[n], t = c.loop ? c.dur * 0.3 : c.dur * 0.55;
+      A.label(cg, n + (c.loop ? '' : ' (once)'), x + 8, y + 14, { size: 11, color: 'ui.ink-900', weight: 700 });
+      cg.strokeStyle = SR.art.draw.color('ui.paper-3'); cg.strokeRect(x + 0.5, y + 0.5, cw - 1, ch - 1);
+      FACINGS.forEach(function (f, j) {
+        S.draw(cg, n, { x: x + 30 + j * 46, y: y + 108, facing: f, t: t, player: j === 0, karma: 30,
+          look: j === 0 ? undefined : 'mel', mount: n === 'skate' ? 'board' : undefined, upper: n === 'drive' });
+      });
+      S.draw(cg, n, { view: 'side', x: x + 262, y: y + 112, scale: 0.4, t: t, player: true, karma: 30, mood: n === 'hurt' ? 'hurt' : n === 'cheer' || n === 'win' ? 'happy' : 'neutral' });
+    });
+
+    // 2. the walk cycle (0.5 s at 280 u/s) and the fight moves over time
+    A.section('Walk cycle and fight moves over time');
+    var wc = A.canvas(document.body, 1280, 250, 'sheet-cycles');
+    A.paper(wc, 1280, 250);
+    for (var k = 0; k < 8; k++) {
+      var tt = k * 0.0625;
+      S.draw(wc, 'walk', { x: 40 + k * 44, y: 80, facing: 'right', t: tt, player: true, karma: 0 });
+      S.draw(wc, 'walk', { x: 40 + k * 44, y: 150, facing: 'down', t: tt, look: 'harold' });
+      S.draw(wc, 'walk', { view: 'side', x: 420 + k * 60, y: 110, scale: 0.4, t: tt, look: 'lou' });
+    }
+    ['punch', 'kick', 'fireball', 'inkbeam', 'hurt'].forEach(function (m, r) {
+      for (var q = 0; q < 6; q++) {
+        var d = S.clips[m].dur;
+        S.draw(wc, m, { view: 'side', x: 920 + q * 58 - (r % 2) * 0, y: 200 + (r - 2) * 0, scale: 0.3, t: d * q / 5, player: true, karma: -60, alpha: r === 0 ? 1 : 0 });
+      }
+    });
+    for (var q2 = 0; q2 < 6; q2++) S.draw(wc, 'punch', { view: 'side', x: 920 + q2 * 58, y: 110, scale: 0.34, t: S.clips.punch.dur * q2 / 5, player: true, karma: -60 });
+    for (var q3 = 0; q3 < 6; q3++) S.draw(wc, 'kick', { view: 'side', x: 920 + q3 * 58, y: 235, scale: 0.34, t: S.clips.kick.dur * q3 / 5, look: 'fighter.4', facing: 'left' });
+
+    // 3. karma bands: every band on each side (the player's head; the side-view torso too)
+    A.section('Karma bands (B-04c): good 0-9, evil 0-9');
+    var kc = A.canvas(document.body, 1280, 190, 'sheet-karma');
+    A.paper(kc, 1280, 190);
+    for (var b = 0; b < 10; b++) {
+      S.draw(kc, 'idle', { x: 30 + b * 62, y: 80, player: true, karma: b * 10 + (b ? 1 : 0), scale: 1.3 });
+      S.draw(kc, 'idle', { x: 30 + b * 62, y: 170, player: true, karma: -(b * 10 + (b ? 1 : 0)), scale: 1.3 });
+      A.label(kc, '+' + (b * 10 + (b ? 1 : 0)), 20 + b * 62, 96, { size: 9 });
+      A.label(kc, '-' + (b * 10 + (b ? 1 : 0)), 20 + b * 62, 186, { size: 9 });
+    }
+    [-100, -50, -15, 0, 15, 50, 100].forEach(function (kv, i) {
+      S.draw(kc, 'idle', { view: 'side', x: 690 + i * 84, y: 170, scale: 0.36, player: true, karma: kv });
+      A.label(kc, String(kv), 680 + i * 84, 186, { size: 9 });
+    });
+
+    // 4. every named person's look: city, side, portraits 32 / 56 / 96
+    A.section('Named people (ART_AUDIO §7): city · side · portraits 32 / 56 / 96');
+    var ids = ['player'].concat(Object.keys(S.looks));
+    var pcw = 330, pch = 132, pr = 4;
+    var pc = A.canvas(document.body, pr * pcw, Math.ceil(ids.length / pr) * pch, 'sheet-people');
+    A.paper(pc, pr * pcw, Math.ceil(ids.length / pr) * pch);
+    ids.forEach(function (id, i) {
+      var x = (i % pr) * pcw, y = Math.floor(i / pr) * pch;
+      pc.strokeStyle = SR.art.draw.color('ui.paper-3'); pc.strokeRect(x + 0.5, y + 0.5, pcw - 1, pch - 1);
+      A.label(pc, id, x + 8, y + 14, { size: 11, color: 'ui.ink-900', weight: 700 });
+      S.draw(pc, 'idle', { x: x + 30, y: y + 118, look: id, player: id === 'player', karma: 20, scale: 1.4, t: 0.4 });
+      S.draw(pc, 'idle', { view: 'side', x: x + 92, y: y + 122, scale: 0.4, look: id, player: id === 'player', karma: 20, t: 0.4, facing: 'down', mood: 'happy' });
+      [[32, 138, 88], [56, 176, 64], [96, 232, 24]].forEach(function (p) {
+        pc.save(); pc.translate(x + p[1], y + p[2]);
+        SR.art.portraits.draw(pc, id, p[0], i % 3 ? 'neutral' : 'happy', { bg: 'ui.paper-2', karma: 20 });
+        pc.restore();
+      });
+    });
+    A.section('Portraits at 176 px, moods');
+    var p176 = A.canvas(document.body, 1280, 200, 'sheet-portraits');
+    A.paper(p176, 1280, 200);
+    [['player', 'happy'], ['harold', 'neutral'], ['mel', 'smug'], ['lou', 'surprised'], ['crayon', 'angry'], ['ori', 'worried'], ['dee', 'sad']].forEach(function (e, i) {
+      p176.save(); p176.translate(10 + i * 182, 10);
+      SR.art.portraits.draw(p176, e[0], 176, e[1], { bg: 'ui.paper-2', frame: true, karma: -35 });
+      p176.restore();
+    });
+
+    // 5. the fight ladder (data/fighters.js when present) and pedestrians
+    A.section('Fight ladder 0-12 · pedestrian looks 0-39');
+    var fc = A.canvas(document.body, 1280, 250, 'sheet-crowd');
+    A.paper(fc, 1280, 250);
+    for (var f = 0; f <= 12; f++) {
+      S.draw(fc, 'guard', { view: 'side', x: 40 + f * 96, y: 112, scale: 0.36, look: 'fighter.' + f, facing: 'left' });
+      fc.save(); fc.translate(18 + f * 96, 118); SR.art.portraits.draw(fc, 'fighter.' + f, 48, 'angry', { bg: 'ui.paper-2' }); fc.restore();
+      A.label(fc, String(f), 40 + f * 96, 14, { size: 10 });
+    }
+    for (var n = 0; n < 40; n++) S.draw(fc, 'walk', { x: 20 + n * 31.5, y: 240, look: n, facing: FACINGS[n % 4], t: n * 0.07 });
+
+    // 6. every accessory on a stick
+    A.section('Accessories');
+    var accs = Object.keys(S.ACCESSORIES);
+    var ac = A.canvas(document.body, 1280, Math.ceil(accs.length / 11) * 116, 'sheet-accessories');
+    A.paper(ac, 1280, Math.ceil(accs.length / 11) * 116);
+    accs.forEach(function (a, i) {
+      var x = (i % 11) * 116, y = Math.floor(i / 11) * 116;
+      A.label(ac, a, x + 6, y + 12, { size: 10, color: 'ui.ink-900' });
+      S.draw(ac, 'idle', { x: x + 30, y: y + 106, look: { head: 'npc.sand', acc: [a] }, scale: 1.5 });
+      S.draw(ac, 'idle', { x: x + 64, y: y + 106, look: { head: 'npc.sand', acc: [a] }, scale: 1.5, facing: 'right' });
+      S.draw(ac, 'idle', { view: 'side', x: x + 94, y: y + 108, scale: 0.26, look: { head: 'npc.sand', acc: [a] }, facing: 'down' });
+    });
+
+    // 7. vehicles: 8 types + the plane, 8 directions
+    A.section('Vehicles × 8 directions (0 east … 2 south … 4 west … 6 north)');
+    var types = ['compact', 'sedan', 'taxi', 'van', 'police', 'junker', 'sports', 'skybus', 'plane'];
+    var vc = A.canvas(document.body, 1280, types.length * 128, 'sheet-vehicles');
+    A.paper(vc, 1280, types.length * 128);
+    types.forEach(function (ty, r) {
+      A.label(vc, ty, 8, r * 128 + 16, { size: 11, color: 'ui.ink-900', weight: 700 });
+      for (var d = 0; d < 8; d++) {
+        var sc = ty === 'skybus' ? 0.26 : 0.72;
+        SR.art.vehicles.draw(vc, ty, d, 150 + d * 142, r * 128 + 76, { scale: sc, t: 0.3 + d * 0.13, lights: d % 2 === 0, brake: d % 3 === 0,
+          driver: ty === 'sports' || ty === 'junker' ? { karma: 40 } : undefined, flashReduction: false, z: ty === 'plane' ? 20 : 0, carry: ty === 'plane' && d === 2 });
+      }
+    });
+
+    // 8. performance (BUILD_PLAN §3.6, calibrated as in ARCHITECTURE §17)
+    A.section('Performance');
+    var pre = document.createElement('pre'); pre.setAttribute('data-id', 'sheet-perf'); document.body.appendChild(pre);
+    var off = document.createElement('canvas'); off.width = 1280; off.height = 720;
+    var g = off.getContext('2d');
+    var cal = A.calibrate();
+    var looksCycle = ['player', 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 'harold', 'kid', 'dealer', 10, 11, 12, 13, 14, 15];
+    var o = { x: 0, y: 0, view: 'city', facing: 'down', t: 0, look: undefined, player: false, karma: 0 };
+    var city = A.timeIt(function (n) {
+      for (var i = 0; i < n; i++) {
+        o.x = 20 + (i * 37) % 1240; o.y = 60 + (i * 53) % 640; o.t = i * 0.013; o.facing = FACINGS[i & 3];
+        var lk = looksCycle[i % looksCycle.length]; o.look = lk === 'player' ? undefined : lk; o.player = lk === 'player';
+        S.draw(g, 'walk', o);
+      }
+    }, 200, 9, g);
+    var who = ['harold', 'mel', 'lou', 'player', 'crayon', 'preacher', 'fighter.7', 'dee'];
+    var port = A.timeIt(function (n) {
+      for (var i = 0; i < n; i++) { g.save(); g.translate((i * 97) % 1180, (i * 61) % 620); SR.art.portraits.draw(g, who[i % who.length], 96, 'neutral'); g.restore(); }
+    }, 100, 9, g);
+    var budget = { city: 0.08 * cal.factor, portrait: 0.5 * cal.factor };
+    A.state.perf = { cityMs: city, portraitMs: port, calibration: cal, budget: budget, ok: city <= budget.city && port <= budget.portrait };
+    pre.textContent = JSON.stringify(A.state.perf, null, 2);
+    A.state.ready = true;
+  })();
+  </script>
+</body>
+</html>

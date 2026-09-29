@@ -1,0 +1,100 @@
+<!doctype html>
+<!-- tests/sheets/icons.html — owner: W1-A. Contact sheet for the icon set (ART_AUDIO §10): every
+     registered icon by category at 48, 32 and 24 px, the disabled state, the DOM path
+     (SR.art.iconURL → <img>) and the missing-icon placeholder. Opens from disk. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paper Sky · icons sheet</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../../css/tokens.css">
+<style>
+  body { margin: 16px; background: var(--paper-1); color: var(--ink-900); font: 13px system-ui, sans-serif; }
+  h1 { font: 900 22px "Arial Black", system-ui, sans-serif; margin: 0 0 8px; }
+  h2 { font: 800 13px system-ui, sans-serif; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-500); margin: 18px 0 6px; }
+  canvas { display: block; border: 1px solid var(--paper-3); }
+  [data-id="sheet-dom"] { display: flex; flex-wrap: wrap; gap: 6px; background: var(--paper-0); border: 1px solid var(--paper-3); padding: 8px; width: 1264px; }
+  [data-id="sheet-dom"] span { display: inline-flex; align-items: center; gap: 4px; background: var(--money-100); color: var(--money-ink); border-radius: 6px; padding: 0 6px; height: 24px; font: 700 14px system-ui, sans-serif; }
+  #app { display: none; }
+</style>
+</head>
+<body>
+  <h1>Icons sheet · W1-A</h1>
+  <div id="app"><div id="stage"><canvas id="world"></canvas><canvas id="fx"></canvas><div id="ui"></div><div id="aria" role="status" aria-live="polite"></div></div></div>
+
+  <script src="../../js/boot/namespace.js"></script>
+  <script src="../../js/boot/util.js"></script>
+  <script src="../../js/boot/events.js"></script>
+  <script src="../../js/core/rng.js"></script>
+  <script src="../../js/core/loop.js"></script>
+  <script src="../../js/core/stage.js"></script>
+  <script src="../../js/core/quality.js"></script>
+  <script src="../../js/core/input.js"></script>
+  <script src="../../js/core/scenes.js"></script>
+  <script src="../../js/core/save.js"></script>
+  <script src="../../js/core/settings.js"></script>
+  <script src="../../js/core/text.js"></script>
+  <script src="../../js/core/debug.js"></script>
+  <script src="../../js/data/features.js"></script>
+  <script src="../../js/data/text/en-ui.js"></script>
+  <script src="../../js/art/palette.js"></script>
+  <script src="../../js/art/paper.js"></script>
+  <script src="../../js/art/draw.js"></script>
+  <script src="../../js/art/icons.js"></script>
+  <script src="art-sheet.js"></script>
+  <script>
+  (function () {
+    'use strict';
+    var SR = window.SR, A = window.ArtSheet;
+    A.boot();
+    var cats = SR.art.icon.CATEGORIES;
+    var names = Object.keys(cats);
+    var rows = 0;
+    names.forEach(function (c) { rows += Math.ceil(cats[c].length / 14); });
+    var H = rows * 92 + names.length * 18;
+    A.section('Every icon by category (48 · 32 · 24 px, and disabled at 32)');
+    var g = A.canvas(document.body, 1280, H, 'sheet-icons');
+    A.paper(g, 1280, H);
+    var y = 0, count = 0;
+    names.forEach(function (c) {
+      A.label(g, c, 8, y + 13, { size: 11, color: 'ui.ink-900', weight: 800 });
+      y += 18;
+      cats[c].forEach(function (n, i) {
+        var x = (i % 14) * 91, yy = y + Math.floor(i / 14) * 92;
+        SR.art.icon(g, n, x + 6, yy, 48);
+        SR.art.icon(g, n, x + 56, yy, 32);
+        SR.art.icon(g, n, x + 58, yy + 34, 24);
+        SR.art.icon(g, n, x + 26, yy + 50, 24, 'disabled');
+        A.label(g, n, x + 6, yy + 86, { size: 9, color: 'ui.ink-700', weight: 500 });
+        count++;
+      });
+      y += Math.ceil(cats[c].length / 14) * 92;
+    });
+
+    A.section('Large (96 px)');
+    var big = A.canvas(document.body, 1280, 110, 'sheet-icons-big');
+    A.paper(big, 1280, 110);
+    ['money', 'hp', 'karma', 'heat', 'fries', 'bank', 'ceo', 'castle', 'slots', 'election', 'fireball', 'storm', 'harold'].forEach(function (n, i) {
+      SR.art.icon(big, n, 6 + i * 98, 7, 96);
+    });
+
+    A.section('DOM (SR.art.iconURL) in chips, and an unknown name');
+    var dom = document.createElement('div'); dom.setAttribute('data-id', 'sheet-dom'); document.body.appendChild(dom);
+    ['money', 'time', 'hp', 'str', 'int', 'cha', 'karma', 'heat', 'buzz', 'ammo', 'beer', 'bus'].forEach(function (n) {
+      var s = document.createElement('span');
+      var img = document.createElement('img');
+      img.src = SR.art.iconURL(n, 16); img.width = 16; img.height = 16; img.alt = '';
+      s.appendChild(img); s.appendChild(document.createTextNode(n));
+      dom.appendChild(s);
+    });
+    var miss = document.createElement('canvas'); miss.width = 48; miss.height = 48; dom.appendChild(miss);
+    SR.art.icon(miss.getContext('2d'), 'no-such-icon-sheet-test', 0, 0, 48);
+
+    A.state.icons = count;
+    A.state.registered = Object.keys(SR.reg.icon).length;
+    A.state.ready = true;
+  })();
+  </script>
+</body>
+</html>

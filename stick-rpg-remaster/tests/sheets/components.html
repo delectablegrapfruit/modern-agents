@@ -1,0 +1,299 @@
+<!doctype html>
+<!-- tests/sheets/components.html — owner: W1-D. The design-system contact sheet (UI.md §2): every
+     component of §2.3 in every state, at 100 / 125 / 150 % text, with High contrast, Reduced motion
+     and the colour-blind tables, plus live overlay demos (toast, stamp, confirm, dialog, caption).
+     Opens from disk. Loads js/boot/*, js/core/*, the data it needs (features, tuning, en-ui), the art
+     modules the components draw with, and the W1-D files; then installs test content and stand-ins
+     for missing modules (tests/sheets/components-fixtures.js; CONTRACT D27) and boots with
+     SR.boot({ scene: false }).
+     Hash: #stage opens the real building scene (test shop) on the stage instead of the gallery.
+     Query: ?scale=1.25|1.5, ?hc, ?rm, ?cb=protan|deutan|tritan, ?device=pad|touch. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paper Sky · components sheet</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../../css/tokens.css">
+<link rel="stylesheet" href="../../css/base.css">
+<link rel="stylesheet" href="../../css/components.css">
+<style>
+  /* Sheet layout only (tokens for every colour). */
+  html, body { height: auto; min-height: 100%; overflow: auto; }
+  body { background: var(--paper-1); }
+  body[data-mode="gallery"] #app { position: fixed; inset: 0; z-index: 20; pointer-events: none; background: transparent !important; }
+  #world, #fx { visibility: hidden; }
+  body[data-mode="stage"] #app { pointer-events: auto; background: var(--paper-2); }
+  body[data-mode="stage"] #world { visibility: visible; }
+  body[data-mode="stage"] .sheet, body[data-mode="stage"] .sheet-bar { display: none; }
+  .sheet-bar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+    padding: 8px 16px; background: var(--paper-0); border-bottom: var(--line); }
+  .sheet-bar h1 { font: 900 20px var(--font-display); text-transform: uppercase; margin-right: 12px; }
+  .sheet { padding: 16px 16px 400px; display: flex; flex-direction: column; gap: 20px; max-width: 1400px; }
+  .gal-sec { display: flex; flex-direction: column; gap: 8px; }
+  .gal-sec > h2 { font: 900 var(--t20) var(--font-display); text-transform: uppercase; letter-spacing: .02em; color: var(--ink-900); }
+  .gal-row { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+  .gal-item { margin: 0; display: flex; flex-direction: column; gap: 6px; padding: 10px; background: var(--paper-0);
+    border: var(--line-thin); border-radius: var(--r-m); }
+  .gal-box { display: flex; align-items: flex-start; }
+  .gal-item figcaption { font: 600 var(--t12) var(--font-ui); color: var(--ink-700); }
+  .gal-wide { width: 100%; }
+  .gal-stagebox { position: relative; width: 1280px; min-height: 112px; padding: 8px 16px 16px; background: var(--paper-2); border-radius: var(--r-m); }
+  .gal-stagebox .hud { position: relative; left: 0; top: 0; }
+  .gal-item .bcard { position: relative; left: 0; top: 0; height: 560px; animation: none; }
+  .gal-item .modal { position: relative; left: 0; top: 0; transform: none; animation: none; }
+  .gal-item .ctx-prompt { position: relative; left: 0; top: 0; opacity: 1; }
+  .gal-item .toast { animation: none; }
+  .gal-rows { width: 472px; background: var(--paper-0); }
+  .gal-counter { font: 700 var(--t12) var(--font-ui); color: var(--ink-700); }
+</style>
+</head>
+<body data-mode="gallery">
+  <header class="sheet-bar sr-ui" data-id="sheet-bar"><h1>Components (W1-D)</h1></header>
+  <main class="sheet sr-ui" data-id="gallery"></main>
+  <div id="app">
+    <div id="stage">
+      <canvas id="world"></canvas>
+      <canvas id="fx"></canvas>
+      <div id="ui"></div>
+      <div id="aria" role="status" aria-live="polite"></div>
+    </div>
+  </div>
+
+  <script src="../../js/boot/namespace.js"></script>
+  <script src="../../js/boot/util.js"></script>
+  <script src="../../js/boot/events.js"></script>
+  <script src="../../js/core/rng.js"></script>
+  <script src="../../js/core/loop.js"></script>
+  <script src="../../js/core/stage.js"></script>
+  <script src="../../js/core/quality.js"></script>
+  <script src="../../js/core/input.js"></script>
+  <script src="../../js/core/scenes.js"></script>
+  <script src="../../js/core/save.js"></script>
+  <script src="../../js/core/settings.js"></script>
+  <script src="../../js/core/text.js"></script>
+  <script src="../../js/core/debug.js"></script>
+  <script src="../../js/data/tuning.js"></script>
+  <script src="../../js/data/features.js"></script>
+  <script src="../../js/data/text/en-ui.js"></script>
+  <script src="../../js/render/sky.js"></script>
+  <script src="../../js/art/palette.js"></script>
+  <script src="../../js/art/paper.js"></script>
+  <script src="../../js/art/draw.js"></script>
+  <script src="../../js/art/stick.js"></script>
+  <script src="../../js/art/portraits.js"></script>
+  <script src="../../js/art/icons.js"></script>
+  <script src="../../js/ui/dom.js"></script>
+  <script src="../../js/ui/components.js"></script>
+  <script src="../../js/ui/focus.js"></script>
+  <script src="../../js/ui/toast.js"></script>
+  <script src="../../js/ui/stamp.js"></script>
+  <script src="../../js/ui/modal.js"></script>
+  <script src="../../js/ui/hud.js"></script>
+  <script src="../../js/ui/card.js"></script>
+  <script src="../../js/ui/dialog.js"></script>
+  <script src="../../js/scenes/building.js"></script>
+  <script src="components-fixtures.js"></script>
+  <script>
+  (function () {
+    'use strict';
+    var SR = window.SR, W1D = window.W1D;
+    var q = new URLSearchParams(location.search);
+    var faked = W1D.fakes();
+    W1D.content();
+    SR.boot({ scene: false });
+    var ui = SR.ui, h = ui.dom.h;
+    var counts = window.W1D.counts = {};
+    function bump(id) { counts[id] = (counts[id] || 0) + 1; var c = document.querySelector('[data-counter="' + id + '"]'); if (c) c.textContent = id + ': ' + counts[id]; }
+    function counter(id) { return h('span', { class: 'gal-counter', 'data-counter': id }, id + ': 0'); }
+
+    // Settings from the query (they drive the root classes through settings:changed).
+    function set(k, v) { try { SR.settings.set(k, v); } catch (e) { console.warn(e.message); } }
+    if (q.get('scale')) set('access.textScale', Number(q.get('scale')));
+    if (q.has('hc')) set('access.highContrast', true);
+    set('access.reducedMotion', q.has('rm') ? 'on' : 'off');
+    if (q.get('cb')) set('access.colorblind', q.get('cb'));
+    set('access.typewriterCps', 0);
+    if (q.get('device')) document.documentElement.setAttribute('data-device', q.get('device'));
+
+    // ---- the control bar ----
+    var bar = document.querySelector('[data-id="sheet-bar"]');
+    bar.appendChild(ui.segmented({ id: 'ctl-scale', label: 'set.access.textScale', value: String(SR.settings.get('access.textScale') || 1),
+      options: [{ id: '1', label: '100 %' }, { id: '1.25', label: '125 %' }, { id: '1.5', label: '150 %' }],
+      onChange: function (v) { set('access.textScale', Number(v)); } }));
+    bar.appendChild(ui.toggle({ id: 'ctl-hc', label: 'set.access.highContrast', value: !!SR.settings.get('access.highContrast'), onChange: function (v) { set('access.highContrast', v); } }));
+    bar.appendChild(ui.toggle({ id: 'ctl-rm', label: 'set.access.reducedMotion', value: q.has('rm'), onChange: function (v) { set('access.reducedMotion', v ? 'on' : 'off'); } }));
+    bar.appendChild(ui.segmented({ id: 'ctl-cb', label: 'set.access.colorblind', value: q.get('cb') || 'none',
+      options: ['none', 'protan', 'deutan', 'tritan'].map(function (c) { return { id: c, label: 'set.access.colorblind.' + c }; }),
+      onChange: function (v) { set('access.colorblind', v); } }));
+    bar.appendChild(h('span', { class: 'gal-counter', 'data-id': 'sheet-faked' }, 'stand-ins: ' + (faked.join(', ') || 'none')));
+
+    // ---- the gallery ----
+    var gal = document.querySelector('[data-id="gallery"]');
+    function sec(title) { var s = h('section', { class: 'gal-sec', 'data-sec': title }, h('h2', null, title)); var row = h('div', { class: 'gal-row' }); s.appendChild(row); gal.appendChild(s); return row; }
+    function item(row, comp, state, el, wide) {
+      var f = h('figure', { class: ['gal-item', wide ? 'gal-wide' : ''], 'data-comp': comp, 'data-state': state }, h('div', { class: 'gal-box' }, el), h('figcaption', null, comp + ' · ' + state));
+      row.appendChild(f);
+      return el;
+    }
+
+    var r = sec('Button');
+    ['primary', 'secondary', 'danger', 'ghost'].forEach(function (v) {
+      item(r, 'button', v, ui.button({ id: 'btn-' + v, label: 'ui.confirm', variant: v, onClick: function () { bump('btn-' + v); } }));
+      item(r, 'button', v + ' disabled', ui.button({ id: 'btn-' + v + '-off', label: 'ui.confirm', variant: v, disabled: true, reason: 'test.reason.fullHp', onClick: function () { bump('btn-' + v + '-off'); } }));
+    });
+    item(r, 'button', 'loading', ui.button({ id: 'btn-loading', label: 'ui.loading', variant: 'primary', loading: true }));
+    item(r, 'button', 'small + hint', ui.button({ id: 'btn-hint', label: 'ui.leave', hint: 'back', size: 's', onClick: function () { bump('btn-hint'); } }));
+    item(r, 'iconButton', 'default', ui.iconButton({ id: 'btn-icon', label: 'hud.pocket', icon: 'pocket', onClick: function () { bump('btn-icon'); } }));
+    item(r, 'iconButton', 'disabled', ui.iconButton({ id: 'btn-icon-off', label: 'hud.pause', icon: 'settings', disabled: true, reason: 'test.reason.late' }));
+    r.appendChild(counter('btn-primary'));
+
+    r = sec('Chip');
+    [{ kind: 'money', n: 20 }, { kind: 'money', n: 12, cost: true }, { kind: 'money', n: 1500, cost: true, short: true },
+     { kind: 'time', n: 120, cost: true }, { kind: 'time', n: 30, cost: true }, { kind: 'time', n: 900, cost: true, restOfDay: true },
+     { kind: 'hp', n: 20 }, { kind: 'hp', n: 4, cost: true }, { kind: 'hp', n: 12, capped: true },
+     { kind: 'stat', key: 'str', n: 2 }, { kind: 'stat', key: 'int', n: 2, range: [1, 3] }, { kind: 'stat', key: 'cha', n: 1, capped: true },
+     { kind: 'karma', n: 1 }, { kind: 'karma', n: -10 }, { kind: 'heat', n: 30 }, { kind: 'buzz', n: 1 },
+     { kind: 'item', key: 'ammo', n: 1, cost: true }, { kind: 'item', key: 'gum', n: 1, cost: true, short: true }, { kind: 'chance', n: 0.62 },
+     { kind: 'bank', n: 42 }].forEach(function (c, i) {
+      item(r, 'chip', c.kind + (c.cost ? ' cost' : '') + (c.short ? ' short' : '') + (c.capped ? ' capped' : '') + (c.range ? ' range' : ''), ui.chip(c));
+    });
+
+    r = sec('Badge');
+    [['NEW', 'new'], ['wed-half-price', 'info'], ['WED', 'warn'], ['LOCKED', 'locked'], ['Wanted', 'danger'], ['DEAL', 'money']].forEach(function (b) { item(r, 'badge', b[1], ui.badge({ text: b[0], kind: b[1] })); });
+
+    r = sec('ActionRow');
+    function rows(list) {
+      var box = h('div', { class: 'gal-rows' });
+      list.forEach(function (o) { box.appendChild(ui.actionRow(o)); });
+      return box;
+    }
+    item(r, 'actionRow', 'enabled, disabled, variants + Hustle', rows([
+      { id: 'g.fries', hotkey: 1, icon: 'fries', label: 'act.testshop.fries', repeatable: true,
+        gains: [ui.chip({ kind: 'hp', n: 20 })], costs: [ui.chip({ kind: 'money', n: 12, cost: true }), ui.chip({ kind: 'time', n: 30, cost: true })],
+        onRun: function () { bump('row-run'); } },
+      { id: 'g.promo', hotkey: 2, icon: 'promotion', label: 'act.testshop.promo', disabled: true, reason: 'test.reason.stat', reasonVars: { stat: 'CHA', n: 20, have: 14 } },
+      { id: 'g.work', hotkey: 3, icon: 'work', label: 'act.testshop.work', badges: ['wed-half-price'],
+        gains: [ui.chip({ kind: 'money', n: 42 }), ui.chip({ kind: 'karma', n: 1 })], costs: [ui.chip({ kind: 'time', n: 360, cost: true })],
+        variants: [{ id: 'full', label: 'ui.variant.full' }, { id: 'half', label: 'ui.variant.half' }, { id: 'overtime', label: 'ui.variant.overtime' }], variant: 'full',
+        onVariant: function () { bump('row-variant'); }, hustle: { label: 'ui.hustle', onClick: function () { bump('row-hustle'); } } },
+      { id: 'g.rob', hotkey: 4, icon: 'rob', label: 'act.testshop.rob', gains: [ui.chip({ kind: 'chance', n: 0.35 }), ui.chip({ kind: 'heat', n: 30 })], costs: [ui.chip({ kind: 'time', n: 960, cost: true, restOfDay: true })] },
+    ]), false);
+    r.appendChild(counter('row-run'));
+
+    r = sec('SpeechBubble');
+    item(r, 'speech', 'tail right', ui.speech({ id: 'g-speech', text: 'test.greet', typewriter: false, tail: 'right' }));
+    item(r, 'speech', 'tail left', ui.speech({ text: 'test.confirmRob', typewriter: false, tail: 'left' }));
+
+    r = sec('Meter');
+    item(r, 'meter', 'hp', ui.meter({ id: 'g-hp', kind: 'hp', value: 34, max: 40 }));
+    item(r, 'meter', 'hp ghost gain', ui.meter({ kind: 'hp', value: 20, max: 40, ghost: 12 }));
+    item(r, 'meter', 'hp ghost loss', ui.meter({ kind: 'hp', value: 30, max: 40, ghost: -10 }));
+    item(r, 'meter', 'poll', ui.meter({ kind: 'poll', value: 46, max: 100 }));
+    item(r, 'meter', 'heat', ui.meter({ kind: 'heat', value: 35, max: 100 }));
+
+    r = sec('ClockRing');
+    [[480, 0], [870, 0], [1200, 120], [1440, 0]].forEach(function (c) {
+      item(r, 'clockRing', SR.text.time(c[0]) + (c[1] ? ' ghost' : ''), ui.clockRing({ min: c[0], ghost: c[1], label: true }));
+    });
+    item(r, 'clockRing', 'compact 40', ui.clockRing({ min: 870, size: 40, label: true }));
+
+    r = sec('StatChip · KarmaMedallion');
+    ['str', 'int', 'cha'].forEach(function (k, i) { item(r, 'statChip', k, ui.statChip({ id: 'g-stat-' + k, stat: k, value: [12, 88, 30][i], ghost: i === 1 ? 2 : 0 })); });
+    [-100, -55, -12, 0, 34, 85, 100].forEach(function (k) { item(r, 'karmaMedallion', String(k), ui.karmaMedallion({ karma: k, glyph: true })); });
+
+    r = sec('Tabs · Segmented');
+    item(r, 'tabs', 'three tabs', ui.tabs({ id: 'g-tabs', value: 'journal', tabs: [{ id: 'journal', label: 'Journal' }, { id: 'map', label: 'Map', badge: 'NEW' }, { id: 'bag', label: 'Bag' }, { id: 'phone', label: 'Phone', disabled: true }],
+      onChange: function () { bump('tabs'); } }));
+    item(r, 'segmented', 'two', ui.segmented({ id: 'g-seg2', value: 'a', options: [{ id: 'a', label: 'Short' }, { id: 'b', label: 'Long' }], onChange: function () { bump('seg'); } }));
+    item(r, 'segmented', 'four', ui.segmented({ id: 'g-seg4', value: '1', options: [{ id: '1', label: '$10' }, { id: '2', label: '$50' }, { id: '3', label: '$100' }, { id: '4', label: '$500' }] }));
+
+    r = sec('NumberField · TextField');
+    item(r, 'numberField', 'money + quick %', ui.numberField({ id: 'g-num', label: 'ui.amount', value: 50, min: 0, max: 1240, money: true, quick: ['10%', '50%', 'all'], onSubmit: function () { bump('num-submit'); } }));
+    item(r, 'numberField', 'adds', ui.numberField({ id: 'g-num2', label: 'ui.amount', value: 0, min: 0, max: 99, quick: ['+10', '+100'] }));
+    item(r, 'textField', 'label + hint', ui.textField({ id: 'g-name', label: 'Name', value: 'Rikki', maxLength: 16, hint: 'Up to 16 letters', paste: true, onSubmit: function (v) { bump('text-submit'); counts.textValue = v; } }));
+    item(r, 'textField', 'error', ui.textField({ id: 'g-code', label: 'Save code', value: 'PSKY1:?', error: 'ui.invalid', pattern: 'PSKY1:.+' }));
+    r.appendChild(counter('text-submit'));
+
+    r = sec('Slider · Toggle');
+    item(r, 'slider', 'music', ui.slider({ id: 'g-slider', label: 'set.audio.music', value: 0.7, min: 0, max: 1, step: 0.1, onChange: function () { bump('slider'); } }));
+    item(r, 'toggle', 'off', ui.toggle({ id: 'g-toggle', label: 'set.access.captions', value: false, onChange: function () { bump('toggle'); } }));
+    item(r, 'toggle', 'on', ui.toggle({ id: 'g-toggle-on', label: 'set.game.clock24', value: true }));
+    item(r, 'toggle', 'disabled', ui.toggle({ id: 'g-toggle-off', label: 'set.display.lean', value: false, disabled: true, reason: 'ui.featureOff' }));
+
+    r = sec('List');
+    item(r, 'list', 'rows + meta', ui.list({ id: 'g-list', label: 'Saves', maxRows: 4, onSelect: function (it) { bump('list'); counts.listLast = it.id; },
+      items: [{ id: 'slot1', icon: 'save', label: 'Slot 1', meta: 'Day 12' }, { id: 'slot2', icon: 'save', label: 'Slot 2', meta: 'Day 3' },
+              { id: 'auto', icon: 'load', label: 'Auto', meta: 'Day 12' }, { id: 'broken', icon: 'warning', label: 'Broken', meta: '—', disabled: true },
+              { id: 'suspend', icon: 'time', label: 'Suspend', meta: 'Day 11' }] }));
+
+    r = sec('KeyHint · Tooltip');
+    ['confirm', 'back', 'row1', 'pocket', 'repeat'].forEach(function (a) { item(r, 'keyHint', a, ui.keyHint({ action: a })); });
+    var tipBtn = item(r, 'tooltip', 'hover or focus', ui.button({ id: 'g-tip', label: 'Hover me' }));
+    ui.tooltip(tipBtn, 'hud.forecastUnknown');
+
+    r = sec('Portrait');
+    [32, 56, 96, 176].forEach(function (s) { item(r, 'portrait', String(s), ui.portrait({ person: 'harold', size: s })); });
+
+    r = sec('Sparkline · LineChart · ProgressBar');
+    item(r, 'sparkline', 'rates', ui.sparkline({ label: 'Rate', kind: 'money', data: [1.5, 1.75, 1.5, 2, 2.25, 2, 1.75, 2.5, 2.25, 2.75] }));
+    item(r, 'lineChart', 'two series', ui.lineChart({ label: 'Stats', xLabels: ['1', '10', '20', '30', '40'],
+      series: [{ label: 'INT', kind: 'int', data: [7, 20, 44, 88, 120, 160] }, { label: 'STR', kind: 'str', data: [7, 9, 12, 30, 44, 51] }] }));
+    item(r, 'progress', 'advisor goal', ui.progress({ label: 'Reach INT 120', value: 88, max: 120, kind: 'int' }));
+
+    r = sec('Breadcrumb · ContextPrompt');
+    item(r, 'breadcrumb', 'three levels', ui.breadcrumb({ id: 'g-crumbs', items: [{ label: 'place.testbank', onClick: function () { bump('crumb'); } }, { label: 'test.sub.form', onClick: function () { bump('crumb'); } }, { label: 'test.sub.child' }] }));
+    item(r, 'contextPrompt', 'door', ui.contextPrompt({ action: 'interact', verb: 'Enter', object: 'place.testshop', detail: 'Open until 24:00' }));
+
+    r = sec('Toast · Stamp · Modal');
+    ['info', 'reward', 'warning', 'achievement'].forEach(function (k) {
+      item(r, 'toast', k, ui.toast({ static: true, kind: k, text: k === 'reward' ? 'Shift done. Mel nods.' : k === 'achievement' ? 'Paper Cut: fall off once' : k === 'warning' ? 'Need $20' : 'Saved to slot 1',
+        chips: k === 'reward' ? [{ kind: 'money', n: 42 }, { kind: 'karma', n: 1 }] : [] }));
+    });
+    item(r, 'stamp', 'int', ui.stamp({ static: true, text: '+2 INTELLIGENCE!', kind: 'int', size: 44 }));
+    item(r, 'stamp', 'hp', ui.stamp({ static: true, text: 'FLATLINED', kind: 'hp', size: 44 }));
+    item(r, 'modal', 'confirm', ui.modal({ id: 'g-modal', title: 'ui.confirmTitle', text: 'test.confirmRob', actions: [{ id: 'no', label: 'ui.cancel' }, { id: 'yes', label: 'ui.confirm', variant: 'danger' }] }));
+
+    r = sec('Card');
+    var cardEl = ui.card({ id: 'g-card', title: 'place.testshop', portrait: 'mel', greeting: 'test.greet', brand: ui.dom.paint('bld.mcsticks.walls') || undefined, readout: '$1,240 · 14:30' });
+    cardEl.body.appendChild(h('h3', { class: 'bcard-group' }, SR.text('ui.group.eat')));
+    cardEl.body.appendChild(ui.actionRow({ id: 'gc.fries', hotkey: 1, icon: 'fries', label: 'act.testshop.fries', gains: [ui.chip({ kind: 'hp', n: 20 })], costs: [ui.chip({ kind: 'money', n: 12, cost: true }), ui.chip({ kind: 'time', n: 30, cost: true })] }));
+    cardEl.body.appendChild(ui.actionRow({ id: 'gc.feast', hotkey: 2, icon: 'tripleburger', label: 'act.testshop.feast', gains: [ui.chip({ kind: 'hp', n: 80 })], costs: [ui.chip({ kind: 'money', n: 50, cost: true, short: true }), ui.chip({ kind: 'time', n: 30, cost: true })] }));
+    cardEl.body.appendChild(h('h3', { class: 'bcard-group' }, SR.text('ui.group.work')));
+    cardEl.body.appendChild(ui.actionRow({ id: 'gc.promo', hotkey: 3, icon: 'promotion', label: 'act.testshop.promo', disabled: true, reason: 'test.reason.stat', reasonVars: { stat: 'CHA', n: 20, have: 14 } }));
+    item(r, 'card', 'building card', cardEl);
+
+    r = sec('HUD');
+    var hudBox = h('div', { class: 'gal-stagebox', 'data-id': 'g-hudbox' });
+    item(r, 'hud', 'city (3 rows)', hudBox, true);
+
+    r = sec('Live overlays');
+    var live = h('div', { class: 'gal-row' });
+    live.appendChild(ui.button({ id: 'live-toast', label: 'Toast', onClick: function () { ui.toast({ text: 'Fries: +20 HP', kind: 'reward', chips: [{ kind: 'hp', n: 20 }] }); } }));
+    live.appendChild(ui.button({ id: 'live-stamp', label: 'Stamp', onClick: function () { ui.stamp({ text: '+2 INTELLIGENCE!', kind: 'int' }); } }));
+    live.appendChild(ui.button({ id: 'live-confirm', label: 'Confirm', onClick: function () { ui.confirm({ text: 'test.confirmRob', danger: true }).then(function (y) { counts.confirm = y; }); } }));
+    live.appendChild(ui.button({ id: 'live-dialog', label: 'Dialog', onClick: function () {
+      ui.dialog.open({ person: 'harold', name: 'Homeless Harold', text: 'The sky ate my hat once. Still waiting for it to come back down.',
+        choices: [{ id: 'give', label: 'Give $10', chips: [{ kind: 'money', n: 10, cost: true }, { kind: 'karma', n: 2 }, { kind: 'time', n: 60, cost: true }] },
+                  { id: 'grams', label: 'Buy some', number: { min: 1, max: 99, label: 'ui.amount' } },
+                  { id: 'leave', label: 'ui.leave' }] }).then(function (r2) { counts.dialog = r2; });
+    } }));
+    live.appendChild(ui.button({ id: 'live-caption', label: 'Caption', onClick: function () { SR.settings.set('access.captions', true); SR.events.emit('caption', { key: 'cap.horn', dir: -1 }); } }));
+    item(r, 'live', 'overlays', live, true);
+
+    // Input: SR.input's actions reach the gallery's focus scope through the test scene.
+    SR.scenes.go('test.gallery');
+    ui.focus.push(gal, { id: 'gallery', autofocus: false });
+
+    if (location.hash === '#stage') {
+      document.body.setAttribute('data-mode', 'stage');
+      SR.scenes.go('building', { id: 'testshop', params: {} }, { transition: false });
+    } else {
+      ui.hud.mount(hudBox, { compact: false });
+      ui.hud.flush();
+    }
+    window.W1D.ready = true;
+  })();
+  </script>
+</body>
+</html>

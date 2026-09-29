@@ -1,0 +1,217 @@
+<!doctype html>
+<!-- tests/sheets/world.html — owner: W1-W. Contact sheet for the world geometry (GDD §3,
+     ARCHITECTURE §8.1): the torn outline with railed and unrailed edges, the Bus Hole, surfaces,
+     lanes, junctions, zebras and portals, every building's footprint, projected rect, tall tops,
+     signature rects, porch (visible strip), door trigger, exit point and kerb, props, people, spots,
+     interactables, home lots, scraps and spawn points, the sidewalk graph and the nav grid.
+     Opens from disk; loads js/boot/*, js/core/*, the world's data and js/world/*, then boots with
+     SR.boot({ scene: false }). window.sheet.render(view, layers) redraws a world rect;
+     query: ?view=x0,y0,x1,y1 &layers=nav,graph,... -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paper Sky · world sheet</title>
+<link rel="icon" href="data:,">
+<style>
+  html, body { margin: 0; background: #20222c; }
+  #app { display: none; }
+  canvas[data-id="sheet-map"] { display: block; }
+  [data-id="sheet-legend"] { position: fixed; right: 8px; top: 8px; width: 250px; font: 12px system-ui, sans-serif; color: #eee; background: rgba(0,0,0,.6); padding: 8px; }
+  body.shot [data-id="sheet-legend"] { display: none; }
+</style>
+</head>
+<body>
+  <div id="app"><div id="stage"><canvas id="world"></canvas><canvas id="fx"></canvas><div id="ui"></div><div id="aria" role="status" aria-live="polite"></div></div></div>
+  <canvas data-id="sheet-map" width="1280" height="1152"></canvas>
+  <div data-id="sheet-legend"></div>
+
+  <script src="../../js/boot/namespace.js"></script>
+  <script src="../../js/boot/util.js"></script>
+  <script src="../../js/boot/events.js"></script>
+  <script src="../../js/core/rng.js"></script>
+  <script src="../../js/core/loop.js"></script>
+  <script src="../../js/core/stage.js"></script>
+  <script src="../../js/core/quality.js"></script>
+  <script src="../../js/core/input.js"></script>
+  <script src="../../js/core/scenes.js"></script>
+  <script src="../../js/core/save.js"></script>
+  <script src="../../js/core/settings.js"></script>
+  <script src="../../js/core/text.js"></script>
+  <script src="../../js/core/debug.js"></script>
+  <script src="../../js/data/tuning.js"></script>
+  <script src="../../js/data/features.js"></script>
+  <script src="../../js/data/worldmap.js"></script>
+  <script src="../../js/data/homes.js"></script>
+  <script src="../../js/data/text/en-world.js"></script>
+  <script src="../../js/art/palette.js"></script>
+  <script src="../../js/world/geometry.js"></script>
+  <script src="../../js/world/collision.js"></script>
+  <script src="../../js/world/nav.js"></script>
+  <script src="../../js/world/camera.js"></script>
+  <script src="../../js/world/player.js"></script>
+  <script src="../../js/world/doors.js"></script>
+  <script src="../../js/world/fall.js"></script>
+  <script src="../../js/world/world.js"></script>
+  <script>
+  (function () {
+    'use strict';
+    var SR = window.SR;
+    SR.boot({ scene: false });
+
+    var canvas = document.querySelector('[data-id="sheet-map"]');
+    var ctx = canvas.getContext('2d');
+    var G = SR.world.geometry, N = SR.world.nav, map = G.map;
+
+    // Colours come from the palette (keys); debug overlays use the UI mirror's stat colours.
+    function pal(key, fallback) {
+      var v = SR.art && SR.art.palette, parts = key.split('.');
+      for (var i = 0; i < parts.length && v; i++) v = v[parts[i]];
+      return typeof v === 'string' ? v : fallback || 'magenta';
+    }
+    var C = {
+      sky: pal('ui.ink-700'), grass: pal('grass'), park: pal('parkGrass'), asphalt: pal('asphalt'), sidewalk: pal('sidewalk'),
+      path: pal('path'), plaza: pal('plaza'), zebra: pal('zebra'), lane: pal('lanePaint'), water: pal('water'), stone: pal('stone'),
+      ink: pal('ink'), rail: pal('railing'), flap: pal('paperBack'), edge: pal('paperEdge'),
+      porch: pal('ui.money'), trigger: pal('ui.str'), kerb: pal('ui.int'), sig: pal('ui.hp'), graph: pal('ui.cha'),
+      nav: pal('ui.time'), scrap: pal('ui.focus'), person: pal('ui.primary-500'), white: pal('white'), tree: pal('grassShade'), lamp: pal('glassLit'),
+    };
+
+    var view = [0, 0, 5120, 4608], k = 0.25;
+    function X(x) { return (x - view[0]) * k; }
+    function Y(y) { return (y - view[1]) * k; }
+    function rect(r, fill, stroke, lw, dash) {
+      if (fill) { ctx.fillStyle = fill; ctx.fillRect(X(r[0]), Y(r[1]), (r[2] - r[0]) * k, (r[3] - r[1]) * k); }
+      if (stroke) {
+        ctx.setLineDash(dash || []); ctx.strokeStyle = stroke; ctx.lineWidth = lw || 1;
+        ctx.strokeRect(X(r[0]), Y(r[1]), (r[2] - r[0]) * k, (r[3] - r[1]) * k); ctx.setLineDash([]);
+      }
+    }
+    function dot(x, y, r, fill) { ctx.fillStyle = fill; ctx.beginPath(); ctx.arc(X(x), Y(y), Math.max(1, r * k), 0, Math.PI * 2); ctx.fill(); }
+    function poly(pts, fill, stroke, lw) {
+      ctx.beginPath(); pts.forEach(function (p, i) { if (i) ctx.lineTo(X(p[0]), Y(p[1])); else ctx.moveTo(X(p[0]), Y(p[1])); }); ctx.closePath();
+      if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+      if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw || 1; ctx.stroke(); }
+    }
+    function line(a, b, stroke, lw, dash) {
+      ctx.setLineDash(dash || []); ctx.strokeStyle = stroke; ctx.lineWidth = lw || 1;
+      ctx.beginPath(); ctx.moveTo(X(a[0]), Y(a[1])); ctx.lineTo(X(b[0]), Y(b[1])); ctx.stroke(); ctx.setLineDash([]);
+    }
+    function label(t, x, y, color, size) {
+      ctx.font = '600 ' + Math.max(9, (size || 11)) + 'px system-ui, sans-serif'; ctx.fillStyle = color || C.white;
+      ctx.textAlign = 'center'; ctx.fillText(t, X(x), Y(y)); ctx.textAlign = 'left';
+    }
+
+    function render(v, layers) {
+      view = v || [0, 0, 5120, 4608];
+      layers = layers || {};
+      k = Math.min(canvas.width / (view[2] - view[0]), canvas.height / (view[3] - view[1]));
+      ctx.fillStyle = C.sky; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      // Ground: the outline, the park pocket, the Dog-Ear flap, the Bus Hole.
+      poly(map.outline, C.grass);
+      ctx.save(); poly(map.outline); ctx.clip();
+      rect(map.pockets[1].rects[0], C.park);
+      ctx.restore();
+      poly(map.features.dogEar.flap, C.flap, C.ink, 1);
+      // Surfaces.
+      map.streets.forEach(function (s) { rect(s.rect, C[s.kind === 'asphalt' ? 'asphalt' : s.kind]); });
+      map.junctions.forEach(function (j) { rect(j.rect, C.asphalt, C.lane, 1, [4, 4]); });
+      var jl = map.jogLoop;
+      ctx.lineWidth = jl.w * k; ctx.strokeStyle = C.path;
+      ctx.beginPath(); ctx.roundRect(X(jl.rect[0] + jl.w / 2), Y(jl.rect[1] + jl.w / 2), (jl.rect[2] - jl.rect[0] - jl.w) * k, (jl.rect[3] - jl.rect[1] - jl.w) * k, (jl.r - jl.w / 2) * k); ctx.stroke();
+      map.zebras.forEach(function (z) { rect(z.rect, null, C.zebra, 2); });
+      rect(map.features.skateBowl.rect, C.plaza, C.ink, 1);
+      map.holes.forEach(function (h) { rect(h.rect, C.sky); });
+      var f = map.features;
+      ctx.fillStyle = C.water; ctx.beginPath(); ctx.ellipse(X(f.pond.x), Y(f.pond.y), f.pond.rx * k, f.pond.ry * k, 0, 0, Math.PI * 2); ctx.fill();
+      dot(f.fountain.x, f.fountain.y, f.fountain.r, C.water);
+      rect(f.plinth.rect, C.stone, C.ink, 1);
+      // Lanes and portals.
+      Object.keys(G.lanes).forEach(function (id) {
+        var l = G.lanes[id], r = l.rect;
+        if (l.axis === 'y') line([l.at, r[1]], [l.at, r[3]], C.lane, 1, [6, 6]); else line([r[0], l.at], [r[2], l.at], C.lane, 1, [6, 6]);
+      });
+      map.portals.forEach(function (p) { dot(p.at[0], p.at[1], 18, p.end === 'in' ? C.porch : C.sig); });
+      // Nav grid (connected cells).
+      if (layers.nav) {
+        ctx.fillStyle = C.nav; ctx.globalAlpha = 0.25;
+        for (var i = 0; i < N.walk.length; i++) {
+          if (!N.connected(i)) continue;
+          var c = N.center(i);
+          ctx.fillRect(X(c.x - 14), Y(c.y - 14), 28 * k, 28 * k);
+        }
+        ctx.globalAlpha = 1;
+      }
+      // Edges: railed thick, unrailed thin.
+      G.edges.forEach(function (e) { line(e.a, e.b, e.railed ? C.rail : C.edge, e.railed ? 5 : 2); });
+      map.walls.forEach(function (w) { line(w.a, w.b, C.stone, Math.max(2, w.w * k)); });
+      // Buildings: footprint (walls colour), projected rect (dashed), tops, signatures.
+      Object.keys(G.buildings).forEach(function (id) {
+        var b = G.buildings[id], walls = pal('bld.' + id + '.walls', pal('bld.default.walls')), roof = pal('bld.' + id + '.roof', C.ink);
+        b.masses.forEach(function (m) { rect(m.rect, walls, roof, 2); });
+        b.projected.forEach(function (r) { rect(r, null, C.white, 1, [5, 4]); });
+        b.tops.forEach(function (r) { rect(r, null, C.scrap, 1, [2, 3]); });
+        b.signature.forEach(function (r) { rect(r, null, C.sig, 2); });
+        var m0 = b.masses[0].rect;
+        label(id, (m0[0] + m0[2]) / 2, (m0[1] + m0[3]) / 2, C.ink, 12);
+      });
+      // Doors: porch (full) and visible strip, trigger, exit, kerb.
+      G.doors.forEach(function (d) {
+        rect(d.porch, null, C.porch, 1, [3, 3]);
+        if (d.visible) rect(d.visible, C.porch);
+        rect(d.trigger, null, C.trigger, 2);
+        dot(d.exit.x, d.exit.y, 10, C.trigger);
+        if (d.kerb) { dot(d.kerb[0], d.kerb[1], 14, C.kerb); line([d.x, d.y], d.kerb, C.kerb, 1, [2, 4]); }
+      });
+      // Props.
+      map.props.forEach(function (p) {
+        if (p.type === 'tree') dot(p.x, p.y, 20, C.tree);
+        else if (p.type === 'lamp') dot(p.x, p.y, 10, C.lamp);
+        else if (p.type === 'bench') rect(p.a === 90 ? [p.x - 8, p.y - 24, p.x + 8, p.y + 24] : [p.x - 24, p.y - 8, p.x + 24, p.y + 8], C.flap);
+        else dot(p.x, p.y, 8, C.stone);
+      });
+      // Sidewalk graph.
+      if (layers.graph !== false) {
+        G.graph.edges.forEach(function (e) { var a = G.graph.nodes[e[0]], b = G.graph.nodes[e[1]]; line([a.x, a.y], [b.x, b.y], C.graph, e[2] ? 2 : 1); });
+        G.graph.nodes.forEach(function (n) { dot(n.x, n.y, 8, C.graph); });
+      }
+      // People, spots, interactables, home lots, scraps, spawn points.
+      map.people.forEach(function (p) {
+        if (p.path) line(p.path[0], p.path[1], C.person, 3); else dot(p.x, p.y, 16, C.person);
+        label(p.id, p.x || p.path[0][0], (p.y || p.path[0][1]) - 24, C.person, 10);
+      });
+      map.interactables.forEach(function (it) {
+        if (it.rect) rect(it.rect, null, C.person, 2); else { ctx.strokeStyle = C.person; ctx.beginPath(); ctx.arc(X(it.x), Y(it.y), it.r * k, 0, Math.PI * 2); ctx.stroke(); }
+      });
+      Object.keys(map.homeLots).forEach(function (id) { rect(map.homeLots[id], null, C.kerb, 1, [4, 2]); });
+      map.scraps.forEach(function (s) { dot(s.x, s.y, 22, C.scrap); label(String(s.n), s.x, s.y + 4, C.ink, 10); });
+      ['newGame', 'afterJail', 'afterHospital'].forEach(function (n) {
+        var p = SR.world.spawnPoint(n, { homes: { living: 'apt' } });
+        dot(p.x, p.y, 14, C.white); label(n, p.x, p.y - 20, C.white, 10);
+      });
+      if (layers.labels !== false) {
+        map.streets.forEach(function (s) { if (s.kind !== 'sidewalk') label(s.id, (s.rect[0] + s.rect[2]) / 2, (s.rect[1] + s.rect[3]) / 2, C.ink, 10); });
+      }
+      if (layers.extra) layers.extra(ctx, { X: X, Y: Y, k: k, dot: dot, line: line, rect: rect, C: C });
+    }
+
+    function legend() {
+      var el = document.querySelector('[data-id="sheet-legend"]');
+      var st = G.graph, n = 0;
+      for (var i = 0; i < N.walk.length; i++) if (N.connected(i)) n++;
+      el.innerHTML = '<b>World sheet (W1-W)</b><br>edges ' + G.edges.length + ' (railed ' + G.rails.length + ')<br>solids ' + G.solids.length +
+        '<br>graph ' + st.nodes.length + ' nodes / ' + st.edges.length + ' links<br>nav ' + n + ' connected cells<br>props ' + map.props.length;
+    }
+
+    var q = new URLSearchParams(location.search);
+    var v = q.get('view') ? q.get('view').split(',').map(Number) : null;
+    var layers = {};
+    (q.get('layers') || '').split(',').forEach(function (l) { if (l) layers[l] = true; });
+    if (q.has('shot')) document.body.classList.add('shot');
+    render(v, layers);
+    legend();
+    window.sheet = { render: render, legend: legend, canvas: canvas };
+  })();
+  </script>
+</body>
+</html>

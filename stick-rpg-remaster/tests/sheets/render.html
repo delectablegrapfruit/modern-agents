@@ -1,0 +1,146 @@
+<!doctype html>
+<!-- tests/sheets/render.html — owner: W1-G. The render core's test bed: the real stage, loop and
+     quality modules, the worldmap, the art kit and every js/render file, painting the whole city
+     through SR.render.frame from a test scene (no world simulation). Fakes (CONTRACT D27) come from
+     render-fakes.js. Opens from disk.
+     Query: ?static (the loop stays paused; tests step it), ?actors (40 walkers and 14 cars),
+     ?min=<0-1439>, ?zoom=<z>, ?x=<u>&y=<u>, ?hours (the hour scrubber), ?projected, ?shot (no panel). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paper Sky · render sheet</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../../css/tokens.css">
+<link rel="stylesheet" href="../../css/base.css">
+<link rel="stylesheet" href="../../css/components.css">
+<style>
+  [data-id="render-panel"] {
+    position: fixed; right: 8px; top: 8px; z-index: 100; display: flex; flex-wrap: wrap; gap: 4px; max-width: 420px;
+    padding: 8px; border-radius: 10px; background: var(--paper-0); border: 2px solid var(--ink-900);
+    font: 600 12px system-ui, sans-serif;
+  }
+  [data-id="render-panel"] button { font: 600 12px system-ui, sans-serif; padding: 3px 6px; border-radius: 6px; border: 1px solid var(--ink-700); background: var(--paper-1); }
+  [data-id="render-panel"] pre { flex-basis: 100%; margin: 0; font: 11px ui-monospace, monospace; white-space: pre-wrap; }
+  body.shot [data-id="render-panel"] { display: none; }
+</style>
+</head>
+<body>
+  <div id="app">
+    <div id="stage">
+      <canvas id="world"></canvas>
+      <canvas id="fx"></canvas>
+      <div id="ui"></div>
+      <div id="aria" role="status" aria-live="polite"></div>
+    </div>
+  </div>
+  <div data-id="render-panel">
+    <button type="button" data-id="rp-hours">Hours</button>
+    <button type="button" data-id="rp-projected">Projected</button>
+    <button type="button" data-id="rp-z08">0.8</button>
+    <button type="button" data-id="rp-z10">1.0</button>
+    <button type="button" data-id="rp-z125">1.25</button>
+    <button type="button" data-id="rp-tour">Tour</button>
+    <button type="button" data-id="rp-actors">Actors</button>
+    <button type="button" data-id="rp-page">Page turn</button>
+    <button type="button" data-id="rp-door">Door zoom</button>
+    <button type="button" data-id="rp-confetti">Confetti</button>
+    <button type="button" data-id="rp-jolt">Jolt</button>
+    <button type="button" data-id="rp-coins">Coins</button>
+    <pre data-id="rp-stats"></pre>
+  </div>
+
+  <script src="../../js/boot/namespace.js"></script>
+  <script src="../../js/boot/util.js"></script>
+  <script src="../../js/boot/events.js"></script>
+  <script src="../../js/core/rng.js"></script>
+  <script src="../../js/core/loop.js"></script>
+  <script src="../../js/core/stage.js"></script>
+  <script src="../../js/core/quality.js"></script>
+  <script src="../../js/core/input.js"></script>
+  <script src="../../js/core/scenes.js"></script>
+  <script src="../../js/core/save.js"></script>
+  <script src="../../js/core/settings.js"></script>
+  <script src="../../js/core/text.js"></script>
+  <script src="../../js/core/debug.js"></script>
+  <script src="../../js/data/tuning.js"></script>
+  <script src="../../js/data/features.js"></script>
+  <script src="../../js/data/worldmap.js"></script>
+  <script src="../../js/data/text/en-ui.js"></script>
+  <script src="../../js/data/text/en-world.js"></script>
+  <script src="../../js/render/renderer.js"></script>
+  <script src="../../js/render/sky.js"></script>
+  <script src="../../js/render/ground.js"></script>
+  <script src="../../js/render/buildings.js"></script>
+  <script src="../../js/render/actors.js"></script>
+  <script src="../../js/render/lighting.js"></script>
+  <script src="../../js/render/shadows.js"></script>
+  <script src="../../js/render/weatherfx.js"></script>
+  <script src="../../js/render/particles.js"></script>
+  <script src="../../js/render/worldui.js"></script>
+  <script src="../../js/render/fx.js"></script>
+  <script src="../../js/art/palette.js"></script>
+  <script src="../../js/art/paper.js"></script>
+  <script src="../../js/art/draw.js"></script>
+  <script src="../../js/art/stick.js"></script>
+  <script src="../../js/art/vehicles.js"></script>
+  <script src="../../js/art/exteriors.js"></script>
+  <script src="../../js/art/exteriors-detail.js"></script>
+  <script src="../../js/art/props.js"></script>
+  <script src="../../js/art/skyline.js"></script>
+  <script src="render-fakes.js"></script>
+  <script>
+  (function () {
+    'use strict';
+    var SR = window.SR, RS = window.RenderSheet;
+    // A test-only scene that paints the city (the real one is W2-City's).
+    SR.scenes.register('render-test', {
+      kind: 'base',
+      render: function (ctx, alpha) { SR.render.frame(ctx, alpha); },
+    });
+    var shot = RS.q('shot') !== null;
+    if (shot) document.body.classList.add('shot');
+    var num = function (n, d) { var v = RS.q(n); return v === null || v === '' ? d : Number(v); };
+    SR.boot({ scene: false });
+    if (RS.q('static') !== null && SR.loop) SR.loop.pause();
+    if (SR.quality && SR.quality.set) SR.quality.set('high');
+    SR.render.setView({ x: num('x', 2480), y: num('y', 2300), zoom: num('zoom', 1), min: num('min', 780) });
+    if (RS.q('actors') !== null) RS.stubActors(40, 14);
+    if (RS.q('hours') !== null) SR.render.debug.hours(true);
+    if (RS.q('projected') !== null) SR.render.debug.projected(true);
+    SR.scenes.go('render-test');
+
+    var $ = function (id) { return document.querySelector('[data-id="' + id + '"]'); };
+    var zoom = function (z) { SR.render.setView({ zoom: z }); };
+    var proj = RS.q('projected') !== null;
+    $('rp-hours').onclick = function () { SR.render.debug.hours(!document.querySelector('[data-id="render-hour-scrubber"]')); };
+    $('rp-projected').onclick = function () { proj = !proj; SR.render.debug.projected(proj); };
+    $('rp-z08').onclick = function () { zoom(0.8); };
+    $('rp-z10').onclick = function () { zoom(1); };
+    $('rp-z125').onclick = function () { zoom(1.25); };
+    $('rp-actors').onclick = function () { RS.stubActors(40, 14); };
+    $('rp-page').onclick = function () { SR.render.fx.transition('pageTurn', function () {}); };
+    $('rp-door').onclick = function () { SR.render.fx.transition('doorZoom', function () {}); };
+    $('rp-confetti').onclick = function () { SR.render.fx.confetti(); };
+    $('rp-jolt').onclick = function () { SR.render.fx.jolt(); };
+    $('rp-coins').onclick = function () { var v = SR.render.view; SR.render.particles.burst('coin', v.x, v.y); SR.render.worldui.float(v.x, v.y, '+$42', 'money'); };
+    var tour = null;
+    $('rp-tour').onclick = function () {
+      if (tour) { clearInterval(tour); tour = null; return; }
+      var t0 = performance.now();
+      tour = setInterval(function () {
+        var t = (performance.now() - t0) / 1000;
+        SR.render.setView({ x: 2480 + Math.sin(t * 0.21) * 1500, y: 2300 + Math.sin(t * 0.13) * 1700 });
+      }, 16);
+    };
+    if (!shot) {
+      setInterval(function () {
+        var s = SR.render.stats();
+        $('rp-stats').textContent = 'chunks ' + s.chunks.count + '/' + s.chunks.max + '  sprites ' + (s.sprites.px / 1e6).toFixed(1) + ' Mpx  frame ' +
+          s.frame.ms.toFixed(1) + ' ms  img ' + s.frame.images + '  fill ' + s.frame.fills + '\nmin ' + Math.round(s.view.min) + '  zoom ' + s.view.zoom;
+      }, 250);
+    }
+  })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,139 @@
+<!doctype html>
+<!-- tests/sheets/exteriors.html — owner: W1-G. Contact sheet of the building painter
+     (SR.art.exterior, ART_AUDIO §5): every worldmap building at zoom 0.8 / 1.0 / 1.25 by day and at
+     1.0 by night (graded, with lit windows and neon), then one sample per archetype with each door
+     treatment (south step, east / west awning, north porch and canopy). Loads only what the painter
+     needs; fakes (CONTRACT D27) come from render-fakes.js. Opens from disk.
+     Query: ?dpr=<sprite dpr> (default 1), ?night=<minute> (default 1320). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paper Sky · exteriors sheet</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../../css/tokens.css">
+<style>
+  html, body { margin: 0; background: var(--paper-2); font: 600 14px system-ui, sans-serif; color: var(--ink-900); }
+  header { padding: 12px 16px; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+  <header data-id="ext-title">Exteriors (W1-G): every building at 0.8 / 1.0 / 1.25 by day, 1.0 by night; then the archetypes and door treatments.</header>
+  <canvas data-id="ext-sheet"></canvas>
+
+  <script src="../../js/boot/namespace.js"></script>
+  <script src="../../js/boot/util.js"></script>
+  <script src="../../js/boot/events.js"></script>
+  <script src="../../js/core/rng.js"></script>
+  <script src="../../js/core/text.js"></script>
+  <script src="../../js/data/tuning.js"></script>
+  <script src="../../js/data/worldmap.js"></script>
+  <script src="../../js/data/text/en-world.js"></script>
+  <script src="../../js/render/renderer.js"></script>
+  <script src="../../js/render/buildings.js"></script>
+  <script src="../../js/render/lighting.js"></script>
+  <script src="../../js/render/actors.js"></script>
+  <script src="../../js/art/palette.js"></script>
+  <script src="../../js/art/paper.js"></script>
+  <script src="../../js/art/draw.js"></script>
+  <script src="../../js/art/exteriors.js"></script>
+  <script src="../../js/art/exteriors-detail.js"></script>
+  <script src="render-fakes.js"></script>
+  <script>
+  (function () {
+    'use strict';
+    var SR = window.SR, RS = window.RenderSheet;
+    SR.boot({ scene: false });
+    var dpr = Number(RS.q('dpr') || 1), nightMin = Number(RS.q('night') || 1320);
+    var ZOOMS = [0.8, 1, 1.25];
+    var E = SR.art.exterior, lib = SR.render.lib;
+
+    // Archetype samples (synthetic defs in the worldmap format) covering every door treatment.
+    var SAMPLES = [
+      { id: 'sample_box', masses: [{ role: 'main', rect: [0, 0, 360, 240], h: 170 }], door: { face: 'S', x: 180, y: 240 }, exterior: { archetype: 'box', palette: 'bld.pawn' } },
+      { id: 'sample_tower', masses: [{ role: 'main', rect: [0, 0, 400, 320], h: 160 }, { role: 'tower', rect: [60, 120, 400, 320], h: 520 }], door: { face: 'W', x: 0, y: 200 }, exterior: { archetype: 'tower', palette: 'bld.nli' } },
+      { id: 'sample_hall', masses: [{ role: 'main', rect: [0, 0, 520, 260], h: 220 }], door: { face: 'S', x: 260, y: 260 }, exterior: { archetype: 'hall', palette: 'bld.uofs' } },
+      { id: 'sample_dome', masses: [{ role: 'main', rect: [0, 0, 440, 320], h: 260 }], door: { face: 'S', x: 220, y: 320 }, exterior: { archetype: 'hall', palette: 'bld.cityhall', roof: 'dome', tops: [{ kind: 'dome', rect: [130, 70, 310, 250], h: 350 }] } },
+      { id: 'sample_shop', masses: [{ role: 'main', rect: [0, 0, 420, 300], h: 160 }], door: { face: 'E', x: 420, y: 150 }, exterior: { archetype: 'shop', palette: 'bld.mcsticks' } },
+      { id: 'sample_castle', masses: [{ role: 'main', rect: [0, 0, 480, 260], h: 300 }], door: { face: 'S', x: 240, y: 260 }, exterior: { archetype: 'castle', palette: 'bld.home_castle' } },
+      { id: 'sample_house', masses: [{ role: 'main', rect: [0, 0, 420, 220], h: 180 }], door: { face: 'S', x: 210, y: 220 }, exterior: { archetype: 'house', palette: 'bld.home_mansion' } },
+      { id: 'sample_depot', masses: [{ role: 'main', rect: [0, 100, 520, 360], h: 180 }, { role: 'annex', rect: [160, 4, 400, 100], h: 48 }], door: { face: 'N', x: 280, y: 4 }, exterior: { archetype: 'depot', palette: 'bld.bus' } },
+      { id: 'sample_vehicle', masses: [{ role: 'main', rect: [0, 0, 86, 378], h: 70 }], door: null, exterior: { archetype: 'vehicle', palette: 'bld.skybus' } },
+    ];
+
+    var wm = SR.reg.worldmap.main;
+    var rows = (wm && wm.buildings ? wm.buildings : []).map(function (b) { return { def: b, label: b.id + ' · ' + (b.exterior && b.exterior.archetype) + ' · door ' + (b.door ? b.door.face : '-') }; })
+      .concat(SAMPLES.map(function (b) { return { def: b, label: b.id.replace('sample_', 'archetype: ') + ' · door ' + (b.door ? b.door.face : '-') }; }));
+
+    // Bake every cell first to lay the sheet out.
+    var night = SR.render.lighting.at(nightMin, 'clear');
+    rows.forEach(function (r) {
+      r.cells = ZOOMS.map(function (z) { return E.build(r.def, z, dpr); });
+      r.night = E.build(r.def, 1, dpr);
+      r.h = Math.max.apply(null, r.cells.concat([r.night]).map(function (c) { return c.albedo.height; })) + 28;
+    });
+    var colW = [0, 1, 2, 3].map(function (i) {
+      return Math.max.apply(null, rows.map(function (r) { return (i < 3 ? r.cells[i] : r.night).albedo.width; })) + 24;
+    });
+    var W = colW.reduce(function (a, b) { return a + b; }, 16), H = rows.reduce(function (a, r) { return a + r.h; }, 48);
+    var cv = document.querySelector('[data-id="ext-sheet"]');
+    cv.width = W; cv.height = H;
+    var ctx = cv.getContext('2d');
+    ctx.fillStyle = lib.pal(['ui.paper-1', 'paperEdge'], 0.95);
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = lib.pal(['ui.ink-900', 'ink'], 0.1);
+    ctx.font = '700 14px system-ui, sans-serif';
+    ['zoom 0.8 (day)', 'zoom 1.0 (day)', 'zoom 1.25 (day)', 'zoom 1.0 (' + SR.text.time(nightMin, false) + ')'].forEach(function (t, i) {
+      var x = 16 + colW.slice(0, i).reduce(function (a, b) { return a + b; }, 0);
+      ctx.fillText(t, x, 28);
+    });
+
+    function nightCell(res) {
+      var c = document.createElement('canvas');
+      c.width = res.albedo.width; c.height = res.albedo.height;
+      var x = c.getContext('2d');
+      x.drawImage(res.albedo, 0, 0);
+      x.globalCompositeOperation = 'multiply';
+      x.fillStyle = night.ambient;
+      x.fillRect(0, 0, c.width, c.height);
+      x.globalCompositeOperation = 'destination-in';
+      x.drawImage(res.albedo, 0, 0);
+      x.globalCompositeOperation = 'lighter';
+      x.setTransform(res.scale, 0, 0, res.scale, -res.bounds[0] * res.scale, -res.bounds[1] * res.scale);
+      x.globalAlpha = night.light * 0.8;
+      x.fillStyle = lib.pal(['light.window', 'glassLit'], 0.9);
+      x.beginPath();
+      var f = SR.render.buildings.litFraction(res.id, nightMin);
+      res.windows.forEach(function (w, i) { if (lib.hash01(res.id, i, 1) < f) x.rect(w[0], w[1], w[2], w[3]); });
+      x.fill();
+      x.globalAlpha = night.light;
+      res.neon.forEach(function (n) { x.drawImage(n.sprite, n.x, n.y, n.w, n.h); });
+      return c;
+    }
+
+    var y = 48;
+    var summary = [];
+    rows.forEach(function (r) {
+      var x = 16;
+      ctx.fillStyle = lib.pal(['ui.ink-700', 'ink'], 0.3);
+      ctx.font = '600 13px system-ui, sans-serif';
+      ctx.fillText(r.label, 16, y + 14);
+      r.cells.concat([r.night]).forEach(function (res, i) {
+        var img = i < 3 ? res.albedo : nightCell(res);
+        if (i === 3) {
+          ctx.fillStyle = lib.pal(['ui.ink-700', 'ink'], 0.3);
+          ctx.fillRect(x - 4, y + 20, img.width + 8, img.height + 4);
+        }
+        ctx.drawImage(img, x, y + 22);
+        x += colW[i];
+      });
+      summary.push({ id: r.def.id, archetype: r.def.exterior && r.def.exterior.archetype, windows: r.cells[1].windows.length, neon: r.cells[1].neon.length,
+        size: [r.cells[1].albedo.width, r.cells[1].albedo.height] });
+      y += r.h;
+    });
+    window.ExteriorSheet = { rows: summary, ready: true };
+  })();
+  </script>
+</body>
+</html>

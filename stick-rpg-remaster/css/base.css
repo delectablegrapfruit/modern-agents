@@ -1,2 +1,145 @@
-/* css/base.css — owner: W1-D. reset, stage, typography, a11y modes.
-   Stub (W1-K M0): empty until the owner writes it. */
+/* css/base.css — owner: W1-D. Reset, the stage layers (#app > #stage > #world, #fx, #ui, #aria;
+   js/core/stage.js sizes them), typography roles (UI.md §2.1), touch-action rules
+   (ARCHITECTURE §11, UI.md §6), helpers and the accessibility modes (UI.md §7-§8). No colour
+   literals: every colour is a token from css/tokens.css. */
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; }
+body {
+  background: var(--paper-2);
+  color: var(--ink-900);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+img, svg, canvas { display: block; }
+h1, h2, h3, h4, p, ul, ol { margin: 0; padding: 0; }
+ul, ol { list-style: none; }
+
+/* ---- the stage (ARCHITECTURE §2) ---- */
+#app {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: var(--paper-2);        /* js/core/stage.js paints the sky horizon colour here */
+  touch-action: none;
+}
+#stage { position: absolute; left: 0; top: 0; width: 1280px; height: 720px; overflow: hidden; }
+#world, #fx { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+#world { z-index: 0; touch-action: none; }
+#fx { z-index: 1; pointer-events: none; }
+#ui {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1280px;
+  height: 720px;
+  z-index: 2;
+  pointer-events: none;              /* the world under #ui keeps its clicks and taps */
+}
+#aria, .vh {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+/* Scene roots and UI layers cover #ui but only their real content takes pointer events. */
+#ui [data-scene], .ui-layer { position: absolute; inset: 0; pointer-events: none; }
+#ui [data-scene] > *, .ui-layer > * { pointer-events: auto; }
+#ui [data-scene] > .pe-none, .ui-layer > .pe-none { pointer-events: none; }
+
+/* ---- typography (UI.md §2.1: body 16, never below 16 px at 100 %; tabular numbers) ---- */
+#ui, .sr-ui {
+  font-family: var(--font-ui);
+  font-size: calc(var(--fs-16) * var(--ui-scale));
+  line-height: var(--lh-body);
+  font-weight: 400;
+  color: var(--ink-900);
+  font-variant-numeric: tabular-nums;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.sr-ui { position: relative; }
+#ui input, #ui textarea, .sr-ui input, .sr-ui textarea { -webkit-user-select: text; user-select: text; }
+.t-display { font-family: var(--font-display); font-weight: 900; font-size: calc(var(--fs-64) * var(--ui-scale)); line-height: var(--lh-tight); text-transform: uppercase; letter-spacing: .02em; }
+.t-h1 { font-family: var(--font-display); font-weight: 900; font-size: calc(var(--fs-44) * var(--ui-scale)); line-height: var(--lh-tight); text-transform: uppercase; letter-spacing: .02em; }
+.t-h2 { font-family: var(--font-display); font-weight: 900; font-size: calc(var(--fs-32) * var(--ui-scale)); line-height: var(--lh-tight); text-transform: uppercase; letter-spacing: .02em; }
+.t-money { font-family: var(--font-display); font-weight: 900; font-size: calc(var(--fs-28) * var(--ui-scale)); line-height: var(--lh-tight); }
+.t-h3 { font-family: var(--font-display); font-weight: 900; font-size: calc(var(--fs-24) * var(--ui-scale)); line-height: var(--lh-tight); text-transform: uppercase; letter-spacing: .02em; }
+.t-label { font-weight: 700; font-size: calc(var(--fs-20) * var(--ui-scale)); line-height: var(--lh-tight); }
+.t-body { font-weight: 400; font-size: calc(var(--fs-16) * var(--ui-scale)); }
+.t-small { font-size: calc(var(--fs-14) * var(--ui-scale)); }
+.t-caption { font-size: calc(var(--fs-12) * var(--ui-scale)); }
+.t-news { font-family: var(--font-news); }
+.t-num { font-variant-numeric: tabular-nums; }
+.t-ink-700 { color: var(--ink-700); }
+.t-ink-500 { color: var(--ink-500); }
+
+/* ---- touch scrolling (UI.md §6): only the world and minigame play areas use none ---- */
+#ui button, #ui [data-nav], .sr-ui button, .sr-ui [data-nav] { touch-action: manipulation; }
+.scroll-y {
+  overflow-x: hidden;
+  overflow-y: auto;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+.play-area { touch-action: none; }
+
+/* ---- paper grain over UI paper (ART_AUDIO §1.1: 4 %) ---- */
+.paper { position: relative; isolation: isolate; }
+.paper::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-image: var(--grain);
+  background-size: 256px 256px;
+  opacity: var(--grain-opacity);
+  mix-blend-mode: multiply;
+  pointer-events: none;
+  z-index: 3;
+}
+
+/* ---- focus: always visible (UI.md §2.3); keyboard, pad and programmatic focus alike ---- */
+[data-nav]:focus { outline: none; box-shadow: var(--focus-ring); }
+[data-nav].nav-inset:focus { box-shadow: var(--focus-ring-inset); }
+:focus-visible { outline: none; }
+
+/* ---- accessibility modes (UI.md §7-§8) ---- */
+.hc .paper::after { display: none; }
+.rm *, .rm *::before, .rm *::after {
+  animation-duration: 1ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 1ms !important;
+  scroll-behavior: auto !important;
+}
+.rm .rm-fade { animation-duration: 200ms !important; transition-duration: 200ms !important; }
+.fr .flicker { animation: none !important; }
+
+/* The portrait card (ARCHITECTURE §2; js/core/stage.js mounts it on a coarse pointer). */
+.sr-turn-card {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-4);
+  padding: var(--sp-6);
+  background: var(--paper-1);
+  color: var(--ink-900);
+  font-family: var(--font-ui);
+  text-align: center;
+  z-index: 100;
+}

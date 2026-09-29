@@ -1,2 +1,135 @@
-/* css/tokens.css — owner: W1-D. design tokens (UI.md §2.1).
-   Stub (W1-K M0): empty until the owner writes it. */
+/* css/tokens.css — owner: W1-D. The design tokens of UI.md §2.1 (mirrored for canvas in
+   SR.art.palette.ui by W1-A), the karma bands of BALANCE B-04c for DOM use, and the token swaps
+   of the accessibility modes: high contrast (html.hc), colour-blind tables (html[data-cb]),
+   reduced motion (html.rm). With js/art/palette.js this is the only file allowed colour literals
+   (ARCHITECTURE §21). tests/node/tokens.test.cjs parses this file and asserts every contrast pair
+   of UI.md §2.1 in every mode. */
+
+:root {
+  /* surfaces: paper */
+  --paper-0: #FFFDF8;   /* cards, rows */
+  --paper-1: #F7F2E8;   /* notebook, report, sheets */
+  --paper-2: #EFE6D4;   /* hover, sunken wells */
+  --paper-3: #E2D6BE;   /* dividers, thin borders */
+  /* ink */
+  --ink-900: #1B1D2B;   /* text, outlines (15.9:1 on paper-0) */
+  --ink-700: #3F4254;   /* secondary text */
+  --ink-500: #5C6070;   /* tertiary text, disabled labels (6.1:1 on paper-0, 5.0:1 on paper-2) */
+  --ink-300: #A8ABB8;   /* disabled strokes, placeholders (non-text only) */
+  /* brand: the original's panel blue, refined */
+  --primary-100: #DCE7FF; --primary-500: #2F6BFF; --primary-600: #1F4FD6; --primary-ink: #FFFFFF;
+  /* primary-500 is for accents, focus fills and large display text only; filled buttons use
+     primary-600 (white text 6.7:1). White on primary-500 is 4.50:1, too close to the limit. */
+  /* focus: a nod to Flash's yellow focus box */
+  --focus: #FFD23F;
+  /* meaning (base = icons, bars, fills; -ink = text on paper; -100 = chip backgrounds) */
+  --money: #19A35B; --money-ink: #0E7A41; --money-100: #DDF5E8;
+  --hp:    #E5484D; --hp-ink:    #B42318; --hp-100:    #FDE2E2;
+  --str:   #F07A2A; --str-ink:   #963F07; --str-100:   #FDE9DA;   /* 5.9:1 */
+  --int:   #3D8BFD; --int-ink:   #1F5FC4; --int-100:   #DEEBFF;
+  --cha:   #D946EF; --cha-ink:   #A21CAF; --cha-100:   #FBE3FD;
+  --time:  #0E9FB5; --time-ink:  #0B6F80; --time-100:  #D9F3F7;
+  --heat:  #FF6A00; --heat-ink:  #B54708; --heat-100:  #FFE7D6;
+  --karma-zero: #0066CC; --karma-good: #FFFFFF; --karma-evil: #CA0000;   /* orig endpoints */
+  --ok: #12B76A; --warn: #F79009; --danger: #D92D20; --danger-ink: #B42318; --info: #3D8BFD;
+  --scrim: rgba(27, 29, 43, .45);
+  /* type */
+  --font-display: "Arial Black", "Segoe UI Black", "Helvetica Neue", Arial, sans-serif;  /* weight 900 */
+  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-news: Georgia, "Times New Roman", Times, serif;                                   /* The Daily Fold */
+  --fs-12: 12px; --fs-14: 14px; --fs-16: 16px; --fs-20: 20px; --fs-24: 24px; --fs-28: 28px;
+  --fs-32: 32px; --fs-44: 44px; --fs-64: 64px; --fs-96: 96px;
+  --lh-tight: 1.2; --lh-body: 1.4;
+  /* space */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px; --sp-7: 48px; --sp-8: 64px;
+  /* shape */
+  --r-xs: 4px; --r-s: 6px; --r-m: 10px; --r-l: 16px; --r-pill: 999px;
+  --line: 2px solid var(--ink-900);      /* the cut-paper outline */
+  --line-thin: 1px solid var(--paper-3);
+  /* elevation: stacked paper (hard offset) plus a soft ambient shadow at higher levels */
+  --e-1: 0 2px 0 rgba(27, 29, 43, .18);
+  --e-2: 0 4px 0 rgba(27, 29, 43, .18), 0 6px 16px rgba(27, 29, 43, .10);
+  --e-3: 0 8px 0 rgba(27, 29, 43, .16), 0 16px 40px rgba(27, 29, 43, .22);
+  /* motion */
+  --dur-1: 120ms; --dur-2: 200ms; --dur-3: 350ms; --dur-4: 600ms;
+  --ease-out: cubic-bezier(.2, .8, .2, 1); --ease-inout: cubic-bezier(.65, 0, .35, 1);
+  --ease-spring: cubic-bezier(.34, 1.56, .64, 1);
+  /* layers inside #ui */
+  --z-hud: 10; --z-card: 20; --z-overlay: 30; --z-modal: 40; --z-toast: 50; --z-stamp: 60; --z-tip: 70;
+  /* accessibility scaling */
+  --ui-scale: 1;        /* text size setting: 1, 1.25, 1.5 */
+  --grain: none;        /* set at boot to a generated 256 px paper-grain data URL (4 % opacity) */
+
+  /* ---- W1-D additions (not in UI.md §2.1; requested for the lead's fold-back) ---- */
+  --white: #FFFFFF;                      /* high-contrast chip wells, text on filled buttons */
+  --gold: #C98A00;                       /* the achievement toast's edge (non-text) */
+  --newsprint: #F4F0E6;                  /* The Daily Fold page tone (ART_AUDIO §11) */
+  --grain-opacity: 1;                    /* --grain (js/art/paper.js) is already the 4 % grain of ART_AUDIO §1.1 */
+  --stamp-alpha: .85;                    /* stamps are inked at 85 % (ART_AUDIO §11) */
+  /* the focus ring: 3 px --focus, a 1 px ink outer line, offset 2 px (UI.md §2.3) */
+  --focus-ring: 0 0 0 2px var(--paper-0), 0 0 0 5px var(--focus), 0 0 0 6px var(--ink-900);
+  --focus-ring-inset: inset 0 0 0 3px var(--focus), inset 0 0 0 4px var(--ink-900);
+  /* karma bands (BALANCE B-04c, the original's palettes; i = clamp(ceil(|karma| / 10) - 1, 0, 9)) */
+  --karma-good-0: #0066CC; --karma-good-1: #017CF8; --karma-good-2: #218FFE; --karma-good-3: #45A2FE;
+  --karma-good-4: #70B7FE; --karma-good-5: #8FC8FE; --karma-good-6: #BFDFFF; --karma-good-7: #DFEFFF;
+  --karma-good-8: #EEF7FF; --karma-good-9: #FFFFFF;
+  --karma-evil-0: #0066CC; --karma-evil-1: #0110C9; --karma-evil-2: #6500CA; --karma-evil-3: #9700CA;
+  --karma-evil-4: #BA01C9; --karma-evil-5: #C9018D; --karma-evil-6: #CA005B; --karma-evil-7: #CA001A;
+  --karma-evil-8: #CA0000; --karma-evil-9: #CA0000;
+}
+
+/* ---- High contrast (UI.md §2.1): no grain, no shadows, 3 px lines, ink-500 → ink-700,
+   chip wells white (components.css adds the 2 px border in the base colour). ---- */
+:root.hc {
+  --ink-500: #3F4254;
+  --line: 3px solid var(--ink-900);
+  --line-thin: 2px solid var(--ink-700);
+  --e-1: none; --e-2: none; --e-3: none;
+  --grain-opacity: 0;
+  --money-100: #FFFFFF; --hp-100: #FFFFFF; --str-100: #FFFFFF; --int-100: #FFFFFF;
+  --cha-100: #FFFFFF; --time-100: #FFFFFF; --heat-100: #FFFFFF; --primary-100: #FFFFFF;
+  --scrim: rgba(27, 29, 43, .7);
+}
+
+/* ---- Colour-blind tables (UI.md §2.1, §8): the stat and karma base colours remap to the
+   Okabe-Ito colour-universal set; icons and labels never change. Each -ink stays ≥ 4.5:1 on its
+   -100 (asserted by the token test). ---- */
+:root[data-cb="protan"], :root[data-cb="deutan"] {
+  --money: #009E73; --money-ink: #006B4E; --money-100: #D8F2EA;
+  --hp:    #D55E00; --hp-ink:    #9A4200; --hp-100:    #FBE7D8;
+  --str:   #E69F00; --str-ink:   #7A5000; --str-100:   #FCF0D2;
+  --int:   #0072B2; --int-ink:   #005C8F; --int-100:   #DCEDF8;
+  --cha:   #CC79A7; --cha-ink:   #8E3B69; --cha-100:   #F7E6F0;
+  --time:  #56B4E9; --time-ink:  #1C5E86; --time-100:  #E1F2FB;
+  --heat:  #A08A00; --heat-ink:  #6E6400; --heat-100:  #FBF7D2;
+  --danger: #C2410C; --danger-ink: #9A3412; --ok: #0072B2;
+  --karma-evil: #C25400;
+  --karma-evil-1: #1864B3; --karma-evil-2: #316299; --karma-evil-3: #495F80; --karma-evil-4: #615D66;
+  --karma-evil-5: #795B4D; --karma-evil-6: #925933; --karma-evil-7: #AA561A; --karma-evil-8: #C25400;
+  --karma-evil-9: #C25400;
+}
+:root[data-cb="tritan"] {
+  --money: #009E73; --money-ink: #006B4E; --money-100: #D8F2EA;
+  --hp:    #D55E00; --hp-ink:    #9A4200; --hp-100:    #FBE7D8;
+  --str:   #E69F00; --str-ink:   #7A5000; --str-100:   #FCF0D2;
+  --int:   #0072B2; --int-ink:   #005C8F; --int-100:   #DCEDF8;
+  --cha:   #CC79A7; --cha-ink:   #8E3B69; --cha-100:   #F7E6F0;
+  --time:  #1B1D2B; --time-ink:  #1B1D2B; --time-100:  #E6E7EC;
+  --heat:  #A08A00; --heat-ink:  #6E6400; --heat-100:  #FBF7D2;
+  --karma-evil: #C25400;
+  --karma-evil-1: #1864B3; --karma-evil-2: #316299; --karma-evil-3: #495F80; --karma-evil-4: #615D66;
+  --karma-evil-5: #795B4D; --karma-evil-6: #925933; --karma-evil-7: #AA561A; --karma-evil-8: #C25400;
+  --karma-evil-9: #C25400;
+}
+/* High contrast keeps the colour-blind hues but its white chip wells. */
+:root.hc[data-cb] {
+  --money-100: #FFFFFF; --hp-100: #FFFFFF; --str-100: #FFFFFF; --int-100: #FFFFFF;
+  --cha-100: #FFFFFF; --time-100: #FFFFFF; --heat-100: #FFFFFF;
+}
+
+/* ---- Reduced motion (UI.md §7): tweens collapse to short fades; components.css turns off
+   slides, scales, shakes and flying chips under html.rm. ---- */
+:root.rm {
+  --dur-1: 1ms; --dur-2: 200ms; --dur-3: 200ms; --dur-4: 200ms;
+  --ease-spring: cubic-bezier(.2, .8, .2, 1);
+}

@@ -1,0 +1,153 @@
+<!doctype html>
+<!-- tests/sheets/kit.html — owner: W1-A. Contact sheet for the interior kit (ART_AUDIO §9): the
+     McSticks example of ART_AUDIO §9 drawn from palette keys only (registered here as a test def,
+     with its custom hero fn), at dusk and at night with the actors in depth order; the neutral
+     placeholder room of every int.<id> palette set; and every prop type of the kit, animated props
+     at a fixed time. Opens from disk. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paper Sky · interior kit sheet</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../../css/tokens.css">
+<style>
+  body { margin: 16px; background: var(--paper-1); color: var(--ink-900); font: 13px system-ui, sans-serif; }
+  h1 { font: 900 22px "Arial Black", system-ui, sans-serif; margin: 0 0 8px; }
+  h2 { font: 800 13px system-ui, sans-serif; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-500); margin: 18px 0 6px; }
+  canvas { display: block; border: 1px solid var(--paper-3); }
+  #app { display: none; }
+</style>
+</head>
+<body>
+  <h1>Interior kit sheet · W1-A</h1>
+  <div id="app"><div id="stage"><canvas id="world"></canvas><canvas id="fx"></canvas><div id="ui"></div><div id="aria" role="status" aria-live="polite"></div></div></div>
+
+  <script src="../../js/boot/namespace.js"></script>
+  <script src="../../js/boot/util.js"></script>
+  <script src="../../js/boot/events.js"></script>
+  <script src="../../js/core/rng.js"></script>
+  <script src="../../js/core/loop.js"></script>
+  <script src="../../js/core/stage.js"></script>
+  <script src="../../js/core/quality.js"></script>
+  <script src="../../js/core/input.js"></script>
+  <script src="../../js/core/scenes.js"></script>
+  <script src="../../js/core/save.js"></script>
+  <script src="../../js/core/settings.js"></script>
+  <script src="../../js/core/text.js"></script>
+  <script src="../../js/core/debug.js"></script>
+  <script src="../../js/data/features.js"></script>
+  <script src="../../js/data/text/en-ui.js"></script>
+  <script src="../../js/art/palette.js"></script>
+  <script src="../../js/art/paper.js"></script>
+  <script src="../../js/art/draw.js"></script>
+  <script src="../../js/art/stick.js"></script>
+  <script src="../../js/art/portraits.js"></script>
+  <script src="../../js/art/icons.js"></script>
+  <script src="../../js/art/interiors/kit.js"></script>
+  <script src="art-sheet.js"></script>
+  <script>
+  (function () {
+    'use strict';
+    var SR = window.SR, A = window.ArtSheet;
+    // The ART_AUDIO §9 McSticks example, verbatim but for its custom fn, registered as test content
+    // (the real js/art/interiors/mcsticks.js belongs to W2-Food and is not loaded here).
+    SR.def.interior('mcsticks', {
+      wall: { type: 'tiles', color: 'int.mcsticks.wall', trim: 'bld.mcsticks.walls' },
+      floor: { type: 'checker', a: 'int.mcsticks.floorA', b: 'int.mcsticks.floorB', perspective: 0.35 },
+      window: { x: 60, y: 90, w: 220, h: 140 },
+      props: [{ type: 'counter', x: 120, y: 470, w: 520, color: 'bld.mcsticks.walls' },
+              { type: 'menuBoard', x: 180, y: 110, items: ['fries', 'burger', 'shake'] },
+              { type: 'fryer', x: 520, y: 400, anim: 'steam' }],
+      owner: { id: 'mel', x: 360, y: 430, pose: 'idle' },
+      you: { x: 250, y: 560 },
+      lights: [{ x: 300, y: 60, r: 220, color: 'int.mcsticks.light' }],
+      custom: 'mcsticksHero',
+      fns: {
+        // a test hero prop: the burger-on-a-stick mascot standee, bobbing
+        mcsticksHero: {
+          static: function (ctx, K) { K.line(ctx, [700, 560, 700, 430], 6, K.color('kit.woodDark')); },
+          anim: function (ctx, K, t) {
+            var y = 400 + Math.sin(t * 2) * 4;
+            K.ellipse(ctx, 700, y, 44, 20, K.color('acc.tan'));
+            K.rect(ctx, 656, y + 2, 88, 10, K.color('acc.coffee'), 2);
+            K.circle(ctx, 686, y - 6, 4, K.color('ink'), 0); K.circle(ctx, 714, y - 6, 4, K.color('ink'), 0);
+          },
+        },
+      },
+    });
+    A.boot();
+    var STATE = { clock: { day: 3, min: 19 * 60 + 30 }, money: { rate: 2.25 }, msgs: [{ read: false }], jail: { served: 7 }, stats: { karma: 25 } };
+    var NIGHT = { clock: { day: 4, min: 22 * 60 }, money: { rate: 2.25 }, msgs: [], stats: { karma: -55 } };
+
+    function room(ctx, r, st, t, actors) { r.drawStatic(ctx, st); r.drawAnim(ctx, t, st, actors); }
+
+    A.section('McSticks (ART_AUDIO §9 example) at 19:30 · owner talking');
+    var m1 = A.canvas(document.body, 1280, 720, 'sheet-mcsticks');
+    room(m1, SR.art.interior('mcsticks'), STATE, 1.3, { owner: { pose: 'talk' }, you: { clip: 'eat' } });
+    // the card zone (x 776-1248) as the building scene will cover it
+    m1.save(); m1.globalAlpha = 0.25; m1.fillStyle = SR.art.draw.color('ui.paper-0'); m1.fillRect(776, 72, 472, 632); m1.restore();
+
+    A.section('At 22:00, react-shock and work, and an extra walk-on');
+    var m2 = A.canvas(document.body, 1280, 720, 'sheet-mcsticks-night');
+    room(m2, SR.art.interior('mcsticks'), NIGHT, 2.1, { owner: { pose: 'react-shock' }, you: { pose: 'work', karma: -55 },
+      extra: [{ look: 'harold', x: 560, y: 610, clip: 'wave', facing: 'left' }] });
+
+    A.section('Placeholder rooms (unregistered ids, their int.<id> sets)');
+    var ids = Object.keys(SR.art.palette.int);
+    var cols = 6, cw = 213, chh = 120, s = cw / 1280;
+    var ph = A.canvas(document.body, 1280, Math.ceil(ids.length / cols) * (chh + 16), 'sheet-rooms');
+    A.paper(ph, 1280, Math.ceil(ids.length / cols) * (chh + 16));
+    ids.forEach(function (id, i) {
+      var x = (i % cols) * cw, y = Math.floor(i / cols) * (chh + 16);
+      ph.save(); ph.beginPath(); ph.rect(x, y, cw - 3, chh); ph.clip(); ph.translate(x, y); ph.scale(s, s);
+      room(ph, SR.art.interior(id === 'mcsticks' ? 'mcsticks_placeholder' : id), STATE, 0.7, {});
+      ph.restore();
+      A.label(ph, id, x + 4, y + chh + 12, { size: 10, color: 'ui.ink-900' });
+    });
+
+    A.section('Every prop type (' + SR.art.interior.types().length + ')');
+    var types = SR.art.interior.types();
+    var pc = 6, pw = 213, phh = 190, ps = 0.3;
+    var cat = A.canvas(document.body, 1280, Math.ceil(types.length / pc) * (phh + 16), 'sheet-props');
+    A.paper(cat, 1280, Math.ceil(types.length / pc) * (phh + 16));
+    var PROPS = SR.art.interior.kit.PROPS;
+    types.forEach(function (ty, i) {
+      var d = PROPS[ty];
+      var w = d.w || 100;
+      var spec = d.wall ? { type: ty, x: Math.max(40, 380 - w / 2), y: ty === 'fan' || ty === 'chandelier' || ty === 'spotlight' ? 40 : 100 }
+        : { type: ty, x: Math.max(20, 380 - Math.min(w, 700) / 2), y: ty === 'rug' ? 640 : 600 };
+      if (ty === 'bars') { spec.x = 0; spec.y = 720; }
+      var def = { wall: { type: 'plain' }, floor: { type: 'planks' }, props: [spec] };
+      var r = SR.art.interior.fromDef('props_' + ty, def);
+      var x = (i % pc) * pw, y = Math.floor(i / pc) * (phh + 16);
+      cat.save(); cat.beginPath(); cat.rect(x, y, pw - 3, phh); cat.clip(); cat.translate(x - 20, y - 20); cat.scale(ps, ps);
+      room(cat, r, STATE, 0.9, {});
+      cat.restore();
+      A.label(cat, ty, x + 4, y + phh + 12, { size: 10, color: 'ui.ink-900' });
+    });
+
+    A.section('Furniture that follows the state (when / pick): bed → pod at tier 2');
+    var fr = A.canvas(document.body, 1280, 260, 'sheet-furniture');
+    A.paper(fr, 1280, 260);
+    var fdef = { wall: { type: 'wallpaper', color: 'int.apt.wall', alt: 'int.apt.wallShade' }, floor: { type: 'planks', a: 'int.apt.floorA', b: 'int.apt.floorB' },
+      window: { x: 520, y: 80, w: 160, h: 130 },
+      props: [{ type: 'bed', x: 80, y: 600, when: function (st) { return st.furniture.bed > 0; }, pick: function (st) { return st.furniture.bed > 1 ? 'pod' : null; } },
+              { type: 'tv', x: 470, y: 540, when: function (st) { return st.furniture.tv > 0; } },
+              { type: 'answering', x: 640, y: 520 }, { type: 'crack', x: 300, y: 60 }],
+      you: { x: 380, y: 640 } };
+    [{ bed: 0, tv: 0 }, { bed: 1, tv: 1 }, { bed: 2, tv: 1 }].forEach(function (f, i) {
+      var st = { clock: { day: 2, min: 8 * 60 }, furniture: f, msgs: [{ read: false }], stats: { karma: 0 } };
+      fr.save(); fr.beginPath(); fr.rect(i * 426, 0, 423, 260); fr.clip(); fr.translate(i * 426, 0); fr.scale(0.36, 0.36);
+      var rr = SR.art.interior.fromDef('furn_' + i, fdef);
+      room(fr, rr, st, 0.2, { you: { clip: 'idle' } });
+      fr.restore();
+    });
+
+    A.state.props = types.length;
+    A.state.rooms = ids.length;
+    A.state.ready = true;
+  })();
+  </script>
+</body>
+</html>

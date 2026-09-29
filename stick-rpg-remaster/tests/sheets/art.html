@@ -1,0 +1,120 @@
+<!doctype html>
+<!-- tests/sheets/art.html — owner: W1-A. Contact sheet: the art bible (SR.art.bible.draw, the
+     #artbible page), the logo drawing itself, the SR.art.draw vocabulary (tones, ink, text roles,
+     Stamp, FloatText, torn paper, grain) and the whole palette with every key's name.
+     Opens from disk; loads js/boot/*, js/core/*, en-ui.js and the W1-A art files, installs test-only
+     text fakes (D27) and boots with SR.boot({ scene: false }). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paper Sky · art sheet</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../../css/tokens.css">
+<style>
+  body { margin: 16px; background: var(--paper-1); color: var(--ink-900); font: 13px system-ui, sans-serif; }
+  h1 { font: 900 22px "Arial Black", system-ui, sans-serif; margin: 0 0 8px; }
+  h2 { font: 800 13px system-ui, sans-serif; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-500); margin: 18px 0 6px; }
+  canvas { display: block; border: 1px solid var(--paper-3); }
+  #app { display: none; }
+</style>
+</head>
+<body>
+  <h1>Art sheet · W1-A</h1>
+  <div id="app"><div id="stage"><canvas id="world"></canvas><canvas id="fx"></canvas><div id="ui"></div><div id="aria" role="status" aria-live="polite"></div></div></div>
+
+  <script src="../../js/boot/namespace.js"></script>
+  <script src="../../js/boot/util.js"></script>
+  <script src="../../js/boot/events.js"></script>
+  <script src="../../js/core/rng.js"></script>
+  <script src="../../js/core/loop.js"></script>
+  <script src="../../js/core/stage.js"></script>
+  <script src="../../js/core/quality.js"></script>
+  <script src="../../js/core/input.js"></script>
+  <script src="../../js/core/scenes.js"></script>
+  <script src="../../js/core/save.js"></script>
+  <script src="../../js/core/settings.js"></script>
+  <script src="../../js/core/text.js"></script>
+  <script src="../../js/core/debug.js"></script>
+  <script src="../../js/data/features.js"></script>
+  <script src="../../js/data/text/en-ui.js"></script>
+  <script src="../../js/data/text/en-prog.js"></script>
+  <script src="../../js/art/palette.js"></script>
+  <script src="../../js/art/paper.js"></script>
+  <script src="../../js/art/draw.js"></script>
+  <script src="../../js/art/stick.js"></script>
+  <script src="../../js/art/portraits.js"></script>
+  <script src="../../js/art/vehicles.js"></script>
+  <script src="../../js/art/icons.js"></script>
+  <script src="../../js/art/logo.js"></script>
+  <script src="../../js/art/bible.js"></script>
+  <script src="../../js/art/interiors/kit.js"></script>
+  <script src="art-sheet.js"></script>
+  <script>
+  (function () {
+    'use strict';
+    var SR = window.SR, A = window.ArtSheet;
+    A.boot();
+    var D = SR.art.draw;
+
+    // 1. the art bible, exactly as the #artbible route draws it
+    A.section('Art bible (1280 × 720)');
+    var bible = A.canvas(document.body, 1280, 720, 'sheet-bible');
+    SR.art.bible.draw(bible);
+
+    // 2. the logo drawing itself (UI.md §5.1: 1.2 s), then complete with its tag
+    A.section('Logo');
+    var lg = A.canvas(document.body, 1280, 420, 'sheet-logo');
+    A.paper(lg, 1280, 420);
+    [0.25, 0.55, 0.85, 1.1].forEach(function (t, i) {
+      SR.art.logo.draw(lg, t, { x: 170 + i * 315, y: 90, width: 280, tag: false });
+      A.label(lg, 't = ' + t + ' s', 40 + i * 315, 120);
+    });
+    SR.art.logo.draw(lg, undefined, { x: 640, y: 300, width: 760 });
+
+    // 3. the draw vocabulary
+    A.section('SR.art.draw');
+    var dv = A.canvas(document.body, 1280, 300, 'sheet-draw');
+    A.paper(dv, 1280, 300);
+    var keys = ['bld.bank.walls', 'bld.mcsticks.walls', 'bld.casino.walls', 'bld.bus.walls', 'grass', 'water', 'int.mcsticks.floorB', 'bld.pawn.walls'];
+    keys.forEach(function (k, i) {
+      for (var t = -1; t <= 1; t++) { dv.fillStyle = D.tone(k, t); dv.fillRect(20 + i * 70 + (t + 1) * 20, 20, 20, 30); }
+      A.label(dv, k.replace('bld.', '').replace('.walls', ''), 20 + i * 70, 64, { size: 9 });
+    });
+    [1, 1.5, 2, 3].forEach(function (w, i) { dv.beginPath(); dv.moveTo(620, 26 + i * 12); dv.lineTo(760, 26 + i * 12); D.inkStroke(dv, w); });
+    D.text(dv, 'Display 28', 800, 44, { size: 28, role: 'display' });
+    D.text(dv, 'UI 16 body text', 1010, 30, { size: 16 });
+    D.text(dv, 'The Daily Fold', 1010, 56, { size: 18, role: 'news', weight: 700 });
+    D.stamp(dv, 'FLATLINED', 180, 180, { size: 44 });
+    D.stamp(dv, '+2 INTELLIGENCE!', 520, 190, { size: 30, color: 'ui.int-ink' });
+    [0, 0.3, 0.6, 0.8].forEach(function (t, i) { D.floatText(dv, '+20 HP', 780 + i * 70, 250, 'ui.hp', t); });
+    D.shadow(dv, function (g) { SR.art.paper.tornRect(g, 1080, 130, 170, 60, { seed: 3, amp: 5, edges: 'lr' }); });
+    SR.art.paper.tornRect(dv, 1080, 130, 170, 60, { seed: 3, amp: 5, edges: 'lr' });
+    D.paperFill(dv, 'ui.paper-0', { grain: 0.3, bounds: [1070, 120, 190, 80] });
+    D.inkStroke(dv, 1.5);
+
+    // 4. every palette key with its swatch (the bible groups them; this lists every name)
+    A.section('Palette: every key');
+    var list = [];
+    (function walk(node, prefix) {
+      Object.keys(node).forEach(function (k) {
+        var v = node[k], key = prefix ? prefix + '.' + k : k;
+        if (typeof v === 'string') list.push([key, v]);
+        else if (v && typeof v === 'object') walk(v, key);
+      });
+    })(SR.art.palette, '');
+    var cols = 6, rowH = 13, rows = Math.ceil(list.length / cols);
+    var pv = A.canvas(document.body, 1280, rows * rowH + 16, 'sheet-palette');
+    A.paper(pv, 1280, rows * rowH + 16);
+    list.forEach(function (e, i) {
+      var x = 8 + Math.floor(i / rows) * 212, y = 8 + (i % rows) * rowH;
+      pv.fillStyle = e[1]; pv.fillRect(x, y, 10, 10);
+      pv.strokeStyle = D.color('ui.ink-300'); pv.lineWidth = 1; pv.strokeRect(x + 0.5, y + 0.5, 9, 9);
+      A.label(pv, e[0], x + 14, y + 9, { size: 9, color: 'ui.ink-700', weight: 500 });
+    });
+    A.state.palette = list.length;
+    A.state.ready = true;
+  })();
+  </script>
+</body>
+</html>
