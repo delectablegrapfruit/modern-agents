@@ -290,7 +290,13 @@
       let v = this.viewRect();
       const dark = this.maze && this.maze.dark;
       if (dark) { const b = this.ball; v = { x0: Math.max(v.x0, b.x - dark), y0: Math.max(v.y0, b.y - dark), x1: Math.min(v.x1, b.x + dark), y1: Math.min(v.y1, b.y + dark) }; } // only what the light reaches
-      const inside = (o, r) => o.x + r > v.x0 && o.x - r < v.x1 && o.y + r > v.y0 && o.y - r < v.y1;
+      const L = this.fx.launch, C = L && { x: L.from.x, y: L.from.y, r: REACH + 30 }; // up on a Launch: only what's inside the clouds
+      if (C) {
+        const r = v, poly = [];
+        for (let i = 0; i < 48; i++) { const a = (i / 48) * Math.PI * 2; poly.push([clamp(C.x + Math.cos(a) * C.r, r.x0, r.x1), clamp(C.y + Math.sin(a) * C.r, r.y0, r.y1)]); }
+        v = { x0: Math.max(r.x0, C.x - C.r), y0: Math.max(r.y0, C.y - C.r), x1: Math.min(r.x1, C.x + C.r), y1: Math.min(r.y1, C.y + C.r), poly };
+      }
+      const inside = (o, r) => o.x + r > v.x0 && o.x - r < v.x1 && o.y + r > v.y0 && o.y - r < v.y1 && (!C || Math.hypot(o.x - C.x, o.y - C.y) < C.r + r);
       const keep = (o) => { if (o.key && this.run && this.run.seenKeys) this.run.seenKeys.add(o.key); };
       if (this.gems) for (const g of this.gems) if (!g.seen && inside(g, 15)) { g.seen = true; keep(g); }
       if (this.beacons) for (const bc of this.beacons) if (!bc.seen && inside(bc, bc.r)) { bc.seen = true; keep(bc); }
@@ -1795,8 +1801,8 @@
       } else pl.hidden = true;
 
       // Goal media, positioned in world space.
-      const gm = MZ.$('#goal-media');
-      if (GoalMedia.active && maze && !menu) {
+      const gm = MZ.$('#goal-media'), L = fx.launch, hid = L && maze && Math.hypot(maze.goal.x - L.from.x, maze.goal.y - L.from.y) > REACH + 30; // (lost in a Launch's clouds)
+      if (GoalMedia.active && maze && !menu && !hid) {
         const p = this.renderer.toScreen(this.cam, maze.goal.x, maze.goal.y), sz = maze.goal.r * 2 * this.cam.zoom * s.goal.size;
         gm.style.transform = 'translate(' + (p.x - sz / 2).toFixed(1) + 'px,' + (p.y - sz / 2).toFixed(1) + 'px)';
         gm.style.width = gm.style.height = sz.toFixed(1) + 'px';

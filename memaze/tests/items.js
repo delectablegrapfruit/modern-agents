@@ -308,7 +308,7 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     check('Launch steers freely, over the void too, as far as the clouds', moved > 250 && moved <= 341 && overVoid, Math.round(moved) + ' units');
     const went = (G.fx.bubble ? G.fx.bubble.a : G.ball), gone = (went.x - a.x) * toward.x + (went.y - a.y) * toward.y;
     check('Launch goes where you steer', gone > 250, Math.round(gone) + ' units the way you dragged');
-    check('Launch maps what it flies over', wide > 1000 && wide > before * 4, Math.round(before) + ' -> ' + Math.round(wide));
+    check('Launch maps what shows inside the clouds, and nothing beyond them', wide > 700 && wide <= 2 * (340 + 30) + 1 && G.trail.every((r) => !r.poly || (r.x0 >= a.x - 371 && r.x1 <= a.x + 371 && r.y0 >= a.y - 371 && r.y1 <= a.y + 371)), Math.round(before) + ' -> ' + Math.round(wide));
     check('camera back down after landing', G.state !== 'play' || Math.abs(G.cam.zoom - G.zoomTarget()) < 1e-6);
     G.quit();
     // Steered onto the board: down exactly there, unhurt. Steered over the void: a fall (a hit), then the nearest floor.

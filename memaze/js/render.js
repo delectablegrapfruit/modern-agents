@@ -648,19 +648,19 @@
     // past it. a: how high you are (0-1), so they gather as you rise and part as you come down.
     drawClouds(cam, c, R, a, t) {
       if (!(a > 0.01)) return;
-      const ctx = this.ctx, k = this.dpr * cam.zoom;
+      const ctx = this.ctx, k = this.dpr * cam.zoom, e = Math.min(1, a * 3); // (solid well before the camera is out far)
       ctx.save();
       ctx.setTransform(k, 0, 0, k, (this.dpr * this.w) / 2 - cam.x * k, (this.dpr * this.h) / 2 - cam.y * k);
       const hw = this.w / 2 / cam.zoom + 10, hh = this.h / 2 / cam.zoom + 10;
       ctx.beginPath(); ctx.rect(cam.x - hw, cam.y - hh, hw * 2, hh * 2); ctx.arc(c.x, c.y, R + 45, 0, TAU, true);
-      ctx.fillStyle = 'rgba(236,242,255,' + (0.5 * a).toFixed(3) + ')'; ctx.fill();
+      ctx.fillStyle = 'rgba(226,233,250,' + e.toFixed(3) + ')'; ctx.fill(); // beyond the clouds, cloud: nothing shows
       const n = Math.max(12, Math.round((TAU * R) / 40)), puffs = [];
       for (let i = 0; i < n; i++) {
         const h = Math.sin(i * 12.9898) * 43758.5453, j = h - Math.floor(h), th = (i / n) * TAU + t * 0.03;
         const rr = R + 24 + 12 * Math.sin(i * 1.7 + t * 0.6), pr = 30 + 18 * j + 4 * Math.sin(t * 1.3 + i);
         puffs.push([c.x + Math.cos(th) * rr, c.y + Math.sin(th) * rr, pr]);
       }
-      ctx.globalAlpha = a;
+      ctx.globalAlpha = e;
       ctx.fillStyle = 'rgba(146,160,204,0.95)'; // shadows first, then the white tops: one bank of cloud
       for (const [x, y, r] of puffs) { ctx.beginPath(); ctx.arc(x + 4, y + 8, r, 0, TAU); ctx.fill(); }
       ctx.fillStyle = '#fff';
@@ -965,9 +965,16 @@
       f.fillRect(0, 0, W, H);
       f.globalCompositeOperation = 'destination-out';
     }
-    // Uncover a world rectangle (what the screen showed).
+    // Uncover a world rectangle (what the screen showed), or the outline in it (what showed inside a Launch's clouds).
     reveal(r) {
       if (!this.maze) return;
+      if (r.poly) {
+        const f = this.fog.getContext('2d');
+        f.beginPath();
+        r.poly.forEach(([x, y], i) => (i ? f.lineTo : f.moveTo).call(f, this.ox + x * this.sc, this.oy + y * this.sc));
+        f.fill();
+        return;
+      }
       const x0 = Math.floor(this.ox + r.x0 * this.sc), y0 = Math.floor(this.oy + r.y0 * this.sc);
       const x1 = Math.ceil(this.ox + r.x1 * this.sc), y1 = Math.ceil(this.oy + r.y1 * this.sc);
       this.fog.getContext('2d').fillRect(x0, y0, x1 - x0, y1 - y0);
@@ -1073,7 +1080,10 @@
       l.globalCompositeOperation = 'destination-in';
       l.fillStyle = '#000';
       l.beginPath();
-      for (const r of seen) l.rect(r.x0 * sc, r.y0 * sc, (r.x1 - r.x0) * sc, (r.y1 - r.y0) * sc);
+      for (const r of seen) {
+        if (r.poly) { r.poly.forEach(([x, y], i) => (i ? l.lineTo : l.moveTo).call(l, x * sc, y * sc)); l.closePath(); }
+        else l.rect(r.x0 * sc, r.y0 * sc, (r.x1 - r.x0) * sc, (r.y1 - r.y0) * sc);
+      }
       if (seen.length) l.fill(); else { l.setTransform(1, 0, 0, 1, 0, 0); l.clearRect(0, 0, W, H); l.translate(W / 2 - pos.x * sc, H / 2 - pos.y * sc); }
       l.globalCompositeOperation = 'source-over';
       for (const p of near) if (p.data.gems) for (const gm of p.data.gems) if (!gm.taken && gm.seen) { l.fillStyle = '#3cf2ff'; l.beginPath(); l.arc(gm.x * sc, gm.y * sc, 3, 0, TAU); l.fill(); }
