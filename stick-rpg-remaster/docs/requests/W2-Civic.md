@@ -77,8 +77,26 @@ Files: `js/data/buildings/{uofs,cityhall}.js`, `js/art/interiors/{uofs,cityhall}
   `cityhall` and asks for the march in office (the scene has just asked for `campus_canon`, so the
   march replaces it on the next bar line), and keeps it when the Election Office closes in office.
 
+## 6. `js/ui/card.js` (lead): re-pick a greeting fn's line after an action (review)
+
+- **File:** `js/ui/card.js` (`pickGreeting` runs once, in `mount`).
+- **Exact change:** after each committed action (the card's `onResult` / `refresh`), run
+  `greet.<building>` again and call `C.el.setGreeting(key, vars)` only when the returned **key**
+  differs from the one shown (so an array greeting does not re-type a new variant after every
+  action).
+- **Why:** accepting the nomination in the Election Office leaves Clerk Plume's bubble reading "Your
+  nomination sits on my desk until the end of day 15" above a running campaign (her campaign line,
+  `greet.cityhall.campaign`, only shows on the next visit); the same holds for the U of S after a
+  graduation (`greet.uofs.graduate`).
+- **Workaround meanwhile:** none needed; the line is right again on the next visit.
+
 ## Notes for other packages (no change requested)
 
+- **W2-Home (review):** the election-night edition (`js/ui/screens/report.js`) plays
+  `SR.audio.music('hail_to_the_stick')` for either winner; ART_AUDIO §13.4 gives the Dictator the
+  B♭-minor arrangement, which `cityhall.campaign` asks for as `{ variant: e.path === 'dictator' ?
+  'dictator' : undefined }` (request 2 names it for W2-Music). Passing the same variant on a
+  Dictator's win keeps the march in one key from the edition into City Hall.
 - **W2-Home:** the castle's Campaign HQ row opens `cityhall.campaign`, which handles every status
   (none, nominated, campaign, office, lost, removed), so the row may also show in office if you
   want the office page at home. The election-night edition's front page uses your
@@ -89,5 +107,7 @@ Files: `js/data/buildings/{uofs,cityhall}.js`, `js/art/interiors/{uofs,cityhall}
   by day {day}" with `nominatedDay + acceptWithin`, one day late: the offer lapses in the night that
   ends day `nominatedDay + acceptWithin - 1` (night step 5), which is the day the Board's voicemail,
   Clerk Plume and the Election Office name. Suggested: `day: s.election.nominatedDay + E.acceptWithin - 1`.
+  *Resolved:* `phone.boardInfo` now reads `SR.rules.election.acceptBy(s)`, which Clerk Plume and the
+  Election Office also use.
 - **W2-City:** the nomination check on stepping into the city (W1-C 5, deferred to you) is the
   only other entry of `election.check`; nothing in W2-Civic's files depends on it.

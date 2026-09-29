@@ -10,7 +10,10 @@
 // asking first at or above the `game.confirmSpendOver` setting like a card row. The selected tile
 // is the set's current item (aria-current). P1 (`homesPlus`): the live preview draws your home's
 // interior (SR.art.interior('home', { homeId, mode: 'live' })) with the selected piece ghosted in,
-// from a view of the state with its own furniture record that owns the piece.
+// from a view of the state with its own furniture record that owns the piece. The preview is a strip
+// that stays in view under the breadcrumb while the grid scrolls (a full-width preview filled the
+// card body, so browsing any tile below the first row scrolled it away); in the touch-compact
+// layout and at 150 % text it scrolls with the grid.
 // Never mutates state: ctx.preview for the refusals and prices, ctx.act to commit.
 // Node-loadable: no DOM, canvas or browser API at load time.
 (function () {
@@ -19,8 +22,11 @@
 
   var ICON = 40;                         // a tile's icon (the ActionRow's size, UI.md §2.3)
   var PREVIEW = { x: 0, y: 200, w: 760, h: 520 };   // the part of the 1280 × 720 home interior shown (its scene, x 0-760, down to the front spots)
-  var PREVIEW_W = 440;                   // the preview's logical width in the card (the body is 472 wide less padding)
+  var PREVIEW_H = 140;                   // the preview's logical height in the card: small enough to stay in view over a row of tiles
+  var PREVIEW_PAD = 16;                  // the preview strip's padding, half above and half below the preview
   var GHOST_ALPHA = 0.55;                // the ghosted piece (UI.md §5.6 "ghosts it into ... the preview")
+  var CRUMBS_H = 'calc(48px * var(--ui-scale))';    // the sticky breadcrumb's height (js/ui/card.js), until measured
+  var UNSTICK_TEXT_SCALE = 1.5;          // at 150 % text (UI.md §8) the strip would leave no room for a tile
 
   function D() { return SR.ui.dom; }
   function t(k, v) { return D().t(k, v); }
@@ -54,6 +60,25 @@
     return n <= 0 ? t('card.furniture.slot0') : n === 1 ? t('card.furniture.slot1') : t('card.furniture.slotN', { n: n });
   }
   function homeName(id) { return SR.text.has('home.' + id) ? SR.text('home.' + id) : String(id); }
+  /**
+   * @returns {string} how far below the top of the card body the preview strip sticks: the height of
+   *   the host's sticky breadcrumb (js/ui/card.js), read from the layout so no scrolled content shows
+   *   between the two; a pixel less, so a fractional height at a large stage scale leaves no sliver
+   *   (the breadcrumb paints over the strip's top padding)
+   */
+  function crumbsTop(root) {
+    var host = root && typeof root.closest === 'function' ? root.closest('.subhost') : null;
+    var crumbs = host ? host.querySelector('.subhost-crumbs') : null;
+    return crumbs && crumbs.offsetHeight > 1 ? (crumbs.offsetHeight - 1) + 'px' : CRUMBS_H;
+  }
+  /**
+   * @returns {boolean} the preview strip stays in view while the grid scrolls: not in the
+   *   touch-compact layout (the body is short) nor at 150 % text
+   */
+  function stickable() {
+    if (SR.stage && SR.stage.compact) return false;
+    return (Number(D().setting('access.textScale')) || 1) < UNSTICK_TEXT_SCALE;
+  }
   /**
    * @returns {object} a state for the home interior to draw: the sub-screen's read-only view with its
    *   own furniture record (a plain object the preview may change), without copying the whole state
@@ -103,22 +128,28 @@
     p: 0,
 
     mount: function (root, ctx) {
-      var h = D().h;
-      var M = this._m = { root: root, ctx: ctx, tiles: [], sel: null, alive: true, previewKey: null };
+      var h = D().h, self = this;
+      var M = this._m = { root: root, ctx: ctx, tiles: [], sel: null, alive: true, previewKey: null, sticky: false };
       M.meter = SR.ui.progress({ id: 'furn-slots', value: 0, max: 1, kind: 'primary' });
       root.appendChild(M.meter);
       M.storage = h('p', { class: 't-small t-ink-700', 'data-id': 'furn-storage', hidden: true });
       root.appendChild(M.storage);
       if (SR.features && SR.features.homesPlus) {
-        M.canvas = h('canvas', { 'data-id': 'furn-preview', role: 'img', style: { width: '100%', height: 'auto', display: 'block',
-          border: 'var(--line-thin)', borderRadius: 'var(--r-m)', background: 'var(--paper-2)' } });
-        M.caption = h('p', { class: 't-small t-ink-700', 'data-id': 'furn-preview-caption' });
-        root.appendChild(h('figure', { style: { margin: '0' }, 'data-id': 'furn-preview-figure' }, M.canvas, M.caption));
+        // the canvas keeps the crop's aspect at PREVIEW_H (its width follows the backing store's)
+        M.canvas = h('canvas', { 'data-id': 'furn-preview', role: 'img', style: { height: PREVIEW_H + 'px', width: 'auto', display: 'block',
+          flex: '0 0 auto', border: 'var(--line-thin)', borderRadius: 'var(--r-m)', background: 'var(--paper-2)' } });
+        M.caption = h('p', { class: 't-small t-ink-700', 'data-id': 'furn-preview-caption', style: { margin: '0', flex: '1 1 8em', minWidth: '0' } });
+        M.figure = h('figure', { 'data-id': 'furn-preview-figure', style: { margin: '0', display: 'flex', flexWrap: 'wrap', alignItems: 'center',
+          gap: 'var(--sp-2)', zIndex: '1', background: 'var(--paper-0)', padding: (PREVIEW_PAD / 2) + 'px 0' } }, M.canvas, M.caption);
+        root.appendChild(M.figure);
       }
       M.grid = h('div', { 'data-id': 'furn-grid', role: 'group', 'aria-label': t('card.furniture.pieces'),
         // two columns at 100 % text; one column once the text size setting makes a tile too narrow (UI.md §8)
         style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(calc(180px * var(--ui-scale)), 1fr))', gap: 'var(--sp-2)' } });
       root.appendChild(M.grid);
+      M.unsubs = ['settings:changed', 'stage:resized'].map(function (name) {
+        return SR.events.on(name, function () { self.refresh(); });
+      });
       this.refresh(ctx);
     },
 
@@ -129,6 +160,7 @@
       var self = this, state = M.ctx.state, H = homes();
       var a = document.activeElement;
       var had = a && M.grid.contains(a) ? a.getAttribute('data-id') : null;
+      M.laidOut = false;
       // the slot meter of the home you live in (B-08a) and the pieces in storage
       var total = H.slots(state), used = H.slotsUsed(state), home = homeName(state.homes.living);
       M.meter.update({ value: used, max: total, label: 'card.furniture.slots', vars: { home: home } });
@@ -172,8 +204,7 @@
         chips,
         status ? h('span', { style: { display: 'flex' } }, SR.ui.badge({ text: status, kind: o.stored ? 'warn' : 'info', id: 'furn-' + o.base + '-status' })) : null,
         reason ? h('span', { class: 't-small', 'data-id': 'furn-' + o.base + '-reason', style: { color: 'var(--danger-ink)', fontWeight: '600' } }, reason) : null);
-      el.style.scrollMarginTop = 'calc(48px * var(--ui-scale))';   // clear of the sticky breadcrumb when focus scrolls
-      var tl = { o: o, pv: pv, el: el };
+      var tl = { o: o, pv: pv, el: el, title: title };
       el.addEventListener('focus', function () { self.select(tl); });
       el.addEventListener('mouseenter', function () { self.select(tl); });
       // the HUD's ghost deltas belong to the tile under focus or the pointer only
@@ -183,10 +214,32 @@
       return tl;
     },
 
+    /**
+     * Lays out the preview strip (sticky or not; under the breadcrumb, whose height is only known
+     * once the host shows it, so this runs on every selection) and the tiles' scroll margins, which
+     * keep a focused tile clear of the breadcrumb and the strip when focus scrolls.
+     */
+    layout: function () {
+      var M = this._m;
+      if (!M) return;
+      var top = crumbsTop(M.root), sticky = !!M.figure && stickable();
+      if (M.laidOut && top === M.top && sticky === M.sticky) return;
+      M.laidOut = true;
+      M.top = top;
+      M.sticky = sticky;
+      if (M.figure) {
+        M.figure.style.position = sticky ? 'sticky' : 'static';
+        M.figure.style.top = top;
+      }
+      var margin = sticky ? 'calc(' + top + ' + ' + (PREVIEW_H + PREVIEW_PAD) + 'px)' : top;
+      M.tiles.forEach(function (x) { x.el.style.scrollMarginTop = margin; });
+    },
+
     /** Selects a tile: its HUD ghost and (P1) the preview of the piece in your home. */
     select: function (tl, quiet) {
       var M = this._m;
       if (!M) return;
+      this.layout();
       M.sel = tl ? tl.o.base : null;
       // the selected tile (the one in the preview) is the set's current item, not a pressed toggle:
       // activating a tile buys it
@@ -209,8 +262,8 @@
       if (!pv.ok) { D().refuse(tl.el, pv.reason ? t(pv.reason, pv.vars) : ''); return; }
       var over = Number(D().setting('game.confirmSpendOver')) || 0;
       if (!(over > 0 && o.price >= over)) { ctx.act(o.action, o.params); return; }
-      var label = o.action === 'furniture.upgrade' ? 'act.furniture.upgrade' : 'act.furniture.buy';
-      SR.ui.confirm({ id: 'confirm-furniture', title: label, text: 'ui.confirmSpend', vars: { money: SR.text.money(o.price) } })
+      // the confirm names the piece, as the tile does ("Upgrade to Grand Library")
+      SR.ui.confirm({ id: 'confirm-furniture', title: tl.title, text: 'ui.confirmSpend', vars: { money: SR.text.money(o.price) } })
         .then(function (yes) { if (yes && M.alive) ctx.act(o.action, o.params); });
     },
 
@@ -225,9 +278,12 @@
       var state = M.ctx.state, living = state.homes.living;
       var furn = JSON.stringify(state.furniture);
       var scale = Math.min(2, (SR.stage && SR.stage.scale) || 1);
-      var w = Math.round(PREVIEW_W * scale), hgt = Math.round(PREVIEW_W * PREVIEW.h / PREVIEW.w * scale);
+      var hgt = Math.round(PREVIEW_H * scale), w = Math.round(PREVIEW_H * PREVIEW.w / PREVIEW.h * scale);
       var key = living + ':' + w + 'x' + hgt + ':' + (tl ? tl.o.base + ':' + tl.o.shown : '-') + ':' + furn;
-      M.caption.textContent = tl ? t('card.furniture.preview', { home: homeName(living) }) : t('card.furniture.previewHint', { home: homeName(living) });
+      var shown = tl && tl.o.action ? SR.reg.furniture[tl.o.shown] : null;
+      // a piece on offer is ghosted in; an owned one is shown as the home has it (nothing to ghost)
+      M.caption.textContent = shown ? t('card.furniture.preview', { name: t(shown.name || 'furn.' + tl.o.shown), home: homeName(living) })
+        : t(tl ? 'card.furniture.previewHome' : 'card.furniture.previewHint', { home: homeName(living) });
       M.canvas.setAttribute('aria-label', M.caption.textContent);
       if (key === M.previewKey) return;
       M.previewKey = key;
@@ -279,6 +335,7 @@
       var M = this._m;
       if (!M) return;
       M.alive = false;
+      (M.unsubs || []).forEach(function (off) { off(); });
       if (SR.ui.hud) SR.ui.hud.ghost(null);
       this._m = null;
     },

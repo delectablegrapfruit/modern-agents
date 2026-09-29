@@ -5,7 +5,9 @@
 // Friday bonus of Executive, VP and CEO over a week of nights; P1 `hustles`: the variants, the skins
 // by rank, the Boardroom's Ruthless karma and the CEO takeover; the three skins' params and Auto;
 // the greetings, Bea's and Terry's), then the game in Chromium over file:// (the card and the
-// ladder by click, Apply and a promotion, a shift, Terry from VP up, the Hustle frames of Sort It,
+// ladder by click, Apply and a promotion, a shift, Terry from VP up, the top of the ladder with the
+// focus kept in the card, the P1 rating line and the takeover by the card, Relaxed wages in cents,
+// the Hustle frames of Sort It,
 // Pitch and Boardroom with Auto, a week of shifts ending in the Friday bonus on the morning report,
 // the a11y audit) with zero console errors. Screenshots go to shots/W2-Money/ (git-ignored).
 //   node tests/e2e/nli.test.cjs
@@ -249,6 +251,46 @@ async function game() {
   T.eq(await E(() => [SR.reg.building.nli.portrait, SR.art.interior('nli').def.owner.id]), ['terry', 'terry'], 'Terry is at the desk and on the card');
   await quiet();
   await t.shot(path.join(SHOTS, 'nli-terry.png'));
+
+  T.section('the top of the ladder; P1: the rating line and the CEO takeover through the card');
+  await t.set({ job: { ranks: { nli: 'vp' }, shiftsAtRank: { nli: 6 } }, stats: { int: 260, cha: 150, karma: 0 }, money: { cash: 0, lien: 0 }, clock: { min: 600 } });
+  await reenter();
+  await t.clickUI('row-nli.ladderOpen');
+  await t.step(2);
+  await t.clickUI('ladder-go');
+  await t.step(3);
+  s = await t.state();
+  T.eq([s.job.ranks.nli, (await txt('ladder-top')) !== null, await E(() => { const a = document.activeElement; return !!a && a !== document.body && !!a.closest('[data-scene="building"]'); })],
+    ['ceo', true, true], 'CEO from the ladder: "You run the place", and the focus stays in the card (the breadcrumb), not the page body');
+  T.eq(await txt('ladder-rating'), null, 'no rating line while hustles is off');
+  await t.press('back');
+  await t.step(2);
+  await t.debug('feature', 'hustles', true);
+  await t.clickUI('row-nli.ladderOpen');
+  await t.step(2);
+  T.ok(/Performance rating: 1\.00/.test(await txt('ladder-rating') || '') && /need 0\.9/.test(await txt('ladder-rating') || ''), 'P1 hustles: the ladder shows your rating and the bar VP and CEO set', await txt('ladder-rating'));
+  await t.press('back');
+  await t.step(2);
+  T.eq((await rows()).some((r) => r.id === 'nli.takeover'), false, 'no takeover in the first week as CEO');
+  await t.set({ clock: { day: s.job.ceoSinceDay + TAKEOVER.from, min: 600 } });
+  await reenter();
+  T.eq((await row('nli.takeover') || {}).enabled, true, 'the third week as CEO: Face the hostile takeover');
+  s0 = await t.state();
+  await t.mg({ beats: [true, true, true], wins: 3, losses: 0, picks: ['ruthless', 'bold', 'safe'], sum: 0.3, m: 1.3 });
+  await t.clickUI('row-nli.takeover');
+  await t.step(4);
+  s = await t.state();
+  T.eq([s.money.cash - s0.money.cash, s.stats.karma - s0.stats.karma, s.flags.ceoTakeover, s.msgs.slice(-1)[0].key, (await rows()).some((r) => r.id === 'nli.takeover')],
+    [TAKEOVER.bonus, -1, true, 'vm.terry.takeoverWon', false], 'won at m 1.3: +$20,000, -1 karma for the Ruthless pick, Terry calls, the row is gone');
+  T.ok(/karma/i.test(await E(() => SR.text('mg.boardroom.ruthless'))), 'the Boardroom\'s Ruthless option says it costs karma (B-30)');
+  await t.debug('feature', 'hustles', false);
+  await t.set({ mode: { difficulty: 'relaxed' } });
+  await t.clickUI('row-nli.ladderOpen');
+  await t.step(2);
+  T.eq(await txt('ladder-pay-janitor'), '$12.50 an hour, $75 a full shift', 'Relaxed wages ×1.25 on the ladder, cents shown (not "$13 an hour")');
+  await t.press('back');
+  await t.step(2);
+  await t.set({ mode: { difficulty: 'standard' } });
 
   T.section('P1 hustles: Sort It, The Pitch, Boardroom with Auto');
   const hustle = async (rank, shot, play) => {

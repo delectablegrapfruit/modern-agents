@@ -45,7 +45,7 @@
     }
     ctx.restore();
     if (f.champion || won >= BOARD.rows) {
-      SR.art.draw.text(ctx, '★', b.x + b.w - 14, b.y + 18, { size: 16, weight: 900, align: 'center', color: 'kit.gold' });
+      if (SR.text.has('card.bar.champMark')) SR.art.draw.text(ctx, SR.text('card.bar.champMark'), b.x + b.w - 14, b.y + 18, { size: 16, weight: 900, align: 'center', color: 'kit.gold' });
       return;
     }
     var y = rowY(won), bob = Math.sin(t * 3) * 2;

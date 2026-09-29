@@ -32,6 +32,10 @@ requests other packages addressed to W2-Front.
 - **Meanwhile:** `js/ui/screens/pause.js` uses `world.retire` when it is registered; until then it
   calls `SR.rules.endgame.retire(SR.state)` and emits `game:over { reason: 'retire', result }` itself
   (tested in `tests/e2e/frontend.test.cjs`: Retire → the results, reason `retire`).
+  The world-action list that `tests/node/invariants.test.cjs` pins (W2-City request 1) would then
+  include `world.retire` as well.
+- **Status:** applied by W2-City during the wave (`js/data/actions/world.js`, `act.world.retire` in
+  `en-world.js`); the pause menu's Retire now runs through `SR.act` (frontend suite green).
 
 ## 3. A feature flag for the new-game accessory carousel (lead: `js/data/features.js`, BUILD_PLAN Appendix B)
 
@@ -80,11 +84,37 @@ requests other packages addressed to W2-Front.
 - **Why:** the requests protocol (BUILD_PLAN §1.3) records public names here.
 - **Meanwhile:** implemented as listed.
 
+## 6. `js/ui/components.js` (lead / W1-D): a tooltip outlives a target that leaves the DOM
+
+- **Change:** in `showTip`, once shown, re-check the owner each frame (or in `hideTip`'s callers) and
+  hide the tip when `tipOwner.isConnected` is false; e.g. a `requestAnimationFrame` loop that runs
+  only while `tipEl` is shown: `if (tipOwner && !tipOwner.isConnected) hideTip();`.
+- **Why:** Chrome fires no `blur` or `pointerleave` for an element that is removed while focused or
+  hovered. A screen that rebuilds its content (a Settings tab, a wizard step, a list re-render) left
+  the "More" tip of a number field's + button floating over the next tab (seen in
+  `shots/W2-Front/settings-controls.png` after the Tab walk of the Game tab).
+- **Meanwhile:** W2-Front's Settings (tab switch and close), the new-game wizard (step switch) and
+  Save / Load (re-render) call `SR.ui.tooltip.hide()` before they clear their content.
+
 ## Requests addressed to W2-Front, answered
 
 - **W2-Transit 1** (`js/scenes/results.js`: let the death, hospital and jail scenes finish before
   the results) → applied as in item 5; `tests/e2e/results.test.cjs` checks Hardcore (FLATLINED first,
   then DECEASED) and the paper-first path after a timed game's last night.
+- **W2-Transit 5** (`js/scenes/results.js`: Keep playing after a game that ended in jail) → applied:
+  Keep playing goes to `jail { resume: true }` while `state.jail` is set, else the city at the home
+  door; tested in `tests/e2e/results.test.cjs`.
+- **W2-Pocket 4** (Esc is `back` then `pause`) → applied in `js/ui/screens/pause.js`: the menu
+  marks itself on `resume` (Settings or Save / Load closed) and swallows that same event's `pause`
+  when its key is a `back` binding, as the city does; Settings and Save / Load close on `back` as
+  before. Tested in `tests/e2e/frontend.test.cjs` with the real Esc key (Esc opens the menu, the Esc
+  that closes Settings or Save / Load leaves it up, the next Esc resumes).
+- **W2-Home 4** (`saveload { mode: 'save' }`, `results { reason, result }`) → applied (item 5).
+- **W2-Goods 4** (`ui.badge.goodKarma`, `ui.badge.couponClipper`) → applied with every B-28a id
+  (below).
+- **W1-M 10** (the Duel's D chips) → applied: `mg.frame.duel.halved` "beats their stance",
+  `mg.frame.duel.doubled` "their stance counters it".
+- **W2-Street 5** (a new game through `SR.save.load(state)`) → followed (the wizard and the intro).
 - **W2-Food 5** (`en-ui.js`: variant and badge labels) → applied: `ui.variant.here` / `.takeout`
   and a `ui.badge.<id>` for every B-28a price modifier (22, including the nine asked for).
 - **W1-K-M1 notes** (the save UI calls) → followed: a new game is `SR.save.load(SR.rules.state.create

@@ -2,7 +2,8 @@
 // 480-wide card over the dimmed world: Resume · Settings · Save (hidden on Hardcore) · Load ·
 // Suspend & quit · Retire (Unlimited, and a Keep-playing run) · Quit to title. Quit and Retire ask to
 // confirm. Over a minigame (the loop opens it when a hidden tab comes back) it offers only Resume and
-// Settings: the round's own panel handles leaving. Esc / Start / B resume.
+// Settings: the round's own panel handles leaving. Esc / Start / B resume; the Esc that closes Settings
+// or Save / Load (it fires `back`, then `pause`) leaves the menu up (docs/requests/W2-Pocket.md 4).
 // Retire ends the run with its results (GDD §5): the world.retire row when it exists (it calls the
 // named fn endgame.retire through SR.act, which emits game:over), else the rule itself and the same
 // game:over; the results follow once the menu is gone (js/scenes/results.js).
@@ -13,7 +14,7 @@
   'use strict';
   var SR = window.SR;
 
-  var P = null;   // the open menu: { root, card, scope, over }
+  var P = null;   // the open menu: { root, card, scope, over, arrived }
 
   function D() { return SR.ui.dom; }
   function h() { return D().h.apply(null, arguments); }
@@ -24,6 +25,20 @@
   function unlimited() { var s = SR.state; return !!(s && s.mode && (s.mode.length === 0 || s.mode.keepPlaying)); }
   /** @returns {string|null} the scene below the menu. */
   function below() { var st = SR.scenes.stack(); var i = st.lastIndexOf('pause'); return i > 0 ? st[i - 1] : null; }
+
+  /** @returns {boolean} whether a key code is bound to `back` (Esc fires `back`, then `pause`). */
+  function isBackKey(code) {
+    var I = SR.input;
+    if (!code || !I || typeof I.bindings !== 'function') return false;
+    try { return I.bindings('back').indexOf(code) >= 0; } catch (e) { return false; }
+  }
+
+  /** The menu is on top again (Settings or Save / Load closed): until this input event is over, its `pause` is the press that closed them. */
+  function arrive() {
+    if (!P) return;
+    P.arrived = true;
+    Promise.resolve().then(function () { if (P) P.arrived = false; });
+  }
 
   function close() {
     var top = SR.scenes.top();
@@ -84,6 +99,7 @@
   SR.scenes.register('pause', {
     kind: 'overlay',
     blocksUpdate: true,
+    resume: arrive,
     ui: {
       mount: function (root) {
         P = { root: root, over: null };
@@ -115,6 +131,7 @@
     onAction: function (action, ev) {
       if (!P || (ev && (ev.consumed || ev.down === false))) return false;
       if (action === 'pocket' && ev && ev.code === 'Tab') return false;
+      if (action === 'pause' && P.arrived && ev && isBackKey(ev.code)) return true;   // docs/requests/W2-Pocket.md 4
       if (SR.ui.focus.handle(action, ev)) return true;
       if ((action === 'back' || action === 'pause') && !(ev && ev.repeat)) { close(); return true; }
       return true;          // the world below waits (rows, the Pocket, the car ...)

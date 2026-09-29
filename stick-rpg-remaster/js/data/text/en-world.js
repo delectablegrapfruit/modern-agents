@@ -97,6 +97,7 @@
     'act.world.getOut': 'Get out',
     'act.world.city': 'Step into the city',
     'act.world.cab': 'Take a cab',
+    'act.world.retire': 'Retire',
 
     // The city's prompts (UI.md §2.3 ContextPrompt), its touch buttons (UI.md §5.5) and the minimap.
     'act.world.talk': 'Talk to {name}',
@@ -118,7 +119,7 @@
     'toast.world.edge': 'Mind the edge. Really.',
     'toast.world.carHit': 'Flattened by traffic. Paper bends back, mostly.',
     'toast.world.crash': 'Crunch! Both cars bounce off each other.',
-    'toast.world.carFished': 'Your car sank into the clouds. It gets towed home tonight for $100.',
+    'toast.world.carFished': 'Your car sank into the clouds. It gets towed home tonight for {money}.',
     'toast.world.noCar': 'None of your cars is close enough.',
     'toast.world.noRoute': 'Can\'t find a way there on foot.',
     'toast.world.midnight': 'Midnight. Only free things and sleep are left today. Head home.',

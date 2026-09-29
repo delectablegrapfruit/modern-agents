@@ -54,7 +54,9 @@
 
   /**
    * Effect: the delivery toast after a purchase or an upgrade: a stat piece trains you from tonight,
-   * a bed or freezer restores more on your next sleep, anything else is waiting at home.
+   * a bed or freezer restores more on your next sleep, anything else is waiting at home. An upgrade
+   * of a piece in storage stays there and does nothing until the home has room (GDD §4.15), so its
+   * toast says so instead.
    */
   SR.def.fn('furniture.delivered', function (s, params) {
     var def = SR.reg.furniture[params && params.piece];
@@ -63,7 +65,8 @@
     var tier = s.furniture.owned[def.base] || 1;
     var id = SR.rules.homes.tierId(def.base, tier);
     var shown = SR.reg.furniture[id] || def;
-    var kind = shown.stat ? 'nightly' : shown.sleep || base.sleep ? 'sleep' : 'home';
+    var stored = (s.furniture.storage || []).indexOf(def.base) >= 0;
+    var kind = stored ? 'stored' : shown.stat ? 'nightly' : shown.sleep || base.sleep ? 'sleep' : 'home';
     return { toasts: [{ key: 'toast.furniture.' + kind, vars: { name: SR.text(shown.name) }, kind: 'info' }] };
   });
 

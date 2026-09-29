@@ -131,6 +131,15 @@ act('pawn.sell', { item: 'ammo' });
 r = act('pawn.sell', { item: 'ammo' });
 T.eq([r.ok, s.items.ammo, s.money.cash], [true, 0, 50], 'and the last 3 rounds for $2 (3/5 of a box, rounded)');
 T.eq(pv('pawn.sell', { item: 'booze' }).reason, 'reason.unavailable', 'Vinnie only buys back what he sells');
+s = game({ money: { cash: 0 }, items: { shirt: 1 } });
+T.eq([pv('pawn.sell', { item: 'shirt' }).reason, act('pawn.sell', { item: 'shirt' }).ok, s.items.shirt], ['reason.unavailable', false, 1],
+  'nor what he does not sell now: the clean shirt while arcs is off (the Sell tab\'s list)');
+undo();
+undo = flags({ shopsPlus: true, arcs: true });
+r = act('pawn.sell', { item: 'shirt' });
+T.eq([r.ok, s.items.shirt, s.money.cash], [true, 0, Math.round(TI.shirt.price * TI.pawnBuyback)], 'with arcs on he buys it back like the rest');
+undo();
+undo = flags({ shopsPlus: true, perks: true });
 s = game({ money: { cash: 0 }, items: { vest: 1 }, perks: { owned: ['smoothTalker'] } });
 r = act('pawn.sell', { item: 'vest' });
 T.eq(s.money.cash, Math.round(TI.vest.price * TI.pawnBuybackSmooth), 'Smooth Talker: a vest sells at 55 % ($' + Math.round(TI.vest.price * TI.pawnBuybackSmooth) + ')');
@@ -169,6 +178,12 @@ T.eq([pv('furniture.buy', { piece: 'satellite' }).reason, SR.text(pv('furniture.
 s = game({ money: { cash: 400 } });
 T.eq([pv('furniture.buy', { piece: 'bed' }).reason], ['reason.needCash'], 'short of cash: refused');
 T.eq(pv('furniture.buy', { piece: 'aquarium' }).reason, 'reason.featureOff', 'the P2 aquarium is not on sale while its flag is off');
+undo = flags({ aquarium: true });
+s = game({ money: { cash: 100000 } });
+r = act('furniture.buy', { piece: 'aquarium' });
+T.ok(r.ok && s.furniture.owned.aquarium === 1 && s.money.cash === 100000 - TF.aquarium.price && SR.rules.homes.slotsUsed(s) === TF.aquarium.slots,
+  'with its flag the aquarium sells at $' + TF.aquarium.price + ' for ' + TF.aquarium.slots + ' slot (B-08b)');
+undo();
 
 T.section('P1 upgrades and the satellite\'s retirement (homesPlus)');
 undo = flags({ homesPlus: true });
@@ -180,6 +195,17 @@ r = act('furniture.upgrade', { piece: 'bed' });
 T.ok(r.ok && s.furniture.owned.bed === 2 && c0 - s.money.cash === 3750, 'the Hibernation Pod: $4,000 less 50 % of the bed = $3,750');
 T.eq(r.toasts.map((x) => x.key), ['toast.furniture.sleep'], 'the delivery toast');
 T.eq(pv('furniture.upgrade', { piece: 'bed' }).reason, 'reason.maxTier', 'already upgraded');
+s = game({ money: { cash: 100000 }, homes: { owned: ['apt', 'apt2'], living: 'apt2' } });
+['bed', 'tv', 'pc', 'books', 'treadmill'].forEach((k) => act('furniture.buy', { piece: k }));
+s.homes.living = 'apt';
+SR.rules.homes.restock(s);
+T.eq(s.furniture.storage, ['books', 'treadmill'], 'back in the apartment, the books and the treadmill go to storage (GDD §4.15)');
+r = act('furniture.upgrade', { piece: 'books' });
+T.eq([r.ok, s.furniture.owned.books, s.furniture.storage.indexOf('books') >= 0], [true, 2, true], 'a stored piece can be upgraded; the Grand Library stays in storage');
+T.eq(r.toasts.map((x) => [x.key, x.vars.name]), [['toast.furniture.stored', 'Grand Library']], 'and the delivery toast says it waits in storage, not that it trains you tonight');
+const int1 = s.stats.int;
+SR.rules.night.run(s, { rng: SR.rng.create(3), source: 'sim' }, { kind: 'sleep' });
+T.eq(s.stats.int, int1, 'indeed: no INT from a stored library');
 undo();
 
 T.section('bought pieces work at the next sleep (night steps 6 and 7)');
@@ -266,7 +292,8 @@ const keys = [];
   ['plain', 'night', 'evil'].forEach((g) => keys.push('greet.' + b + '.' + g));
 });
 PIECES.concat(['satellite', 'pod', 'skydish', 'workstation', 'library', 'homegym', 'lounge', 'aquarium', 'freezerPlus']).forEach((k) => keys.push('card.furniture.effect.' + k));
-keys.push('toast.pawn.vestTours', 'card.pawn.sellConfirm', 'card.pawn.sellConfirmN', 'card.pawn.sellIntro', 'card.pawn.sellFor', 'card.pawn.sellEmpty');
+keys.push('card.furniture.preview', 'card.furniture.previewHint', 'card.furniture.previewHome');
+keys.push('toast.pawn.vestTours', 'toast.furniture.stored', 'toast.furniture.sleep', 'toast.furniture.nightly', 'toast.furniture.home', 'card.pawn.sellConfirm', 'card.pawn.sellConfirmN', 'card.pawn.sellIntro', 'card.pawn.sellFor', 'card.pawn.sellEmpty');
 ['knife', 'gun', 'ammo', 'alarm', 'phone', 'knuckles', 'vest', 'skateboard', 'shirt'].forEach((k) => keys.push('card.pawn.use.' + k, k === 'ammo' ? 'card.pawn.haveMax' : 'toast.pawn.' + k));
 T.eq(keys.filter((k) => !SR.text.has(k)), [], 'every key the goods name is registered (' + keys.length + ')');
 T.ok(SR.rules.act.actions('pawn').concat(SR.rules.act.actions('furniture')).every((id) => SR.text(SR.reg.action[id].label).length <= 28), 'action labels are ≤ 28 characters');

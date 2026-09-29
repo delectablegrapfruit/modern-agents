@@ -401,6 +401,17 @@
   /** @returns {number} the total staked on a round (doubles and splits included). */
   function wagered(r) { return r.hands.reduce(function (a, h) { return a + h.bet; }, 0); }
 
+  /**
+   * The most a round can stake on a bet under B-14b's rules: a double (2 × bet), or every hand of
+   * the splits allowed (splits + 1 hands, each doubled only when doubling after a split is). A
+   * round can neither win nor lose more than this (a natural pays 1.5 × bet).
+   * @returns {number}
+   */
+  function maxStake(bet) {
+    var hands = BJ().splits + 1;
+    return bet * Mth.max(2, BJ().doubleAfterSplit ? 2 * hands : hands);
+  }
+
   /** @returns {boolean} a shoe object has the expected shape (a saved or engine-returned shoe). */
   function validShoe(sh) {
     return !!(sh && isArray(sh.cards) && sh.cards.length >= 52 && typeof sh.pos === 'number' &&
@@ -734,7 +745,9 @@
    * wagered?, trueCount, shoe } (the engine plays the round with the functions above on a copy of
    * the state's shoe; `wagered` is the round's total stake with doubles and splits, bj.wagered) or
    * { round, shoe, trueCount } (the net and the stake are settled here). Applies the round, the
-   * day's hand count, the pit boss (P1) and keeps the shoe in state.casino.shoe.
+   * day's hand count, the pit boss (P1) and keeps the shoe in state.casino.shoe. An echoed net and
+   * stake are held to what one round on that bet can do (maxStake), so a malformed result never
+   * pays more than the table could.
    * @returns {object} a partial Result
    */
   function bjRound(s, p) {
@@ -744,11 +757,13 @@
     var bet = Mth.floor(Number(p.bet !== undefined ? p.bet : p.round && p.round.bet) || 0);
     var lim = vip(s).bjBets;
     if (bet < lim[0] || bet > lim[1]) return { ok: false, reason: 'reason.badBet', vars: { n: bet } };
-    var net = p.round ? settle(p.round) : Number(p.net) || 0;
+    var most = maxStake(bet);
+    if (p.round && !(isArray(p.round.hands) && p.round.hands.length && wagered(p.round) <= most)) return { ok: false, reason: 'reason.badBet', vars: { n: bet } };
+    var net = p.round ? settle(p.round) : SR.util.clamp(Number(p.net) || 0, -most, most);
     // The stake (VIP points, the gamble payload, the cash it needed): a played round's own, else the
-    // engine's `wagered` (a double or a split stakes up to 2 × the bet), else the bet or the loss.
+    // engine's `wagered` (a double or a split stakes up to maxStake), else the bet or the loss.
     var told = Mth.floor(Number(p.wagered) || 0);
-    var staked = p.round ? wagered(p.round) : Mth.max(bet, -net, told >= bet && told <= 2 * bet ? told : 0);
+    var staked = p.round ? wagered(p.round) : Mth.max(bet, -net, told >= bet && told <= most ? told : 0);
     var sh = short(s, staked);
     if (sh) return sh;
     s.daily.bjHands = (s.daily.bjHands || 0) + 1;
@@ -807,7 +822,9 @@
    * keeps it as the card in progress (state.casino.card = { roll, pay, tier, day }) and opens the
    * `scratch` engine to reveal it. The prize is paid at the reveal by 'casino.scratchResolve' (the
    * resolve row), so the start's feedback never spoils it (docs/requests/W2-Food.md 4). A card left
-   * unpaid (a resolve that never came) is paid before the next one is drawn. No karma (B-14e).
+   * unpaid (a resolve that never came) is paid before the next one is drawn, except in a preview's
+   * dry run (ctx.preview): the row never shows that unrevealed prize as a chip for the next card.
+   * No karma (B-14e).
    * @returns {object} a partial Result with `open`
    */
   function scratchRound(s, ctx) {
@@ -816,7 +833,7 @@
       if (!((s.items.scratch || 0) > 0)) return { ok: false, reason: 'reason.needItem', vars: { item: SR.rules.conditions.nameOf('item', 'scratch') } };
       s.items.scratch -= 1;
     }
-    var res = payCard(s) || partial();
+    var res = (ctx && ctx.preview ? null : payCard(s)) || partial();
     var r = scratch(rng0(ctx));
     s.casino.card = { roll: r.roll, pay: r.pay, tier: r.tier, day: s.clock.day };
     res.open = { minigame: 'scratch', skin: 'scratch', params: { roll: r.roll, pay: r.pay, tier: r.tier, panels: 3 },

@@ -119,6 +119,31 @@
     for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
     return null;
   }
+  /** @returns {object} a building's worldmap `exterior` entry ({} when it has none). */
+  function exOf(id) { var d = defOf(id); return (d && d.exterior) || {}; }
+  /** @returns {number[]|null} a worldmap spot [x, y] (people's places, CONTRACT §15.1). */
+  function spotOf(name) {
+    var wm = SR.reg.worldmap && SR.reg.worldmap.main, p = wm && wm.spots && wm.spots[name];
+    return Array.isArray(p) && p.length >= 2 && isFinite(p[0]) && isFinite(p[1]) ? p : null;
+  }
+  // The kid's corner when the worldmap has no `spots.kidCorner`; the mansion's second signature rect
+  // covers the memorial there (tests/node/exterior-detail.test.cjs checks it against the worldmap).
+  var KID_CORNER = [2090, 1110];
+
+  /**
+   * The shop roof sign's board as the painter draws it (js/art/exteriors.js roofSign: a sign top's
+   * south face, else 0.55 of the facade, ≤ 260 u wide, from the sign height to 0.3 of it), until the
+   * painter hands it over (docs/requests/W2-Exterior.md 2d). @returns {number[]} [x0, y0, x1, y1]
+   */
+  function roofBoard(g, m) {
+    if (g.roofSign) return g.roofSign.slice();
+    var ex = exOf(g.id), K = g.projection, f = m.facade, t = null;
+    (ex.tops || []).forEach(function (x) { if (!t && x.kind === 'sign') t = x; });
+    if (t) return [t.rect[0], t.rect[3] - K * t.h, t.rect[2], t.rect[3] - K * m.h];
+    var sh = K * Math.max(30, (typeof ex.signH === 'number' ? ex.signH : m.h + 70) - m.h);
+    var sw = Math.min((f[2] - f[0]) * 0.55, 260), cx = (f[0] + f[2]) / 2;
+    return [cx - sw / 2, f[1] - sh, cx + sw / 2, f[1] - sh * 0.3];
+  }
 
   // ---- state readers (the reacting elements need the `cityReacts` flag; For Sale and the memorial are P0)
   function reacts() { return !!(SR.features && SR.features.cityReacts); }
@@ -135,7 +160,10 @@
   function karmaCol(s) {
     var k = s && s.stats ? s.stats.karma || 0 : 0;
     if (SR.art.stick && typeof SR.art.stick.karmaColor === 'function') return SR.art.stick.karmaColor(k);
-    return (k < 0 ? 'evil.' : 'good.') + Math.max(0, Math.min(9, Math.ceil(Math.abs(k) / 10) - 1));
+    // The band's palette key (the rules' B-04c band index; its formula where the rules are absent).
+    var St = SR.rules && SR.rules.stats, b = St && typeof St.band === 'function' ? St.band(k) : -1;
+    if (!(b >= 0 && b <= 9)) b = Math.max(0, Math.min(9, Math.ceil(Math.abs(k) / 10) - 1));
+    return 'karma.' + (k < 0 ? 'evil.' : 'good.') + b;
   }
   function kidGone(s) { return !!(s && s.npc && s.npc.kid && s.npc.kid.dead); }
 
@@ -178,7 +206,7 @@
     bank: office, cityhall: office, mcsticks: office, bar: office, casino: office, store: office, pawn: office,
   };
 
-  /** @returns {string} the state key a building's detail depends on ('' for none). */
+  /** @param {string} id a building id @param {object=} s the state @returns {string} the state key its detail depends on ('' for none). */
   function stateKey(id, s) { var f = KEYS[id]; return f ? f(s || null) : ''; }
 
   /** Records the key a detail drew with (every detail calls it first). */
@@ -288,14 +316,13 @@
         }
       }
       fill(ctx, [f[0] + lw, f[1] + 4 + storey, f[2] - lw, f[1] + 6 + storey], g.tone(P.walls, -1));
-      // A grove of three trees at the west end of the house.
-      [[1788, 1058, 0.8, 0], [1830, 1054, 0.72, 1], [1866, 1060, 0.66, 0]].forEach(function (t) {
-        cover(g, [t[0] - 34 * t[2], t[1] - 150 * t[2], t[0] + 34 * t[2], t[1] - 30 * t[2]]);
-      });
-      prop(ctx, 'tree', 1830, 1054, 0.72, 1);
-      prop(ctx, 'tree', 1788, 1058, 0.8, 0);
-      prop(ctx, 'tree', 1866, 1060, 0.66, 0);
-      if (forSale(s, ['mansion'])) saleSign(ctx, g, 2004, 1060, 0.9);
+      // A grove of three trees at the west end of the house (the first signature rect), the poplar
+      // behind the two oaks.
+      var x0 = m.rect[0], y1 = m.rect[3];
+      var grove = [[x0 + 84, y1 - 10, 0.72, 1], [x0 + 42, y1 - 6, 0.8, 0], [x0 + 120, y1 - 4, 0.66, 0]];
+      grove.forEach(function (t) { cover(g, [t[0] - 34 * t[2], t[1] - 150 * t[2], t[0] + 34 * t[2], t[1] - 30 * t[2]]); });
+      grove.forEach(function (t) { prop(ctx, 'tree', t[0], t[1], t[2], t[3]); });
+      if (forSale(s, ['mansion'])) saleSign(ctx, g, m.rect[2] - 134, y1 - 4, 0.9);
       // The butler at the gate once you own it (P1, cityReacts).
       if (reacts() && owns(s, 'mansion')) {
         var gx = f[2] - 16;
@@ -307,7 +334,8 @@
         stick(ctx, 'wave', { x: gx - 22, y: f[3] - 2, t: 0.2, view: 'city', facing: 'down', look: { head: 'npc.stone', acc: ['bowtie', 'vest'], col: { bowtie: 'acc.black', vest: 'acc.black' } } });
       }
       // The kid's memorial at his corner once he is gone (BALANCE kid.givePack, P0).
-      if (kidGone(s)) prop(ctx, 'memorial', 2090, 1110, 1);
+      var kc = spotOf('kidCorner') || KID_CORNER;
+      if (kidGone(s)) prop(ctx, 'memorial', kc[0], kc[1], 1);
       banners(ctx, g, s, f, 3);
     },
   });
@@ -344,7 +372,7 @@
       // pennants are repainted at the same spots (towers from the worldmap's turret tops).
       if (reacts() && owns(s, 'castle')) {
         var def = defOf('home_castle'), tops = def && def.exterior && def.exterior.tops ? def.exterior.tops : [];
-        var midX = (m.rect[0] + m.rect[2]) / 2, midY = (m.rect[1] + m.rect[3]) / 2, flag = karmaCol(s);
+        var midX = (m.rect[0] + m.rect[2]) / 2, midY = (m.rect[1] + m.rect[3]) / 2, flag = SR.art.draw.color(karmaCol(s));
         var tallest = null;
         tops.forEach(function (t) { if (t.kind === 'turret' && (t.rect[1] + t.rect[3]) / 2 >= midY && (!tallest || t.rect[0] > tallest.rect[0])) tallest = t; });
         tops.forEach(function (t) {
@@ -496,8 +524,11 @@
       outline(ctx, g, panel);
       // The rooftop billboard (worldmap signature) on the top roof's north edge: the company's ad,
       // or your portrait once you are CEO (P1, cityReacts).
-      var roofTop = tt[1] - K * tw.h;
-      var bb = [3000, roofTop - 88, 3300, roofTop - 24];
+      // It fills the worldmap's signature rect (the one the visibility invariant protects), else a
+      // 300 × 64 board over the top roof's north edge.
+      var roofTop = tt[1] - K * tw.h, sig = (exOf('nli').signature || [])[0];
+      var cxT = (tt[0] + tt[2]) / 2;
+      var bb = Array.isArray(sig) && sig.length === 4 ? sig.slice() : [cxT - 150, roofTop - 88, cxT + 150, roofTop - 24];
       [bb[0] + 36, (bb[0] + bb[2]) / 2, bb[2] - 36].forEach(function (x) { fill(ctx, [x - 3, bb[3], x + 3, roofTop + 8], g.pal('prop.lampPost')); });
       fill(ctx, [bb[0] - 4, bb[1] - 4, bb[2] + 4, bb[3] + 4], g.pal('prop.billboard'));
       if (ceo(s)) {
@@ -604,13 +635,11 @@
     signature: [[792, 2208, 1278, 2258]],
     detail: function (ctx, g, s) {
       drew('furniture', s);
-      var m = massOf(g, 'main'), P = g.colors, f = m.facade, K = g.projection;
+      var m = massOf(g, 'main'), P = g.colors, f = m.facade;
       var name = word('place.sign.furniture');
       var paper = g.pal(['bld.furniture.walls', 'paperEdge']);
-      // Thin serif-ish lettering on the roof sign (the painter's board: 0.55 of the facade, ≤ 260 u
-      // wide, 35 u tall at the roof's south edge) and on the annex canopy.
-      var sw = Math.min((f[2] - f[0]) * 0.55, 260), cx = (f[0] + f[2]) / 2, sh = K * 70;
-      var board = g.roofSign || [cx - sw / 2, f[1] - sh, cx + sw / 2, f[1] - sh * 0.3];
+      // Thin serif-ish lettering on the painter's roof sign and on the annex canopy.
+      var board = roofBoard(g, m), cx = (f[0] + f[2]) / 2;
       fill(ctx, [board[0] + 2, board[1] + 2, board[2] - 2, board[3] - 3], P.trim);
       letters(ctx, g, name, [board[0] + 8, board[1] + 3, board[2] - 8, board[3] - 3], paper, { role: SERIF, weight: 400, fill: 0.78, tracking: 0.12 });
       if (g.canopy) {
@@ -802,11 +831,11 @@
     signature: [[3024, 3246, 3292, 3302], [2858, 3186, 2924, 3302]],
     detail: function (ctx, g, s) {
       drew('store', s);
-      var m = g.masses[0], P = g.colors, f = m.facade, K = g.projection;
+      var m = g.masses[0], P = g.colors, f = m.facade;
       // Graffiti-style "FIVE-O" on a taller roof sign: fat tilted letters, an ink outline, a drop
-      // shadow and drips (the painter's board sits at its foot).
-      var sw = Math.min((f[2] - f[0]) * 0.55, 260), cx = (f[0] + f[2]) / 2, sh = K * 70;
-      var board = [cx - sw / 2, f[1] - sh - 22, cx + sw / 2, f[1] - sh * 0.3];
+      // shadow and drips (the painter's board, raised 22 u, sits at its foot).
+      var b0 = roofBoard(g, m), sw = b0[2] - b0[0], cx = (b0[0] + b0[2]) / 2;
+      var board = [b0[0], b0[1] - 22, b0[2], b0[3]];
       fill(ctx, board, P.trim);
       ctx.save(); ctx.fillStyle = g.tone(P.trim, 1);
       for (var sp = 0; sp < 14; sp++) { ctx.beginPath(); ctx.arc(board[0] + 8 + h01('five', sp, 1) * (sw - 16), board[1] + 4 + h01('five', sp, 2) * (board[3] - board[1] - 8), 1.5 + h01('five', sp, 3) * 2.5, 0, Math.PI * 2); ctx.fill(); }
@@ -894,13 +923,15 @@
       logo(ctx, g, 'bus', board[0] + 10, (board[1] + board[3]) / 2, 20, { lw: g.lineWidth * 0.4 });
       var amber = g.pal('light.neonYellow');
       letters(ctx, g, word('place.sign.departures'), [board[0] + 22, board[1] + 1, board[2] - 4, board[1] + 9], amber, { fill: 0.8, tracking: 0.2 });
-      var cities = ['crayonburg', 'rustbelt', 'glitter', 'gusty', 'eraser', 'pegas'];
+      // The six cities in their destination-board order (SR.def.city: `order`, the `name` key).
+      var reg = SR.reg.city || {};
+      var cities = Object.keys(reg).sort(function (a, b) { return (reg[a].order || 0) - (reg[b].order || 0); }).slice(0, 6);
       // A board's own 24 h clock: the sprite never depends on the player's 12 / 24 h setting.
       var when = SR.text && typeof SR.text.time === 'function' ? SR.text.time(0, false) : '';
-      for (var i = 0; i < 6; i++) {
+      for (var i = 0; i < cities.length; i++) {
         var col = i % 2, row = Math.floor(i / 2);
         var r = [board[0] + 22 + col * 72, board[1] + 11 + row * 9, board[0] + 90 + col * 72, board[1] + 19 + row * 9];
-        var nm = word('city.' + cities[i] + '.name');
+        var nm = word(reg[cities[i]].name || 'city.' + cities[i] + '.name');
         ctx.save(); ctx.font = SR.art.draw.font(6, 700, 'ui'); ctx.textBaseline = 'middle'; ctx.fillStyle = amber;
         ctx.textAlign = 'left'; ctx.fillText(nm, r[0], (r[1] + r[3]) / 2, 46);
         ctx.textAlign = 'right'; ctx.fillText(when, r[2], (r[1] + r[3]) / 2, 20);

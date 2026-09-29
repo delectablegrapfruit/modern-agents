@@ -32,6 +32,24 @@
 
   function D() { return SR.ui.dom; }
   function fast() { return !!(SR.debug && typeof SR.debug.fast === 'function' && SR.debug.fast()); }
+  /** @returns {boolean} the press came from a binding of that input action (Esc is `back` and `pause`). */
+  function boundTo(ev, action) {
+    var I = SR.input;
+    if (!ev || !ev.code || !I || typeof I.bindings !== 'function') return false;
+    try { return (I.bindings(action) || []).indexOf(ev.code) >= 0; } catch (e) { return false; }
+  }
+
+  /**
+   * The compact HUD, without its Pocket button: the ward is a presentation (a cab out of it would
+   * skip the Stick General edition and the hospital night's day:started). It comes with the card:
+   * during the gag it would give the joke away (the next day, HP already patched up to 50 %).
+   */
+  function mountHud() {
+    if (!H || !H.ui || H.hud) return;
+    H.hud = SR.ui.hud.mount(H.ui, { compact: true }) || true;
+    var pb = H.hud && H.hud.querySelector ? H.hud.querySelector('[data-id="hud-pocket"]') : null;
+    if (pb) pb.hidden = true;
+  }
   function reduced() { return !!(SR.ui && SR.ui.dom && D().reduced()); }
 
   /** Re-emits a night Report's rule events, then day:started, as the report scene does (CONTRACT §8.7). */
@@ -83,6 +101,7 @@
     if (H.dirge && typeof H.dirge.stop === 'function') { try { H.dirge.stop(); } catch (e) { /* audio gone */ } }
     H.dirge = null;
     if (H.gag) H.gag.show(null);
+    mountHud();
     if (H.ui && !H.card) {
       H.card = SR.ui.hospital.card({ down: H.down, onDischarge: discharge });
       H.ui.appendChild(H.card);
@@ -170,7 +189,7 @@
     enter: function (params) {
       params = params || {};
       H = { params: params, down: params.down || null, t: 0, phase: 'gag', beat: 0, card: null, ui: null, scope: null,
-        gag: null, dirge: null, discharged: false, started: false, cache: null, cacheScale: 0, skipFast: fast() };
+        gag: null, dirge: null, discharged: false, started: false, cache: null, cacheScale: 0, skipFast: fast(), skipping: false, hud: null };
       if (!H.down && SR.state) H.down = { outcome: 'hospital', cause: params.cause || 'other', bill: 0, writtenOff: 0, report: null };
       H.interior = SR.art && typeof SR.art.interior === 'function' ? SR.art.interior('hospital', {}) : null;
     },
@@ -207,13 +226,26 @@
       if (ev.down === false) return false;
       if ((action === 'confirm' || action === 'back' || action === 'interact') && SR.ui.stamp.swallow()) return true;
       if (H.phase === 'gag') {
-        if ((action === 'confirm' || action === 'back' || action === 'interact') && H.t >= SKIP_AFTER) { SR.ui.stamp.clear(); toCard(); }
+        if ((action === 'confirm' || action === 'back' || action === 'interact') && H.t >= SKIP_AFTER && !ev.repeat && !H.skipping) {
+          // The card comes once this input event is over: Enter is `interact` and `confirm`, and
+          // the rest of the press must not also press the card's Discharge button.
+          var me = H;
+          H.skipping = true;
+          SR.ui.stamp.clear();
+          Promise.resolve().then(function () { me.skipping = false; if (H === me) toCard(); });
+        }
         return true;
       }
       if (action === 'interact') return true;
       if (SR.ui.focus.handle(action, ev)) return true;
       if (action === 'back') { discharge(); return true; }
-      if (action === 'pause' && SR.reg.scene.pause) { SR.scenes.push('pause'); return true; }
+      // Esc is both `back` and `pause` (CONTRACT §12.1): here it skips the gag or discharges (the
+      // building card's rule), so its `pause` half does nothing; Start (pad) and the HUD's pause
+      // button open the menu.
+      if (action === 'pause') {
+        if (!boundTo(ev, 'back') && SR.reg.scene.pause) SR.scenes.push('pause');
+        return true;
+      }
       return false;
     },
     ui: {
@@ -221,11 +253,8 @@
         if (!H) return;
         root.classList.add('scene-hospital');
         H.ui = root;
-        // The ward is a presentation: no Pocket (a cab out of the ward would skip the Stick General
-        // edition and the hospital night's day:started), so the HUD's Pocket button goes.
-        var hud = SR.ui.hud.mount(root, { compact: true });
-        var pb = hud && hud.querySelector ? hud.querySelector('[data-id="hud-pocket"]') : null;
-        if (pb) pb.hidden = true;
+        H.hud = null;
+        if (H.phase === 'card') mountHud();
         H.gag = SR.ui.hospital.gag();
         root.appendChild(H.gag.el);
         if (H.skipFast) return;

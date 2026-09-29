@@ -7,6 +7,7 @@
 //     hotkey, closes on Back; with `shopsPlus` the P1 rows, the Buy / Sell tabs (Q / E and the
 //     `tabs` context) and a confirmed sale at 40 % (by click and by Enter; the confirm says how many;
 //     focus stays in the list when the sold row leaves it, and on the tab when the list empties);
+//     the detail panel pinned under the list, following it at 150 % text;
 //     with `arcs` the clean shirt once Harold asks;
 //   - the interior draws (Vinnie behind the counter), the accessibility audit of the card and the
 //     counter, screenshots at 1280×720 (day and night) and 1920×1080, zero console errors.
@@ -122,6 +123,15 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-Goods');
   await t.clickUI('row-pawn.counter');
   await t.step(2);
   T.eq(await visible('[data-id="shop-tabs"]'), true, 'the counter has Buy / Sell tabs');
+  const detailPos = () => ev(() => getComputedStyle(document.querySelector('#ui [data-id="shop-detail"]')).position);
+  T.eq(await detailPos(), 'sticky', 'the detail panel is pinned under the list');
+  await ev(() => { window.SR.settings.set('access.textScale', 1.5); window.SR.ui.dom.applySettings(); });
+  await t.step(2);
+  T.eq(await detailPos(), 'static', 'at 150 % text it follows the list (pinned, it left room for about one row)');
+  await t.shot(path.join(SHOTS, 'pawn-counter-text150.png'));
+  await ev(() => { window.SR.settings.set('access.textScale', 1); window.SR.ui.dom.applySettings(); });
+  await t.step(2);
+  T.eq(await detailPos(), 'sticky', 'and is pinned again at 100 %');
   T.ok(await ev(() => window.SR.input.contexts().indexOf('tabs') >= 0), 'the tabs context is pushed (Q / E)');
   await t.press('tabNext');
   await t.step(2);
@@ -165,6 +175,13 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-Goods');
   await t.press('back');
   await t.step(2);
   T.ok(await ev(() => window.SR.input.contexts().indexOf('tabs') < 0), 'closing the counter pops the tabs context');
+  await t.set({ items: { knife: 1 } });
+  await ev(() => window.SR.ui.card.push('pawn.shop', { tab: 'sell' }));
+  await t.step(2);
+  T.eq([await visible('[data-id="row-shop-sell-knife"]'), await ev(() => { const e = document.querySelector('#ui [data-id="shop-tabs-sell"]'); return e && e.getAttribute('aria-selected'); })],
+    [true, 'true'], 'params.tab "sell" opens the counter on the Sell tab');
+  await t.press('back');
+  await t.step(2);
   await ev(() => window.SR.debug.feature('shopsPlus', false));
 
   // ------------------------------------------------------------ P1: arcs, the clean shirt

@@ -24,7 +24,6 @@
   var ORDER = [0, 28, 9, 26, 30, 11, 7, 20, 32, 17, 5, 22, 34, 15, 3, 24, 36, 13, 1, 37, 27, 10, 25, 29, 12, 8, 19, 31, 18, 6, 21, 33, 16, 4, 23, 35, 14, 2];
   var G = { x: 494, y: 40, cw: 54, rh: 64, zx: 440 };      // the number grid (12 × 3) and the zeros column
   var STREET_H = 20, DOZ_H = 48, OUT_H = 48, COL_W = 54;
-  var CHIPS = [5, 25, 100, 500];
   var CHIP_COL = ['acc.red', 'acc.green', 'acc.black', 'acc.purple'];
   var SPIN_S = 5, SKIP_S = 2, COMMIT_S = 3.2, HISTORY = 12;
   var OUTSIDE = ['low', 'even', 'red', 'black', 'odd', 'high'];
@@ -117,6 +116,7 @@
 
   function create(host, params) {
     var T = host.text;
+    var CHIPS = SR.tuning.casino.chips.slice(0, 4);   // $5 / $25 / $100 / $500 (GDD §6.5; keys 1-4)
     var lim = limit(live() || host.state);
     var chipI = 0, active = { X: 0, Y: 2 };
     var bets = {};                 // key -> { bet, amount, X, Y }
@@ -124,6 +124,13 @@
     var wheelA = 0, ballRel = 0, ballR = 1, wheelV = 0.6;
     var history = [], lastPocket = null, lastWins = [], session = { net: 0, rounds: 0, wagered: 0 };
     var finished = false, t = 0;
+    var ballSnd = null;            // the ball rolling round the rim: a looping sound, held while it rolls
+
+    /** Stops the rolling loop (the ball has settled, or the table closed). */
+    function stopBall() {
+      if (ballSnd && typeof ballSnd.stop === 'function') { try { ballSnd.stop(); } catch (e) { /* audio is optional */ } }
+      ballSnd = null;
+    }
 
     // ---- DOM -------------------------------------------------------------------------------------
     var bar = host.el('div', { 'data-id': 'mg-roulette-controls', style: {
@@ -229,7 +236,8 @@
       if (!pv.ok) { host.audio.sfx('error'); host.aria(T(pv.reason || 'reason.notNow', pv.vars || {})); return; }
       spin = { t: 0, committed: false, result: null, tc: 0, rel0: 0, relT: 0 };
       wheelV = 2.4;
-      host.audio.sfx('roulette_settle');
+      stopBall();
+      ballSnd = host.audio.sfx('roulette_loop');   // ART_AUDIO §13: the ball loop, then its settle
       host.aria(T('mg.roulette.spinning'));
       controls();
       if (fast()) skip();
@@ -273,6 +281,7 @@
     function finishSpin() {
       var sp = spin;
       spin = null;
+      stopBall();
       wheelV = 0.6;
       if (sp && sp.result) {
         ballRel = sp.relT; ballR = 0;
@@ -286,7 +295,8 @@
         var net = sp.result.net;
         host.aria(T(net > 0 ? 'mg.roulette.resultWin' : net < 0 ? 'mg.roulette.resultLose' : 'mg.roulette.resultEven',
           { colour: colour, n: label(p), money: money(Math.abs(net)) }));
-        host.audio.sfx(net > 0 ? 'coin' : 'roulette_settle');
+        host.audio.sfx('roulette_settle');
+        if (net > 0) host.audio.sfx('coin');
         if (net > 0 && host.haptic) host.haptic(30);
       }
       controls();
@@ -390,7 +400,7 @@
       ctx.fillStyle = pal(CHIP_COL[i]); ctx.fill();
       ctx.lineWidth = won ? 4 : 2; ctx.strokeStyle = won ? pal('kit.gold') : pal('kit.paper'); ctx.stroke();
       ctx.font = host.font(amount >= 1000 ? 10 : 12, 900); ctx.fillStyle = pal('kit.paper'); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(amount >= 1000 ? (amount / 1000).toFixed(amount % 1000 ? 1 : 0) + 'k' : String(amount), x, y + 1);
+      ctx.fillText(amount >= 1000 ? T('mg.roulette.chipK', { n: (amount / 1000).toFixed(amount % 1000 ? 1 : 0) }) : String(amount), x, y + 1);
       ctx.textBaseline = 'alphabetic';
     }
 
@@ -516,7 +526,7 @@
         return { chip: CHIPS[chipI], active: { X: active.X, Y: active.Y, bet: spotAt(active.X, active.Y) }, bets: list(), total: total(), limit: lim,
           spinning: !!spin, committed: !!(spin && spin.committed), t: spin ? spin.t : 0, last: lastPocket, history: history.slice(), session: sessionResult(), finished: finished };
       },
-      destroy: function () {},
+      destroy: function () { stopBall(); },
     };
   }
 

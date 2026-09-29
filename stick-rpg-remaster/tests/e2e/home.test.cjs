@@ -236,6 +236,8 @@ const LIVE_P0 = ['home.sleep', 'home.tv', 'home.messages', 'home.computer', 'hom
     const front = await ev(() => ({ el: !!document.querySelector('#ui [data-id="report-election"]'), poll: !!document.querySelector('#ui [data-id="report-poll"]'),
       needle: !!document.querySelector('#ui [data-id="report-needle"]'), head: document.querySelector('#ui [data-id="report-headline"]').textContent }));
     T.ok(front.el && front.poll && front.needle, 'the election-night front page: the result, the poll bar and the swing\'s needle', front);
+    const line = await ev(() => { const SR = window.SR; return [document.querySelector('#ui [data-id="report-election"]').textContent, SR.text('news.election.line', { n: SR.tuning.election.win.threshold })]; });
+    T.ok(line[0].indexOf(line[1]) >= 0 && /50/.test(line[1]), 'the winning line comes from B-17 (election.win.threshold): "' + line[1] + '"');
     await t.shot(path.join(SHOTS, 'report-election.png'));
     await t.press('confirm');
     await t.step(1);
@@ -256,6 +258,12 @@ const LIVE_P0 = ['home.sleep', 'home.tv', 'home.messages', 'home.computer', 'hom
     await t.press('confirm');
     await t.step(1);
     T.eq([await t.scenes(), await ev(() => window.__popped)], [['city'], 'done'], 'and pops back to its caller with "done" (next defaults to pop for jail)');
+    // params.next may name another scene
+    await ev(() => { window.SR.scenes.push('report', { report: window.__j, next: 'title', events: false, dayStarted: false }); return true; });
+    await t.step(1);
+    await t.press('confirm');
+    await t.step(1);
+    T.eq(await t.scenes(), ['title'], 'next: a scene id goes to that scene');
   });
 
   await section('the paper by keyboard: ↑ / ↓ scroll a long page; a press settles the election needle', async () => {
@@ -367,6 +375,17 @@ const LIVE_P0 = ['home.sleep', 'home.tv', 'home.messages', 'home.computer', 'hom
       }
     }
     T.eq(bad, [], '4 doors × 8 states: Live (the home card), Owned (Move in), For Sale (Tour); the interior has your things only where you live');
+    // the For Sale sign carries the listing's exterior photo (UI §5.6), baked by SR.art.exterior
+    await fresh();
+    await openDoor('home_mansion');
+    await t.step(2);
+    // (the frame's backdrop is ui.primary-100; the paper grain moves it by a few units only)
+    const photo = await t.pixels(516, 362, 128, 70);   // the sign at x 470: its photo frame from (514, 360)
+    const bg = await ev(() => window.SR.art.draw.color('ui.primary-100'));
+    const [br, bgg, bb] = [1, 3, 5].map((i) => parseInt(bg.slice(i, i + 2), 16));
+    let drawn = 0;
+    for (let i = 0; i < photo.data.length; i += 4) if (Math.abs(photo.data[i] - br) + Math.abs(photo.data[i + 1] - bgg) + Math.abs(photo.data[i + 2] - bb) > 90) drawn++;
+    T.ok(drawn > 400, 'a For Sale door\'s sign shows the building\'s photo (' + drawn + ' pixels of building in its frame)');
     // the first morning's greeting (a new game holds Mel's offer: the machine is blinking, UI §9)
     await fresh();
     await openDoor('home_apt');
@@ -495,6 +514,27 @@ const LIVE_P0 = ['home.sleep', 'home.tv', 'home.messages', 'home.computer', 'hom
       await t.shot(path.join(SHOTS, 'interior-' + tier + '.png'));
       T.eq(r.params.homeId, tier, 'the ' + tier + ' interior');
     }
+    // ART_AUDIO §9: the scene lives in x 0-760 (the card covers the rest), every piece at either tier
+    const wide = await ev(() => {
+      const SR = window.SR, s = SR.state, PROPS = SR.art.interior.kit.PROPS, out = [];
+      const pieces = ['bed', 'tv', 'pc', 'books', 'treadmill', 'freezer', 'minibar', 'aquarium'];
+      ['apt', 'apt2', 'pent', 'mansion', 'castle'].forEach((tier) => [1, 2].forEach((lvl) => {
+        s.homes.living = tier;
+        s.furniture.owned = {};
+        pieces.forEach((k) => { s.furniture.owned[k] = k === 'freezer' || k === 'aquarium' ? 1 : lvl; });
+        s.furniture.owned.satellite = 1;
+        s.furniture.storage = [];
+        const p = { homeId: tier, mode: 'live' };
+        SR.art.interior('home', p).def.props.forEach((q) => {
+          if (q.when && !q.when(s, p)) return;
+          const type = (q.pick && q.pick(s, p)) || q.type, d = PROPS[type] || {};
+          const right = q.x + (q.w || d.w || 0);
+          if (right > 760) out.push([tier, lvl, type, right]);
+        });
+      }));
+      return out;
+    });
+    T.eq(wide, [], 'every piece, at tier 1 and tier 2, stays inside the scene (x ≤ 760) in all five homes');
   });
 
   // --------------------------------------------------------------------------------------------
@@ -518,6 +558,15 @@ const LIVE_P0 = ['home.sleep', 'home.tv', 'home.messages', 'home.computer', 'hom
     const p = s0.stocks.MCS.price;
     T.eq([s0.money.cash - s1.money.cash, s1.stocks.MCS.held], [Math.round(10 * p * 1.005) + 5, 10], 'Buy 10: price × 1.005 each plus the $5 fee (B-10)');
     T.ok(Math.abs(s1.stocks.MCS.basis - 10 * p * 1.005) < 0.02, 'the cost basis is what was paid for the shares');
+    // the list row gives the holding and its unrealised P/L (UI §5.6)
+    await t.press('back');
+    await t.step(1);
+    const heldRow = await ev(() => { const e = document.querySelector('#ui [data-id="stock-held-MCS"]'); return e ? e.textContent : ''; });
+    const wantPl = await ev((st) => window.SR.text('sub.home.stocks.pl', { money: window.SR.text.money(Math.round(st.held * st.price - st.basis), { sign: true }) }), s1.stocks.MCS);
+    T.ok(/10/.test(heldRow) && heldRow.indexOf(wantPl) >= 0, 'the list row: held and P/L ("' + heldRow + '")');
+    await t.clickUI('stock-MCS');
+    await t.step(1);
+    await t.page.fill('#ui [data-id="stock-n-input"]', '10');
     await t.page.fill('#ui [data-id="stock-n-input"]', '11');
     await t.step(1);
     const sell11 = await ev(() => { const b = document.querySelector('#ui [data-id="stock-sell"]'); return { disabled: b.getAttribute('aria-disabled') === 'true' }; });
@@ -623,9 +672,10 @@ const LIVE_P0 = ['home.sleep', 'home.tv', 'home.messages', 'home.computer', 'hom
     await openDoor('home_apt');
     await t.clickUI('row-home.messages');
     await t.step(1);
-    const ids = await ev(() => Array.prototype.map.call(document.querySelectorAll('#ui [data-id^="msg-"][role="listitem"]'), (b) => b.getAttribute('data-id')));
+    const ids = await ev(() => Array.prototype.map.call(document.querySelectorAll('#ui [data-id="msg-list"] > [role="listitem"] > button[data-id^="msg-"]'), (b) => b.getAttribute('data-id')));
     const st = await t.state();
     T.eq(ids, st.msgs.map((m) => 'msg-' + m.id).reverse(), 'the inbox, newest first');
+    T.eq(await ev(() => document.querySelectorAll('#ui [data-id="msg-list"] button[role]').length), 0, 'each row is a list item holding a real button (a <button> may not take the listitem role)');
     await t.shot(path.join(SHOTS, 'messages.png'));
     const newest = st.msgs[st.msgs.length - 1];
     await t.clickUI('msg-' + newest.id);
@@ -706,6 +756,12 @@ const LIVE_P0 = ['home.sleep', 'home.tv', 'home.messages', 'home.computer', 'hom
     await t.clickUI('row-home.letOut');
     await t.step(1);
     T.eq([(await t.state()).homes.lets.pent !== undefined, (await rows()).slice().sort()], [true, ['home.endLet', 'home.moveIn', 'home.sell']], 'let out: End the let replaces it');
+    const greetNow = () => ev(() => { const e = document.querySelector('#ui [data-id="card-greeting"] .vh'); return e ? e.textContent : ''; });
+    const letText = await ev(() => { const SR = window.SR; return SR.text('greet.home.let', { home: SR.text('home.pent'), rent: SR.text.money(SR.tuning.homes.pent.rent) }); });
+    T.eq(await greetNow(), letText, 'and the greeting follows the let (no home Delta, so no home:changed)');
+    await t.clickUI('row-home.endLet');
+    await t.step(1);
+    T.ok((await greetNow()) !== letText && (await t.state()).homes.lets.pent === undefined, 'End the let: the greeting is the empty home\'s again', await greetNow());
     await ev(() => { window.SR.debug.feature('homesPlus', false); return true; });
     await fresh();
     await openDoor('home_apt');

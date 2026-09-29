@@ -64,7 +64,9 @@
   }
 
   function screenBox() {
-    return D().h('div', { class: 'tv-screen', 'data-id': 'tv-screen', role: 'status', 'aria-live': 'polite',
+    // Not a live region: watch() announces the show once through #aria (SR.ui.dom.announce), and a
+    // role="status" box would have it read twice.
+    return D().h('div', { class: 'tv-screen', 'data-id': 'tv-screen',
       style: { background: 'var(--ink-900)', color: 'var(--paper-0)', border: 'var(--line)', borderRadius: 'var(--r-m)',
         padding: 'var(--sp-3) var(--sp-4)', minHeight: 'calc(120px * var(--ui-scale))', marginBottom: 'var(--sp-3)',
         boxShadow: 'var(--e-1)', overflow: 'hidden' } });

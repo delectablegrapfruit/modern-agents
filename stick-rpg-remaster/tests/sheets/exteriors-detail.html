@@ -48,6 +48,7 @@
   <script src="../../js/data/tuning.js"></script>
   <script src="../../js/data/features.js"></script>
   <script src="../../js/data/worldmap.js"></script>
+  <script src="../../js/data/cities.js"></script>
   <script src="../../js/data/text/en-world.js"></script>
   <script src="../../js/data/text/en-conflict.js"></script>
   <script src="../../js/render/renderer.js"></script>
@@ -69,8 +70,8 @@
   (function () {
     'use strict';
     var SR = window.SR;
-    // Fakes (CONTRACT D27): sign words W2-Exterior asked W2-City for (docs/requests/W2-Exterior.md),
-    // installed only while en-world.js does not register them yet.
+    // Fakes (CONTRACT D27): the sign words W2-Exterior asked W2-City for (docs/requests/W2-Exterior.md
+    // 1, applied: en-world.js registers them now), installed only for a key en-world.js lacks.
     var PENDING = {
       'place.sign.forSale': 'FOR SALE', 'place.sign.slushee': 'SLUSHEE', 'place.sign.departures': 'DEPARTURES',
       'place.sign.skybus': 'SKY BUS', 'place.sign.ceo': 'YOUR CEO', 'place.sign.nliAd': 'WE DRAW THE LINE',

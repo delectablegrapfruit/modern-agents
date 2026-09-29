@@ -6,7 +6,9 @@
 // Sale, the memorial, the cityReacts elements behind their flag); props cover every worldmap prop
 // and every ART_AUDIO §6 type with a sprite box that holds its anchor, and no prop's sprite covers a
 // door's visible porch strip; the glyphs and the six skyline silhouettes; no Math.random and no
-// colour literal in the four files; the sign words they name (registered or requested).
+// colour literal in the four files; the sign words they name (registered or requested); details
+// placed by the data (the departures board's SR.def.city order, NLI's billboard in its worldmap
+// signature, the kid's memorial at spots.kidCorner inside a mansion signature rect).
 //   node tests/node/exterior-detail.test.cjs
 'use strict';
 const fs = require('fs');
@@ -142,10 +144,12 @@ const AR = L.load({ mode: 'all', extra: ['js/art/draw.js', 'js/art/stick.js', 'j
 T.eq(AR.errors.map((e) => String(e.message || e)), [], 'the details load headless beside the drawing rigs');
 const S2 = AR.SR, D2 = S2.art.exteriorDetail, X2 = S2.reg.exterior;
 function mockCtx() {
-  const rec = { n: 0, bad: [] };
+  const rec = { n: 0, bad: [], texts: [], rects: [] };
   const st = { font: '10px sans-serif', canvas: { width: 100, height: 100 } };
   const fns = {
     measureText: (s) => { const m = /([\d.]+)px/.exec(st.font); return { width: String(s).length * (m ? +m[1] : 10) * 0.6 }; },
+    fillText: (str) => { rec.n++; rec.texts.push(String(str)); },
+    fillRect: (x, y, w, h) => { rec.n++; rec.rects.push([x, y, x + w, y + h]); for (const a of [x, y, w, h]) if (!Number.isFinite(a)) rec.bad.push('fillRect'); },
     getTransform: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }),
     createLinearGradient: () => ({ addColorStop() {} }), createRadialGradient: () => ({ addColorStop() {} }), createPattern: () => ({}),
   };
@@ -220,6 +224,33 @@ wm.buildings.forEach((b) => X2[b.id].detail(mockCtx().ctx, geomOf(b), S2.state))
 S2.state.stats.karma = 64;
 T.eq(D2.refresh().sort(), ['home_castle', 'nli'], "a karma band change re-bakes only the castle (its flags) and NLI (the CEO portrait's head)");
 S2.render = hadRender; S2.state = null; S2.features.cityReacts = false;
+// Details that place things by the worldmap and the data rather than by hand-typed numbers.
+const bOf = (id) => wm.buildings.find((b) => b.id === id);
+const same4 = (a, b) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) < 1e-6);
+{
+  const m = mockCtx();
+  X2.bus.detail(m.ctx, geomOf(bOf('bus')), null);
+  const order = Object.keys(S2.reg.city).sort((a, b) => S2.reg.city[a].order - S2.reg.city[b].order).map((id) => S2.text(S2.reg.city[id].name));
+  T.eq(m.rec.texts.filter((x) => order.indexOf(x) >= 0), order, 'the departures board lists the six cities of SR.def.city in their board order');
+  T.ok(m.rec.texts.filter((x) => x === '00:00').length === 6, "each at the red-eye's 24 h time, whatever the player's clock setting");
+}
+{
+  const sig = bOf('nli').exterior.signature[0], m = mockCtx();
+  X2.nli.detail(m.ctx, geomOf(bOf('nli')), null);
+  T.ok(m.rec.rects.some((r) => same4(r, sig)), "NLI's rooftop billboard fills the worldmap's signature rect (the one the invariant protects)", sig);
+}
+{
+  // The kid's memorial stands at his corner (worldmap spots.kidCorner), inside a mansion signature
+  // rect: if W2-City moves the spot, the rect must follow or the sprite would crop the memorial.
+  const kc = wm.spots && wm.spots.kidCorner, sz = S2.art.props.size('memorial', 0, 0);
+  const box = kc && [kc[0] - sz.ax, kc[1] - sz.ay, kc[0] - sz.ax + sz.w, kc[1] - sz.ay + sz.h];
+  const inside = (r, q) => q[0] <= r[0] && q[1] <= r[1] && q[2] >= r[2] && q[3] >= r[3];
+  T.ok(!!box && X2.home_mansion.signature.some((q) => inside(box, q)), "the memorial's sprite box at spots.kidCorner lies inside a mansion signature rect", [kc, box]);
+  const tr = [], m = mockCtx();
+  const ctx = new Proxy(m.ctx, { get(t, k) { if (k === 'translate') return (x, y) => tr.push([x, y]); return t[k]; }, set(t, k, v) { t[k] = v; return true; } });
+  X2.home_mansion.detail(ctx, geomOf(bOf('home_mansion')), { homes: { owned: ['apt'] }, npc: { kid: { dead: true } }, stats: { karma: 0 } });
+  T.ok(tr.some((p) => same4(p, kc)), 'and the detail draws it there once the kid is gone', tr);
+}
 // Props and glyphs on the mock under the reacting states (the statue, wanted posters).
 const propThrew = [], propBad = [];
 STATES.forEach(([tag, s, flag]) => {

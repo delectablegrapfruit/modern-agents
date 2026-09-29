@@ -4,7 +4,8 @@
 // js/data/buildings/pawn.js, previewed live: price and gain chips, or the refusal); the Sell tab
 // (P1 `shopsPlus`) lists what you hold that he buys back, at the price the `pawn.sell` preview
 // shows. The focused row's item is described in a panel pinned to the bottom of the list (what it
-// does, the pawn data's `pawn.use` line, and how many you hold of how many). When a sale takes the
+// does, the pawn data's `pawn.use` line, and how many you hold of how many; in the touch-compact
+// layout and at 150 % text the panel follows the list instead). When a sale takes the
 // focused row off the list, focus moves to the row now in its place (or the tabs), not off the card.
 // Input (CONTRACT §15.5): focus navigation first (the card), then here: 1-9 run the Nth row, Q / E
 // and LB / RB switch tabs (the `tabs` context is pushed while the tabs show). A purchase at or
@@ -18,6 +19,9 @@
   var ICON_DETAIL = 48;  // the detail panel's icon (the ActionRow's is 40, UI.md §2.3)
   var SCROLL_TOP = 'calc(48px * var(--ui-scale))';      // the sticky breadcrumb's height
   var SCROLL_BOTTOM = 'calc(112px * var(--ui-scale))';  // the pinned detail panel's height
+  // At 150 % text (UI.md §8) the pinned panel would leave the list about one row between it and the
+  // breadcrumb, so from this text scale on it follows the list like in the touch-compact layout.
+  var UNPIN_TEXT_SCALE = 1.5;
 
   function D() { return SR.ui.dom; }
   function t(k, v) { return D().t(k, v); }
@@ -58,6 +62,14 @@
     ((pv && pv.gains) || []).forEach(function (g) { if (g.kind === 'cash' && g.n > 0) n += g.n; });
     return n;
   }
+  /**
+   * @returns {boolean} the detail panel stays pinned to the bottom of the card body: not in the
+   *   touch-compact layout (the body is short) nor at 150 % text
+   */
+  function pinnable() {
+    if (SR.stage && SR.stage.compact) return false;
+    return (Number(D().setting('access.textScale')) || 1) < UNPIN_TEXT_SCALE;
+  }
   /** @returns {number} the share of the price Vinnie pays back (B-06 pawnBuyback; Smooth Talker). */
   function buyback(state) {
     var T = SR.tuning.items;
@@ -88,12 +100,15 @@
       M.list = h('div', { class: 'shop-list', role: 'group', 'data-id': 'shop-list', 'aria-label': t('card.pawn.goods') });
       root.appendChild(M.list);
       // The detail panel stays pinned to the bottom of the card body while the list scrolls (in the
-      // touch-compact layout the body is short, so it simply follows the list).
-      M.pinned = !(SR.stage && SR.stage.compact);
-      M.detail = h('div', { 'data-id': 'shop-detail', style: { position: M.pinned ? 'sticky' : 'static', bottom: '0', zIndex: '1',
+      // touch-compact layout and at 150 % text the body is short, so it simply follows the list;
+      // refresh re-reads that, and a text size or layout change refreshes).
+      M.detail = h('div', { 'data-id': 'shop-detail', style: { bottom: '0', zIndex: '1',
         display: 'flex', gap: 'var(--sp-3)', alignItems: 'flex-start', padding: 'var(--sp-2) var(--sp-1)',
         background: 'var(--paper-0)', borderTop: 'var(--line-thin)' } });
       root.appendChild(M.detail);
+      M.unsubs = ['settings:changed', 'stage:resized'].map(function (name) {
+        return SR.events.on(name, function () { self.refresh(); });
+      });
       this.refresh(ctx);
     },
 
@@ -107,6 +122,8 @@
       // where the focused row sat, so focus stays in the list when a sale removes that row
       var hadAt = -1;
       M.rows.forEach(function (r, i) { if (r.el && r.el.main === a) hadAt = i; });
+      M.pinned = pinnable();
+      M.detail.style.position = M.pinned ? 'sticky' : 'static';
       // The Buy list needs no intro (Vinnie's greeting is above); the Sell tab states his rate.
       M.intro.hidden = M.tab !== 'sell';
       M.intro.textContent = M.tab === 'sell' ? t('card.pawn.sellIntro', { pct: SR.text.pct(buyback(state)) }) : '';
@@ -218,6 +235,7 @@
       var M = this._m;
       if (!M) return;
       M.alive = false;
+      (M.unsubs || []).forEach(function (off) { off(); });
       if (M.popTabs) { try { M.popTabs(); } catch (e) { /* already popped */ } }
       if (SR.ui.hud) SR.ui.hud.ghost(null);
       this._m = null;

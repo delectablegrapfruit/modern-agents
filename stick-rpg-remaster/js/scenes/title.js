@@ -30,7 +30,10 @@
       if (!(T && T.gateOn)) SR.ui.title.backdrop.update(dt);
       if (T) T.update(dt);
     },
-    render: function (ctx, alpha) { if (!(T && T.gateOn)) SR.ui.title.backdrop.render(ctx, alpha); },
+    render: function (ctx, alpha) {
+      if (T) T.render();
+      if (!(T && T.gateOn)) SR.ui.title.backdrop.render(ctx, alpha);
+    },
     ui: {
       mount: function (root, params) { T = SR.ui.title.mount(root, { gate: !!(params && params.gate) }); },
       unmount: function () { if (T) T.destroy(); T = null; },

@@ -102,12 +102,27 @@ Nothing frozen changes; records only.
 - **Test hook (no public name):** `SR.reg.subscreen['bank.realestate'].peek()` → the property order
   and each card's buttons.
 
+## 7. `js/rules/night.js` and `js/data/text/en-econ.js` (W2-RulesE): the loan's last day on the report
+
+- **File:** `js/rules/night.js` step 2 (`report.loanDays`) and `js/data/text/en-econ.js`.
+- **Change:** when `ln.daysLeft === 1`, push `report.loanDueTonight` ("Loan: {money} owed, due
+  tonight") instead of `report.loanDays` ("Loan: {days} days left, {money} owed"), which reads
+  "Loan: 1 days left" on the morning before a default.
+- **Why:** night step 2 decrements first, so the morning that shows 1 day left is the loan's last
+  day: that night's step 2 runs the default. The bank's own texts now say so (`greet.bank.loanTonight`,
+  `card.bank.loan.lastDay` "Due tonight", and `vm.penny.loan1`, which used to say "after tomorrow
+  night", one night too late).
+- **Meanwhile:** nothing in W2-Money's files; the report line keeps the number.
+
 ## Notes for other packages (no change requested)
 
 - **W2-Pocket:** the P1 Paperweight Realty contact (UI §5.9, `homesPlus`) can push
   `bank.realestate` through `SR.ui.subhost.create(root, { host: 'pocket' })` with no params (or
   `{ homeId }`); buy, move in, sell and let all work there (`tests/e2e/bank.test.cjs` does it).
 - **W2-Home:** Tour / Top floor / Sell (P1) pass the door's `{ homeId, mode }`; the page puts that
-  home first, marked "On tour", with its first button focused. After a purchase the door is Owned.
+  home first, framed, with its first button focused, and marks it "On tour" only while it is for
+  sale. From the Owned door's Sell row (`mode: 'owned'`) the Sell button takes the focus; the Live
+  card's Properties row (P1) passes the home you live in, which is never singled out (the plain
+  B-08a list). After a purchase the door is Owned.
 - **W2-Music:** the bank plays `compound_interest`, NLI `please_hold`, the three skins
   `tick_tock_trouble` (ART_AUDIO §13.4); until they land the validator warns and the page is silent.

@@ -42,8 +42,10 @@
      */
     promotion: function (s, track) {
       var cur = s.job.ranks[track] || null, list = ladder(track);
+      // A rank the ladder does not know (a hand-edited or modded save) has no next rung: without
+      // this, indexOf's -1 would "promote" it to the track's first rung.
       var i = cur ? list.indexOf(cur) + 1 : 0;
-      var next = list[i] || null;
+      var next = cur && i === 0 ? null : list[i] || null;
       if (!next || !feature(SR.reg.job[next])) return { ok: false, next: null, missing: [{ key: 'top', need: 0, have: 0 }] };
       var row = T()[next], missing = [];
       if (s.stats.int < row.int) missing.push({ key: 'int', need: row.int, have: s.stats.int });
@@ -143,7 +145,8 @@
      */
     canWork: function (s, track, variant, ctx) {
       variant = variant || 'full';
-      if (!s.job.ranks[track]) return refuse('reason.notHired');
+      // A rank B-05 does not know (a hand-edited save) works no shift rather than one at $0.
+      if (!s.job.ranks[track] || !T()[s.job.ranks[track]]) return refuse('reason.notHired');
       if (!variantRow(variant) || !variantOn(variant)) return refuse('reason.featureOff');
       if (variant === 'overtime') {
         var ot = variantRow('overtime');
@@ -256,7 +259,7 @@
       var ranks = SR.tuning.endgame.legacy.jobRanks, best = null;
       Object.keys(s.job.ranks).forEach(function (track) {
         var id = s.job.ranks[track];
-        if (!id) return;
+        if (!id || !T()[id]) return;   // an unknown rank (a hand-edited save) is no title
         if (!best) { best = id; return; }
         var a = ranks[id] || 0, b = ranks[best] || 0;
         if (a > b || (a === b && (T()[id].wage > T()[best].wage || (T()[id].wage === T()[best].wage && track === 'nli')))) best = id;

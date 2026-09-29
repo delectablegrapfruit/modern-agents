@@ -30,6 +30,25 @@
 
   function fast() { return !!(SR.debug && typeof SR.debug.fast === 'function' && SR.debug.fast()); }
 
+  /** @returns {boolean} the press came from a binding of that input action (Esc is `back` and `pause`). */
+  function boundTo(ev, action) {
+    var I = SR.input;
+    if (!ev || !ev.code || !I || typeof I.bindings !== 'function') return false;
+    try { return (I.bindings(action) || []).indexOf(ev.code) >= 0; } catch (e) { return false; }
+  }
+
+  /**
+   * The cell came up (or back) on top: until the current input event is over, a `pause` from a back
+   * key is the press that brought us here (Esc is `back`, then `pause`: "Go quietly" on the trip
+   * card, closing the election paper), not a request to pause (as the city does).
+   */
+  function onTop() {
+    if (!J) return;
+    var me = J;
+    me.arrived = true;
+    Promise.resolve().then(function () { me.arrived = false; });
+  }
+
   /** Remembers a jail night's Report for this game (a loaded save or a new game is another one). */
   function remember(report) { last = { state: SR.state, report: report }; }
 
@@ -104,7 +123,16 @@
       return;
     }
     if (J.mode === 'over') {
-      SR.scenes.go(SR.reg.scene.results ? 'results' : 'title', { reason: (s && s.result && s.result.reason) || 'time', result: s ? s.result : null }, { transition: 'fade' });
+      // Once this input event is over: Esc is `back` and `pause`, and the Final Edition would take
+      // the `pause` half as a press that skips its count-up.
+      var me = J;
+      if (me.leaving) return;
+      me.leaving = true;
+      Promise.resolve().then(function () {
+        if (J !== me) return;
+        var st = SR.state;
+        SR.scenes.go(SR.reg.scene.results ? 'results' : 'title', { reason: (st && st.result && st.result.reason) || 'time', result: st ? st.result : null }, { transition: 'fade' });
+      });
       return;
     }
     if (s && SR.world && SR.world.ready) SR.world.place('afterJail', s);
@@ -151,8 +179,11 @@
       J.interior = SR.art && typeof SR.art.interior === 'function' ? SR.art.interior('jail', {}) : null;
       // The arrest night (or the night that brought you back here) is finished once, here.
       if (params.report) { remember(params.report); startDay(params.report); }
+      onTop();
     },
     exit: function () { J = null; },
+    // Back from the pause menu or the election paper: the Esc that closed it is not a new pause.
+    resume: function () { onTop(); },
     update: function (dt) {
       if (!J) return;
       J.t += dt;
@@ -180,9 +211,20 @@
         return true;
       }
       if (SR.ui.focus.handle(action, ev)) return true;
-      if (action === 'back') { leave(); return true; }
+      // Esc is both `back` and `pause` (CONTRACT §12.1). While you serve there is no way back, so
+      // Esc opens the pause menu (a back-only button, pad B, still shows why Walk out is refused);
+      // once you may walk out, Esc walks out and does not also pause.
+      if (action === 'back') {
+        if (J.mode === 'day' && boundTo(ev, 'pause')) return true;
+        leave();
+        return true;
+      }
       // The cell is the whole game while you serve (GDD §6.6): the pause menu, but no Pocket.
-      if (action === 'pause' && SR.reg.scene.pause) { SR.scenes.push('pause'); return true; }
+      if (action === 'pause') {
+        if (boundTo(ev, 'back') && (J.arrived || J.mode !== 'day')) return true;
+        if (SR.reg.scene.pause) SR.scenes.push('pause');
+        return true;
+      }
       return action === 'pocket' || action === 'map' || action === 'bag' || action === 'journal';
     },
     ui: {

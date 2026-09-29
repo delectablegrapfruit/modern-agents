@@ -8,8 +8,10 @@
 //   on soft 17, a bust, H / S / D in the `blackjack` context only (never the city's down / right /
 //   minimal HUD), the 60-hand day, a hand abandoned mid-play is lost (its cards and hole card stay
 //   dealt and counted), a decided hand is applied when you leave during its reveal, Hardcore's
-//   pending hand, "By the book", a sampled Auto moves the saved shoe; roulette with forced pockets: every bet type placed by mouse and by
-//   keyboard pays per B-14c, 0 and 00 lose the outside bets, C clears, the table limit, no Auto;
+//   pending hand (a decided one survives a closed tab as played), "By the book", a sampled Auto
+//   moves the saved shoe; roulette with forced pockets: every bet type placed by mouse and by
+//   keyboard pays per B-14c, 0 and 00 lose the outside bets, C clears, the table limit, the pad's
+//   Y / A / LB / RB, no Auto;
 //   karma -1 per pull, spin and hand, at most -10 a day; #aria for every game; zero console errors.
 // Screenshots: shots/W2-Night/casino-*.png.   node tests/e2e/casino.test.cjs
 'use strict';
@@ -65,6 +67,21 @@ function rouletteNet(bets, pocket) {
     await k.quiet();
     await k.clearLogs();
   }
+  // The looping sounds (the reels' ratchet, the rolling ball) must stop when the reels / the ball do:
+  // a spy on SR.audio.sfx marks each handle stopped (works whether or not the audio has unlocked).
+  const spySfx = () => E(() => {
+    window.__snd = [];
+    if (SR.audio.__spied) return;
+    const o = SR.audio.sfx;
+    SR.audio.__spied = true;
+    SR.audio.sfx = function (n) {
+      const h = o.apply(this, arguments), rec = { n, stopped: false };
+      window.__snd.push(rec);
+      if (h && typeof h.stop === 'function') { const st = h.stop; h.stop = function () { rec.stopped = true; return st.apply(this, arguments); }; }
+      return h;
+    };
+  });
+  const sounds = (name) => E((name) => { const l = window.__snd.filter((x) => x.n === name); return { started: l.length, playing: l.filter((x) => !x.stopped).length }; }, name);
   const gambles = async (id) => (await k.acted()).filter((a) => a.id === id && a.ok).map((a) => a.events.filter((e) => e.name === 'gamble')[0].payload);
   const key = async (code, n) => { await t.key(code); await t.step(n === undefined ? 1 : n); };
 
@@ -136,6 +153,7 @@ function rouletteNet(bets, pocket) {
 
   T.section('Paper Jackpot: every pull pays per B-14a; stop early; karma -1 a pull');
   await k.clearLogs();
+  await spySfx();
   const k0 = (await k.state()).stats.karma;
   for (let i = 0; i < 6; i++) {
     await key('Space', 20);
@@ -146,6 +164,8 @@ function rouletteNet(bets, pocket) {
   T.eq(pulls.length, 6, 'six pulls, stopped early, each applied once');
   T.ok(pulls.every((x) => x.net === x.bet * (PAYS[lineOf(x.reels)] || 0) - x.bet), 'every pull: net = bet × pays(line) - bet', pulls.map((x) => [x.reels.join(' '), x.net]));
   T.eq((await k.state()).stats.karma - k0, -6, 'karma -1 per pull (orig)');
+  const ratchet = await sounds('reel_spin');
+  T.ok(ratchet.started === 6 && ratchet.playing === 0, 'each pull\'s looping ratchet (reel_spin) stops with its reels', ratchet);
   const tbl = await E(() => SR.rules.casino.slots.pays(SR.state));
   T.eq(tbl, PAYS, 'the pay table shown is B-14a');
 
@@ -296,6 +316,16 @@ function rouletteNet(bets, pocket) {
   T.ok(await k.heard('mg.blackjack.dealerShows') && await k.heard('mg.blackjack.youHave'), '"Dealer shows … You have …" is announced');
   const hands = await k.state('daily.bjHands');
   T.eq(hands, 5, 'every hand counts toward the day');
+  // While the outcome shows, the keys already start the next bet; a pointer must find the same.
+  const out0 = await k.peek();
+  await t.clickUI('mg-bj-chip-1');
+  await t.step(1);
+  const out1 = await k.peek();
+  T.ok(out0.phase === 'outcome' && out1.phase === 'bet' && out1.bet === out0.bet + 5, 'during the outcome a click on the $5 chip starts the next bet',
+    [out0.phase, out1.phase, out0.bet, out1.bet]);
+  await key('Digit5');
+  await key('Digit2');
+  await key('Digit1');   // back to $30
 
   T.section('blackjack: a hand left mid-play is lost');
   await shoe([R(10), R(9), R(6), R(5), R(10)]);   // you 10 + 6 against a 9 up; the hole card is a 5
@@ -407,6 +437,25 @@ function rouletteNet(bets, pocket) {
   T.ok(sampled.pos.every((x, i) => i === 0 || x > sampled.pos[i - 1]), 'each applied sample moves the saved shoe past its cards', sampled.pos);
   T.eq(sampled.hands.map((x) => x - sampled.hands[0]), [0, 1, 2, 3], 'and counts toward the 60-hand day');
 
+  T.section('blackjack on Hardcore: a decided hand survives a closed tab');
+  // You stand on 19; the dealer's 6 + 10 draws a 10 and busts. While the dealer's cards turn over
+  // the hand is decided, so the pending stake becomes the hand itself: a tab closed now must pay
+  // the win, not forfeit the $30.
+  await atCasino({ difficulty: 'hardcore' });
+  await shoe([R(10), R(6), R(9), R(10), R(10)]);
+  await bjOpen();
+  await key('Enter', 30);
+  const cHc = (await k.state()).money.cash;
+  T.eq((await k.state('pending')).worst.live, 30, 'the hand out is a $30 stake');
+  await key('KeyS', 3);
+  const pendD = await k.state('pending');
+  T.ok((await k.peek()).phase === 'reveal' && pendD && pendD.resolve === 'casino.blackjack.hand:resolve' && pendD.worst.round && pendD.worst.round.phase === 'over',
+    'decided: the pending becomes the hand (casino.blackjack.hand:resolve with its round)', pendD && pendD.resolve);
+  await t.reload();                                    // the tab closes during the reveal
+  await K.install(t.page);
+  const back = await E(() => { SR.save.load('ironman'); return { cash: SR.state.money.cash, hands: SR.state.daily.bjHands, pending: SR.state.pending, pos: SR.state.casino.shoe.pos }; });
+  T.eq([back.cash - cHc, back.hands, back.pending, back.pos], [30, 1, null, 5], 'reloading applies the hand as played: +$30, one hand, its five cards dealt');
+
   // ------------------------------------------------------------------------------------------
   // Roulette: pockets forced by setting the rules stream to a seed whose next draw is the pocket.
   const seedFor = (pocket) => E((pocket) => { for (let s = 1; s < 100000; s++) if (SR.rng.create(s).int(0, 37) === pocket) return s; return null; }, pocket);
@@ -447,7 +496,11 @@ function rouletteNet(bets, pocket) {
   await k.shot('casino-roulette-bets');
   T.eq(await k.audit(), [], 'the roulette frame passes the a11y audit');
   await k.clearLogs();
+  await spySfx();
   await spinOn(17);
+  const ball = await sounds('roulette_loop');
+  T.ok(ball.started === 1 && ball.playing === 0 && (await sounds('roulette_settle')).started === 1,
+    'the ball rolls (a loop) while it spins and settles when it lands; the loop stops', [ball, await sounds('roulette_settle')]);
   let rg = (await gambles('casino.roulette.spin:resolve'))[0];
   T.eq(rg.pocket, 17, 'the ball lands in 17 (the rules\' draw)');
   T.eq(rg.net, rouletteNet(placed, 17), 'every bet pays per B-14c (35 / 17 / 17 / 8 / 11 / 5 / 2 / 2 / 1 …)');
@@ -500,6 +553,34 @@ function rouletteNet(bets, pocket) {
   await spinOn(5);
   await spinOn(6);
   T.eq((await k.state()).stats.karma, km - 1, 'the day\'s tenth gamble costs karma, the eleventh does not (-10 a day)');
+
+  T.section('roulette by gamepad: Y changes the chip, A places, LB clears, RB spins (docs/requests/W2-Night.md 4)');
+  await E(() => {
+    window.__pad = { id: 'Mock pad (Xbox)', index: 0, connected: true, mapping: 'standard', axes: [0, 0, 0, 0],
+      buttons: Array.from({ length: 17 }, () => ({ pressed: false, touched: false, value: 0 })) };
+    navigator.getGamepads = () => [window.__pad];
+  });
+  const padR = async (b) => {
+    await E((b) => { window.__pad.buttons[b].pressed = true; window.__pad.buttons[b].value = 1; }, b);
+    await t.step(1);
+    await E((b) => { window.__pad.buttons[b].pressed = false; window.__pad.buttons[b].value = 0; }, b);
+    await t.step(1);
+  };
+  await padR(4);                                       // LB: clear
+  T.eq((await k.peek()).bets.length, 0, 'LB (tabPrev) clears the bets');
+  const chipsT = await E(() => SR.tuning.casino.chips.slice(0, 4));
+  const chipA = (await k.peek()).chip;
+  await padR(3);                                       // Y: the next chip
+  const chipB = (await k.peek()).chip;
+  T.eq(chipB, chipsT[(chipsT.indexOf(chipA) + 1) % 4], 'Y (car) steps to the next chip of SR.tuning.casino.chips', [chipA, chipB]);
+  await padR(0);                                       // A: place on the active space
+  T.eq((await k.peek()).bets.map((b) => b.amount), [chipB], 'A (confirm) places it on the active space');
+  await k.clearLogs();
+  await k.rngSeed(await seedFor(9));
+  await padR(5);                                       // RB: spin
+  T.ok((await k.peek()).spinning, 'RB (tabNext) spins');
+  for (let i = 0; i < 400 && (await k.peek()).spinning; i++) await t.step(10);
+  T.eq((await gambles('casino.roulette.spin:resolve')).map((g) => g.pocket), [9], 'and the spin is applied (pocket 9)');
   await key('Backspace', 2);
   T.eq((await k.cur()).panel, 'pause', 'Backspace stays Back (the pause panel)');
   await key('Escape', 2);

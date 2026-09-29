@@ -413,6 +413,7 @@
   }
 
   /**
+   * @param {string} type a prop type (the variant and angle do not change what it reacts to)
    * @returns {string} what a prop's look depends on in the state ('' for a static prop): the render
    *   core appends it to the sprite cache key so a reacting prop re-bakes when it changes.
    */
@@ -422,7 +423,7 @@
     return '';
   }
 
-  /** Draws a railing from a to b ([x, y] in u): posts every 48 u and two rails (ART_AUDIO §6). */
+  /** Draws a railing from a to b (number[2], [x, y] in u) on ctx (CanvasRenderingContext2D): posts every 48 u and two rails (ART_AUDIO §6). */
   function railing(ctx, a, b) {
     var len = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.round(len / RAIL_POST));
     ctx.save();
@@ -438,7 +439,7 @@
     ctx.restore();
   }
 
-  /** Draws the castle wall from a to b, w u thick: a stone top with merlons over a shaded face. */
+  /** Draws the castle wall from a to b (number[2], u), w (number, default 20) u thick: a stone top with merlons over a shaded face. */
   function wall(ctx, a, b, w) {
     w = w || 20;
     var hz = 18, horiz = Math.abs(b[0] - a[0]) >= Math.abs(b[1] - a[1]);

@@ -102,6 +102,25 @@
     box.appendChild(ul);
   }
 
+  /** @returns {object} the numbers the Help pages quote, read from SR.tuning (BALANCE) so they never drift. */
+  function helpVars() {
+    var T = SR.tuning, v = {};
+    var put = function (k, f) { try { v[k] = f(); } catch (e) { v[k] = '?'; } };
+    put('step', function () { return T.time.stepMin; });
+    put('wake', function () { return SR.text.time(T.time.wake); });
+    put('hpBase', function () { return T.start.hpMaxBase; });
+    put('cap', function () { return SR.text.num(T.start.statCap); });
+    put('winded', function () { return Math.round(T.training.winded.threshold * 100); });
+    put('factor', function () { return Math.round(T.training.winded.factor * 100); });
+    put('shift', function () { return T.jobs.shift.full.min / 60; });
+    put('ammo', function () { return T.crime.store.requires.ammo; });
+    put('rob', function () { return SR.text.time(T.crime.store.startBefore); });
+    put('skate', function () { return Math.round(T.world.skate.speed / T.world.walk.speed * 10) / 10; });
+    put('fallHp', function () { return T.world.fall.hp; });
+    put('money', function () { return SR.text.money(T.election.requires.money); });
+    return v;
+  }
+
   function renderHelp(box) {
     box.appendChild(heading('pocket.journal.help', 'journal-help-title'));
     box.appendChild(h('p', { class: 't-small', style: { margin: '0 0 var(--sp-2)', color: 'var(--ink-700)' } }, t('pocket.journal.helpIntro')));
@@ -124,7 +143,7 @@
     box.appendChild(h('div', { role: 'tabpanel', 'data-id': 'journal-help-page', 'aria-label': t('pocket.help.' + J.topic + '.title'),
       style: { padding: 'var(--sp-3)', border: 'var(--line)', borderRadius: 'var(--r-m)', background: 'var(--paper-0)' } },
       h('h4', { class: 't-label', style: { margin: '0 0 var(--sp-1)', color: 'var(--ink-900)' } }, t('pocket.help.' + J.topic + '.title')),
-      h('p', { class: 't-body', style: { margin: '0', color: 'var(--ink-900)' } }, t('pocket.help.' + J.topic + '.body'))));
+      h('p', { class: 't-body', style: { margin: '0', color: 'var(--ink-900)' } }, t('pocket.help.' + J.topic + '.body', helpVars()))));
   }
 
   function render() {
@@ -156,7 +175,7 @@
       /** @returns {object} the First Day list and the Help topic (tests). */
       debug: function () {
         var s = SR.state;
-        return { firstDay: s && firstDayOn(s) ? firstDay(s) : null, topic: J ? J.topic : null, topics: HELP.slice() };
+        return { firstDay: s && firstDayOn(s) ? firstDay(s) : null, topic: J ? J.topic : null, topics: HELP.slice(), helpVars: helpVars() };
       },
       firstDay: firstDay,
     });

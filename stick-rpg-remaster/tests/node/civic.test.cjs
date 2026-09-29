@@ -294,6 +294,8 @@ T.section('the debate (day 4), its resolve and the no-show');
   T.eq(sk.params(s, r.open.params).situations, p.situations, 'the same questions on a reload (a hash of the seed and the run)');
   T.eq(sk.params(campaigner(50, 4, 'dictator'), { path: 'dictator', rival: 'crayon', beats: 3 }).opponent.portrait, 'crayon', 'General Crayon for the Dictator race');
   T.ok(p.situations.concat([p.opponent.name, p.subtitle, 'mg.debate.title', 'mg.debate.facts', 'mg.debate.charm', 'mg.debate.pressure']).every((k) => SR.text.has(k)), 'its text keys exist');
+  T.eq(Object.keys(SR.tuning.duel.debate.options).filter((id) => !new RegExp(id, 'i').test(SR.text('mg.debate.' + id))), [],
+    'each option label carries B-30\'s name (Facts, Charm, Pressure: the words of the counter table, GDD §6.5)');
   T.eq(sk.params(s, {}).situations.length, SR.tuning.duel.debate.beats, 'without run params the questions follow B-30 (tuning.duel.debate.beats)');
   const oldBeats = SR.tuning.duel.debate.beats;
   SR.tuning.duel.debate.beats = 4;
@@ -373,6 +375,8 @@ T.section('greetings and text');
   ['vm.board.nominated', 'vm.board.impeached', 'vm.board.coup', 'vm.doodle.concede', 'vm.doodle.gloat', 'vm.crayon.concede', 'vm.crayon.gloat',
     'sub.uofs.transcript', 'sub.cityhall.campaign'].forEach((k) => named.push(k));
   T.eq(named.filter((k) => !SR.text.has(k)), [], 'every label, confirm and voicemail key resolves');
+  const adCount = (rival) => { let n = 0; while (SR.text.has('sub.cityhall.campaign.ad.' + rival + '.' + (n + 1))) n++; return n; };
+  T.ok(adCount('doodle') >= 3 && adCount('crayon') >= 3, 'each rival has a pool of attack ads (GDD §6.2): ' + adCount('doodle') + ' and ' + adCount('crayon'));
   const trainLabels = Object.keys(SR.reg.action).filter((id) => SR.reg.action[id].building === 'uofs' && SR.reg.action[id].group === 'train').map((id) => SR.text(SR.reg.action[id].label));
   T.eq(trainLabels.filter((l) => l.length > 28 || !/^(Study|Take|Work|Attend) /.test(l)), [], 'U of S training labels are verb first and at most 28 characters (UI §10)', trainLabels);
   const vars = { path: 'president', days: 14, day: 20, poll: 51.2 };

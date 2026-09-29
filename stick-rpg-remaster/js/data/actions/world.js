@@ -8,8 +8,10 @@
 // the time wall (timeRule 'free'); none is ever a card row. The damage runs W1-R's `hurt` effect
 // through SR.rules.effects.run, so Hard Landing and the HP-0 cause apply as for any hurt.
 // W2-City adds world.city (silent and free: stepping into the city runs the nomination check,
-// GDD §4.17, CONTRACT §8.10) and world.cab { door } (P1, flag `phone`: $15 and 30 min to any door,
-// GDD §4.18; at 24:00 only home, and the ride then takes no minutes: the day is already over).
+// GDD §4.17, CONTRACT §8.10), world.retire (silent and free: Retire from the pause menu of an
+// Unlimited run, GDD §5; W2-Front request 2) and world.cab { door } (P1, flag `phone`: $15 and
+// 30 min to any door, GDD §4.18; at 24:00 only home, and the ride then takes no minutes: the day
+// is already over).
 // Pure data and named functions: no DOM, no platform RNG.
 (function () {
   'use strict';
@@ -56,7 +58,8 @@
     if (!row) return { ok: false, reason: 'reason.unavailable', vars: {} };
     row.towed = true;
     if (s.player.driving === car) s.player.driving = null;
-    return { toasts: [{ key: 'toast.world.carFished', vars: {}, kind: 'warning' }] };
+    // The toast names the tow the night will charge (B-15 carTow, a forced charge at night step 10).
+    return { toasts: [{ key: 'toast.world.carFished', vars: { money: SR.text.money(SR.tuning.world.carTow.cash) }, kind: 'warning' }] };
   });
 
   SR.def.fn('world.enter', function (s, params) {
@@ -112,6 +115,13 @@
   SR.def.action('world.city', {
     building: 'world', group: 'special', order: 60, label: 'act.world.city', p: 0, timeRule: 'free', silent: true,
     effects: [['fn', 'election.check']],
+  });
+  // Retire (GDD §5: an Unlimited or Keep-playing run ends from the pause menu with its results):
+  // through SR.act the Result carries `over` and the pipeline emits game:over { reason: 'retire' }
+  // (docs/requests/W2-Front.md 2; W2-RulesE's named fn refuses a timed game).
+  SR.def.action('world.retire', {
+    building: 'world', group: 'special', order: 99, label: 'act.world.retire', p: 0, timeRule: 'free', silent: true,
+    effects: [['fn', 'endgame.retire']],
   });
   // A cab ride to a door (the city places you there on success: SR.world.cab).
   SR.def.action('world.cab', {

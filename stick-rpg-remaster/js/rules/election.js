@@ -254,8 +254,13 @@
     return res;
   }
 
+  /** @returns {number} v as a whole number within lo..hi (NaN and junk count as lo). */
+  function count(v, lo, hi) { v = Math.floor(Number(v)); return v >= lo ? Math.min(v, hi) : lo; }
+
   /**
-   * The debate's result (B-17): +3 per won question, -2 per lost one; the debate is done.
+   * The debate's result (B-17): +3 per won question, -2 per lost one; the debate is done. The
+   * counts are bounded by the questions asked (3): at most that many wins, and losses at most the
+   * questions left, never negative (a result that names only its wins counts the beats it has).
    * @param {object|boolean[]} r the Duel result ({ beats, wins, losses }) or its beats
    * @returns {object} a partial Result
    */
@@ -263,8 +268,9 @@
     var c = canDebate(s);
     if (!c.ok) return refuse(c);
     var D = T().debate, beats = Array.isArray(r) ? r : r && Array.isArray(r.beats) ? r.beats : [];
-    var wins = r && !Array.isArray(r) && typeof r.wins === 'number' ? r.wins : beats.filter(Boolean).length;
-    var losses = r && !Array.isArray(r) && typeof r.losses === 'number' ? r.losses : beats.length - wins;
+    var won = beats.filter(Boolean).length;
+    var wins = count(r && !Array.isArray(r) && typeof r.wins === 'number' ? r.wins : won, 0, D.questions);
+    var losses = count(r && !Array.isArray(r) && typeof r.losses === 'number' ? r.losses : beats.length - won, 0, D.questions - wins);
     var el = s.election, from = el.poll;
     el.poll = clampPoll(el.poll + D.win * wins + D.lose * losses);
     el.debateDone = true;

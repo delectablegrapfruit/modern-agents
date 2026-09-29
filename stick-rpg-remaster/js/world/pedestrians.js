@@ -29,8 +29,10 @@
   var JOG_X = 1.8;             // joggers run
   var PLAYER_PUSH = 10;        // u of room a walker gives the player on foot
   var HOP_SEC = 0.6, BARK_SEC = 1.5;
-  var REACT_R = 120, TURN_R = 80, WAVE_SEC = 1.2, FLEE_X = 2;   // P1 reactions (cityReacts)
-  var SCURRY_P = 0.2;          // GDD §3.11: at karma ≤ -50 one walker in five scurries (rolled once per encounter)
+  var REACT_R = 120, WAVE_SEC = 1.2, FLEE_X = 2;   // P1 reactions (cityReacts)
+  // GDD §3.11's numbers until tuning.crowd has them (docs/requests/W2-City.md 6): idle people within
+  // 80 u turn toward the player; at karma ≤ -50 one walker in five scurries (rolled once per encounter).
+  var TURN_R = 80, SCURRY_P = 0.2;
   var BARK_R = 200;            // P1: a bark comes from someone this close
   var FAMOUS_P = 0.4;          // P1: how often a walker who recognises an Executive (or better) says so
   var BUMP_SEC = 2;            // P1: a walker the player walked into barks "bumped" lines this long after
@@ -55,7 +57,10 @@
   function rng() { return SR.rng.world; }
 
   var PD = {
-    /** The live walkers (the renderer's list): { id, x, y, px, py, facing, state, look, n, visible, bark, hopT, ... }. */
+    /**
+     * The live walkers (the renderer's list), with ARCHITECTURE §8.2's fields: { id, x, y, px, py,
+     * node, next, speed, archetype, look, facing, state, visible, bark, hopT, zebra, n, ... }.
+     */
     list: [],
     /** The city scene switches the simulation on while it runs. */
     live: false,
@@ -206,7 +211,7 @@
     var g = G().graph, n = g.nodes[node], m = clockMin(), a = pickArch(m, node), sp = T().speed;
     var p = free.pop() || {};
     p.id = 'ped' + nextId; p.n = nextId; nextId++;
-    p.arch = a.id; p.busker = !!a.busker;
+    p.archetype = a.id; p.busker = !!a.busker;
     p.look = lookOf(a, rng().int(0, HEADS.length - 1), rng().int(-1, a.alt.length - 1), rng().int(0, COLS.length - 1), hats());
     p.x = p.px = n.x; p.y = p.py = n.y;
     p.node = node; p.from = -1; p.next = node;
@@ -346,7 +351,7 @@
     if (k >= th && !p.waved) { p.waved = true; p.state = 'wave'; p.t2 = WAVE_SEC; faceTo(p, P.x, P.y); PD.stats.waved++; }
     else if (k <= -th && p.mode === 'walk') {
       // One roll per encounter (until the walker is out of range again): one in five scurries.
-      if (!p.shy) { p.shy = true; p.flee = rng().float() < SCURRY_P; }
+      if (!p.shy) { p.shy = true; p.flee = rng().float() < (typeof T().scurry === 'number' ? T().scurry : SCURRY_P); }
       if (p.flee) p.state = 'flee';
       // A walker on a zebra finishes crossing (turning back there would leave the crosswalk).
       if (p.zebra) return;
@@ -357,7 +362,10 @@
         if (e > bd && !meta.zebra[p.node + ':' + adj[i]]) { bd = e; best = adj[i]; }
       }
       p.next = best;
-    } else if (p.mode === 'pause' && d2 < TURN_R * TURN_R) faceTo(p, P.x, P.y);
+    } else if (p.mode === 'pause') {
+      var tr = typeof T().turnRange === 'number' ? T().turnRange : TURN_R;
+      if (d2 < tr * tr) faceTo(p, P.x, P.y);
+    }
   }
 
   /** P1 barks (GDD §3.11): one line, at most one every 4 s, from someone near the player, by context. */
@@ -394,7 +402,7 @@
     else if (rainy()) key = 'bark.ped.rain.' + r;
     else if (m < 600) key = 'bark.ped.morning.' + r;
     else if (m >= 1200 || m < 300) key = 'bark.ped.night.' + r;
-    else key = 'bark.ped.' + p.arch + '.' + r;
+    else key = 'bark.ped.' + p.archetype + '.' + r;
     return SR.text && SR.text.has && SR.text.has(key) ? key : null;
   }
 
@@ -413,7 +421,7 @@
     var s = SR.state, P = W().player, F = W().fall;
     var player = s && P && !P.car && !(F && F.active && F.active()) ? P : null;
     var reacts = !!(SR.features && SR.features.cityReacts);
-    var sep = T().separation, i, j, p, q;
+    var sep = T().separation, pr = (W().cfg || W().readCfg()).playerRadius, i, j, p, q;
     for (i = 0; i < PD.list.length; i++) {
       p = PD.list[i];
       p.px = p.x; p.py = p.y;
@@ -434,7 +442,7 @@
         sidestep(q, ux, uy, push);
       }
       if (player) {
-        var r = (W().cfg ? W().cfg.playerRadius : 14) + PLAYER_PUSH, ex = p.x - player.x, ey = p.y - player.y;
+        var r = pr + PLAYER_PUSH, ex = p.x - player.x, ey = p.y - player.y;
         if (Math.abs(ex) < r && Math.abs(ey) < r) {
           var e = Math.sqrt(ex * ex + ey * ey);
           if (e < r) {

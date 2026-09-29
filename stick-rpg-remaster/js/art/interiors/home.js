@@ -5,7 +5,8 @@
 // piece you own and use appears in a fixed spot of the home you live in, at its tier (the pod,
 // the SkyDish, the Workstation, the Grand Library, the Home Gym, the Cocktail Lounge; the P0
 // satellite beside the TV); the answering machine blinks while messages are unread. A home you own
-// but live elsewhere stands empty; one for sale shows a For Sale sign with its price.
+// but live elsewhere stands empty; one for sale shows a For Sale sign with a photo of the building
+// and its price.
 //
 // The building scene draws SR.art.interior('home', { homeId, mode }) (D60). The kit draws one def
 // per interior id, so 'home' is a frame: its custom static fn paints the tier's own room (a def per
@@ -63,7 +64,7 @@
     table: { x: 300, y: 545 },
     freezer: { x: 600, y: 590 },
     minibar: { x: 400, y: 600 }, lounge: { x: 360, y: 610 },
-    pc: { x: 560, y: 700 },
+    pc: { x: 540, y: 700 },          // the Workstation (220 u) still ends at x 760 (ART_AUDIO §9)
     treadmill: { x: 330, y: 712 },
     aquarium: { x: 20, y: 712 },
   };
@@ -145,19 +146,57 @@
   };
 
   // ---- the For Sale sign (a home you do not own) ----------------------------------------------------
+  // UI §5.6: the For Sale card shows the listing with an exterior thumbnail. The card is W1-D's, so
+  // the listing's facts are the greeting (greet.home) and the sign in the room carries the photo of
+  // the building, the price and the realty's name. It stands below every tier's windows (the live
+  // sky is repainted over the glass each frame) and inside the scene (x ≤ 760, ART_AUDIO §9).
+  var SIGN = { x: 470, y: 316, w: 220, h: 196, post: 600 };   // clear of the penthouse's lamp (x 700)
+  var PHOTO = { w: 132, h: 74, pad: 4, dpr: 2 };
+  var photos = {};                  // door building id → { img, w, h } | null (baked once a session)
+
+  /** @returns {object|null} the worldmap building behind a home tier's door (the photo's model). */
+  function doorBuilding(tier) {
+    var door = doorOf(tier), map = SR.reg.worldmap && SR.reg.worldmap.main, list = map && map.buildings;
+    if (!door || !list) return null;
+    if (Array.isArray(list)) { for (var i = 0; i < list.length; i++) if (list[i].id === door) return list[i]; return null; }
+    return list[door] || null;
+  }
+
+  /** @returns {object|null} the door's building baked by SR.art.exterior (W1-G) at the photo's size, once. */
+  function photoOf(tier) {
+    var def = doorBuilding(tier), E = SR.art.exterior;
+    if (!def || !E || typeof E.build !== 'function' || typeof E.geom !== 'function') return null;
+    if (photos[def.id] === undefined) {
+      try {
+        var b = E.geom(def).bounds, bw = b[2] - b[0], bh = b[3] - b[1];
+        var zoom = Math.min((PHOTO.w - 2 * PHOTO.pad) / bw, (PHOTO.h - 2 * PHOTO.pad) / bh);
+        photos[def.id] = { img: E.build(def, zoom, PHOTO.dpr).albedo, w: bw * zoom, h: bh * zoom };
+      } catch (e) {
+        SR.util.warnOnce('home.photo.' + tier, 'SR.art.interior home: the For Sale photo of ' + tier + ' failed: ' + e.message);
+        photos[def.id] = null;
+      }
+    }
+    return photos[def.id];
+  }
+
   function forSaleSign(tier) {
     return function (ctx, kit, state) {
       if (owns(state, tier)) return;
-      var x = 520, y = 330, w = 200, h = 118;
-      kit.rect(ctx, x + w / 2 - 7, y + h - 4, 14, 150, kit.color('kit.woodDark'));
+      var x = SIGN.x, y = SIGN.y, w = SIGN.w, h = SIGN.h;
+      kit.rect(ctx, x + w / 2 - 7, y + h - 4, 14, SIGN.post - y - h + 4, kit.color('kit.woodDark'));
       kit.rect(ctx, x, y, w, h, kit.color('kit.paper'));
       kit.rect(ctx, x, y, w, 34, kit.color('kit.red'), kit.DL);
       var price = SR.tuning && SR.tuning.homes && SR.tuning.homes[tier] ? SR.tuning.homes[tier].price : 0;
       var say = function (key, vars) { return SR.text && SR.text.has(key) ? SR.text(key, vars) : ''; };
       SR.art.draw.text(ctx, say('card.home.forSaleSign'), x + w / 2, y + 18, { size: 20, weight: 900, role: 'display', align: 'center', color: 'kit.paper', maxWidth: w - 16 });
-      SR.art.draw.text(ctx, say('card.home.signPrice', { price: SR.text ? SR.text.money(price) : String(price) }), x + w / 2, y + 62,
-        { size: 26, weight: 900, role: 'display', align: 'center', color: 'ink', maxWidth: w - 16 });
-      SR.art.draw.text(ctx, say('card.home.signRealty'), x + w / 2, y + 96, { size: 14, weight: 700, align: 'center', color: 'ink', maxWidth: w - 16 });
+      // the photo: the building from the street, on the sky of the realty's brochure
+      var px = x + (w - PHOTO.w) / 2, py = y + 44, ph = photoOf(tier);
+      kit.rect(ctx, px, py, PHOTO.w, PHOTO.h, kit.color('ui.primary-100'), 0);
+      if (ph) ctx.drawImage(ph.img, px + (PHOTO.w - ph.w) / 2, py + (PHOTO.h - ph.h) / 2, ph.w, ph.h);
+      kit.rect(ctx, px, py, PHOTO.w, PHOTO.h, null, kit.DL);
+      SR.art.draw.text(ctx, say('card.home.signPrice', { price: SR.text ? SR.text.money(price) : String(price) }), x + w / 2, py + PHOTO.h + 24,
+        { size: 24, weight: 900, role: 'display', align: 'center', color: 'ink', maxWidth: w - 16 });
+      SR.art.draw.text(ctx, say('card.home.signRealty'), x + w / 2, y + h - 18, { size: 14, weight: 700, align: 'center', color: 'ink', maxWidth: w - 16 });
     };
   }
 
@@ -187,37 +226,53 @@
     });
   });
 
+  // The penthouse's view: the city's towers across its two windows. The geometry is fixed, so it is
+  // worked out once here (the anim fn runs every frame and allocates nothing).
+  var PENT_WINDOWS = ROOMS.pent.props.filter(function (p) { return p.type === 'window'; });
+  var SKY_TOWERS = [], SKY_LIGHTS = [], SKY_MULLIONS = [];
+  PENT_WINDOWS.forEach(function (wr, n) {
+    for (var i = 0; i < 7; i++) {
+      var bw = 30 + ((i * 37 + n * 11) % 25), bh = 60 + ((i * 53 + n * 29) % 90);
+      var bx = wr.x + 8 + i * (wr.w - 16) / 7, by = wr.y + wr.h - bh;
+      SKY_TOWERS.push(bx, by, bw, bh);
+      for (var r = 0; r < 4; r++) if ((i + r + n) % 3) SKY_LIGHTS.push(bx + 6 + (r % 2) * 12, by + 10 + r * 14);
+    }
+    // the kit's panes (3 across, 2 down for a window this size), drawn again over the towers
+    SKY_MULLIONS.push([wr.x + wr.w / 3, wr.y, wr.x + wr.w / 3, wr.y + wr.h], [wr.x + wr.w * 2 / 3, wr.y, wr.x + wr.w * 2 / 3, wr.y + wr.h],
+      [wr.x, wr.y + wr.h / 2, wr.x + wr.w, wr.y + wr.h / 2]);
+  });
+  var SKY_ALPHA = 0.72;             // the towers read as solid shapes in the haze; the sky still tints them
+  var PENT_FRONT = null;            // the penthouse's floor props (the ones that can stand in front of the glass)
+
   /** The penthouse's view: the city's towers across the windows (drawn over the live sky each frame). */
   function skyline(ctx, kit, t, state) {
     if (tierOf(state, kit.params) !== 'pent') return;
-    var ink = SR.art.draw.alpha(kit.color('ui.ink-700'), 0.5);
-    var lit = kit.color('kit.bulb');
+    var PROPS = SR.art.interior.kit.PROPS;
+    if (!PENT_FRONT) PENT_FRONT = TIER_DEFS.pent.props.filter(function (p) { return PROPS[p.type] && !PROPS[p.type].wall && p.type !== 'rug'; });
     var min = state && state.clock ? state.clock.min : NOON;
     var night = min < LIT_UNTIL || min >= LIT_FROM;
-    // Tall pieces standing in front of the glass (the Grand Library, the lamp) stay in front.
-    var front = TIER_DEFS.pent.props.filter(function (p) {
-      var d = kit.def && SR.art.interior.kit.PROPS[p.type];
-      return d && !d.wall && p.type !== 'rug' && (!p.when || p.when(state, kit.params));
-    });
-    [[30, 40, 330, 250], [390, 40, 330, 250]].forEach(function (wr, n) {
-      ctx.save();
-      ctx.beginPath(); ctx.rect(wr[0], wr[1], wr[2], wr[3]);
-      front.forEach(function (p) {
-        var d = SR.art.interior.kit.PROPS[p.type], w = p.w || d.w, hh = (p.h || d.h) + 40;
-        ctx.rect(p.x + w, p.y - hh, -w, hh);   // wound the other way: evenodd cuts it out
-      });
-      ctx.clip('evenodd');
-      for (var i = 0; i < 7; i++) {
-        var bw = 30 + ((i * 37 + n * 11) % 25), bh = 60 + ((i * 53 + n * 29) % 90);
-        var bx = wr[0] + 8 + i * (wr[2] - 16) / 7, by = wr[1] + wr[3] - bh;
-        ctx.fillStyle = ink; ctx.fillRect(bx, by, bw, bh);
-        if (night) {
-          ctx.fillStyle = lit;
-          for (var r = 0; r < 4; r++) if ((i + r + n) % 3) ctx.fillRect(bx + 6 + (r % 2) * 12, by + 10 + r * 14, 5, 6);
-        }
-      }
-      ctx.restore();
-    });
+    var i, j;
+    ctx.save();
+    // Clip to the glass, less whatever stands in front of it (the lamp, the Grand Library): each
+    // cut-out is wound the other way, so the even-odd rule leaves it out.
+    ctx.beginPath();
+    for (i = 0; i < PENT_WINDOWS.length; i++) ctx.rect(PENT_WINDOWS[i].x, PENT_WINDOWS[i].y, PENT_WINDOWS[i].w, PENT_WINDOWS[i].h);
+    for (i = 0; i < PENT_FRONT.length; i++) {
+      var p = PENT_FRONT[i];
+      if (p.when && !p.when(state, kit.params)) continue;
+      var d = PROPS[p.type], w = p.w || d.w, hh = (p.h || d.h) + 40;
+      ctx.rect(p.x + w, p.y - hh, -w, hh);
+    }
+    ctx.clip('evenodd');
+    ctx.fillStyle = SR.art.draw.alpha(kit.color('ui.ink-700'), SKY_ALPHA);
+    for (i = 0; i < SKY_TOWERS.length; i += 4) ctx.fillRect(SKY_TOWERS[i], SKY_TOWERS[i + 1], SKY_TOWERS[i + 2], SKY_TOWERS[i + 3]);
+    if (night) {
+      ctx.fillStyle = kit.color('kit.bulb');
+      for (i = 0; i < SKY_LIGHTS.length; i += 2) ctx.fillRect(SKY_LIGHTS[i], SKY_LIGHTS[i + 1], 5, 6);
+    }
+    var trim = kit.color('int.pent.trim');
+    for (j = 0; j < SKY_MULLIONS.length; j++) kit.line(ctx, SKY_MULLIONS[j], 6, trim);
+    ctx.restore();
   }
 
   SR.def.interior('home', {

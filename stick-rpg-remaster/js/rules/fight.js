@@ -390,8 +390,11 @@
     var rng = rng0(ctx.rng), F = T(), res = partial(), st = s.stats;
     var kind = f.kind || 'bar', outcome = f.outcome || 'run';
     var n = typeof f.n === 'number' && f.n > 0 ? f.n : kind === 'goons' ? F.goons.n : Mth.min(F.ladder.n, (s.fight.won || 0) + 1);
-    var hpLeft = typeof f.hpLeft === 'number' ? f.hpLeft : f.me && typeof f.me.hp === 'number' ? f.me.hp : st.hp;
+    var hpLeft = typeof f.hpLeft === 'number' && isFinite(f.hpLeft) ? f.hpLeft : f.me && typeof f.me.hp === 'number' ? f.me.hp : st.hp;
     hpLeft = SR.util.clamp(Mth.floor(hpLeft), 0, st.hp);
+    // Only a loss reaches 0 HP (a fight ends on the player's winning blow, and running needs a turn
+    // of your own): a win or a run that echoes 0 leaves you at 1, never downed with no cause.
+    if (outcome !== 'lose' && !(hpLeft >= 1)) hpLeft = Mth.min(1, st.hp);
     if (outcome === 'lose') {
       var diff = s.mode.difficulty;
       var L = F.lose[diff] || F.lose.standard;

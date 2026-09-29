@@ -159,6 +159,19 @@ T.section('hands a day, the round applier and the pit boss (B-14b)');
   T.eq([dbl.events[0].payload.bet, nat.events[0].payload.bet, odd.events[0].payload.bet], [20, 10, 10],
     'the stake of an engine-played hand: a double or a split stakes its `wagered` (≤ 2 × the bet); a natural stakes the bet');
   T.eq(K.act(SR, s, 'bjHand', { bet: 501, net: 0 }).reason, 'reason.badBet', 'to $500');
+  // Review (W2-RulesC): an echoed net is held to what one round on the bet can do under B-14b (a
+  // double or a split: 2 × the bet; no double after a split), so a malformed result pays no more.
+  const big = K.state(SR, { money: { cash: 1000 } });
+  const huge = K.act(SR, big, 'bjHand', { bet: 10, net: 100000, trueCount: 0 });
+  const deep = K.act(SR, big, 'bjHand', { bet: 10, net: -5000, trueCount: 0 });
+  T.eq([huge.ok, huge.events[0].payload.net, deep.events[0].payload.net, deep.events[0].payload.bet, big.money.cash], [true, 20, -20, 20, 1000],
+    'an echoed net is clamped to ±2 × the bet (the stake too)');
+  const forged = BJ.deal(BJ.shoe(SR.rng.create(5)), 10, SR.rng.create(5));
+  forged.hands = forged.hands.concat(forged.hands, forged.hands);
+  const fr = K.act(SR, big, 'bjHand', { round: forged, trueCount: 0 });
+  const empty = K.act(SR, big, 'bjHand', { round: { bet: 10, hands: [] }, trueCount: 0 });
+  T.eq([fr.reason, empty.reason, big.money.cash], ['reason.badBet', 'reason.badBet', 1000],
+    'a played round staking more than the rules allow (three hands of a split-once table), or none, is refused');
 
   const sus = (seq, extra) => {
     const x = K.state(SR, Object.assign({ stats: { cha: 100 } }, extra || {}));
@@ -302,6 +315,14 @@ T.section('the scratch card (B-14e): EV $3.00 exactly');
   CA.scratchRound(lost, { rng: K.scripted(SR, { int: [1] }) });
   const next = CA.scratchRound(lost, { rng: K.scripted(SR, { int: [9999] }) });
   T.eq([lost.money.cash, next.events.length, lost.casino.card.pay], [10000, 1, 0], 'an unpaid card is paid at the next start');
+  // Review (W2-RulesC): the row's preview never shows that unrevealed prize as a chip for the next
+  // card (the dry run skips paying it); the run still pays it.
+  const stale = K.state(SR, { items: { scratch: 2 }, money: { cash: 0 } });
+  stale.casino.card = { roll: 1, pay: 10000, tier: 3, day: 1 };
+  const pv = SR.rules.act.preview(stale, 'testc.scratch', {}, K.ctx(SR, 1));
+  T.eq([pv.ok, pv.gains.filter((g) => g.kind === 'cash'), stale.casino.card.pay, stale.money.cash], [true, [], 10000, 0],
+    'the Scratch row\'s preview shows no cash from a card left unrevealed');
+  T.eq([K.act(SR, stale, 'scratch', {}, 2).ok, stale.money.cash], [true, 10000], 'the row itself pays it before drawing the next card');
   rs();
 }
 

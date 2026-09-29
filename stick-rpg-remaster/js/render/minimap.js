@@ -31,10 +31,20 @@
   };
   var base = null;             // { canvas, scale, key }
   var last = -1;
+  var NO_BOUNDS = [0, 0, 1, 1];
+
+  /** @returns {number[]} the island outline's box [x0, y0, x1, y1] (before the world is built). */
+  function outlineBounds() {
+    var map = SR.reg.worldmap && SR.reg.worldmap.main, o = map && map.outline;
+    if (!o || !o.length) return NO_BOUNDS;
+    var b = [Infinity, Infinity, -Infinity, -Infinity];
+    o.forEach(function (p) { b[0] = Math.min(b[0], p[0]); b[1] = Math.min(b[1], p[1]); b[2] = Math.max(b[2], p[0]); b[3] = Math.max(b[3], p[1]); });
+    return b;
+  }
 
   /** @returns {{s: number, ox: number, oy: number}} world → minimap px: px = (x - ox) * s. */
   function fit() {
-    var g = SR.world && SR.world.geometry, b = g && g.bounds ? g.bounds : [480, 200, 4396, 4440];
+    var g = SR.world && SR.world.geometry, b = g && g.bounds ? g.bounds : outlineBounds();
     var w = b[2] - b[0], h = b[3] - b[1], s = (SIZE - 2 * PAD) / Math.max(w, h);
     return { s: s, ox: b[0] - (SIZE / s - w) / 2, oy: b[1] - (SIZE / s - h) / 2 };
   }

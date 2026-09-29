@@ -6,16 +6,18 @@
 //   nominated              the call, the deadline, anything still missing, and the three war chests
 //                          (each with its starting poll) → cityhall.accept { chest } after a confirm;
 //   campaign               the poll Meter with its 50 % line (a row's poll change ghosts on it), day
-//                          n / 7, the war chest, the rival's nightly gain, the debate on day 4, the
-//                          action rows with their poll change ("used 1 / 2 today", the halved repeat)
-//                          and the campaign diary;
+//                          n / 7, the war chest, the rival's nightly gain and attack ad (GDD §6.2),
+//                          the debate on day 4, the action rows with their poll change ("used 1 / 2
+//                          today", the halved repeat) and the campaign diary;
 //   office                 the office, the salary and the karma-flip watch.
 // The sub-screen never mutates state: rows preview through ctx.preview and commit through ctx.act
 // (the host plays the feedback and runs the debate's minigame). A row's poll change is read from
 // SR.rules.election.campaign run on a copy of the state with fixed draws (success and failure), so
-// it follows the rules exactly (halving, the clamp, CHA). The diary keeps this session's poll news
-// (the election toasts of each action and the election lines of each morning report); it is not
-// saved, and a loaded or new game starts it empty. Music (ART_AUDIO §13.4 `hail_to_the_stick`:
+// it follows the rules exactly (halving, the clamp, CHA). Rows ask first as card rows do: their
+// `confirm`, or a spend at or above the `game.confirmSpendOver` setting. The diary keeps this
+// session's poll news (the election toasts of each action and the election lines of each morning
+// report), dated by campaign day like the header; it is not saved, and a loaded or new game
+// starts it empty. Music (ART_AUDIO §13.4 `hail_to_the_stick`:
 // "campaign, City Hall in office"; the Dictator asks for the `dictator` variant): the screen plays
 // the march while a campaign runs or you hold office, and re-asserts it after every refresh (a
 // minigame with a song of its own hands the building's song back when it closes; the debate has
@@ -33,7 +35,7 @@
   var MUSIC_FADE_S = 0.6;      // the building's cross-fade (ART_AUDIO §13.4)
 
   var M = null;                // the mounted screen: { root, ctx, rows, meter, music }
-  var diary = [];              // this session's campaign news: { day, key, vars }, newest last
+  var diary = [];              // this session's campaign news: { day /* campaign day or null */, key, vars }, newest last
 
   function D() { return SR.ui.dom; }
   function h() { return D().h.apply(null, arguments); }
@@ -42,12 +44,27 @@
   function money(n) { return SR.text.money(n); }
   /** A poll figure: one decimal (the rules round every change to 0.1), none when it is whole. */
   function pollText(p) { var r = Math.round(p * 10) / 10; return SR.text.num(r, r % 1 ? 1 : 0); }
+  /** A poll figure as a percentage (SR.text.pct: "40.8 %", "66 %"). */
+  function pollPct(p) { var r = Math.round(p * 10) / 10; return SR.text.pct(r / 100, r % 1 ? 1 : 0); }
   function signed(n) { return (n < 0 ? '-' : '+') + pollText(Math.abs(n)); }
   function officeName(path) { return t(path === 'dictator' ? 'sub.cityhall.campaign.dictator' : 'sub.cityhall.campaign.president'); }
 
   // ---- the diary ---------------------------------------------------------------------------------
-  function note(day, key, vars) {
-    diary.push({ day: day, key: key, vars: vars || {} });
+  /**
+   * The campaign day (1..7, the header's "Day n of 7") of a calendar day: the campaign counter moves
+   * with every night, as the calendar does, so it is the running counter less the days since.
+   * After election night the counter reads 8, so the night that ended day 7 maps to 7.
+   * @returns {(number|null)} null outside a campaign
+   */
+  function campaignDayOf(s, day) {
+    var cd = s && s.election ? s.election.campaignDay || 0 : 0;
+    var n = cd - (s.clock.day - day);
+    return cd > 0 && n >= 1 ? n : null;
+  }
+
+  /** A diary line dated by its campaign day (a calendar day would read "Day 12" under "Day 1 of 7"). */
+  function note(s, day, key, vars) {
+    diary.push({ day: campaignDayOf(s, day), key: key, vars: vars || {} });
     if (diary.length > DIARY_MAX) diary.splice(0, diary.length - DIARY_MAX);
   }
 
@@ -58,13 +75,20 @@
       (res.toasts || []).forEach(function (x) {
         if (!x || typeof x.key !== 'string' || x.key.indexOf('toast.election.') !== 0) return;
         if (x.key === 'toast.election.accepted') diary.length = 0;   // a new campaign starts a new diary
-        note(s.clock.day, x.key, x.vars);
+        note(s, s.clock.day, x.key, x.vars);
       });
     });
     SR.events.on('day:started', function (p) {
-      var rep = p && p.report;
-      if (!rep || !Array.isArray(rep.lines)) return;
-      rep.lines.forEach(function (l) { if (l && l.section === 'election') note(rep.endedDay || rep.day, l.key, l.vars); });
+      var rep = p && p.report, s = SR.state;
+      if (!rep || !Array.isArray(rep.lines) || !s) return;
+      // The night's own lines (report.election.*: the rival, the no-show, the result) belong to the
+      // day that ended; the morning's (the Board's call, a campaign event) to the new one.
+      var today = rep.day || s.clock.day;
+      rep.lines.forEach(function (l) {
+        if (!l || l.section !== 'election') return;
+        var night = typeof l.key === 'string' && l.key.indexOf('report.') === 0;
+        note(s, night ? rep.endedDay || today - 1 : today, l.key, l.vars);
+      });
     });
     // A loaded save or a new game (SR.save.load emits save:loaded for both) is another timeline:
     // the diary of the game before it must not show.
@@ -154,7 +178,10 @@
 
   function ghost(pv) { if (SR.ui.hud && typeof SR.ui.hud.ghost === 'function') SR.ui.hud.ghost(pv || null); }
 
-  /** Runs a row: its confirm first (the card's rule for rows with `confirm`), then ctx.act. */
+  /**
+   * Runs a row the way the card runs one (UI §2.3 Confirm): its `confirm` first, else a confirm for
+   * a spend at or above the `game.confirmSpendOver` setting (a rally, a TV ad), then ctx.act.
+   */
   function commit(id, params, vars) {
     if (!M) return;
     var ctx = M.ctx, def = SR.reg.action[id] || {};
@@ -166,8 +193,15 @@
       m.acting = true;
       try { ctx.act(id, params || {}); } finally { m.acting = false; }
     };
-    if (def.confirm && SR.ui.confirm) {
-      SR.ui.confirm({ id: 'confirm-campaign', title: def.label, text: def.confirm, vars: vars || {} }).then(function (yes) { if (yes) go(); });
+    var ask = def.confirm ? { text: def.confirm, vars: vars || {} } : null;
+    if (!ask) {
+      var over = Number(D().setting('game.confirmSpendOver')) || 0;
+      var pv = over > 0 ? ctx.preview(id, params || {}) : null;
+      var cash = pv && pv.cost ? pv.cost.cash || 0 : 0;
+      if (over > 0 && cash >= over) ask = { text: 'ui.confirmSpend', vars: { money: money(cash) } };
+    }
+    if (ask && SR.ui.confirm) {
+      SR.ui.confirm({ id: 'confirm-campaign', title: def.label, text: ask.text, vars: ask.vars }).then(function (yes) { if (yes) go(); });
     } else go();
   }
 
@@ -189,6 +223,20 @@
     return el;
   }
 
+  /**
+   * Tonight's attack ad (GDD §6.2: the rivals' attack ads): one of the rival's lines
+   * (sub.cityhall.campaign.ad.<rival>.1..n), picked by a hash of the seed, the run and the campaign
+   * day, so it holds all day, changes each day and never draws on the rules stream.
+   * @returns {(string|null)} a text key, or null when the rival has none
+   */
+  function attackAd(s, rival) {
+    var base = 'sub.cityhall.campaign.ad.' + rival + '.', n = 0;
+    while (SR.text.has(base + (n + 1))) n++;
+    if (!n) return null;
+    var el = s.election;
+    return base + (1 + SR.util.hash(s.seed, 'attackAd', el.runs || 0, el.campaignDay) % n);
+  }
+
   // ---- the screens -------------------------------------------------------------------------------
   function renderOpen(root, s) {
     var el = s.election;
@@ -207,7 +255,8 @@
   function renderNominated(root, s) {
     var el = s.election, T = E();
     root.appendChild(title('sub.cityhall.campaign.nominatedTitle', { office: officeName(el.path) }));
-    root.appendChild(para('sub.cityhall.campaign.nominatedLine', { day: el.nominatedDay, last: el.nominatedDay + T.acceptWithin - 1 }, 'campaign-deadline'));
+    // The last day is the rules' (acceptBy: the night that ends it lapses the offer).
+    root.appendChild(para('sub.cityhall.campaign.nominatedLine', { day: el.nominatedDay, last: SR.rules.election.acceptBy(s) }, 'campaign-deadline'));
     var q = SR.rules.election.qualifies(s);
     if (!q.ok) {
       root.appendChild(para('sub.cityhall.campaign.stillMissing', null, 'campaign-missing'));
@@ -235,14 +284,15 @@
     root.appendChild(title('sub.cityhall.campaign.campaignTitle', { office: officeName(el.path) }));
     var head = h('div', { style: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 'var(--sp-2)' } },
       h('span', { class: 't-label', 'data-id': 'campaign-day' }, t('sub.cityhall.campaign.day', { day: el.campaignDay, days: T.campaignDays })),
-      h('span', { class: 't-h2 t-num', 'data-id': 'campaign-poll-value' }, pollText(el.poll) + ' %'));
+      h('span', { class: 't-h2 t-num', 'data-id': 'campaign-poll-value' }, pollPct(el.poll)));
     root.appendChild(head);
     M.meter = SR.ui.meter({ id: 'campaign-poll', kind: 'poll', value: el.poll, max: T.pollClamp[1], label: false });
     root.appendChild(M.meter);
     root.appendChild(para(el.campaignDay >= T.campaignDays ? 'sub.cityhall.campaign.tonight' : 'sub.cityhall.campaign.night',
       { days: T.campaignDays, jitter: T.win.jitter[1], need: T.win.threshold }, 'campaign-night', true));
     root.appendChild(para('sub.cityhall.campaign.chestPaid', { money: money(el.chest) }, 'campaign-chest', true));
-    root.appendChild(para('sub.cityhall.campaign.rival', { rival: t(rival === 'crayon' ? 'mg.debate.crayon' : 'mg.debate.doodle'), min: T.rivalDaily[0], max: T.rivalDaily[1] }, 'campaign-rival', true));
+    var rivalName = t(rival === 'crayon' ? 'mg.debate.crayon' : 'mg.debate.doodle');
+    root.appendChild(para('sub.cityhall.campaign.rival', { rival: rivalName, min: T.rivalDaily[0], max: T.rivalDaily[1] }, 'campaign-rival', true));
     var dd = T.debate.day, debateKey = el.campaignDay < dd ? 'sub.cityhall.campaign.debateSoon'
       : el.debateDone ? 'sub.cityhall.campaign.debateDone'
       : el.campaignDay === dd ? 'sub.cityhall.campaign.debateToday' : 'sub.cityhall.campaign.debateMissed';
@@ -258,16 +308,22 @@
       root.appendChild(actionRow('campaign-' + id, 'cityhall.' + id, {}, { pv: pv, gains: [pollChip(poll)], badges: badges, poll: poll[0] || 0 }));
     });
     var drow = actionRow('campaign-debate', 'cityhall.debate', {}, {
-      gains: [SR.ui.chip({ kind: 'info', icon: 'ballot', text: t('sub.cityhall.campaign.pollOr', { a: signed(T.debate.win), b: signed(T.debate.lose) }) })],
+      // B-17: the poll moves per question (3 of them), not once for the debate.
+      gains: [SR.ui.chip({ kind: 'info', icon: 'ballot', text: t('sub.cityhall.campaign.debateChip', { n: T.debate.questions, a: signed(T.debate.win), b: signed(T.debate.lose) }) })],
     });
     if (drow) root.appendChild(drow);
 
     root.appendChild(sub('sub.cityhall.campaign.diary'));
+    // The rival's attack ad heads the diary (news, like the diary; the top of the screen stays the
+    // poll and the facts that decide it, so the first row still shows with the Meter).
+    var ad = attackAd(s, rival);
+    if (ad) root.appendChild(para('sub.cityhall.campaign.ad', { rival: rivalName, ad: t(ad) }, 'campaign-ad', true));
     if (!diary.length) root.appendChild(para('sub.cityhall.campaign.diaryEmpty', null, 'campaign-diary', true));
     else {
       var ul = h('ul', { 'data-id': 'campaign-diary', class: 't-small', style: { margin: '0', paddingLeft: 'var(--sp-4)' } });
       diary.slice().reverse().forEach(function (d) {
-        ul.appendChild(h('li', null, t('sub.cityhall.campaign.diaryLine', { day: d.day, text: t(d.key, d.vars) })));
+        var text = t(d.key, d.vars);
+        ul.appendChild(h('li', null, d.day ? t('sub.cityhall.campaign.diaryLine', { day: d.day, text: text }) : text));
       });
       root.appendChild(ul);
     }

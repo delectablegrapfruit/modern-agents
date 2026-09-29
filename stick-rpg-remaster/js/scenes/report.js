@@ -8,8 +8,9 @@
 //               night);
 //   next        'city' (the default for a sleep or hospital night): the player steps out of the home
 //               door into the city at the new day's wake time (after a hospital night that is
-//               12:00, the 'afterHospital' spawn, which is the home door); 'pop' (the default for a
-//               jail night): the scene pops itself with 'done' and the caller carries on;
+//               12:00, at the worldmap's 'afterHospital' spawn, the home door); 'pop' (the default
+//               for a jail night): the scene pops itself with 'done' and the caller carries on; any
+//               other registered scene id: that scene (SR.scenes.go);
 //   events      false: the Report's rule events are not re-emitted (a caller that emitted them);
 //   dayStarted  false: no day:started (a caller that emits it).
 // Closing the paper finishes the night as CONTRACT §8.7 / §9.2 ask of the report scene: the
@@ -68,7 +69,9 @@
       return;
     }
     if (next === 'pop') { SR.scenes.pop('done'); return; }
-    if (s && SR.world && SR.world.ready && typeof SR.world.place === 'function') SR.world.place('homeDoor', s);
+    if (next !== 'city' && SR.reg.scene[next]) { SR.scenes.go(next); return; }
+    // GDD §4.16 / ARCHITECTURE §6.7: after a hospital night, the worldmap's afterHospital spawn.
+    if (s && SR.world && SR.world.ready && typeof SR.world.place === 'function') SR.world.place(rep.kind === 'hospital' ? 'afterHospital' : 'homeDoor', s);
     SR.scenes.go(SR.reg.scene.city ? 'city' : 'title');
   }
 
@@ -113,6 +116,8 @@
   // The card picks its greeting once, at the door (greet.home). Rows switch in place when the door's
   // mode changes (Tour → buy, Move in, Let out: js/data/buildings/home.js), so the greeting follows:
   // "For sale: ..." must not stay up over the Move in row. Uses the Card component's setGreeting.
+  // Checked on home:changed and after every action (a let changes no `home` Delta, so SR.act raises
+  // no home:changed for it); the signature keeps it from retyping when nothing it names changed.
   var greetSig = null;              // the door's mode:home:let when the card's greeting was picked
 
   /** @returns {string|null} what the home card's greeting depends on at this door, or null. */
@@ -155,6 +160,7 @@
     SR.events.on('action:done', function (p) {
       var r = p && p.result;
       if (!r || !r.ok) return;
+      regreet();
       if (r.report && r.report.kind === 'sleep') {
         var top = SR.scenes.top();
         if (!(top && top.id === 'report')) SR.scenes.push('report', { report: r.report });

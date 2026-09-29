@@ -278,6 +278,16 @@ T.section('through the action pipeline (start, resolve, Hardcore)');
     'Red\'s goons: their own lose line (not Sticky\'s bouncer), and one line per goon beaten');
   const hcl = F.finish(K.state(SR, { stats: { hp: 40 } }, { difficulty: 'hardcore' }), { kind: 'bar', n: 1, outcome: 'lose', hpLeft: 0 }, null, K.ctx(SR));
   T.eq(hcl.toasts, [], 'Hardcore: no bouncer toast on the way to FLATLINED');
+  // Review (W2-RulesC): only a loss reaches 0 HP. A win or a run echoing hpLeft 0 used to set HP 0,
+  // and the pipeline downed the player with no cause (death in Hardcore); a NaN left HP NaN.
+  const zero = (outcome, hpLeft) => {
+    const x = K.state(SR, { clock: { min: 600 }, stats: { str: 60, hp: 40 } }, { difficulty: 'hardcore' });
+    K.act(SR, x, 'barFight', {}, 4);
+    const r = K.act(SR, x, 'barFight:resolve', { outcome, hpLeft }, 5);
+    return [r.ok, x.stats.hp, r.down, x.over];
+  };
+  T.eq([zero('run', 0), zero('win', 0), zero('win', NaN)], [[true, 1, null, false], [true, 1, null, false], [true, 40, null, false]],
+    'a win or a run never leaves you at 0 HP (1 at worst); a non-number HP keeps yours');
 }
 
 T.done();

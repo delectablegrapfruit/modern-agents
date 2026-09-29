@@ -6,8 +6,9 @@
 // clamp(0.55 + karma/250, 0.2, 0.95) by Monte Carlo (±3 %) on a scripted player in a lane, a car
 // hit (-10 HP, the 1.14 s knockdown, a voicemail the next morning), zebras always stopping cars,
 // Pedestrian Supremacy, skid marks only after an emergency stop (fading over 8 s), a crash of the
-// player's car (-5 HP, both bounce), a hit at 10 HP reaching the hospital (Standard) or death
-// (Hardcore), and zero console errors.
+// player's car (-5 HP, both bounce), drivers braking for your car crossing their lane, a hit at
+// 10 HP reaching the hospital (Standard) or death (Hardcore), the cars' and walkers' ARCHITECTURE
+// §8.2 fields, no drop-in onto you or your parked car, and zero console errors.
 //   node tests/e2e/traffic.test.cjs
 'use strict';
 const path = require('path');
@@ -121,9 +122,10 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-City');
   });
   T.ok(soak.frames === 13500, '30 minutes simulated: 13,500 frames of 8 fixed steps (' + soak.ms + ' ms)');
   T.eq(soak.overlaps, 0, 'no two cars ever overlap (oriented boxes, every frame)');
-  // A queue behind a busy box at noon waits up to half a minute (cars keep the box clear and let
-  // walkers cross); a stuck car would sit for the rest of the soak.
-  T.ok(soak.maxStill < 60, 'no car is stuck: the longest standstill is ' + soak.maxStill.toFixed(1) + ' s (a junction queue)', soak.stuck);
+  // A queue behind a busy box waits a few light cycles (cars keep the box clear and let walkers
+  // cross, and a car waiting at a crosswalk's stop line keeps its turn until the box is free); a
+  // stuck car would sit for the rest of the soak.
+  T.ok(soak.maxStill < 30, 'no car is stuck: the longest standstill is ' + soak.maxStill.toFixed(1) + ' s (a junction queue)', soak.stuck);
   T.ok(soak.maxCars <= 14 && soak.maxCars >= 10, 'at most 14 cars at once (max ' + soak.maxCars + ')');
   T.ok(Object.keys(soak.drops).length === 4 && soak.badDrop === 0, 'cars drop in from the sky at all four road ends', soak.drops);
   T.ok(Object.keys(soak.tumbles).length === 4, 'and tumble off all four far ends into the clouds', soak.tumbles);
@@ -307,6 +309,30 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-City');
   T.ok(crash.crashes === 1 && crash.last === 'crash', 'driving into a traffic car is one crash (world.carCrash)', crash);
   T.eq([crash.dhp, crash.dmin], [-5, 0], 'a crash costs 5 HP and no time');
   T.ok(crash.vBefore > 100 && crash.vAfter < 0 && crash.carV === 0, 'both bounce: your car rebounds, theirs is knocked still', crash);
+  // Your car crossing a lane (or coming the wrong way) is braked for; only one driving away along
+  // the lane is followed at its speed.
+  const cross = await ev(() => {
+    const SR = window.SR, W = SR.world, TR = W.traffic, P = W.player, out = {};
+    TR.spawning = false;
+    SR.debug.set({ player: { cars: { junker: { owned: true, x: 2398, y: 2900, a: 0, towed: false } } } });
+    W.teleport(2398, 2860);
+    P.board('junker', true);
+    [['crossing', 0], ['oncoming', -Math.PI / 2], ['away', Math.PI / 2]].forEach(([name, a]) => {
+      TR.clear();
+      const c = TR.add('mainS|J1:mainS|J2:mainS', { s: 2900 - 656 - 150, v: 440, cruise: 440 });
+      P.a = a; P.v = 600;
+      TR.update(1 / 60);
+      out[name] = { vTarget: Math.round(c.vTarget), why: c.why };
+    });
+    P.v = 0;
+    P.park(2398, 2900, 0);
+    SR.debug.set({ player: { cars: { junker: { owned: false } } } });
+    TR.clear();
+    TR.spawning = true;
+    return out;
+  });
+  T.ok(cross.crossing.why === 'playerCar' && cross.crossing.vTarget < 440 && cross.oncoming.vTarget < 440 && cross.away.vTarget === 440,
+    'a driver brakes for your car crossing its lane or coming the wrong way, and follows it driving away', cross);
 
   T.section('a hit at 10 HP: the hospital (Standard), death (Hardcore)');
   const down = await ev(() => {
@@ -334,6 +360,52 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-City');
   });
   T.eq(down.standard.got, { outcome: 'hospital', cause: 'carHit' }, 'Standard: a hit at 10 HP reaches the hospital flow (player:down, cause carHit)');
   T.eq([down.hardcore.got, down.hardcore.over], [{ outcome: 'death', cause: 'carHit' }, true], 'Hardcore: it is death (' + down.hardcore.stack + ')');
+
+  T.section('the entity fields of ARCHITECTURE §8.2; no car drops in on you or your parked car');
+  const fields = await ev(() => {
+    const SR = window.SR, W = SR.world, TR = W.traffic, PD = W.pedestrians, G = W.geometry, out = {};
+    const idle = { x: 0, y: 0, skate: false };
+    SR.debug.newGame({ seed: 10 });
+    SR.debug.goto('city');
+    SR.debug.setTime(720);
+    PD.list.length = 0;
+    TR.clear(); TR.spawning = false;
+    W.teleport(2220, 1300);
+    const c = TR.add('mainS|J1:mainS|J2:mainS', { s: 400, v: 300, cruise: 440 });
+    TR.update(1 / 60);
+    out.car = { id: typeof c.id, lane: c.lane, v: typeof c.v, vTarget: c.vTarget, kind: c.kind, state: c.state, honkT: typeof c.honkT, a: typeof c.a, braking: typeof c.braking };
+    PD.clear();
+    const p = PD.list[0];
+    out.ped = p ? { id: typeof p.id, node: typeof p.node, next: typeof p.next, speed: typeof p.speed, archetype: typeof p.archetype, look: typeof p.look, state: typeof p.state, facing: typeof p.facing } : null;
+    // Main's north road end: cars of that lane never land on your parked car, or on you, there.
+    const inp = G.map.portals.find((q) => q.end === 'in' && q.lane === 'mainS');
+    const drops = (sec) => {
+      const seen = new Set();
+      for (let k = 0; k < 60 * sec; k++) {
+        W.update(1 / 60, idle);
+        for (const car of TR.cars) if (car.route.lane === 'mainS' && car.phase === 'drop') seen.add(car.id);
+      }
+      return seen.size;
+    };
+    TR.clear(); TR.spawning = true;
+    SR.debug.set({ player: { cars: { junker: { owned: true, x: inp.at[0], y: inp.at[1] + 40, a: Math.PI / 2, towed: false } } } });
+    W.teleport(2760, 760);
+    out.onCar = drops(20);
+    SR.debug.set({ player: { cars: { junker: { owned: false, towed: false } } } });
+    TR.clear();
+    W.teleport(inp.at[0], inp.at[1] + 70);
+    SR.world.player.knockdown = 0;
+    out.onYou = drops(20);
+    TR.clear();
+    W.teleport(2760, 760);
+    out.clear = drops(20);
+    return out;
+  });
+  T.eq(fields.car, { id: 'number', lane: 'mainS', v: 'number', vTarget: 440, kind: 'sedan', state: 'drive', honkT: 'number', a: 'number', braking: 'boolean' },
+    'a car carries id, lane, x, y, a, v, vTarget, kind, state and honkT (ARCHITECTURE §8.2)');
+  T.ok(fields.ped && Object.keys(fields.ped).every((k) => fields.ped[k] !== 'undefined') && fields.ped.look === 'object',
+    'a walker carries id, node, next, speed, archetype, look and state', fields.ped);
+  T.ok(fields.onCar === 0 && fields.onYou === 0 && fields.clear >= 2, 'no car drops onto your car parked at a road end, or onto you standing there; once clear they drop in again', fields);
 
   // ------------------------------------------------------------------------------------------------
   T.section('screenshots');

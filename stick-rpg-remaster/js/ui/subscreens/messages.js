@@ -70,7 +70,8 @@
       var body = textOf(m);
       var snip = body.length > SNIPPET ? body.slice(0, SNIPPET - 1) + '…' : body;
       var unread = !m.read;
-      var b = h('button', { type: 'button', class: 'arow-main nav-inset', 'data-nav': '', 'data-id': 'msg-' + m.id, role: 'listitem',
+      // A list item holding a button (a <button> may not take the listitem role: it would lose its own).
+      var b = h('button', { type: 'button', class: 'arow-main nav-inset', 'data-nav': '', 'data-id': 'msg-' + m.id,
         'aria-label': fromName(m.from) + ', ' + t('sub.home.messages.day', { day: m.day }) + (unread ? ', ' + t('sub.home.messages.new') : '') + '. ' + snip,
         style: { display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '2px', width: '100%', textAlign: 'left',
           padding: 'var(--sp-2) var(--sp-3)', borderBottom: 'var(--line-thin)', background: 'transparent' } },
@@ -81,7 +82,7 @@
           h('span', { class: 't-small', style: { color: 'var(--ink-700)' } }, t('sub.home.messages.day', { day: m.day }))),
         h('span', { class: 't-small', style: { color: 'var(--ink-700)' } }, snip));
       b.addEventListener('click', function () { openMsg(m.id); });
-      ul.appendChild(b);
+      ul.appendChild(h('div', { role: 'listitem' }, b));
     });
     root.appendChild(ul);
   }

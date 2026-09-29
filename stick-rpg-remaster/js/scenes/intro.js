@@ -46,19 +46,24 @@
   }
 
   // ---- hold-to-skip: keys, pointers and pad buttons ----
+  /** @returns {boolean} the intro is the top scene (a press in an overlay above it does not skip it). */
+  function onTop() { var top = SR.scenes.top(); return !!(top && top.id === 'intro'); }
   function onKey(e) {
     if (!I || e.repeat || e.ctrlKey || e.metaKey || e.altKey || e.key === 'Tab') return;
-    if (e.type === 'keydown') { I.held['k:' + (e.code || e.key)] = true; I.hint = 1.2; }
-    else delete I.held['k:' + (e.code || e.key)];
+    var k = 'k:' + (e.code || e.key);
+    if (e.type !== 'keydown') { delete I.held[k]; return; }
+    if (!onTop()) return;
+    I.held[k] = true;
+    I.hint = 1.2;
   }
   function onPointer(e) {
     if (!I) return;
-    if (e.type === 'pointerdown') { I.held.pointer = true; I.hint = 1.2; } else delete I.held.pointer;
+    if (e.type === 'pointerdown') { if (onTop()) { I.held.pointer = true; I.hint = 1.2; } } else delete I.held.pointer;
   }
   function onInput(ev) {
     if (!I || !ev || ev.device !== 'pad' && ev.code) return;          // keys come through onKey
     var k = 'a:' + ev.action;
-    if (ev.down) { if (!ev.repeat) { I.held[k] = true; I.hint = 1.2; } } else delete I.held[k];
+    if (ev.down) { if (!ev.repeat && onTop()) { I.held[k] = true; I.hint = 1.2; } } else delete I.held[k];
   }
 
   function holding() { for (var k in I.held) if (I.held[k]) return true; return false; }

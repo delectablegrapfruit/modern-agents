@@ -108,6 +108,21 @@ function rules() {
   T.eq(iron.stats.hp - i0, Math.floor(FOOD.fries[1] * IRON_STOMACH), 'Iron Stomach: fries heal floor(20 × 1.25) = 25');
   flags([]);
 
+  T.section('Free Fries Friday and Good karma (B-28a: fixed prices first, then only the largest percent)');
+  const decree = (patch) => { const s = fresh(patch); s.election.decrees = ['freeFriesFriday']; return s; };
+  const fri = decree({ clock: { day: 5 }, stats: { hp: 1 } });
+  T.eq(Object.keys(FOOD).filter((f) => f !== 'megameal').map((f) => [pv(fri, 'mcsticks.' + f).cost.cash, pv(fri, 'mcsticks.' + f).badges.indexOf('freeFriesFriday') >= 0]),
+    [[0, true], [0, true], [0, true], [0, true]], 'Free Fries Friday (decree): every McSticks food is $0 on a Friday, with its badge');
+  T.eq(pv(decree({ clock: { day: 4 }, stats: { hp: 1 } }), 'mcsticks.fries').cost.cash, roundHalfUp(FOOD.fries[0] * (1 - EMPLOYEE_PCT / 100)), '... and only on Fridays (Thursday: the employee $9)');
+  flags(['karmaTiers']);
+  const goodCook = fresh({ stats: { hp: 1, karma: 60 } });
+  T.eq([pv(goodCook, 'mcsticks.fries').cost.cash, pv(goodCook, 'mcsticks.fries').badges], [roundHalfUp(FOOD.fries[0] * (1 - EMPLOYEE_PCT / 100)), ['employee']],
+    'Good karma and the employee discount: only the larger (25 %) applies, $9');
+  const goodWalkIn = fresh({ stats: { hp: 1, karma: 60 }, job: { ranks: { mcsticks: null } } });
+  T.eq([pv(goodWalkIn, 'mcsticks.fries').cost.cash, pv(goodWalkIn, 'mcsticks.fries').badges], [roundHalfUp(FOOD.fries[0] * 0.9), ['goodKarma']],
+    'Good karma without the job: 10 % off, $11 (10.8 rounded half up)');
+  flags([]);
+
   T.section('Takeout and the Mega Meal (P1 shopsPlus)');
   flags(['shopsPlus']);
   const to = fresh();
@@ -117,6 +132,8 @@ function rules() {
   const rt = run(to, 'mcsticks.fries', { variant: 'takeout' });
   T.eq([rt.ok, to.items.takeout, to.stats.hp, to.clock.min], [true, ['fries'], t0.stats.hp, t0.clock.min], 'the meal goes into the Bag as a takeout entry (no HP now, no time)');
   T.ok(rt.toasts.some((x) => x.key === 'toast.mcsticks.takeout') && SR.text.has('toast.mcsticks.takeout'), 'a toast says it was bagged');
+  T.eq([rt.events.filter((e) => e.name === 'buy').map((e) => e.payload), rt.events.some((e) => e.name === 'eat')],
+    [[{ item: 'takeout', n: 1, where: 'mcsticks', price: pt.cost.cash }], false], 'the buy rule event carries the price paid; nothing is eaten yet');
   to.items.coupon = 1;
   const pc = pv(to, 'mcsticks.fries', { variant: 'takeout' });
   T.eq([pc.cost.cash, pc.badges.indexOf('flyerCoupon') >= 0], [7, true], 'B-28a example: fries to go as an employee with a flyer coupon = $7');
@@ -130,6 +147,8 @@ function rules() {
   const big = fresh({ stats: { str: MEGA_HPMAX - 15, hpMax: MEGA_HPMAX, hp: 1 } });
   const pm = pv(big, 'mcsticks.megameal');
   T.eq([pm.hidden, pm.ok, pm.cost.cash, pm.gains[0].n, pm.cost.min], [false, true, 90, 199, 30], 'at HP max 200 it shows: $120 × 0.75 = $90, +200 HP (199 to full), 30 m');
+  const pmt = pv(big, 'mcsticks.megameal', { variant: 'takeout' });
+  T.eq([pmt.ok, pmt.cost.cash, pmt.cost.min], [true, roundHalfUp((FOOD.megameal[0] + TAKEOUT_ADD) * (1 - EMPLOYEE_PCT / 100)), 0], 'a Mega Meal to go: (120 + 2) × 0.75 = $92 (91.5 rounded half up), 0 m');
   flags(['shopsPlus', 'calendar']);
   T.eq(pv(fresh({ clock: { day: 4 }, stats: { str: MEGA_HPMAX - 15, hpMax: MEGA_HPMAX, hp: 1 } }), 'mcsticks.megameal').cost.cash, 75, 'Thursday Mega Meal: $100 × 0.75 = $75');
 
@@ -196,6 +215,11 @@ function rules() {
     [fresh({ flags: { melFirstShift: true }, job: { ranks: { mcsticks: 'manager' } } }), 'manager'],
   ];
   T.eq(cases.map((c) => g(c[0]).key), cases.map((c) => 'greet.mcsticks.' + c[1]), 'the greeting follows first visit, time, HP, job and karma');
+  const wet = fresh({ flags: { melFirstShift: true }, clock: { min: 900 }, world: { weather: 'rain' } });
+  T.eq(g(wet).key, 'greet.mcsticks.default', 'rain is not mentioned while the weather flag is off (P0 is always Clear)');
+  flags(['weather']);
+  T.eq([g(wet).key, SR.text.has('greet.mcsticks.rain')], ['greet.mcsticks.rain', true], '... and is with it (P1 weather)');
+  flags([]);
   const keys = Object.keys(SR.reg.text).filter((k) => /^(greet|act|toast|card)\.mcsticks\.|^vm\.mel\./.test(k));
   T.ok(keys.length >= 20 && ['vm.mel.job', 'vm.mel.firstShift', 'vm.mel.promoted'].every((k) => keys.indexOf(k) >= 0), 'Mel\'s voicemails (the day-1 offer included) and ' + keys.length + ' McSticks keys are registered');
   flags([]);

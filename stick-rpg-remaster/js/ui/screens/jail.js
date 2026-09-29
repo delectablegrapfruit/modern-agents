@@ -23,15 +23,27 @@
   function t(k, v) { return D().t(k, v); }
 
   /**
-   * The one-line summary of a jail night: the night's own jail line (interest, the biggest market
-   * mover, unread messages, days to go; en-econ's report.jail.*), then any election lines (jail days
-   * are campaign days).
-   * @returns {string} '' when there is no report
+   * The one-line summary of a jail night, as UI §5.12 shows it ("Interest +$42 · NLI ▲ 2 % · 1
+   * message"): the interest the night earned (its report.interest lines), the biggest market mover and
+   * the unread messages (the night's jail line, section 'jail'), or "a quiet night"; then any election
+   * lines (jail days are campaign days). The days to go are the card's "Day 2 of 5", not repeated here.
+   * @returns {string} '' when there is no report (or it is not a jail night's)
    */
   function summary(report) {
     if (!report || !Array.isArray(report.lines)) return '';
-    var parts = [];
-    report.lines.forEach(function (l) { if (l && l.section === 'jail') parts.push(SR.text(l.key, l.vars)); });
+    var parts = [], jail = null, got = 0;
+    report.lines.forEach(function (l) {
+      if (!l) return;
+      if (l.section === 'jail' && !jail) jail = l;
+      if (l.key === 'report.interest' && l.vars && typeof l.vars.n === 'number') got += l.vars.n;
+    });
+    if (jail) {
+      var v = jail.vars || {}, unread = Number(v.msgs) || 0;
+      if (got > 0) parts.push(SR.text('card.jail.sum.interest', { n: got, money: SR.text.money(got) }));
+      if (v.ticker) parts.push(SR.text('card.jail.sum.market', { ticker: v.ticker, arrow: v.arrow || '', pct: v.pct }));
+      if (unread > 0) parts.push(SR.text(unread === 1 ? 'card.jail.sum.msgOne' : 'card.jail.sum.msgs', { n: unread }));
+      if (!parts.length) parts.push(SR.text('card.jail.quiet'));
+    }
     report.lines.forEach(function (l) { if (l && l.section === 'election') parts.push(SR.text(l.key, l.vars)); });
     return parts.join(' · ');
   }

@@ -76,9 +76,11 @@
     var list = h('div', { 'data-id': 'stock-list', role: 'list' });
     R().tickers().forEach(function (tk) {
       var st = s.stocks[tk], pct = change(st), def = SR.reg.stock[tk] || {};
-      var b = h('button', { type: 'button', class: 'arow-main nav-inset', 'data-nav': '', 'data-id': 'stock-' + tk, role: 'listitem',
-        'aria-label': tk + ', ' + money(st.price, { cents: true }) + ', ' + changeText(pct) + ', ' +
-          (st.held ? t('sub.home.stocks.held', { n: SR.text.num(st.held) }) : t('sub.home.stocks.none')),
+      // UI §5.6: each row also gives what you hold and its unrealised P/L (the average cost is on its page)
+      var holding = st.held ? t('sub.home.stocks.held', { n: SR.text.num(st.held) }) + ' · ' +
+        t('sub.home.stocks.pl', { money: money(Math.round(st.held * st.price - st.basis), { sign: true }) }) : t('sub.home.stocks.none');
+      var b = h('button', { type: 'button', class: 'arow-main nav-inset', 'data-nav': '', 'data-id': 'stock-' + tk,
+        'aria-label': tk + ', ' + money(st.price, { cents: true }) + ', ' + changeText(pct) + ', ' + holding,
         style: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto auto', alignItems: 'center', columnGap: 'var(--sp-3)',
           width: '100%', textAlign: 'left', padding: 'var(--sp-2) var(--sp-3)', borderBottom: 'var(--line-thin)', background: 'transparent' } },
         h('span', { style: { minWidth: '0' } },
@@ -89,10 +91,9 @@
         h('span', { style: { textAlign: 'right', fontVariantNumeric: 'tabular-nums' } },
           h('span', { style: { display: 'block', fontWeight: '700' } }, money(st.price, { cents: true })),
           h('span', { class: 't-small', style: { display: 'block', color: changeColour(pct), fontWeight: '700' } }, changeText(pct)),
-          h('span', { class: 't-small', style: { display: 'block', color: 'var(--ink-700)' } },
-            st.held ? t('sub.home.stocks.held', { n: SR.text.num(st.held) }) : t('sub.home.stocks.none'))));
+          h('span', { class: 't-small', 'data-id': 'stock-held-' + tk, style: { display: 'block', color: 'var(--ink-700)', whiteSpace: 'nowrap' } }, holding)));
       b.addEventListener('click', function () { S.ticker = tk; S.n = 1; render(); });
-      list.appendChild(b);
+      list.appendChild(h('div', { role: 'listitem' }, b));   // a <button> may not take the listitem role
     });
     root.appendChild(list);
     root.appendChild(notes(s, null));

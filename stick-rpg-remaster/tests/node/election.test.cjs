@@ -175,6 +175,11 @@ T.section('the debate (B-17: day 4 only, 3 questions, +3 / -2)');
   const w = campaigner(50, 4);
   E.debate(w, [false, false, false]);
   T.eq(w.election.poll, 44, 'three losses: -6');
+  // Review (W2-RulesC): the counts are bounded by the 3 questions, never negative; a result naming
+  // only its wins no longer turns the missing losses into -wins (a +10 for two wins).
+  const deb = (r) => { const x = campaigner(50, 4); const out = E.debate(x, r); return [out.delta, x.election.poll]; };
+  T.eq([deb({ wins: 2 }), deb({ wins: 9, losses: 0 }), deb({ wins: 1, losses: 7 }), deb({ wins: -3, losses: -3 }), deb({ beats: [true, false, true] })],
+    [[6, 56], [9, 59], [-1, 49], [0, 50], [4, 54]], 'wins ≤ 3, losses ≤ 3 - wins, neither below 0; beats alone still count');
 }
 
 T.section('campaign nights: the rival, the no-show, election night (night step 5)');

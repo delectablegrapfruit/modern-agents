@@ -8,8 +8,9 @@
 //   - bought pieces work at the next sleep (the books' INT, the bed in the restore);
 //   - P1 `homesPlus`: the satellite retires, an owned piece offers its upgrade at the net price (no
 //     "Owned" badge on it), the freezer names its Leftovers, the selected tile is aria-current, and
-//     the live preview draws the home with the selected piece ghosted in; P1 `karmaTiers`: the
-//     Good-karma price with its discount badge;
+//     the live preview draws the home with the selected piece ghosted in, and stays in view under
+//     the breadcrumb while a tile further down is browsed (it scrolls with the grid at 150 % text);
+//     P1 `karmaTiers`: the Good-karma price with its discount badge;
 //   - the interior draws (Sofia, the display bed), the accessibility audit of the card and the
 //     showroom, screenshots at 1280×720 (day and night) and 1920×1080, zero console errors.
 //   node tests/e2e/furniture.test.cjs      (screenshots: shots/W2-Goods/, git-ignored)
@@ -107,6 +108,7 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-Goods');
   await t.clickUI('furn-books');
   await t.step(2);
   T.eq(await t.scenes(), ['building', 'confirm'], 'a $2,000 piece asks first (game.confirmSpendOver 1000)');
+  T.eq(await ev(() => { const e = document.querySelector('#ui .modal-title'); return e ? e.textContent.trim() : null; }), 'Grand Atlas of Everything', 'and the confirm names the piece');
   await t.clickUI('confirm-furniture-yes');
   await t.step(3);
   T.eq((await owned()).books, 1, 'confirmed: the Grand Atlas is bought');
@@ -146,7 +148,7 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-Goods');
   T.ok(await ev(() => !!document.querySelector('#ui [data-id="furn-preview"]')), 'the live preview is shown');
   await ev(() => window.SR.ui.focus.focus(document.querySelector('#ui [data-id="furn-treadmill"]')));
   await t.step(1);
-  T.ok(/Preview: your Bigger Apartment/.test(await text('[data-id="furn-preview-caption"]')), 'it names your home');
+  T.ok(/Preview: the Tread-Millionaire in your Bigger Apartment/.test(await text('[data-id="furn-preview-caption"]')), 'it names the piece and your home');
   T.eq(await ev(() => Array.from(document.querySelectorAll('#ui [data-id="furn-grid"] > button')).filter((b) => b.getAttribute('aria-current') === 'true').map((b) => b.getAttribute('data-id'))),
     ['furn-treadmill'], 'the selected tile is the set\'s current item (aria-current), not a pressed toggle');
   const inked = await ev(() => {
@@ -157,6 +159,27 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-Goods');
     return n / (d.length / 4);
   });
   T.ok(inked > 0.9, 'and draws the home (' + Math.round(inked * 100) + ' % of its pixels painted)');
+  // The strip stays in view while focus browses the grid: the last tile, focused, is fully inside the
+  // card body, below the breadcrumb and the preview, which are both still showing.
+  const box = (sel) => ev((sel) => { const e = document.querySelector('#ui ' + sel); const b = e.getBoundingClientRect(); return { top: b.top, bottom: b.bottom }; }, sel);
+  const bodyBox = () => ev(() => { let e = document.querySelector('#ui [data-id="furn-grid"]'); while (e && getComputedStyle(e).overflowY !== 'auto' && getComputedStyle(e).overflowY !== 'scroll') e = e.parentElement; const b = e.getBoundingClientRect(); return { top: b.top, bottom: b.bottom }; });
+  await ev(() => window.SR.ui.focus.focus(document.querySelector('#ui [data-id="furn-minibar"]')));
+  await t.step(1);
+  const [fig, crumbs, lastTile, body] = [await box('[data-id="furn-preview-figure"]'), await box('.subhost-crumbs'), await box('[data-id="furn-minibar"]'), await bodyBox()];
+  T.ok(Math.abs(fig.top - crumbs.bottom) <= 1 && fig.bottom < lastTile.top && lastTile.bottom <= body.bottom + 1,
+    'browsing the last tile keeps the preview in view under the breadcrumb, the tile clear of both (' + [crumbs.bottom, fig.top, fig.bottom, lastTile.top, lastTile.bottom, body.bottom].map(Math.round).join(', ') + ')');
+  T.ok(/Globetrotter Bar Cart/.test(await text('[data-id="furn-preview-caption"]')), 'and the preview follows the focused tile');
+  await t.shot(path.join(SHOTS, 'furniture-showroom-p1-sticky.png'));
+  await ev(() => { window.SR.settings.set('access.textScale', 1.5); window.SR.ui.dom.applySettings(); });
+  await t.step(2);
+  T.eq(await ev(() => [getComputedStyle(document.querySelector('#ui [data-id="furn-preview-figure"]')).position,
+    new Set(Array.from(document.querySelectorAll('#ui [data-id="furn-grid"] > button')).map((b) => Math.round(b.getBoundingClientRect().left))).size]),
+  ['static', 1], 'at 150 % text the grid is one column and the preview scrolls with it (no room for a strip)');
+  await t.shot(path.join(SHOTS, 'furniture-showroom-p1-text150.png'));
+  await ev(() => { window.SR.settings.set('access.textScale', 1); window.SR.ui.dom.applySettings(); });
+  await t.step(2);
+  await ev(() => window.SR.ui.focus.focus(document.querySelector('#ui [data-id="furn-bed"]')));
+  await t.step(1);
   c0 = await cash();
   await t.clickUI('furn-bed');
   await t.step(2);

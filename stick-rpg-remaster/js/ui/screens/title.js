@@ -184,7 +184,7 @@
 
   function mount(root, opts) {
     opts = opts || {};
-    var T = { root: root, gateOn: false, scope: null, gateScope: null, logoT: 0, padT: 0, destroyed: false, keyOff: null };
+    var T = { root: root, gateOn: false, scope: null, gateScope: null, logoT: 0, logoDirty: true, padT: 0, destroyed: false, keyOff: null };
     var el = h('div', { class: 'title-screen', 'data-id': 'title' });
     root.appendChild(el);
 
@@ -280,8 +280,17 @@
       var glyph = SR.ui.keyHint && typeof SR.ui.keyHint.glyph === 'function' ? SR.ui.keyHint.glyph('Pad0') : 'A';
       gatePress.textContent = padOnly() ? text('front.gate.pad', { button: glyph }) : text('front.gate.press');
     }
+    /** @returns {boolean} the stage's "turn your device" card is up (it keeps its focus and its keys). */
+    function portraitUp() {
+      var c = document.querySelector('[data-id="stage-portrait"]');
+      return !!(c && c.getClientRects().length);
+    }
     function onGateKey(e) {
       if (!T.gateOn) return;
+      var top = SR.scenes.top();
+      if (!top || top.id !== 'title') return;                  // a scene above the title (a test's minigame, #debug) keeps its keys
+      var ae = document.activeElement;
+      if (portraitUp() || (ae && ae !== document.body && !root.contains(ae))) return;   // focus outside the card keeps its keys
       var k = e.key || '';
       if (e.ctrlKey || e.metaKey || e.altKey || k === 'Tab' || /^F\d+$/.test(k)) return;   // focus moves and browser keys pass
       e.preventDefault();
@@ -300,7 +309,7 @@
       gateWrap = h('div', { class: 'title-gate-wrap paper' }, gate);
       el.appendChild(gateWrap);
       gateText();
-      T.gateScope = SR.ui.focus.push(gateWrap, { id: 'title-gate', initial: gate });
+      T.gateScope = SR.ui.focus.push(gateWrap, { id: 'title-gate', initial: gate, autofocus: !portraitUp() });
       window.addEventListener('keydown', onGateKey, true);
       T.keyOff = function () { window.removeEventListener('keydown', onGateKey, true); };
       paintLogo(gateLogo, fast() ? undefined : 0, { x: GATE_LOGO_W / 2, y: 150, width: 760 });
@@ -326,15 +335,12 @@
       return true;
     };
 
-    /** Per fixed step: the boot card's logo, the pad-only sound note. */
+    /** Per fixed step: the boot card's logo clock, the pad-only sound note. */
     T.update = function (dt) {
       if (T.destroyed) return;
       if (T.gateOn && gateLogo) {
         var total = SR.art.logo ? SR.art.logo.duration + 0.3 : 1.5;
-        if (T.logoT < total + 0.1) {
-          T.logoT += dt;
-          paintLogo(gateLogo, fast() || D().reduced() ? undefined : Math.min(T.logoT, total), { x: GATE_LOGO_W / 2, y: 150, width: 760 });
-        }
+        if (T.logoT < total + 0.1) { T.logoT += dt; T.logoDirty = true; }
       }
       T.padT += dt;
       if (T.padT >= PAD_NOTE_SEC) {
@@ -343,6 +349,14 @@
         var locked = SR.audio && typeof SR.audio.state === 'function' && SR.audio.state() === 'locked';
         padNote.hidden = !(locked && SR.input && SR.input.last === 'pad' && !T.gateOn);
       }
+    };
+
+    /** Per rendered frame: paints the boot card's logo once when its clock moved (a catch-up frame runs several steps). */
+    T.render = function () {
+      if (T.destroyed || !T.logoDirty || !T.gateOn || !gateLogo) return;
+      T.logoDirty = false;
+      var total = SR.art.logo ? SR.art.logo.duration + 0.3 : 1.5;
+      paintLogo(gateLogo, fast() || D().reduced() ? undefined : Math.min(T.logoT, total), { x: GATE_LOGO_W / 2, y: 150, width: 760 });
     };
 
     T.destroy = function () {

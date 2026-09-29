@@ -132,3 +132,12 @@ Nothing frozen changes. Record:
   page on the door's home (its card first, "On tour"). The test buys and moves in through it.
 - Item 1 was applied by W2-RulesE (with the jail-night exception).
 - W2-Street request 4 (a new game holds Mel's voicemail): applied in `tests/e2e/home.test.cjs`.
+- Item 5 (for the lead's record), additions from the second review: the `report` scene's `next` also
+  takes a registered scene id (the scene goes there), and a hospital night steps out at the
+  worldmap's `afterHospital` spawn (today the home door). `news.election.line` takes `{n}`, the
+  winning poll read from `tuning.election.win.threshold`, which also places the needle's line.
+- Item 7 (meanwhile, UI §5.6's exterior thumbnail): the For Sale sign in the interior now carries a
+  photo of the door's building, baked once a session with `SR.art.exterior.build` (as W2-Money's
+  Real Estate cards do), over the price and "Paperweight Realty". The card's title still needs item 7.
+- The home card's greeting also follows a let (Let out / End the let change no `home` Delta, so
+  SR.act raises no `home:changed`): `js/scenes/report.js` re-checks the door after every action.

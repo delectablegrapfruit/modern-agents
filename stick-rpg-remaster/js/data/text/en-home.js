@@ -5,7 +5,7 @@
 (function () {
   'use strict';
   window.SR.def.text({
-    // ---- rows (≤ 28 characters) ------------------------------------------------------------------
+    // ---- rows (≤ 28 characters, verb first: UI §10; the TV's channel rows are named like channels) --
     'act.home.sleep': 'Sleep',
     'act.home.nap': 'Take a nap',
     'act.home.leftovers': 'Eat leftovers',
@@ -15,11 +15,11 @@
     'act.home.party': 'Throw a party',
     'act.home.swim': 'Swim a few lengths',
     'act.home.holdCourt': 'Hold court',
-    'act.home.messages': 'Messages',
-    'act.home.computer': 'Computer',
+    'act.home.messages': 'Check messages',
+    'act.home.computer': 'Use the computer',
     'act.home.save': 'Save the game',
-    'act.home.properties': 'Properties',
-    'act.home.campaign': 'Campaign HQ',
+    'act.home.properties': 'Manage properties',
+    'act.home.campaign': 'Go to Campaign HQ',
     'act.home.topFloor': 'Top floor: Tour',
     'act.home.moveIn': 'Move in',
     'act.home.letOut': 'Let it out',
@@ -73,7 +73,7 @@
     // ---- the For Sale sign in the interior ---------------------------------------------------------
     'card.home.forSaleSign': 'FOR SALE',
     'card.home.signPrice': '{price}',
-    'card.home.signRealty': 'Ask at the bank',
+    'card.home.signRealty': 'Paperweight Realty',
 
     // ---- toasts (≤ 80) -------------------------------------------------------------------------------
     'toast.home.saved': 'Game saved to slot {slot}.',
@@ -169,7 +169,6 @@
     'sub.home.stocks.costs': 'Fee {fee} a trade · spread {spread}',
     'sub.home.stocks.chart': 'The last {n} market nights',
     'sub.home.stocks.markets': 'Prices move on the nights after Monday to Friday. No short selling.',
-    'sub.home.stocks.price': 'Price {price}',
 
     // ---- TV shows (tv.*) ------------------------------------------------------------------------------
     'tv.show.news': 'The Six O\'Clock Fold',

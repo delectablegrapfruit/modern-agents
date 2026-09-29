@@ -31,9 +31,10 @@
   var ORDER = ['journal', 'map', 'stats', 'bag', 'messages', 'phone', 'achievements'];   // UI §5.9
   var NB = { x: 80, y: 48, w: 1120, h: 640, rail: 168 };   // UI §2.2: the Pocket notebook, tab rail 168 wide
   var GUTTER = 16;                                           // touch-compact: centred with 16 px gutters
-  var RAIL_NARROW = 136;                                     // the rail on a narrow (compact) notebook
+  var RAIL_NARROW = 160;                                     // the rail on a narrow (compact) notebook: "Messages" and its badge fit
   var SLIDE_MS = 350;                                        // UI §5.9: slides up in 350 ms
   var SLIDE_PX = 48;
+  var NAV = { up: true, down: true, left: true, right: true, confirm: true };   // the actions that resume a lost focus
   var REFRESH_EVENTS = ['time:advanced', 'money:changed', 'stat:changed', 'karma:changed', 'heat:changed', 'buzz:changed',
     'item:changed', 'job:changed', 'home:changed', 'day:started', 'msg:received', 'action:done', 'settings:changed'];
 
@@ -238,18 +239,23 @@
     P.nb.setAttribute('data-size', stage ? 'stage' : 'compact');
   }
 
+  /** @returns {string} a label without its soft hyphens (they only mark where a narrow rail may break a word). */
+  function plain(k, v) { return t(k, v).replace(/\u00AD/g, ''); }
+
   function railButton(id) {
     var def = panels[id];
-    var b = h('button', { type: 'button', role: 'tab', class: 'tab pocket-tab', 'data-nav': '', 'data-id': 'pocket-tab-' + id,
+    // nav-inset: the rail scrolls (overflow), which would clip an outer focus ring to two stray lines.
+    var b = h('button', { type: 'button', role: 'tab', class: 'tab pocket-tab nav-inset', 'data-nav': '', 'data-id': 'pocket-tab-' + id,
       'data-tab': id, 'aria-selected': 'false',
       style: { position: 'relative', display: 'flex', alignItems: 'center', gap: '6px', width: '100%', minHeight: 'var(--tap)', margin: '0',
-        padding: '6px 4px 6px 8px', border: '0', borderLeft: '4px solid transparent', borderRadius: '0', background: 'transparent',
+        padding: '6px 2px 6px 6px', border: '0', borderLeft: '4px solid transparent', borderRadius: '0', background: 'transparent',
         color: 'var(--ink-900)', fontWeight: '700', textAlign: 'left', cursor: 'pointer' } },
-      // A count badge sits on the icon's corner (in the icon's own box), so the label keeps the rail's width.
-      h('span', { style: { position: 'relative', display: 'inline-flex', flex: 'none', width: '24px' } }, D().icon(def.icon || id, 20),
-        h('span', { class: 'pocket-tab-badge', 'data-id': 'pocket-badge-' + id, style: { position: 'absolute', left: '10px', top: '-10px', lineHeight: '1' } })),
-      // Labels wrap rather than clip (UI §8: no clipping at 150 % text; the narrow compact rail).
-      h('span', { class: 'pocket-tab-label', style: { flex: '1 1 auto', minWidth: '0', whiteSpace: 'normal', overflowWrap: 'anywhere', lineHeight: '1.15' } }, t(def.label)));
+      h('span', { 'aria-hidden': 'true', style: { display: 'inline-flex', flex: 'none', width: '20px' } }, D().icon(def.icon || id, 20)),
+      // Labels wrap rather than clip (UI §8: no clipping at 150 % text; the narrow compact rail): at
+      // spaces, at a soft hyphen of the text table (Achieve-ments), else anywhere.
+      h('span', { class: 'pocket-tab-label', style: { flex: '1 1 auto', minWidth: '0', whiteSpace: 'normal', overflowWrap: 'anywhere', lineHeight: '1.15' } }, t(def.label)),
+      // The unread count trails the label (UI §5.9's "MESSAGES •").
+      h('span', { class: 'pocket-tab-badge', 'data-id': 'pocket-badge-' + id, style: { display: 'none', flex: 'none', lineHeight: '1' } }));
     b.addEventListener('click', function () {
       D().sfx('click');
       select(id);
@@ -291,15 +297,17 @@
       if (s && typeof panels[id].badge === 'function') { try { text = panels[id].badge(s); } catch (e) { text = null; } }
       D().clear(badge);
       if (text) badge.appendChild(SR.ui.badge({ text: text.text || text, kind: 'new' }));
-      b.setAttribute('aria-label', t(panels[id].label) + (text && text.aria ? ', ' + text.aria : ''));
+      badge.style.display = text ? 'inline-flex' : 'none';   // an empty badge takes no room (nor the flex gap)
+      b.setAttribute('aria-label', plain(panels[id].label) + (text && text.aria ? ', ' + text.aria : ''));
     });
   }
 
   function mountPanel() {
     var def = panels[P.tab];
+    P.lastRect = null;
     D().clear(P.page);
     P.page.setAttribute('data-tab', P.tab);
-    P.page.setAttribute('aria-label', t(def.label));
+    P.page.setAttribute('aria-label', plain(def.label));
     P.page.scrollTop = 0;
     P.ctx = makeCtx(P.tab, P.params);
     P.ctx.root = P.page;
@@ -334,7 +342,7 @@
     lastTab = id;
     markTabs();
     mountPanel();
-    D().announce(t('pocket.opened', { tab: t(panels[id].label) }));
+    D().announce(t('pocket.opened', { tab: plain(panels[id].label) }));
     return true;
   }
 
@@ -420,6 +428,10 @@
       var a = document.activeElement;
       if (a && a !== P.buttons[P.tab] && P.rail.contains(a)) SR.ui.focus.focus(P.buttons[P.tab]);
     }, 0);
+    // Where focus last was on the page, so a control a panel re-renders away can hand it on (regainFocus).
+    P.page.addEventListener('focusin', function (e) {
+      if (P && e.target && e.target.getBoundingClientRect) P.lastRect = e.target.getBoundingClientRect();
+    });
     // Swipe the page sideways on touch to turn tabs (UI §6).
     if (SR.ui.swipe) P.unsubs.push(SR.ui.swipe(P.page, function () { step(1); }, function () { step(-1); }));
     REFRESH_EVENTS.forEach(function (name) { P.unsubs.push(SR.events.on(name, function () { refresh(); })); });
@@ -429,7 +441,7 @@
       P.nb.animate([{ transform: 'translateY(' + SLIDE_PX + 'px)' }, { transform: 'translateY(0)' }], { duration: SLIDE_MS, easing: 'cubic-bezier(.2, .8, .2, 1)' });
     }
     D().sfx('open');
-    D().announce(t('pocket.opened', { tab: t(panels[P.tab] ? panels[P.tab].label : 'pocket.title') }));
+    D().announce(t('pocket.opened', { tab: plain(panels[P.tab] ? panels[P.tab].label : 'pocket.title') }));
   }
 
   function unmount() {
@@ -473,6 +485,23 @@
     close();
   }
 
+  /**
+   * A panel re-rendered the focused control away (the last pack smoked, a phone app switched):
+   * focus fell to the document. The next arrow or confirm lands on the page control nearest to
+   * where focus was, instead of jumping to the top of the rail (SR.ui.focus's empty-scope rule).
+   * @returns {boolean} focus was put back (the key press is spent on it)
+   */
+  function regainFocus() {
+    var a = document.activeElement;
+    if (!P.lastRect || (a && a !== document.body && P.nb.contains(a))) return false;
+    var r = P.lastRect, cx = r.left + r.width / 2, cy = r.top + r.height / 2, best = null, bd = Infinity;
+    SR.ui.focus.navigables(P.page).forEach(function (el) {
+      var q = el.getBoundingClientRect(), d = Math.hypot(q.left + q.width / 2 - cx, q.top + q.height / 2 - cy);
+      if (d < bd) { bd = d; best = el; }
+    });
+    return best ? SR.ui.focus.focus(best) : false;
+  }
+
   /** Start / a pause key that is not `back`: the pause menu replaces the Pocket. */
   function toPause() {
     if (!SR.reg.scene.pause) { D().refuse(null); return; }
@@ -488,6 +517,7 @@
     if ((action === 'confirm' || action === 'back' || action === 'pocket') && !ev.repeat && SR.ui.stamp && SR.ui.stamp.swallow && SR.ui.stamp.swallow()) return true;
     if (action === 'interact') return true;   // Enter / Space / A also fire confirm
     if (action === 'pocket') { if (!ev.repeat) close(); return true; }
+    if (NAV[action] && regainFocus()) return true;
     if (SR.ui.focus.handle(action, ev)) return true;
     if (P.mounted && callPanel(P.mounted, 'onAction', action, ev, P.ctx) === true) return true;
     switch (action) {

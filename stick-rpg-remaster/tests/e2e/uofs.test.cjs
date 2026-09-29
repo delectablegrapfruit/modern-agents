@@ -4,7 +4,7 @@
 // of S karma (+1, at most +3 a day), R repeats a training row, "Too hurt" at HP ≤ 4 and the time
 // wall as disabled rows with their reasons, and the P1 `degrees` rows: Kinesiology and Theatre, a
 // seminar once you qualify, the transcript sub-screen and graduation from it (its "+1 Diploma"
-// chip and the ceremony's confetti). Screenshots in
+// chip, the ceremony's confetti and the degree stinger). Screenshots in
 // shots/W2-Civic/. Zero console errors.
 //   node tests/e2e/uofs.test.cjs
 'use strict';
@@ -78,6 +78,9 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-Civic');
     await refresh();
     const hurt = await row('uofs.gym');
     T.ok(hurt && !hurt.enabled && /Too hurt/.test(hurt.text), 'at HP 4 the gym row is disabled: "Too hurt"', hurt);
+    // The shot shows that state (the HUD rewritten from the set state first).
+    await t.eval(() => { const H = window.SR.ui.hud; if (H && H.invalidate) { H.invalidate(); H.flush(); } });
+    await t.shot(path.join(SHOTS, 'uofs-too-hurt.png'));
     const hp0 = await t.get('stats.hp');
     await t.press('row3');
     await t.step(2);
@@ -92,7 +95,6 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-Civic');
     await t.set({ clock: { min: 1320 } });
     await refresh();
     T.ok((await row('uofs.study')).enabled, 'at 22:00 it fits');
-    await t.shot(path.join(SHOTS, 'uofs-too-hurt.png'));
 
     // ------------------------------------------------------------------------------------------
     T.section('P1 `degrees`: the other classes, a seminar, the transcript and graduation');
@@ -127,6 +129,14 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-Civic');
       const fx = window.SR.render.fx, orig = fx.confetti;
       window.__confetti = 0;
       fx.confetti = function () { window.__confetti++; return orig.apply(this, arguments); };
+      // The degree stinger is W2-Music's: until it lands, a stand-in registration lets the call show
+      // (the spy records it and plays nothing).
+      const A = window.SR.audio, songs = window.SR.reg.song;
+      window.__stingers = [];
+      window.__stingerOrig = A.stinger;
+      A.stinger = function (id) { window.__stingers.push(id); };
+      window.__fakeDegree = !songs['stingers.degree'];
+      if (window.__fakeDegree) songs['stingers.degree'] = { standIn: true };
     });
     await t.fast(false);   // the ceremony's confetti is skipped in fast mode, like the report's
     await t.clickUI('row-transcript-graduate-biz');
@@ -136,6 +146,12 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-Civic');
     const g = await t.state();
     T.ok(g.edu.degrees.biz === true && g.stats.int === int0 + TT.degree.bonusStat, 'Graduate: the degree and +25 INT once', { deg: g.edu.degrees, int: g.stats.int });
     T.eq(await t.eval(() => window.__confetti), 1, 'the ceremony throws confetti (GDD §4.5: confetti, a stamp)');
+    T.eq(await t.eval(() => {
+      const A = window.SR.audio, got = window.__stingers.slice();
+      A.stinger = window.__stingerOrig;
+      if (window.__fakeDegree) delete window.SR.reg.song['stingers.degree'];
+      return got.filter((id) => id === 'degree');
+    }), ['degree'], 'and plays the degree stinger (ART_AUDIO §13.4: the organ chord)');
     const after = await t.eval(() => document.querySelector('#ui [data-subscreen="uofs.transcript"]').innerText);
     T.ok(/Degree earned/.test(after), 'the transcript now reads "Degree earned"', after);
     await t.step(60);

@@ -268,6 +268,7 @@
 
     function show() {
       var had = SR.ui.focus.focused();
+      if (SR.ui.tooltip && SR.ui.tooltip.hide) SR.ui.tooltip.hide();   // a control's tip would outlive its step
       D().clear(body);
       nameField = null; wink = null; preview = null; accLabel = null;
       header();

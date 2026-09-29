@@ -422,8 +422,9 @@
       var on = M.sel === p.id;
       var li = h('li', { role: 'option', class: 'list-row nav-inset', 'data-nav': '', tabindex: '-1', 'data-id': 'map-place-' + p.id,
         'aria-selected': on ? 'true' : 'false', style: { minHeight: '40px', background: on ? 'var(--primary-100)' : null } },
+        // The pin's own brand colour (a palette key), so the list reads as the map's legend.
         h('span', { 'aria-hidden': 'true', style: { width: '12px', height: '12px', flex: 'none', border: 'var(--line)', borderRadius: '50%',
-          background: p.kind === 'person' ? 'var(--cha)' : 'var(--paper-0)' } }),
+          background: (p.kind === 'person' ? 'var(--cha)' : D().paint(p.brand)) || 'var(--paper-0)' } }),
         h('span', { class: 'list-label' }, p.name),
         wp && wp.id === p.id ? D().icon('map', 16) : null);
       li.addEventListener('click', function () { D().sfx('click'); focusPlace(p); });

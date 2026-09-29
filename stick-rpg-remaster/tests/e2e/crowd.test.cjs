@@ -92,7 +92,7 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-City');
         if (i % 10) continue;
         PD.list.forEach((p) => {
           samples++;
-          archs[p.arch] = (archs[p.arch] || 0) + 1;
+          archs[p.archetype] = (archs[p.archetype] || 0) + 1;
           const s = G.surfaceAt(p.x, p.y);
           surfaces[s] = (surfaces[s] || 0) + 1;
           if (s === 'asphalt') { if (p.zebra || G.zebraAt(p.x, p.y)) crossing++; if (!p.zebra && !G.zebraAt(p.x, p.y) && p.hopT <= 0) bad.push([p.id, Math.round(p.x), Math.round(p.y), p.mode]); }
@@ -123,8 +123,8 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-City');
     PD.invalidate();
     X.run(10);
     const archs = {};
-    PD.list.forEach((p) => { archs[p.arch] = (archs[p.arch] || 0) + 1; });
-    const looks = PD.list.map((p) => ({ arch: p.arch, acc: p.look.acc, head: p.look.head }));
+    PD.list.forEach((p) => { archs[p.archetype] = (archs[p.archetype] || 0) + 1; });
+    const looks = PD.list.map((p) => ({ arch: p.archetype, acc: p.look.acc, head: p.look.head }));
     const lookWarn = [];
     looks.forEach((l) => { try { SR.art.stick.look(l); } catch (e) { lookWarn.push(e.message); } });
     return { archs, sample: looks.slice(0, 4), lookWarn, headsNeutral: looks.every((l) => /^npc\./.test(l.head)) };
@@ -284,12 +284,20 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-City');
     const w1 = PD.stats.waved;
     X.run(3);
     const wavedAt50 = PD.stats.waved - w1;
+    // Idle people within 80 u turn toward you (GDD §3.11); one farther off keeps looking its way.
+    SR.debug.set({ stats: { karma: 0 } });
+    const q1 = PD.list[1], q2 = PD.list[2];
+    Object.assign(q1, { x: P.x + 60, y: P.y, mode: 'pause', state: 'pause', t: 30, hopT: 0, facing: 0, flee: false });
+    Object.assign(q2, { x: P.x + 110, y: P.y - 10, mode: 'pause', state: 'pause', t: 30, hopT: 0, facing: 0, flee: false });
+    W.update(1 / 60, idle);
+    const turned = { near: Math.round(q1.facing), far: Math.round(q2.facing) };
     SR.debug.feature('cityReacts', false);
-    return { trials, fled, share: fled / trials, key, th, wavedAt90, wavedAt50 };
+    return { trials, fled, share: fled / trials, key, th, wavedAt90, wavedAt50, turned };
   });
   T.ok(react2.trials >= 300 && Math.abs(react2.share - 0.2) <= 0.06, 'one in five scurries (' + react2.fled + ' of ' + react2.trials + ' walkers in reach)', react2);
   T.ok(/^bark\.ped\.bumped\.[123]$/.test(react2.key || ''), 'someone you walk into barks a "bumped" line (' + react2.key + ')');
   T.ok(react2.th === 50 && react2.wavedAt90 === 0 && react2.wavedAt50 > 0, 'the wave threshold is tuning.karma.crowd: nobody waves at +80 when it reads 90, people do at 50', react2);
+  T.eq(react2.turned, { near: 270, far: 0 }, 'an idle walker within 80 u turns toward you; one 110 u off does not');
 
   // ------------------------------------------------------------------------------------------------
   T.section('screenshots');

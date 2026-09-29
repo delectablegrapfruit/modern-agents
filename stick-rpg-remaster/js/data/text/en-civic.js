@@ -1,10 +1,10 @@
 // js/data/text/en-civic.js — owner: W2-Civic. Text of the University of Stick (rows, Dean Quill's
 // greetings, the transcript sub-screen), City Hall (rows, Clerk Plume's greetings, the Election
-// Office sub-screen `cityhall.campaign`), the debate skin (mg.debate.*) and the voicemails the
-// election rules raise (vm.board.*, vm.doodle.*, vm.crayon.*; js/rules/election.js, W1-C 10), the
-// rivals' side of election night (the edition's front page is W2-Home's news.election.*, the inbox's
-// sender names its sub.home.messages.from.*). Length limits by prefix: CONTRACT §7 (act ≤ 28,
-// greet ≤ 140, vm ≤ 280, card ≤ 400).
+// Office sub-screen `cityhall.campaign` with the rivals' attack ads), the debate skin (mg.debate.*)
+// and the voicemails the election rules raise (vm.board.*, vm.doodle.*, vm.crayon.*;
+// js/rules/election.js, W1-C 10), the rivals' side of election night (the edition's front page is
+// W2-Home's news.election.*, the inbox's sender names its sub.home.messages.from.*). Length limits
+// by prefix: CONTRACT §7 (act ≤ 28, greet ≤ 140, vm ≤ 280, card ≤ 400).
 // Numbers never appear in the prose; the vars carry them.
 (function () {
   'use strict';
@@ -125,6 +125,7 @@
     'sub.cityhall.campaign.chest': 'War chest of {money}',
     'sub.cityhall.campaign.pollChip': '{n} poll',
     'sub.cityhall.campaign.pollOr': '{a} or {b} poll',
+    'sub.cityhall.campaign.debateChip': '{n} questions: {a} or {b} poll each',
     'sub.cityhall.campaign.startChip': 'Start at {poll} %',
     'sub.cityhall.campaign.campaignTitle': 'Campaign for {office}',
     'sub.cityhall.campaign.day': 'Day {day} of {days}',
@@ -132,6 +133,20 @@
     'sub.cityhall.campaign.tonight': 'Election night is tonight. Sleep anywhere; the city counts.',
     'sub.cityhall.campaign.chestPaid': 'War chest paid: {money}',
     'sub.cityhall.campaign.rival': '{rival} campaigns every night: poll -{min} to -{max}.',
+    // The rivals' attack ads (GDD §6.2), one a campaign day (campaign.js picks by a hash).
+    'sub.cityhall.campaign.ad': 'Tonight\'s attack ad from {rival}: {ad}',
+    'sub.cityhall.campaign.ad.doodle.1': 'A slow zoom on your castle and one question in bold: "How many rooms does one person need?"',
+    'sub.cityhall.campaign.ad.doodle.2': '"Four more years of the potholes you already know." Paid for by Friends of Doodle.',
+    'sub.cityhall.campaign.ad.doodle.3': 'Grainy footage of you jaywalking, a sad cello, and the word RECKLESS in capital letters.',
+    'sub.cityhall.campaign.ad.doodle.4': '"My opponent promises change. I promise the same, but on time." Mayor Doodle, smiling.',
+    'sub.cityhall.campaign.ad.doodle.5': 'Mayor Doodle cuts a ribbon, then a second ribbon, then a cake. The narrator calls it leadership.',
+    'sub.cityhall.campaign.ad.doodle.6': '"Ask your opponent where they were the night bus fares went up." They were asleep.',
+    'sub.cityhall.campaign.ad.crayon.1': '"Order. Discipline. Very straight lines." General Crayon salutes a parade of tanks.',
+    'sub.cityhall.campaign.ad.crayon.2': 'A marching band spells out your name, then marches straight over it. Twice.',
+    'sub.cityhall.campaign.ad.crayon.3': '"My opponent calls themselves a strongman. We have seen them lift. It was a sandwich."',
+    'sub.cityhall.campaign.ad.crayon.4': '"Under the General, every street leads somewhere. Mostly to the palace."',
+    'sub.cityhall.campaign.ad.crayon.5': 'A slideshow of your worst photos, set to a drum roll that never quite ends.',
+    'sub.cityhall.campaign.ad.crayon.6': '"The General has never lost a war. He also decides who won." Paid for by the General.',
     'sub.cityhall.campaign.debateSoon': 'The debate is on day {day}.',
     'sub.cityhall.campaign.debateToday': 'The debate is today. Skip it and lose {n} points tonight.',
     'sub.cityhall.campaign.debateDone': 'Debate done.',
@@ -148,15 +163,16 @@
     'sub.cityhall.campaign.flipDictator': 'Karma above 0 on {of} mornings in a row ends the term. Bad mornings so far: {n}.',
 
     // ---------------------------------------------------------------------------------------------
-    // The debate (Duel skin `debate`, stance mode; B-30). Options are B-30's ids.
+    // The debate (Duel skin `debate`, stance mode; B-30). Options are B-30's ids, and each label
+    // carries B-30's name (Facts, Charm, Pressure), the words of the counter table (GDD §6.5).
     'mg.debate.title': 'The Debate',
     'mg.debate.vs.doodle': 'versus Mayor Doodle',
     'mg.debate.vs.crayon': 'versus General Crayon',
     'mg.debate.doodle': 'Mayor Doodle',
     'mg.debate.crayon': 'General Crayon',
     'mg.debate.facts': 'Quote the facts',
-    'mg.debate.charm': 'Flash the smile',
-    'mg.debate.pressure': 'Talk over them',
+    'mg.debate.charm': 'Turn on the charm',
+    'mg.debate.pressure': 'Pile on the pressure',
     'mg.debate.banner': 'LIVE FROM CITY HALL',
     'mg.debate.q.1': 'Question {n} of {total}: what will you do about the potholes in the sky?',
     'mg.debate.q.2': 'Question {n} of {total}: the city is one sheet of paper. How will you stop it from blowing away?',

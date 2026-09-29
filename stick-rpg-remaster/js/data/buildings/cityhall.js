@@ -65,7 +65,7 @@
     var el = s.election, min = s.clock.min;
     if (s.job.office === 'dictator') return { key: 'greet.cityhall.dictator' };
     if (s.job.office) return { key: 'greet.cityhall.president' };
-    if (el.status === 'nominated') return { key: 'greet.cityhall.nominated', vars: { day: el.nominatedDay + T().acceptWithin - 1 } };
+    if (el.status === 'nominated') return { key: 'greet.cityhall.nominated', vars: { day: SR.rules.election.acceptBy(s) } };
     if (el.status === 'campaign') return { key: 'greet.cityhall.campaign', vars: { day: el.campaignDay, poll: el.poll } };
     if (el.status === 'lost') return { key: 'greet.cityhall.lost' };
     if (el.status === 'removed') return { key: 'greet.cityhall.removed' };

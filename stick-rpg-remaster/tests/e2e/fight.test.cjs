@@ -3,8 +3,9 @@
 //   the row's start (3 h, -2 karma, +5 Heat, the open record) and the frame (the `fight` context);
 //   AP, moves and damage ranges per B-13; a scripted fight replays exactly with SR.rules.fight on a
 //   copy of the stream (real rolls from host.rng); the enemy table and the quirks; a Standard loss
-//   (HP 1, the 10 % tab, never the hospital), Relaxed and Hardcore losses, the KO's ink blot; the
-//   wallet (-3 karma) and the drink (P1); Run; the Quick fight (Auto) is a real sample; the "(it
+//   (HP 1, the 10 % tab, never the hospital), Relaxed and Hardcore losses, the KO's ink blot; on
+//   Hardcore a won fight (the wallet panel, the Quick fight) replaces the pending loss, so a tab
+//   closed then reloads the win; the wallet (-3 karma) and the drink (P1); Run; the Quick fight (Auto) is a real sample; the "(it
 //   froze)" joke; taunts and the accessible mirror; leaving mid-fight runs away; the hit shake
 //   honours Reduced Motion (the setting and the system preference) and the screen-shake setting;
 //   zero console errors.
@@ -56,6 +57,8 @@ const K = require('./night-kit.cjs');
   const apMax = Math.min(Math.floor(60 / 20) + 1, 15);
   T.eq(p.fight.me.apMax, apMax, 'AP = min(floor(STR / 20) + 1, 15) = 4 at STR 60');
   T.eq(await entries(), ['punch', 'kick', 'fireball', 'inkBeam', 'endTurn', 'run'], 'the move bar: Punch, Kick, Fireball, Ink Beam, End turn, Run (Guard is P1)');
+  const hint0 = await E(() => document.querySelector('[data-id="mg-hint-0"]').textContent);
+  T.ok(/^1-6/.test(hint0), 'the key hint spans the six buttons (1-6)', hint0);
   const mv = {}; p.entries.forEach((e) => { mv[e.id] = e; });
   T.eq([mv.punch.ap, mv.kick.ap, mv.fireball.ap, mv.inkBeam.ap], [1, 2, 3, 4], 'move costs 1 / 2 / 3 / 4 AP');
   // B-13 at STR 60, no gear, Buzz 0: punch rand((STR+10)/10) → 0..6; kick rand(STR/4.5) + 1 → 1..13;
@@ -99,6 +102,8 @@ const K = require('./night-kit.cjs');
   T.ok(engine.log.filter((e) => e.who === 'foe').every((e) => e.move === 'punch' || e.move === 'kick'),
     'rung 1 (P = 15): the enemy roll 1..15 only reaches punch (≤ 10) and kick (> 10)');
   T.ok(p.phase === 'win' && p.winOpen && p.picks === 1, 'the win panel offers the wallet only (P0)', p && [p.phase, p.winOpen, p.picks]);
+  const walletSub = await E(() => document.querySelector('[data-id="mg-fight-pick-wallet"]').textContent);
+  T.ok(new RegExp('karma ' + String(-3)).test(walletSub), 'the wallet\'s line names its karma from B-13 (tuning.fight.wallet.karma)', walletSub);
   await E(() => SR.debug.fast(false));
   await t.step(2);
   await k.shot('fight-win');
@@ -169,6 +174,35 @@ const K = require('./night-kit.cjs');
   T.ok(downEv && downEv.payload.cause === 'fight' && /death|secondWind/.test(downEv.payload.outcome), 'Hardcore: HP 0 → health.down(cause fight): death unless Second Wind', downEv);
   await E(() => SR.debug.fast(false));
 
+  T.section('Hardcore: a decided fight is no longer a stake (the wallet panel, the Quick fight)');
+  // The frame saves the loss as `pending` when the fight opens; closing the tab while the wallet
+  // panel waits for a pick must not reload as a KO (HP 0: death) for a fight you won.
+  await atBar({ stats: { str: 999 }, difficulty: 'hardcore' });
+  await k.row('bar.fight');
+  await E(() => SR.debug.fast(true));
+  await k.until((q) => q.phase === 'player' && !q.queue && !q.beat, 50, 1);
+  await key('Digit4', 3);   // Ink Beam at STR 999 fells rung 1
+  p = await k.until((q) => q.phase === 'win', 100, 2);
+  let pendW = await k.state('pending');
+  T.ok(p.phase === 'win' && pendW && pendW.resolve === 'bar.fight:resolve' && pendW.worst.outcome === 'win' && pendW.worst.choice === 'wallet',
+    'the won fight replaces the pending loss (the wallet, the default pick)', pendW && pendW.worst);
+  await t.reload();                                    // the tab closes at the wallet panel
+  await K.install(t.page);
+  const reloaded = await E(() => { SR.save.load('ironman'); const s = SR.state; return { over: s.over, hp: s.stats.hp, str: s.stats.str, won: s.fight.won, open: s.fight.open, pending: s.pending }; });
+  T.ok(!reloaded.over && reloaded.hp > 0 && reloaded.won === 1 && reloaded.open === null && reloaded.pending === null,
+    'reloading the ironman save applies the win: alive, the ladder moves on', reloaded);
+  T.eq(reloaded.str, 999, 'the win\'s +3 STR (capped at 999)');
+  await atBar({ stats: { str: 45 }, difficulty: 'hardcore' }, { fight: { won: 2 } });
+  await k.row('bar.fight');
+  await t.clickUI('mg-auto');
+  await t.step(2);
+  pendW = await k.state('pending');
+  const qhc = await k.peek();
+  T.ok(qhc.phase === 'over' && pendW && pendW.worst.outcome === qhc.fight.outcome && pendW.worst.hpLeft === qhc.fight.me.hp,
+    'the Quick fight\'s result replaces it during the 2 s replay', [pendW && pendW.worst, qhc.fight.outcome]);
+  await k.closed();
+  T.eq(await k.state('pending'), null, 'the resolve clears it');
+
   T.section('the KO: an ink blot covers the fight before the result (ART_AUDIO §12)');
   await atBar({ stats: { str: 7 } }, { fight: { won: 11 } });
   await k.row('bar.fight');
@@ -192,6 +226,7 @@ const K = require('./night-kit.cjs');
   await atBar({ stats: { str: 999 } });
   await k.row('bar.fight');
   T.ok((await entries()).indexOf('guard') === 4, 'with `nightlife` the Guard button sits after Ink Beam (1 AP)');
+  T.ok(/^1-7/.test(await E(() => document.querySelector('[data-id="mg-hint-0"]').textContent)), 'and the key hint spans seven (1-7)');
   await E(() => SR.debug.fast(true));
   p = await k.until((q) => { return q.phase === 'win' || (q.phase === 'player' && !q.queue && !q.beat); }, 50, 1);
   await key('Digit4');   // Ink Beam at STR 999 fells rung 1
@@ -203,6 +238,23 @@ const K = require('./night-kit.cjs');
   const d1 = await k.state();
   T.eq([d1.money.cash - d0.money.cash, d1.stats.karma - d0.stats.karma, d1.stats.cha - d0.stats.cha], [-5, 1, 1],
     'Buy him a drink: -$5, +1 karma, +1 CHA (B-13 drink)');
+  // Without $5 the rules would pay the wallet instead (-3 karma): the drink must be refused, not swapped.
+  await atBar({ stats: { str: 999 } }, { money: { cash: 3 } });
+  await k.row('bar.fight');
+  await k.until((q) => q.phase === 'player' && !q.queue && !q.beat, 50, 1);
+  await key('Digit4');
+  p = await k.until((q) => q.phase === 'win', 100, 2);
+  const drinkOff = await E(() => document.querySelector('[data-id="mg-fight-pick-drink"]').getAttribute('aria-disabled'));
+  await key('Digit2');
+  const stillWin = (await k.peek()).phase;
+  await E(() => document.querySelector('[data-id="mg-fight-pick-drink"]').click());   // Playwright will not click an aria-disabled control
+  await t.step(2);
+  T.ok(drinkOff === 'true' && stillWin === 'win' && (await k.peek()).phase === 'win' && await k.heard('reason.needCash'),
+    'with $3 the drink is shown refused ("Need $5"): neither 2 nor a click turns it into the wallet', [drinkOff, stillWin]);
+  const w0 = await k.state();
+  await key('Digit1');
+  await k.closed();
+  T.eq((await k.state()).stats.karma - w0.stats.karma, -3, 'the wallet is still there (-3 karma)');
   await E(() => { SR.debug.feature('nightlife', false); SR.debug.fast(false); });
 
   // ------------------------------------------------------------------------------------------

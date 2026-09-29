@@ -71,6 +71,20 @@
     var flying = null;                  // { x, y, t } the dart in the air
     var lock = 0, done = false, endT = 0, t = 0, touchAim = false;
     var replay = null;
+    // Hardcore (ARCHITECTURE §10, §15): a match is a stake, so the frame saved { resolve, worst: no
+    // score } in state.pending as it opened; once the tenth dart lands (or the Auto has thrown them
+    // all) the round is decided and decided() puts the real score in its place.
+    var pend0 = match && SR.state && SR.state.pending && SR.state.pending.resolve ? SR.state.pending : null;
+
+    /** Hardcore: the decided round replaces the pending worst in the ironman slot (a tab closed now keeps the score). */
+    function decided(r) {
+      var s = SR.state;
+      if (!pend0 || !s || s.pending !== pend0 || !s.mode || s.mode.difficulty !== 'hardcore') return;
+      pend0.worst = SR.util.clone(r);
+      if (SR.save && typeof SR.save.write === 'function') {
+        try { SR.save.write('ironman'); } catch (e) { SR.util.warnOnce('darts-ironman', 'darts: ironman write failed (' + e.message + ')'); }
+      }
+    }
 
     function amp() { return p.A * (host.assist ? W.assist : 1); }
     function wob(tt) { var o = R().wobble(tt, p); var k = host.assist ? W.assist : 1; return { x: o.x * k, y: o.y * k }; }
@@ -108,12 +122,11 @@
       if (pts === 0) line = T('mg.darts.offBoard') + ' ' + line;
       host.aria(line);
       mirror();
-      if (darts.length >= p.darts) { done = true; endT = fast() ? 0 : END_HOLD_S; if (!endT) finish(); }
+      if (darts.length >= p.darts) { done = true; decided(result()); endT = fast() ? 0 : END_HOLD_S; if (!endT) finish(); }
     }
 
-    function finish() {
-      host.finish({ score: score(), throws: darts.map(function (d) { return d.pts; }) });
-    }
+    function result() { return { score: score(), throws: darts.map(function (d) { return d.pts; }) }; }
+    function finish() { host.finish(result()); }
 
     // ---- drawing ---------------------------------------------------------------------------------
     function board(ctx, x, y, alpha) {
@@ -225,8 +238,10 @@
         ctx.fillStyle = host.color(ok ? 'ok' : 'ink-300');
         ctx.fillRect(x + 190, y + 188, 110 * Math.min(1, score() / Math.max(1, p.target)), 10);
         ctx.strokeStyle = host.color('ink-900'); ctx.lineWidth = 1.5; ctx.strokeRect(x + 190, y + 188, 110, 10);
+        // "Match 2 of 3 today" (UI §5.8) runs the column's full width under the ten throws: the
+        // narrow total column beside them cannot hold it.
         ctx.font = host.font(14, 600); ctx.fillStyle = host.color('ink-700');
-        ctx.fillText(T('mg.darts.matchToday', { n: matchesToday(), max: D().match.perDay }), x + 190, y + 224);
+        ctx.fillText(T('mg.darts.matchToday', { n: matchesToday(), max: D().match.perDay }), x + 24, y + 70 + p.darts * 34 + 8, COL.w - 48);
       }
     }
 
@@ -304,6 +319,7 @@
       },
       auto: function (rng) {
         var out = autoFrom(p, darts, rng);
+        decided(out.r);
         replay = { spots: out.spots, shown: 0, t: 0, dur: fast() ? 0.01 : 0.9 };
         flying = null;
         done = true;

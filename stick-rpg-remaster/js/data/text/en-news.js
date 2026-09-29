@@ -38,7 +38,7 @@
     'news.election.poll': 'Final poll {poll} %',
     'news.election.roll': 'Election-night swing {roll}',
     'news.election.result': 'On the night: {final} %',
-    'news.election.line': 'Fifty percent to win',
+    'news.election.line': '{n} % to win',
     'news.election.stamp.president': 'PRESIDENT OF STICKS',
     'news.election.stamp.dictator': 'DICTATOR OF STICKS',
     'news.election.stamp.concede': 'CONCEDES',

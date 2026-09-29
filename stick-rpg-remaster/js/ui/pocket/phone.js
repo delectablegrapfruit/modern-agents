@@ -45,13 +45,13 @@
     });
   }
 
-  function contactName(c) {
-    var vars = null;
-    if (Array.isArray(c.nameVars) && SR.reg.fn[c.nameVars[0]]) {
-      try { vars = SR.reg.fn[c.nameVars[0]].apply(null, [SR.state, {}, { source: 'ui' }].concat(c.nameVars.slice(1))); } catch (e) { vars = null; }
-    }
-    return t(c.name, vars || undefined);
+  /** @returns {object|undefined} the vars a contact's `nameVars` / `roleVars` ([fnName, ...args]) give. */
+  function varsOf(spec) {
+    if (!Array.isArray(spec) || !SR.reg.fn[spec[0]]) return undefined;
+    try { return SR.reg.fn[spec[0]].apply(null, [SR.state, {}, { source: 'ui' }].concat(spec.slice(1))) || undefined; } catch (e) { return undefined; }
   }
+  function contactName(c) { return t(c.name, varsOf(c.nameVars)); }
+  function contactRole(c) { return c.role ? t(c.role, varsOf(c.roleVars)) : ''; }
 
   /** @returns {{x: number, y: number, a: number}|null} the nearest point of a road lane to (x, y). */
   function roadNear(x, y) {
@@ -154,7 +154,7 @@
       box.appendChild(h('div', { style: { display: 'flex', alignItems: 'center', gap: 'var(--sp-3)', margin: 'var(--sp-2) 0' } },
         D().icon(c.icon || 'phone', 40),
         h('div', {}, h('h3', { class: 't-h3', 'data-id': 'phone-contact-name', style: { margin: '0' } }, contactName(c)),
-          c.role ? h('p', { class: 't-small', style: { margin: '0', color: 'var(--ink-700)' } }, t(c.role)) : null)));
+          c.role ? h('p', { class: 't-small', style: { margin: '0', color: 'var(--ink-700)' } }, contactRole(c)) : null)));
       if (c.app === 'cab') { F.app = 'cab'; F.contact = null; render(); return; }
       var rows = h('div', { 'data-id': 'phone-contact-rows', style: { borderTop: 'var(--line-thin)' } });
       (c.actions || []).forEach(function (id) {
@@ -171,7 +171,7 @@
     var list = contacts(s);
     if (!list.length) { box.appendChild(h('p', { class: 't-body', style: { color: 'var(--ink-700)' } }, t('pocket.phone.noContacts'))); return; }
     box.appendChild(SR.ui.list({ id: 'phone-contacts', label: 'pocket.phone.contactsTitle', items: list.map(function (c) {
-      return { id: c.id, icon: c.icon || 'phone', label: contactName(c), meta: c.role };
+      return { id: c.id, icon: c.icon || 'phone', label: contactName(c), meta: c.role, metaVars: varsOf(c.roleVars) };
     }), onSelect: function (it) { F.contact = it.id; render(); } }));
   }
 

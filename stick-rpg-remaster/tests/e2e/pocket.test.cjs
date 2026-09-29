@@ -385,6 +385,17 @@ const P0_TABS = ['journal', 'map', 'stats', 'bag', 'messages'];
     T.eq(await ev(() => document.querySelector('#ui [data-id="journal-fd-work"]').getAttribute('data-done')), 'true', '… on the page too');
     await t.clickUI('journal-help-karma');
     T.eq(await ev(() => document.querySelector('#ui [data-id="journal-help-page"] p').textContent), await ev(() => window.SR.text('pocket.help.karma.body')), 'a Help topic opens its page');
+    // Every page's numbers come from SR.tuning (no placeholder left, no stale number).
+    const pages = [];
+    for (const k of (await dbg()).panel.topics) {
+      await t.clickUI('journal-help-' + k);
+      pages.push([k, await ev(() => document.querySelector('#ui [data-id="journal-help-page"] p').textContent)]);
+    }
+    T.eq(pages.filter((p) => /[{}?]/.test(p[1])).map((p) => p[0]), [], 'every Help page reads whole (its numbers filled in)');
+    const nums = await ev(() => { const T = window.SR.tuning; return { hp: T.start.hpMaxBase, fall: T.world.fall.hp, rob: window.SR.text.time(T.crime.store.startBefore), money: window.SR.text.money(T.election.requires.money) }; });
+    const page = (k) => (pages.filter((p) => p[0] === k)[0] || [k, ''])[1];
+    T.ok(page('stats').indexOf('HP max is ' + nums.hp + ' plus STR') >= 0 && page('getAround').indexOf(nums.fall + ' HP lighter') >= 0 &&
+      page('crime').indexOf('before ' + nums.rob) >= 0 && page('endgame').indexOf(nums.money) >= 0, 'the Help pages quote the tuning (HP base, the fall, the hold-up hour, the war money)', nums);
     await t.setDay(2);
     await ev(() => window.SR.ui.pocket.refresh());
     await t.step(1);
@@ -425,6 +436,9 @@ const P0_TABS = ['journal', 'map', 'stats', 'bag', 'messages'];
     await t.clickUI('phone-app-contacts');
     T.ok((await dbg()).panel.contacts.indexOf('cabs') >= 0 && (await dbg()).panel.contacts.indexOf('hospital') >= 0, 'contacts without a flag of their own are listed');
     T.eq((await dbg()).panel.contacts.indexOf('lawyer'), -1, 'the lawyer hides with `police`');
+    const cabRole = await ev(() => { const r = Array.from(document.querySelectorAll('#ui [data-id="phone-contacts"] .list-meta')).map((e) => e.textContent); return r; });
+    T.ok(cabRole.indexOf(await ev(() => window.SR.text('contact.cabs.role', { money: window.SR.text.money(window.SR.tuning.world.cab.cash) }))) >= 0,
+      'Sky Cabs\' line names the fare from the tuning', cabRole);
     await t.set({ player: { cars: { junker: { owned: true, x: 727, y: 1113 } } } });
     await ev(() => { window.SR.ui.pocket.select('journal'); window.SR.ui.pocket.select('phone'); });
     await t.clickUI('phone-app-summon');
@@ -433,6 +447,17 @@ const P0_TABS = ['journal', 'map', 'stats', 'bag', 'messages'];
     const car = (await t.state()).player.cars.junker;
     const pl = await ev(() => ({ x: window.SR.world.player.x, y: window.SR.world.player.y }));
     T.ok(Math.hypot(car.x - pl.x, car.y - pl.y) < 400 && !(car.x === 727 && car.y === 1113), 'Summon car brings the junker to the nearest road', { car, pl });
+    // The Electoral Board (while nominated) names the last day to accept: SR.rules.election.acceptBy.
+    await t.set({ election: { status: 'nominated', nominatedDay: 1 } });
+    await ev(() => { window.SR.ui.pocket.select('journal'); window.SR.ui.pocket.select('phone'); });
+    await t.clickUI('phone-app-contacts');
+    T.ok((await dbg()).panel.contacts.indexOf('board') >= 0, 'the Electoral Board is listed while you are nominated');
+    const board = await t.act('phone.board', {});
+    const toast = (board.toasts || []).filter((x) => x.key === 'toast.phone.board')[0];
+    const by = await ev(() => window.SR.rules.election.acceptBy(window.SR.state));
+    T.ok(toast && toast.vars.day === by && by === 1 + (await ev(() => window.SR.tuning.election.acceptWithin)) - 1,
+      'the Board\'s call names the last day to accept, the day the voicemail and City Hall name (acceptBy: ' + by + ')', toast);
+    await t.set({ election: { status: 'none', nominatedDay: 0 } });
     await ev(() => window.SR.ui.pocket.select('achievements'));
     T.ok(await exists('ach-none') || await exists('ach-grid'), 'the Achievements tab shows its placeholder (W3-Prog fills it)');
     await ev(() => { window.SR.debug.feature('shopsPlus', true); });
@@ -454,26 +479,45 @@ const P0_TABS = ['journal', 'map', 'stats', 'bag', 'messages'];
     await ev(() => { window.SR.debug.feature('phone', true); window.SR.debug.feature('achievements', true); });
     await ev(() => window.SR.ui.pocket.open('journal'));
     await t.step(1);
+    const noToasts = () => ev(() => { if (window.SR.ui.toast.clear) window.SR.ui.toast.clear(); });   // the captures show the notebook, not the last toast
     for (const id of P0_TABS.concat(['phone', 'achievements'])) {
       await t.clickUI('pocket-tab-' + id);
       await t.step(1);
       const a = await t.eval(A.audit, '#ui [data-scene="pocket"]');
       T.eq(a.issues, [], 'tab ' + id + ': names, roles and contrast (' + a.controls + ' controls, ' + a.checked + ' text nodes)');
+      await noToasts();
       await t.shot(path.join(SHOTS, 'pocket-' + id + '-1280x720.png'));
     }
+    const rail = await ev(() => Array.from(document.querySelectorAll('#ui [data-scene="pocket"] .pocket-tab-label')).map((l) => [l.getAttribute('data-id') || l.textContent, Math.round(l.getBoundingClientRect().height)]));
+    T.ok(rail.every((r) => r[1] <= 24), 'every rail label fits on one line at 1280 × 720 ("Achievements" included)', rail);
+    T.eq(await ev(() => document.querySelector('#ui [data-id="pocket-tab-achievements"]').getAttribute('aria-label')), 'Achievements', 'its name has no soft hyphen');
+    // Stats with two weeks behind them: the Sparklines draw a line.
+    await ev(() => {
+      const s = window.SR.state, d0 = s.clock.day;
+      ['str', 'int', 'cha', 'karma'].forEach((k, j) => { s.history[k] = []; for (let d = 1; d <= 14; d++) s.history[k].push([d0 - 14 + d, [7, 7, 7, 0][j] + Math.round(d * [2.5, 1.5, 1, 3][j] + (d % 3))]); });
+      Object.assign(s.stats, { str: 42, int: 30, cha: 24, karma: 38 });
+      window.SR.ui.pocket.select('journal');
+    });
+    await t.clickUI('pocket-tab-stats');
+    await t.step(1);
+    await noToasts();
+    await t.shot(path.join(SHOTS, 'pocket-stats-history-1280x720.png'));
     await ev(() => { window.SR.debug.feature('phone', false); window.SR.debug.feature('achievements', false); });
     await closeAll();
     await t.resize(1920, 1080);
     await ev(() => window.SR.ui.pocket.open('bag'));
     await t.step(1);
+    await noToasts();
     await t.shot(path.join(SHOTS, 'pocket-bag-1920x1080.png'));
     await ev(() => window.SR.ui.pocket.select('map'));
+    await noToasts();
     await t.shot(path.join(SHOTS, 'pocket-map-1920x1080.png'));
     await closeAll();
     await t.resize(1280, 720);
     await ev(() => window.SR.settings.set('access.textScale', 1.5));
     await ev(() => window.SR.ui.pocket.open('stats'));
     await t.step(1);
+    await noToasts();
     await t.shot(path.join(SHOTS, 'pocket-stats-text150.png'));
     const clipped = await ev(() => { const p = document.querySelector('#ui [data-id="pocket-panel"]'); return p.scrollWidth > p.clientWidth + 1; });
     T.eq(clipped, false, 'at 150 % text the page reflows (no sideways overflow)');
@@ -529,9 +573,22 @@ const P0_TABS = ['journal', 'map', 'stats', 'bag', 'messages'];
       await u.eval(() => window.SR.ui.pocket.select('map'));
       const listCss = await u.eval(() => getComputedStyle(document.querySelector('#ui [data-id="map-places"]')).touchAction);
       T.eq(listCss, 'pan-y', 'the Map\'s place list scrolls with a finger too');
+      const clearToasts = () => u.eval(() => { if (window.SR.ui.toast.clear) window.SR.ui.toast.clear(); });
+      await clearToasts();
       await u.shot(path.join(SHOTS, 'pocket-map-touch-844x390.png'));
       await u.eval(() => window.SR.ui.pocket.select('bag'));
+      await clearToasts();
       await u.shot(path.join(SHOTS, 'pocket-bag-touch-844x390.png'));
+      // The narrow rail with every tab (P1 flags on): a long label breaks at its soft hyphen, not mid-letter.
+      await u.eval(() => { window.SR.debug.feature('phone', true); window.SR.debug.feature('achievements', true); window.SR.ui.pocket.refresh(); });
+      await u.step(1);
+      const narrow = await u.eval(() => { const l = document.querySelector('#ui [data-id="pocket-tab-achievements"] .pocket-tab-label'); return l ? { w: l.getBoundingClientRect().width, rail: document.querySelector('#ui [data-id="pocket-rail"]').getBoundingClientRect().width } : null; });
+      T.ok(narrow && narrow.rail < 168, 'the compact notebook has the narrow rail', narrow);
+      await u.eval(() => window.SR.ui.pocket.select('journal'));
+      await clearToasts();
+      await u.shot(path.join(SHOTS, 'pocket-rail-touch-844x390.png'));
+      await u.eval(() => { window.SR.debug.feature('phone', false); window.SR.debug.feature('achievements', false); window.SR.ui.pocket.refresh(); });
+      await u.step(1);
       await tapUI('pocket-close');
       T.eq(await u.scenes(), ['city'], 'a tap on ✕ closes it');
       T.eq(u.errors(), [], 'zero console errors (touch)');

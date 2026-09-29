@@ -98,6 +98,10 @@ function rules() {
   T.eq(s.stats.karma - k0, 10 * KID.karma + KID.deathKarma, 'ten packs: -50 karma in all');
   T.eq([pv(s, 'street.kid.givePack').reason, SR.reg.fn['street.here'](s, {}, {}, 'kid').ok], ['reason.unavailable', false], 'no eleventh pack: nobody is there');
   T.eq(pv(fresh(), 'street.kid.givePack').reason, 'reason.needItem', 'no smokes: "Need Smokes"');
+  s = fresh({ items: { smokes: 1, skateboard: 1 } });
+  r = run(s, 'street.kid.givePack');
+  T.eq([r.ok, s.items.skateboard, delta(r, 'item', 'skateboard'), r.toasts.map((x) => x.key), s.npc.kid.packs], [true, 1, 0, [], 1],
+    'holding a board already (P1: the pawn\'s): the first pack still counts, but no second board and no "gave you" toast (orig: skateboard = 1)');
   T.ok(SR.text('vm.mcholland.kid').length <= 280 && SR.text.has('news.head.kidDied'), 'the voicemail fits 280 characters; the headline template exists (W2-Home)');
 
   T.section('Red, the dealer: n grams (B-26 red.buy, B-06 snow, B-28a product.red)');
@@ -114,6 +118,7 @@ function rules() {
   T.eq([s.items.snow, r.events.find((e) => e.name === 'buy').payload], [99, { item: 'snow', n: 1, where: 'dealer', price: RED.price }], 'the buy rule event names Red and the price paid');
   T.eq([pv(fresh(), 'street.dealer.buy', { n: 0 }).reason, pv(fresh({ money: { cash: 799 } }), 'street.dealer.buy', { n: 2 }).reason, pv(fresh({ money: { cash: 400 } }), 'street.dealer.buy').ok],
     ['reason.amount', 'reason.needCash', true], 'no grams: "Enter an amount"; short: "Need $800"; without n it is one gram');
+  T.eq(pv(fresh({ money: { cash: 800 }, clock: { min: 1440 } }), 'street.dealer.buy', { n: 2 }).ok, true, 'no time, so Red still sells at 24:00 (orig: no clock check)');
   flags(['arcs']);
   const loyal = fresh({ money: { cash: 50000 }, npc: { dealer: { bought: 100 } } });
   const week = SR.reg.fn['mods.redWeek'](loyal);
@@ -157,6 +162,15 @@ function rules() {
   run(s, 'street.junker.ring');
   r = run(s, 'street.junker.ring:resolve', { started: false, hits: 1, misses: 1, exited: true });
   T.eq([delta(r, 'hp'), delta(r, 'heat'), s.player.cars.junker.owned], [-RING.missHp, 0, false], 'leaving early: the misses so far, no alarm, no car');
+  s = fresh(SR.util.merge({ stats: { int: 250 } }, strong));
+  run(s, 'street.junker.ring');
+  s.clock.day += 1;
+  r = run(s, 'street.junker.ring:resolve', { started: true, hits: 3, misses: 0 });
+  T.eq([r.reason, s.player.cars.junker.owned, s.stats.hp], ['reason.notNow', false, 65], 'a :resolve on a later day pays nothing (only today\'s attempt, CONTRACT §8.9)');
+  s.clock.day -= 1;
+  const worst = SR.reg.minigame.timingring.worst(SR.reg.skin.hotwire.params(s));
+  r = run(s, 'street.junker.ring:resolve', worst);
+  T.eq([worst, delta(r, 'hp'), delta(r, 'heat')], [{ started: false, hits: 0, misses: 3 }, -3 * RING.missHp, RING.alarmHeat], 'Hardcore\'s pending worst (the save written as the ring opens): 3 misses, -45 HP, the alarm');
   flags(['arcs', 'perks']);
   const tink = fresh({ stats: { int: RING.tinker }, perks: { owned: ['tinkerer'] } });
   T.eq([pv(tink, 'street.junker.ring').hidden, pv(fresh({ stats: { int: RING.tinker } }), 'street.junker.ring').hidden], [false, true], 'Tinkerer: from INT 150 (B-21)');
@@ -261,6 +275,13 @@ function rules() {
     return { bark: e.bark, t: e.barkT };
   });
   T.ok(/^bark\.kid\.[123]$/.test(bark.bark) && bark.t > 0, 'coming near, Skid calls out a bark (' + bark.bark + ')');
+  const drawnTags = await ev(() => {
+    const SR = window.SR, U = SR.render.worldui, tag = U.tag, seen = [];
+    U.tag = function (x, y, text) { seen.push(text); return tag.apply(this, arguments); };
+    try { SR.loop.step(1); } finally { U.tag = tag; }
+    return seen;
+  });
+  T.ok(drawnTags.indexOf((await text(bark.bark))[0]) >= 0, 'the city draws his bark over him (W2-City, request 1)');
   await t.teleport(2200, 2380);
   await t.step(10);
   T.ok(/Talk to Homeless Harold/.test(await t.uiText()), 'within 96 u: "[E] Talk to Homeless Harold"');
@@ -268,9 +289,11 @@ function rules() {
   await shot('city-harold.png');
 
   T.section('Harold\'s dialog (UI §5.7): chips, the gifts, the replies');
+  await ev(() => { window.__talks = []; window.SR.events.on('talk', (p) => window.__talks.push(p)); return true; });
   await t.press('interact');
   await t.step(3);
-  T.eq(await t.scenes(), ['city', 'dialog'], 'Interact opens the Dialog sheet over the frozen city');
+  T.eq([await t.scenes(), await ev(() => window.__talks), await ev(() => window.SR.world.streetnpcs.talking)], [['city', 'dialog'], [{ npc: 'harold' }], 'harold'],
+    'Interact opens the Dialog sheet over the frozen city and raises the talk rule event');
   T.eq(await choices(), ['street.harold.give10', 'street.harold.giveBottle', 'leave'], 'Give $10, Give a bottle, Leave');
   const opening = await line();
   T.ok((await text('greet.harold.day')).indexOf(opening) >= 0, 'his day greeting (' + opening + ')');
@@ -297,11 +320,32 @@ function rules() {
   after = await t.state();
   T.eq([after.items.booze - before.items.booze, after.stats.cha - before.stats.cha, after.stats.karma - before.stats.karma, after.clock.min - before.clock.min, await line()],
     [-1, 8, 0, 60, (await text('card.harold.firstBottle'))[0]], 'Give a bottle: -1 bottle, +8 CHA (the first), no karma, 1 h, his reply');
+  const bag = await ev(() => {
+    const SR = window.SR, S = SR.world.streetnpcs, a = S.giveAction('booze');
+    const r = SR.act(a, {});
+    return { a, ok: r.ok, cash: S.giveAction('cash'), smokes: S.giveAction('smokes'), talking: S.talking, open: SR.ui.dialog.isOpen() };
+  });
+  await t.step(2);
+  T.eq([bag, (await t.state()).items.booze, await ev(() => document.querySelector('#ui [data-choice="street.harold.giveBottle"]').classList.contains('is-disabled'))],
+    [{ a: 'street.harold.giveBottle', ok: true, cash: 'street.harold.give10', smokes: null, talking: 'harold', open: true }, 0, true],
+    'the Bag\'s Give (GDD §6.4) runs his own row while the dialog is open; the sheet stays and re-reads its rows (no bottle left)');
   await t.press('back');
   await t.step(2);
   T.eq([await t.scenes(), await ev(() => window.SR.world.streetnpcs.talking)], [['city'], null], 'Esc leaves (the dialog\'s Leave)');
 
   T.section('Skid: ten packs through the dialog');
+  // Records what the street dialog hands the sheet (the portrait's look), without changing it.
+  await ev(() => {
+    const D = window.SR.ui.dialog, open = D.open;
+    window.__streetOpen = open;
+    D.open = function (o) {
+      const p = o && o.portrait;
+      window.__dlg = { person: o.person, look: p && typeof p === 'object' ? { acc: (p.acc || []).slice(), str: String(p) } : p };
+      return open.apply(this, arguments);
+    };
+    return true;
+  });
+  const portrait = () => ev(() => { const p = document.querySelector('#ui [data-id="dialog-portrait"]'); return p && { label: p.getAttribute('aria-label'), person: p.getAttribute('data-person') }; });
   await t.setTime(480);
   await talkTo(2090, 1180);
   T.eq([await choices(), await line()], [['street.kid.givePack', 'leave'], (await text('greet.kid.first'))[0]], 'his first ask and the pack row');
@@ -311,6 +355,10 @@ function rules() {
   let st = await t.state();
   T.eq([st.items.skateboard, st.npc.kid.packs, await line()], [1, 1, (await text('card.kid.firstPack'))[0]], 'the first pack: his skateboard, and his thanks');
   T.ok(await ev(() => { const e = window.SR.world.streetnpcs.get('kid'); return typeof e.look === 'object' && e.look.acc.indexOf('skateboard') < 0; }), 'he no longer carries the board');
+  T.eq([await portrait(), await ev(() => window.__dlg)], [{ label: 'Portrait: Skid', person: 'kid' }, { person: 'kid', look: { acc: ['capback'], str: 'kid' } }],
+    'his portrait drops the board too, and still reads "Portrait: Skid" (the look prints as his id)');
+  a = await t.eval(A11Y.audit, '[data-id="street-kid"]');
+  T.eq(a.issues, [], 'a11y: Skid\'s dialog with the board-less portrait');
   for (let i = 2; i <= 9; i++) {
     await t.setTime(480);
     await t.clickUI('choice-street.kid.givePack');
@@ -324,6 +372,9 @@ function rules() {
   await t.step(3);
   st = await t.state();
   T.eq([st.npc.kid.dead, st.stats.karma - k9, await line(), await choices()], [true, KID.karma + KID.deathKarma, (await text('card.kid.last'))[0], ['leave']], 'the tenth: his last words, -32 karma, only Leave');
+  T.eq([await ev(() => window.__dlg.look), await portrait()], [{ acc: ['capback'], str: 'kid' }, { label: 'Portrait: Skid', person: 'kid' }],
+    'he says them without the board he gave you (gone from the street, his look stays board-less)');
+  await ev(() => { window.SR.ui.dialog.open = window.__streetOpen; return true; });
   await clearToasts();
   await shot('dialog-kid-last.png');
   await t.press('back');
@@ -335,6 +386,10 @@ function rules() {
   const memorial = await ev(() => { const X = window.SR.art.exteriorDetail; return X && typeof X.stateKey === 'function' ? X.stateKey('home_mansion', window.SR.state) : null; });
   T.ok(memorial === null || /memorial/.test(memorial), 'the mansion\'s exterior detail now shows his memorial (W2-Exterior reads npc.kid.dead: ' + memorial + ')');
   await shot('city-kid-gone.png');
+  await ev(() => { const SR = window.SR; SR.save.write('slot2'); SR.save.load('slot2'); SR.save.remove('slot2'); return true; });
+  await t.step(2);
+  T.eq([(await people()).map((e) => e.id), (await t.state()).msgs.filter((m) => m.key === 'vm.mel.job').length], [['harold', 'dealer'], 1],
+    'saved and loaded, he stays gone (npc.kid.dead), and Mel\'s offer is not queued again');
 
   T.section('Red: Buy n grams with the NumberField');
   await talkTo(2920, 3480);
@@ -354,6 +409,16 @@ function rules() {
   after = await t.state();
   T.eq([after.items.snow, before.money.cash - after.money.cash, after.clock.min - before.clock.min, after.stats.karma - before.stats.karma], [11, 4400, 0, -2], 'bought 11 g: $4,400, no time, -2 karma');
   T.ok((await text('card.dealer.sold', { n: 11 })).indexOf(await line()) >= 0, 'Red\'s reply (' + (await line()) + ')');
+  const quick = () => ev(() => { const b = document.querySelector('#ui [data-id="choice-street.dealer.buy-n-q-max"]'); const i = document.querySelector('#ui [data-id="choice-street.dealer.buy-n-input"]'); return { label: b ? b.textContent.trim() : null, value: i ? i.value : null }; });
+  T.eq((await quick()).label, 'All I can carry', 'with $45,580 the quick button fills up to 99 held: "All I can carry"');
+  await t.press('back');
+  await t.step(2);
+  await t.set({ money: { cash: 1000 } });
+  await talkTo(2920, 3480);
+  T.eq((await quick()).label, 'All I can afford', 'with $1,000 the cash runs out first: "All I can afford"');
+  await t.clickUI('choice-street.dealer.buy-n-q-max');
+  await t.step(1);
+  T.eq((await quick()).value, '2', '... and it sets 2 g');
   await t.press('back');
   await t.step(2);
 
@@ -435,7 +500,40 @@ function rules() {
   T.section('no game: the title\'s backdrop still has the cast');
   const backdrop = await ev(() => { const SR = window.SR, keep = SR.state; SR.state = null; const ids = SR.world.streetnpcs.judge(true).map((e) => e.id); SR.state = keep; SR.world.streetnpcs.judge(true); return ids; });
   T.eq(backdrop.sort(), ['dealer', 'harold', 'kid'], 'without a state everyone stands at their first spot');
+  T.ok(await ev(() => window.SR.world.streetnpcs.list === window.SR.world.streetnpcs.people), 'the live list also answers to CONTRACT §15.1\'s name (streetnpcs.list)');
 
+  T.section('schedule rows (data/people.js): weekdays, windows, past midnight, conditions, inside a building');
+  const sched = await ev(() => {
+    const SR = window.SR, S = SR.world.streetnpcs, def = SR.reg.person.harold, keep = def.schedule;
+    const at = (day, min, patch) => { const s = SR.util.clone(SR.state); s.clock.day = day; s.clock.min = min; if (patch) SR.util.merge(s, patch); const p = S.placeOf('harold', s); return p ? p.place : null; };
+    const out = {};
+    try {
+      def.schedule = [
+        [['sat', 'sun'], 600, 960, 'kidCorner'],                        // weekends 10:00-16:00
+        ['all', 1200, 120, 'dealerAlley'],                              // 20:00-02:00, past midnight
+        [[0], 0, 1440, 'bar'],                                          // Mondays: inside Sticky's
+        ['all', 360, 1200, 'haroldCorner', [['stat', 'int', 100]]],     // only while INT ≥ 100
+      ];
+      Object.assign(out, {
+        sat10: at(6, 600), sat1559: at(6, 959), sat16: at(6, 960), sun10: at(7, 600),
+        tue23: at(2, 1380), wed01: at(3, 60), wed02: at(3, 120), mon12: at(1, 720), tue12: at(2, 720), tue12int: at(2, 720, { stats: { int: 100 } }),
+      });
+      def.schedule = [['all', 0, 1440, 'haroldCorner']];
+      out.midnight = at(3, 1440);
+      def.schedule = [];
+      out.none = at(3, 720);
+      def.schedule = [['all', 0, 1440, 'bar']];
+      out.inside = S.judge(true).map((e) => e.id).sort();
+    } finally { def.schedule = keep; }
+    out.back = S.judge(true).map((e) => e.id).sort();
+    return out;
+  });
+  T.eq(sched, {
+    sat10: 'kidCorner', sat1559: 'kidCorner', sat16: null, sun10: 'kidCorner', tue23: 'dealerAlley', wed01: 'dealerAlley', wed02: null,
+    mon12: null, tue12: null, tue12int: 'haroldCorner', midnight: 'haroldCorner', none: null, inside: ['dealer', 'kid'], back: ['dealer', 'harold', 'kid'],
+  }, 'the first row that holds places him: weekday lists (0 = Monday), from ≤ now < to (to 1440 holds at 24:00), a window past midnight, a condition; a building id or no row: not on the street');
+
+  T.eq(await ev(() => window.SR.text.missing().filter((k) => /^(person|act|greet|card|toast|bark|vm|mg)\.(street|harold|kid|dealer|junker|mcholland|hotwire)\b|^person\./.test(k))), [], 'no street text key is missing');
   T.eq(t.errors(), [], 'no console errors');
   await t.close();
   T.done();

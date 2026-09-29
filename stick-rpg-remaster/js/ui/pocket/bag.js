@@ -218,12 +218,18 @@
     if (rows.childNodes.length) d.appendChild(rows);
   }
 
+  /** @returns {{h: number, hp: number}} what a pill does tonight (B-06 `pills`: wakeMinus, restorePenalty). */
+  function pillVars() {
+    var p = SR.tuning.items && SR.tuning.items.pills;
+    return { h: p ? p.wakeMinus / 60 : '?', hp: p ? p.restorePenalty : '?' };
+  }
+
   function pillToggle(s, id) {
     var el = SR.ui.toggle({ id: id, label: 'pocket.bag.pillAuto', value: s.clock.pillAuto !== false, onChange: function (v) {
       B.ctx.act('bag.pillToggle', { on: v }, el);
     } });
     return h('div', { style: { display: 'flex', flexDirection: 'column', gap: '2px', padding: 'var(--sp-2) 0' } }, el,
-      h('span', { class: 't-small', style: { color: 'var(--ink-700)' } }, t('pocket.bag.pillAutoHint')));
+      h('span', { class: 't-small', style: { color: 'var(--ink-700)' } }, t('pocket.bag.pillAutoHint', pillVars())));
   }
 
   function line(label, meta, id) {

@@ -257,6 +257,7 @@
     var hadId = had && had.getAttribute('data-id');
     var keepScroll = S.tab === id ? S.body.scrollTop : 0;
     S.tab = id;
+    if (SR.ui.tooltip && SR.ui.tooltip.hide) SR.ui.tooltip.hide();   // a stepper's tip would outlive its tab
     D().clear(S.body);
     var box = h('div', { class: 'set-tab', role: 'tabpanel', 'data-id': 'set-tab-' + id, 'aria-label': text('set.tab.' + id) });
     BUILD[id](box);
@@ -296,6 +297,7 @@
 
   function unmount() {
     window.removeEventListener('keydown', onCaptureKey, true);
+    if (SR.ui.tooltip && SR.ui.tooltip.hide) SR.ui.tooltip.hide();
     if (S) {
       if (S.ctxPop) S.ctxPop();
       if (S.tabs && S.tabs.swipe) S.tabs.swipe();

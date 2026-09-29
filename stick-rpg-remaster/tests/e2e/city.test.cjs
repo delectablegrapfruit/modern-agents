@@ -6,7 +6,9 @@
 // Pause, minimap and minimal-HUD keys, the Fold Rescue (-10 HP, no time, the landing ≥ 64 u inside,
 // Pilot Ori's line), a fall at 10 HP reaching the hospital (Standard) and death (Hardcore), the car
 // fished out of the clouds, the 24:00 state, the day and night songs, the cab stub (P1, `phone`),
-// the knockdown's presentation, the a11y audit of the city's own controls, and zero console errors.
+// the knockdown's presentation (no click-to-walk while flat), the minimal HUD hiding the minimap,
+// the parked sports car, the movement and door sounds, the fall and rescue stingers, Retire
+// (world.retire), the a11y audit of the city's own controls, and zero console errors.
 // Screenshots go to shots/W2-City/.
 //   node tests/e2e/city.test.cjs
 'use strict';
@@ -264,6 +266,16 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-City');
   await page.mouse.click(click.cx, click.cy);
   const walked = await ev(() => { const SR = window.SR, P = SR.world.player; const had = P.path.length; SR.loop.step(90); return { had, y: P.y }; });
   T.ok(walked.had > 0 && walked.y > click.y0 + 150, 'a click on the ground walks you there along a route (' + Math.round(walked.y - click.y0) + ' u in 1.5 s)', walked);
+  const flat = await ev(() => {
+    const SR = window.SR, W = SR.world;
+    W.teleport(2223, 2700); window.W2C.run(0.1); SR.loop.step(1);
+    W.player.knock(1.14);
+    const q = SR.render.toScreen(2223, 2950), c = SR.stage.box;
+    return { cx: c.left + q.x * SR.stage.k, cy: c.top + q.y * SR.stage.k };
+  });
+  await page.mouse.click(flat.cx, flat.cy);
+  const flatPath = await ev(() => { const P = window.SR.world.player, n = P.path.length; P.knockdown = 0; return n; });
+  T.eq(flatPath, 0, 'a click while knocked down walks nowhere (no route queued for later)');
   const keys = await ev(() => {
     const SR = window.SR, out = {};
     const vis = () => !document.querySelector('#ui [data-id="minimap"]').hidden;
@@ -285,6 +297,120 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-City');
   T.ok(!keys.pauseReg || keys.pause.join() === 'city,pause', 'Esc / Start opens Pause' + (keys.pauseReg ? '' : ' (pause not registered yet: refused)'), keys);
   T.eq(keys.after, ['city'], 'and they close back to the city');
 
+  T.section('the minimal HUD hides the minimap; your parked sports car');
+  const minimal = await ev(() => {
+    const SR = window.SR, mini = () => document.querySelector('#ui [data-id="minimap"]');
+    // (One frame for the HUD to take its minimal look, one for the city to follow it.)
+    SR.debug.press('minimalHud'); SR.loop.step(1); SR.loop.step(1);
+    const out = { minimal: SR.ui.hud.el().classList.contains('is-minimal'), hidden: mini().hidden };
+    SR.debug.press('minimalHud'); SR.loop.step(1); SR.loop.step(1);
+    out.back = !mini().hidden;
+    // The sports car parked on its home lot (the mansion drive) is drawn; while you drive it, it is you.
+    const lot = SR.world.geometry.map.homeLots.sports, cx = (lot[0] + lot[2]) / 2, cy = (lot[1] + lot[3]) / 2;
+    SR.debug.set({ player: { cars: { sports: { owned: true, bought: false, x: cx, y: cy, a: 0, towed: false } } } });
+    SR.world.teleport(cx, lot[3] + 50); SR.loop.step(1);
+    out.parked = SR.render.actors.cars().filter((e) => e.kind === 'sports' && e.parked).length;
+    return out;
+  });
+  await clearToasts();
+  await t.step(1);
+  await t.shot(path.join(SHOTS, 'city-parked-sports.png'));
+  Object.assign(minimal, await ev(() => {
+    const SR = window.SR, out = {}, lot = SR.world.geometry.map.homeLots.sports, cx = (lot[0] + lot[2]) / 2, cy = (lot[1] + lot[3]) / 2;
+    SR.world.player.board('sports', true); SR.loop.step(1);
+    out.driving = SR.render.actors.cars().filter((e) => e.kind === 'sports' && e.parked).length;
+    SR.world.player.park(cx, cy, 0);
+    SR.debug.set({ player: { cars: { sports: { owned: false } } } });
+    SR.loop.step(1);
+    out.gone = SR.render.actors.cars().filter((e) => e.kind === 'sports' && e.parked).length;
+    return out;
+  }));
+  T.eq([minimal.minimal, minimal.hidden, minimal.back], [true, true, true], 'H (the minimal HUD: only HP and the ClockRing) hides the minimap, and H again brings it back', minimal);
+  T.eq([minimal.parked, minimal.driving, minimal.gone], [1, 0, 0], 'your parked sports car is drawn where you left it (not while you drive it, not once it is gone)', minimal);
+
+  T.section('movement sounds: footsteps, the board, the engine, the doors (ART_AUDIO §13.5)');
+  const snd = await ev(() => {
+    const SR = window.SR, W = SR.world, P = W.player, G = W.geometry, got = [];
+    const orig = SR.audio.sfx;
+    SR.audio.sfx = function (name, o) {
+      const h = orig.apply(this, arguments), rec = { name, pitch: o && o.pitch, sets: [], stopped: false };
+      got.push(rec);
+      return { name: h.name, inert: h.inert, playing: () => h.playing(), set(q) { rec.sets.push(Object.assign({}, q)); h.set(q); }, stop() { rec.stopped = true; h.stop(); } };
+    };
+    const names = (from) => got.slice(from).map((r) => r.name);
+    const walk = (dir, frames) => { SR.input.inject(dir, true); SR.loop.step(frames); SR.input.inject(dir, false); SR.loop.step(2); };
+    const out = {};
+    try {
+      SR.debug.setTime(720);
+      // Find 400 u of open lawn and of sidewalk to walk east along.
+      // 400 u of one surface, walkable, and no door trigger near the way (walking must not enter one).
+      const clear = (x, y, kind) => {
+        if (G.doors.some((d) => d.tc && Math.abs(d.tc[1] - y) < 120 && d.tc[0] > x - 120 && d.tc[0] < x + 520)) return false;
+        for (let d = 0; d <= 400; d += 20) if (G.surfaceAt(x + d, y) !== kind || !G.walkable(x + d, y, 16)) return false;
+        return true;
+      };
+      const find = (kind) => { for (let y = 700; y < 4200; y += 37) for (let x = 600; x < 4000; x += 41) if (clear(x, y, kind)) return [x, y]; return null; };
+      const lawn = find('lawn'), walkway = find('sidewalk');
+      out.spots = { lawn, walkway };
+      let n = got.length;
+      W.teleport(walkway[0], walkway[1]); walk('right', 60);
+      out.sidewalk = names(n).filter((x) => /^step/.test(x));
+      out.pitches = got.slice(n).filter((r) => /^step/.test(r.name)).map((r) => r.pitch);
+      n = got.length;
+      W.teleport(lawn[0], lawn[1]); walk('right', 60);
+      out.lawn = names(n).filter((x) => /^step/.test(x));
+      // On the Dog-Ear, the folded corner of the sheet, the steps creak like paper.
+      const ear = SR.reg.worldmap.main.features.dogEar.flap;
+      n = got.length;
+      W.teleport(720, 480); walk('right', 30);
+      out.ear = { inFlap: G.util.inPoly(SR.world.player.x, SR.world.player.y, ear), steps: names(n).filter((x) => /^step/.test(x)) };
+      // Standing still: no footsteps.
+      n = got.length; SR.loop.step(60); out.still = names(n).filter((x) => /^step/.test(x)).length;
+      // The board: the roll loop and a push clack, no footsteps.
+      SR.debug.set({ items: { skateboard: 1 } });
+      n = got.length;
+      W.teleport(walkway[0], walkway[1]);
+      SR.input.inject('skate', true); walk('right', 45); SR.input.inject('skate', false); SR.loop.step(2);
+      const sk = got.slice(n);
+      out.skate = { loop: sk.filter((r) => r.name === 'skate_loop').length, stopped: sk.filter((r) => r.name === 'skate_loop').every((r) => r.stopped),
+        push: sk.filter((r) => r.name === 'skate_push').length, steps: sk.filter((r) => /^step/.test(r.name)).length };
+      // The car: the ignition as you get in, the engine rising with the speed, silence when you get out.
+      SR.debug.set({ player: { cars: { junker: { owned: true, x: 2223, y: 2700, a: Math.PI / 2, towed: false } } } });
+      W.teleport(2223, 2740); SR.loop.step(1);
+      n = got.length;
+      SR.debug.press('car'); SR.loop.step(2);
+      out.ignition = names(n).indexOf('ignition') >= 0;
+      SR.input.inject('down', true); SR.loop.step(40); SR.input.inject('down', false);
+      const eng = got.slice(n).filter((r) => r.name === 'engine_loop');
+      const pitches = eng.length ? eng[0].sets.map((q) => q.pitch).filter((x) => typeof x === 'number') : [];
+      out.engine = { loops: eng.length, first: eng.length ? eng[0].pitch : null, top: pitches.length ? Math.max.apply(null, pitches) : null };
+      SR.loop.step(60);
+      SR.debug.press('car'); SR.loop.step(2);
+      out.engine.stopped = eng.length > 0 && eng.every((r) => r.stopped);
+      // Walking into a door: its sound (McSticks a shop bell, the casino its ding).
+      out.doors = {};
+      ['mcsticks', 'casino'].forEach((id) => {
+        const d = G.doorById[id];
+        W.teleport(d.x + (d.exit.x - d.x) * 0.9, d.y + (d.exit.y - d.y) * 0.9); SR.loop.step(1);
+        n = got.length;
+        SR.debug.press('interact');
+        out.doors[id] = { stack: SR.scenes.stack().join(), sfx: names(n).filter((x) => /^door_/.test(x)) };
+        SR.debug.goto('city');
+      });
+    } finally { SR.audio.sfx = orig; }
+    return out;
+  });
+  T.ok(snd.sidewalk.length >= 3 && snd.sidewalk.length <= 5 && snd.sidewalk.every((x) => x === 'step') && snd.pitches.some((x) => x !== snd.pitches[0]),
+    'on foot: a footstep every stride (' + snd.sidewalk.length + ' in 1 s at 280 u/s), alternating pitch', snd);
+  T.ok(snd.lawn.length >= 3 && snd.lawn.every((x) => x === 'step_grass'), 'softer on the grass (step_grass)', snd.lawn);
+  T.ok(snd.ear.inFlap && snd.ear.steps.length >= 1 && snd.ear.steps.every((x) => x === 'step_paper'), 'the paper creak on the Dog-Ear (step_paper)', snd.ear);
+  T.eq(snd.still, 0, 'standing still makes no footsteps');
+  T.ok(snd.skate.loop === 1 && snd.skate.push >= 1 && snd.skate.steps === 0 && snd.skate.stopped, 'on the board: the roll loop and a push clack, no footsteps; the roll stops with the board', snd.skate);
+  T.ok(snd.ignition && snd.engine.loops === 1 && snd.engine.top > snd.engine.first && snd.engine.stopped,
+    'in the car: the ignition, one engine loop whose pitch rises with the speed, stopped when you get out', snd.engine);
+  T.ok(snd.doors.mcsticks.stack === 'building' && snd.doors.mcsticks.sfx.join() === 'door_bell' && snd.doors.casino.sfx.join() === 'door_ding',
+    'walking in: McSticks rings its shop bell, the casino dings', snd.doors);
+
   // ------------------------------------------------------------------------------------------------
   T.section('the Fold Rescue');
   await t.newGame({ seed: 24 });
@@ -294,6 +420,12 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-City');
   const start = await ev(() => {
     const SR = window.SR, F = SR.world.fall, s = SR.state;
     const r = { hp: s.stats.hp, min: s.clock.min, falls: s.records.falls };
+    // The fall's and the rescue's stingers (W2-Music): stand-ins so the city's calls can be seen.
+    window.__stingers = [];
+    window.__stingerOrig = SR.audio.stinger;
+    window.__fakeSongs = ['stingers.fall', 'stingers.rescue'].filter((id) => !SR.reg.song[id]);
+    window.__fakeSongs.forEach((id) => { SR.reg.song[id] = { id }; });
+    SR.audio.stinger = (id) => { window.__stingers.push(id); return null; };
     SR.input.inject('down', true);
     let n = 0;
     while (n < 200 && F.phase !== 'drop') { SR.loop.step(1); n++; }
@@ -313,12 +445,16 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-City');
     let n = 0;
     while (n < 120 && F.active()) { SR.loop.step(1); n++; }
     SR.loop.step(4);
-    return { hp: SR.state.stats.hp, min: SR.state.clock.min, falls: SR.state.records.falls, inside: G.edgeDistance(P.x, P.y), toasts: window.W2C.toasts(), shown: SR.render.actors.player().visible !== false };
+    SR.audio.stinger = window.__stingerOrig;
+    window.__fakeSongs.forEach((id) => { delete SR.reg.song[id]; });
+    return { hp: SR.state.stats.hp, min: SR.state.clock.min, falls: SR.state.records.falls, inside: G.edgeDistance(P.x, P.y), toasts: window.W2C.toasts(), shown: SR.render.actors.player().visible !== false,
+      stingers: window.__stingers };
   });
   T.eq([landed.hp - start.hp, landed.min - start.min, landed.falls - start.falls], [-10, 0, 1], 'a fall costs 10 HP and no time (orig)');
   T.ok(landed.inside >= 64, 'the plane sets you down ≥ 64 u inside the edge (' + Math.round(landed.inside) + ' u)');
   T.ok(landed.toasts.some((x) => /Pilot Ori/.test(x)), 'Pilot Ori says his line after the first fall', landed.toasts);
   T.ok(landed.shown, 'and the stick is back on the sheet');
+  T.eq(landed.stingers, ['fall', 'rescue'], 'the fall and the rescue play their stingers (once W2-Music registers them)');
   await t.step(20);
   await t.shot(path.join(SHOTS, 'fold-4-landed.png'));
 
@@ -447,6 +583,23 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-City');
   T.eq([cab.flagOff, cab.noPhone], ['reason.featureOff', 'reason.needPhone'], 'no cab without the phone flag, or without a phone');
   T.eq([cab.ride.ok, cab.ride.cash, cab.ride.min, cab.ride.at], [true, 85, 750, cab.ride.exit], 'a ride: $15 and 30 min, and you step out at the door (GDD §4.18)');
   T.eq([cab.lateShop, cab.lateHome.ok, cab.lateHome.min, cab.lateHome.at], ['reason.dayOver', true, 1440, cab.lateHome.exit], 'at 24:00 only home, and it takes no minutes');
+
+  T.section('Retire (world.retire, W2-Front request 2)');
+  const retire = await ev(() => {
+    const SR = window.SR, out = {};
+    SR.debug.newGame({ seed: 31 });
+    out.timed = SR.act('world.retire').reason;
+    SR.debug.newGame({ seed: 31, length: 0 });
+    let ev = null;
+    const off = SR.events.on('game:over', (p) => { ev = p && p.reason; });
+    const r = SR.act('world.retire');
+    off();
+    out.unlimited = { ok: r.ok, over: r.over, event: ev, stateOver: SR.state.over, result: SR.state.result && SR.state.result.reason };
+    return out;
+  });
+  T.eq(retire.timed, 'reason.timedGame', 'a timed game cannot retire');
+  T.eq(retire.unlimited, { ok: true, over: { reason: 'retire' }, event: 'retire', stateOver: true, result: 'retire' }, 'an Unlimited run retires through SR.act: Result.over and game:over { reason: retire }');
+  await ev(() => { const SR = window.SR; SR.debug.newGame({ seed: 32 }); SR.debug.goto('city'); });
 
   T.section('result (desktop)');
   T.eq(t.errors(), [], 'zero console errors');

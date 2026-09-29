@@ -206,6 +206,20 @@ const B18 = [
   await t.step(2);
   const kp = await t.state();
   T.eq([await t.scenes(), kp.over, kp.mode.keepPlaying, kp.result && kp.result.reason], [['city'], false, true, 'time'], 'Keep playing continues it unranked in the city (the original results kept)');
+  await t.newGame({ seed: 24, name: 'Jailbird', length: 15 });
+  await ev(() => {
+    const SR = window.SR, s = SR.state;
+    s.clock.day = 16;
+    s.jail = { daysLeft: 3, served: 2, reason: 'police' };
+    s.over = true;
+    s.result = SR.rules.endgame.results(s, 'time');
+    SR.scenes.go('results', { reason: 'time', result: s.result }, { transition: false });
+  });
+  await t.step(1);
+  await t.clickUI('results-keep');
+  await t.step(2);
+  const kj = await t.state();
+  T.eq([await t.scenes(), kj.over, kj.jail && kj.jail.daysLeft], [['jail'], false, 3], 'Keep playing after a game that ended in jail goes back to the cell (W2-Transit 5)');
   await t.newGame({ seed: 22, name: 'Unkept', length: 0 });
   await t.set({ clock: { day: 5 } });
   await ev(() => { window.SR.rules.endgame.retire(window.SR.state); window.SR.scenes.go('results', { reason: 'retire', result: window.SR.state.result }, { transition: false }); });

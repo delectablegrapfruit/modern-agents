@@ -32,6 +32,11 @@
   function t(k, v) { return D().t(k, v); }
   function has(k) { return SR.text.has(k); }
   function hasSong(id) { return !!(SR.reg.song && SR.reg.song[id]); }
+  /** @returns {number} the poll an election is won at (B-17 `election.win.threshold`, in %). */
+  function winLine() {
+    var w = SR.tuning.election && SR.tuning.election.win;
+    return w && typeof w.threshold === 'number' ? w.threshold : 50;
+  }
 
   // ---------------------------------------------------------------------------------------------
   // Text
@@ -55,7 +60,7 @@
     if (v.how) v.howText = has('news.how.' + v.how) ? SR.text('news.how.' + v.how) : v.how;
     if (v.cause) v.causeText = SR.text(has('news.cause.' + v.cause) ? 'news.cause.' + v.cause : 'news.cause.other');
     if (v.id && has('decree.' + v.id + '.name')) v.decreeName = SR.text('decree.' + v.id + '.name');
-    if (typeof v.pct === 'number') v.move = (v.pct > 0 ? '+' : '') + v.pct + ' %';
+    if (typeof v.pct === 'number') v.move = (v.pct > 0 ? '+' : '') + SR.text.pct(v.pct / 100);
     return v;
   }
 
@@ -215,6 +220,7 @@
     cv.width = W * dpr; cv.height = H * dpr;
     var ctx = cv.getContext && cv.getContext('2d');
     var from = e.poll, to = SR.util.clamp(e.poll + (e.roll || 0), 0, 100);
+    var lineX = 10 + SR.util.clamp(winLine(), 0, 100) / 100 * (W - 20);   // the winning line
     function tok(n) { return D().token(n); }
     function draw(v) {
       if (!ctx) return;
@@ -226,7 +232,7 @@
         var x = 10 + i * (W - 20) / 10;
         ctx.beginPath(); ctx.moveTo(x, H - 14); ctx.lineTo(x, H - (i === 5 ? 34 : 22)); ctx.stroke();
       }
-      ctx.fillStyle = tok('--danger'); ctx.fillRect(10 + (W - 20) / 2 - 1.5, 6, 3, H - 20);
+      ctx.fillStyle = tok('--danger'); ctx.fillRect(lineX - 1.5, 6, 3, H - 20);
       var nx = 10 + SR.util.clamp(v, 0, 100) / 100 * (W - 20);
       ctx.strokeStyle = tok('--primary-600'); ctx.lineWidth = 4; ctx.lineCap = 'round';
       ctx.beginPath(); ctx.moveTo(W / 2, H + 60); ctx.lineTo(nx, 8); ctx.stroke();
@@ -255,7 +261,7 @@
   }
 
   function electionPage(rep, page) {
-    var h = D().h, e = rep.election, final = Math.round((e.poll + (e.roll || 0)) * 10) / 10;
+    var h = D().h, e = rep.election, final = Math.round(SR.util.clamp(e.poll + (e.roll || 0), 0, 100) * 10) / 10;
     var vars = newsVars({ path: e.path, poll: e.poll });
     var roll = (e.roll > 0 ? '+' : '') + (e.roll || 0);
     var cv = h('canvas', { 'data-id': 'report-needle', 'aria-hidden': 'true', style: { width: '600px', height: '70px', display: 'block', margin: '0 auto' } });
@@ -267,7 +273,7 @@
       h('div', { style: { display: 'flex', justifyContent: 'center', gap: 'var(--sp-4)', alignItems: 'center', marginBottom: 'var(--sp-2)' } },
         h('span', { class: 't-label' }, t('news.election.poll', { poll: e.poll })),
         SR.ui.meter({ id: 'report-poll', kind: 'poll', value: e.poll, max: 100, w: 360 }),
-        h('span', { class: 't-small', style: { color: 'var(--ink-700)' } }, t('news.election.line'))),
+        h('span', { class: 't-small', style: { color: 'var(--ink-700)' } }, t('news.election.line', { n: winLine() }))),
       h('p', { class: 't-body', style: { margin: 'var(--sp-2) 0' } }, t('news.election.roll', { roll: roll })),
       cv, result);
     page.startAnim = function () {

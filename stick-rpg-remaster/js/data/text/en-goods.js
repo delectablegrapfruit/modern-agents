@@ -39,11 +39,11 @@
     'greet.pawn.vest': 'You have been doing some time, huh? A vest will not keep you out. It might keep you in one piece.',
 
     // ---- the pawn shop: toasts after a purchase (one-off items teach what they do) ----
-    'toast.pawn.knife': 'Your punches and kicks now land +{n} harder in a fight.',
+    'toast.pawn.knife': 'Your punches and kicks now deal +{n} damage in a fight.',
     'toast.pawn.gun': 'A hold-up needs at least {n} rounds. Vinnie sells them by the box.',
     'toast.pawn.alarm': 'From tomorrow morning you wake up {h} h earlier.',
     'toast.pawn.phone': 'Your messages now reach you wherever you are.',
-    'toast.pawn.knuckles': 'Your punches now land +{n} harder in a fight.',
+    'toast.pawn.knuckles': 'Your punches now deal +{n} damage in a fight.',
     'toast.pawn.vest': 'Fights now hurt {pct} less.',
     'toast.pawn.vestTours': 'Fights now hurt {pct} less, and a mugger takes only {mug} of your cash.',
     'toast.pawn.skateboard': 'Hold the skate button to roll at {n}× walking speed.',
@@ -96,6 +96,7 @@
     'toast.furniture.sleep': '{name} delivered. Sleep restores more HP from tonight.',
     'toast.furniture.nightly': '{name} delivered. It trains you every night from tonight.',
     'toast.furniture.home': '{name} delivered. It is waiting for you at home.',
+    'toast.furniture.stored': '{name} delivered. It waits in storage until your home has room.',
 
     // ---- the showroom (furniture.browse) ----
     'sub.furniture.browse': 'Showroom',
@@ -109,8 +110,9 @@
     'card.furniture.inStorage': 'In storage',
     'card.furniture.topTier': 'Top of the line',
     'card.furniture.pieces': 'Pieces on the floor',
-    'card.furniture.preview': 'Preview: your {home}',
+    'card.furniture.preview': 'Preview: the {name} in your {home}.',
     'card.furniture.previewHint': 'Pick a piece to see it in your {home}.',
+    'card.furniture.previewHome': 'Your {home} as it is now.',
     'card.furniture.effect.bed': 'Sleep restores {pct} more of your HP max.',
     'card.furniture.effect.pod': 'Sleep restores {pct} more of your HP max.',
     'card.furniture.effect.tv': 'Watch the News at home.',

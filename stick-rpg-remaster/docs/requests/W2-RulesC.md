@@ -62,7 +62,8 @@ Each request names the file, the exact change, why, and the workaround used mean
   - §8.9 `SR.rules.casino`: `scratchResolve(s)`; named fns for data: `casino.scratchResolve`
     (the scratch row's `:resolve`: pays the card in progress, refused with `reason.notNow` when
     none is open). `SR.rules.casino.scratchRound(s, ctx)` no longer credits the prize: it keeps the
-    card in `casino.card` and opens the engine (a card left unpaid is paid before the next one).
+    card in `casino.card` and opens the engine (a card left unpaid is paid before the next one,
+    except in a preview's dry run, so the row never shows that unrevealed prize).
   - §8.9 "The in progress records": add `casino.scratchResolve` / `casino.card` to the list.
   - §8.9 `SR.rules.crime`: `jailDay` releases at once (no gain, no night) when `jail.daysLeft ≤ 0`.
   - §8.9 `SR.rules.election`: `acceptBy(s)` → the last day the nomination can be accepted
@@ -84,3 +85,5 @@ Each request names the file, the exact change, why, and the workaround used mean
   Office name that day, the phone says one day later (W2-Civic's review note in
   `docs/requests/W2-Civic.md`). Pinned in `tests/node/election.test.cjs`.
 - **Meanwhile:** nothing (P1 `phone`).
+- **Status:** applied by W2-Pocket in the wave (`phone.boardInfo` reads
+  `SR.rules.election.acceptBy(s)`; recorded in `docs/requests/W2-Pocket.md`).

@@ -267,6 +267,7 @@
     var had = SR.ui.focus.focused();
     var hadId = had && had.getAttribute('data-id');
     var list = SR.save.list();
+    if (SR.ui.tooltip && SR.ui.tooltip.hide) SR.ui.tooltip.hide();   // a card's tip would outlive the card
     D().clear(V.list);
     slots(list).forEach(function (slot) {
       V.list.appendChild(cardFor(slot, list.filter(function (e) { return e.slot === slot; })[0]));

@@ -50,6 +50,8 @@
   function fast() { try { return !!(SR.debug && typeof SR.debug.fast === 'function' && SR.debug.fast() === true); } catch (e) { return false; } }
   function pal(k) { return SR.art && SR.art.draw ? SR.art.draw.color(k) : ''; }
   function clone(v) { return SR.util.clone(v); }
+  /** @returns {string} a stat change with its sign ("+1", "-3") for a chip-like line. */
+  function signed(n) { n = Number(n) || 0; return (n > 0 ? '+' : '') + n; }
   function fighterDef(f) { return f && f.fighter && SR.reg.fighter ? SR.reg.fighter[f.fighter] || null : null; }
   function foeName(f) {
     var key = f && f.name || (fighterDef(f) && fighterDef(f).name);
@@ -90,6 +92,10 @@
     var pose = { me: 'guard', foe: 'guard', meT: 0, foeT: 0 };
     var winPick = 0;
     var ended = false;
+    // Hardcore (ARCHITECTURE §10, §15): the frame saved { resolve, worst: the loss } in
+    // state.pending just before this fight opened (a stake). Once the fight is decided it is no
+    // longer a live stake, so decided() puts the decided result in its place.
+    var pend0 = SR.state && SR.state.pending && SR.state.pending.resolve ? SR.state.pending : null;
 
     // ---- DOM: the move bar, the "(it froze)" link and the win panel ----------------------------
     var bar = host.el('div', { 'data-id': 'mg-fight-moves', style: {
@@ -262,23 +268,49 @@
       mirror();
     }
 
+    /**
+     * Hardcore: the fight is decided (won at the wallet panel, or played out by the Quick fight),
+     * so the decided result replaces the pending loss in the ironman slot, as the frame does when a
+     * round finishes (js/scenes/minigame.js settlePending). Without it, closing the tab while the
+     * wallet panel waits for your pick, or during the Quick fight's replay, reloaded as a KO: HP 0,
+     * death unless Second Wind. The wallet is the default pick (B-13).
+     */
+    function decided(r) {
+      var s = SR.state;
+      if (!pend0 || !s || s.pending !== pend0 || !s.mode || s.mode.difficulty !== 'hardcore') return;
+      pend0.worst = clone(r);
+      if (SR.save && typeof SR.save.write === 'function') {
+        try { SR.save.write('ironman'); } catch (e) { SR.util.warnOnce('fight-ironman', 'fight: ironman write failed (' + e.message + ')'); }
+      }
+    }
+
     function showWin() {
       phase = 'win';
       pose.me = 'win';
       pose.foe = 'lose';
       host.audio.sfx('cheer');
       if (f.kind !== 'bar') { end(resultOf(f)); return; }
+      decided(resultOf(f, 'wallet'));
       while (panel.firstChild) panel.removeChild(panel.firstChild);
       panel.appendChild(host.el('h3', { style: { margin: '0', font: '900 calc(28px * var(--ui-scale, 1)) var(--font-display)', textTransform: 'uppercase' } }, [T('mg.fight.winTitle')]));
       var str = SR.tuning.fight.win.str;
       var row = host.el('div', { style: { display: 'flex', gap: '8px' } }, [host.chip(T('mg.fight.winStr', { n: str }), 'str')]);
       panel.appendChild(row);
-      var picks = [{ id: 'wallet', label: T('mg.fight.wallet'), sub: T('mg.fight.walletDesc') }];
-      if (nightlife) picks.push({ id: 'drink', label: T('mg.fight.drink'), sub: T('mg.fight.drinkDesc', { money: SR.text.money(SR.tuning.fight.drink.cash) }) });
+      // B-13 `wallet` (-3 karma, orig) and `drink` (P1: -$5, +1 CHA, +1 karma): the numbers are tuning's.
+      var W = SR.tuning.fight.wallet, Dk = SR.tuning.fight.drink;
+      var picks = [{ id: 'wallet', label: T('mg.fight.wallet'), sub: T('mg.fight.walletDesc', { karma: signed(W.karma) }) }];
+      if (nightlife) picks.push({ id: 'drink', label: T('mg.fight.drink'), sub: T('mg.fight.drinkDesc', { money: SR.text.money(Dk.cash), cha: signed(Dk.cha), karma: signed(Dk.karma) }) });
       winPick = 0;
       picks.forEach(function (p, i) {
         var b = host.button({ id: 'mg-fight-pick-' + p.id, label: p.label, sub: p.sub, badge: String(i + 1), tall: true, width: '100%',
           onPress: function () { choose(p.id); } });
+        if (p.id === 'drink' && !canTreat()) {
+          // Without the price of a drink the rules would pay the wallet instead (B-13 `drink`), so
+          // the kind option is shown refused rather than quietly turned into the unkind one.
+          b.setAttribute('aria-disabled', 'true');
+          b.setAttribute('aria-description', T('reason.needCash', { n: Dk.cash, money: SR.text.money(Dk.cash) }));
+          dim(b);
+        }
         panel.appendChild(b);
       });
       panel.style.display = 'flex';
@@ -291,9 +323,16 @@
       Array.prototype.forEach.call(nodes, function (b, i) { host.ring(b, i === winPick && host.device !== 'touch'); });
     }
     function picksCount() { return nightlife ? 2 : 1; }
+    /** @returns {boolean} the drink is affordable (B-13 `drink`: -$5); SR.state is the live cash. */
+    function canTreat() { var s = SR.state; return !!(s && s.money && s.money.cash >= SR.tuning.fight.drink.cash); }
 
     function choose(choice) {
       if (phase !== 'win' || ended) return;
+      if (choice === 'drink' && !canTreat()) {
+        host.audio.sfx('error');
+        host.aria(T('reason.needCash', { n: SR.tuning.fight.drink.cash, money: SR.text.money(SR.tuning.fight.drink.cash) }));
+        return;
+      }
       host.audio.sfx(choice === 'drink' ? 'glass_clink' : 'coin');
       end(resultOf(f, choice));
     }
@@ -588,7 +627,7 @@
     host.label('info', f.kind === 'ring' ? T('mg.fight.titleRing') + ' · ' + T('mg.fight.bout', { k: f.k })
       : f.kind === 'bar' ? T('mg.fight.rung', { n: f.n, max: SR.tuning.fight.ladder.n }) : T('mg.fight.titleGoons'));
     host.hints([
-      { range: ['move1', 'move7'], label: 'mg.fight.hintMoves', only: 'kb' },
+      { range: ['move1', 'move' + entries().length], label: 'mg.fight.hintMoves', only: 'kb' },   // 1-6, or 1-7 with Guard (P1)
       { actions: ['left', 'right'], label: 'mg.fight.hintPick', only: 'pad' },
       { action: 'confirm', label: 'mg.fight.hintUse', only: 'pad' },
       { label: 'mg.fight.hintTap', only: 'touch' },
@@ -627,12 +666,13 @@
       pointer: function () {},
       /** The Quick fight from here: SR.rules.fight.autoPlay with real rolls (ARCHITECTURE §10). */
       auto: function (rng) {
-        if (phase === 'win') return resultOf(f, 'wallet', true);
+        if (phase === 'win') { panel.style.display = 'none'; return resultOf(f, 'wallet', true); }
         queue.length = 0;
         beat = null;
         var from = { me: disp.me, foe: disp.foe }, before = f.log.length;
         var r = F().autoPlay(host.state, f, rng);
         if (r.outcome === 'win' && f.kind === 'bar') r.choice = 'wallet';
+        decided(r);   // Hardcore: the 2 s replay shows a fight already decided
         replay = { from: from, to: { me: f.me.hp, foe: f.foe.hp }, t: 0, dur: fast() ? 0.01 : REPLAY_S, log: f.log.slice(before), shown: -1 };
         phase = 'over';
         ended = true;

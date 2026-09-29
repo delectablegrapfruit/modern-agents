@@ -14,6 +14,8 @@ a file this desk does not own, are named "not this desk".
 | 1 | start of the wave | none in `docs/requests/W2-*.md` (no wave-2 request file existed yet). The wave-1 decision files list no deferred item for W2-RulesC (their Deferred tables name no rules desk); the wave-1 items that touch this desk's files were settled at the wave-1 integration (below) |
 | 2 | mid-wave (continuous, as each request file appeared) | `W2-Food.md` item 4 (below). Read and nothing for this desk: `W2-Civic.md` (its campaign rows call `election.*` as CONTRACT §8.10 records), `W2-Goods.md`, `W2-Exterior.md` (reads `tuning.crime.police.posters` and the cities' palette keys, both present), `W2-Transit.md` (its rows call `trade.*` / `crime.*` as recorded; the tour hook's forfeit `{ wins: 0 }` gets the -20 % of `trade.tour`), `W2-Night.md` ("nothing is asked of the rules desks": every §8.10 call worked), `W2-City.md` (`world.city` runs `election.check`), `W2-Home.md` (its item 1 is `act.js`, W2-RulesE's), `W2-RulesE.md` |
 | 3 | before finishing | nothing new for this desk: `W2-Money.md`, `W2-Street.md` and `W2-Pocket.md` (new) name no conflict rule or file of this desk; `W2-RulesE.md` 4 and `decisions-w2-W2-RulesE.md` answer this desk's request 3 (applied: `casino.card: null` in `defaults()`); `W2-Food.md` 4 records the adopted order of its scratch resolve |
+| 4 | after the pause (resumed), before handing off | nothing new for this desk: the files changed since sweep 3 (`W2-Front.md` 1-5, `W2-Transit.md` 1-5, `W2-Home.md` 1-9, `decisions-w2-W2-RulesE.md` sweep 4) name no conflict rule or file of this desk (W2-Transit 5, Keep playing after a game that ended in jail, is W2-Front's; the cell still releases through `crime.jailDay`, and a sentence already served releases at once); this desk's request 5 (`phone.boardInfo` → `election.acceptBy`) was applied by W2-Pocket after the pause (`js/data/actions/phone.js` reads `SR.rules.election.acceptBy`), so the Board's voicemail, City Hall, the Campaign HQ and the phone name the same day; W2-Food, W2-Front and W2-Pocket's edits after the pause and `decisions-w2-W2-RulesE.md` sweep 5 add nothing for this desk |
+| 5 | the review | nothing new for this desk: the items added since sweep 4 (`W2-City.md` 6-7, `W2-Civic.md` 6, `W2-Front.md` 6, `W2-Exterior.md` 10-11 and its item 6 update, which asks the lead's render sheet to load `cities.js` and `en-conflict.js` as they are, `W2-RulesE.md` 6, `decisions-w2-W2-RulesE.md` sweep 6) name other owners' files; `W2-Night.md` still asks nothing of the rules desks |
 
 ## Requests from wave-2 packages
 
@@ -75,6 +77,34 @@ a file this desk does not own, are named "not this desk".
 - **`SR.rules.election.acceptBy(s)`** (above) and **`casino.scratchResolve`** (W2-Food 4): the two
   additive names of this desk in wave 2; the CONTRACT records are `docs/requests/W2-RulesC.md` 4.
 
+## Fixes from the adversarial review (wave 2)
+
+No public name changes; each is pinned in the suite named.
+
+- **The debate's counts were unbounded** (`js/rules/election.js` `debate`): losses were read as
+  `beats.length - wins`, so a result naming only its wins (`{ wins: 2 }`) counted -2 losses and
+  moved the poll +10 instead of +6, and `{ wins: 9 }` gave +27. Wins are now held to the 3 questions
+  (B-17 `debate.questions`), losses to the questions left, neither below 0; the Duel's own results
+  (`wins + losses = beats.length ≤ 3`) are unchanged (`election.test.cjs`).
+- **A won or fled fight could leave 0 HP** (`js/rules/fight.js` `finish`): a `win` or `run` result
+  echoing `hpLeft: 0` set HP 0, and the pipeline then downed the player with cause `other` (death
+  in Hardcore); a `NaN` left HP `NaN`. Only a loss reaches 0 now (a win or a run keeps at least 1),
+  and a non-finite `hpLeft` keeps your HP (`fight.test.cjs`).
+- **`casino.bjHand`'s echoed net was unbounded** (`js/rules/casino.js` `bjRound`): the `{ bet, net }`
+  form paid any net (`{ bet: 10, net: 100000 }` paid $100,000), while the echoed `wagered` was
+  already capped at a hard-coded 2 × bet. One bound now comes from B-14b's rules (`maxStake`: a
+  double, or the hands a split allows, doubled only with double-after-split: 2 × bet today): the
+  echoed net is clamped to ±that, `wagered` uses it, and a played `{ round }` staking more (or with
+  no hands) is refused with `reason.badBet`. The engine's `{ round, shoe, trueCount }` calls are
+  unaffected (`casino.test.cjs`).
+- **The Scratch row's preview showed an unrevealed card's prize** (`js/rules/casino.js`
+  `scratchRound`): with a card left in progress (a reload mid-reveal), the dry run paid it, so the
+  "Scratch a card" row showed e.g. "+$10,000" as if the next card paid it. The dry run
+  (`ctx.preview`) no longer pays it; the row itself still pays it before drawing the next card
+  (`casino.test.cjs`).
+- **A stale header** (`js/data/decrees.js`) pointed at named constants in `election.js` that the
+  wave-1 integration moved to `tuning.election`; it now names the tuning rows.
+
 ## Notes for the wave-2 data (how the conflict rules read through `SR.act`)
 
 - `SR.act`'s Result keeps only the fields of CONTRACT §8.3: the module functions' extras (`released`,
@@ -90,8 +120,8 @@ a file this desk does not own, are named "not this desk".
 
 ## Checks
 
-- `node tests/node/{crime,trade,fight,casino,election}.test.cjs`: 115 / 73 / 67 / 104 / 116 passed,
-  0 failed. New in wave 2: the game can end in jail (the arrest night of the last day, a Jail Day
+- `node tests/node/{crime,trade,fight,casino,election}.test.cjs`: 115 / 73 / 68 / 108 / 117 passed,
+  0 failed (after the review's fixes above). New in wave 2: the game can end in jail (the arrest night of the last day, a Jail Day
   night, Keep playing), the release of a served sentence, the scratch card paid at its reveal
   (module and pipeline), a debug-assisted election run from the Board's call to office through
   the pipeline and the real nights (a police catch mid-campaign counts as campaign days; the
@@ -101,3 +131,14 @@ a file this desk does not own, are named "not this desk".
   and W2-Food's `tests/e2e/store.test.cjs` (the scratch change) pass; the conflict sheet captured
   into `shots/W2-RulesC/` (cities, decrees, fighters) shows every city's palette keys resolved and
   every decree card named.
+- Final run after the pause, `node tools/run-all.cjs --jobs 2` (node, tools, balance, e2e): every
+  suite of this desk and every suite that drives the conflict rules passes (every Node suite but
+  `invariants`, `tests/balance/sim.cjs --selftest`, `tests/e2e/{slice,conflict-sheet,store,bank,bar,casino,
+  fight,darts,bus,jail,election,hospital,results}.test.cjs`); a scratch smoke over file:// (the
+  store robbery and its resolve, a bar fight, a slot pull, a roulette spin, the red-eye, the city
+  check) shows zero console errors. The failing suites name no file of this desk and their owners
+  have filed them, or they belong to other packages: `tests/node/invariants.test.cjs` (W2-City 1),
+  `tools/validate.cjs --selftest` (W2-Food 6, W2-Money 5b), `tests/e2e/boot.test.cjs` (W2-Front 1),
+  `tests/e2e/a11y.test.cjs` (W2-Pocket 1); `tests/e2e/{minigames,stage,ui-kit,world,render}` fail
+  in the minigame frame, the stage's focus, a clock-ring overflow, three sampled edge falls and the
+  render budget under two jobs (none of them reads a conflict rule; left to their owners).

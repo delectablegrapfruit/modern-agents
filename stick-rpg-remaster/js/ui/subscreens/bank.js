@@ -4,11 +4,14 @@
 //                                 preview chips (or the refusal) and the commit button;
 //   bank.loan                     the credit limit of your best job, the terms (r + 1 % a day,
 //                                 15 days), a NumberField and Borrow (asks first: a loan is never
-//                                 half done); the loan you owe with its days left and Repay; the
+//                                 half done); the loan you owe with its days left and Repay (from
+//                                 cash, as the rules take it; the page points at the bank); the
 //                                 lien and the credit freeze, if any; what a default does on this
 //                                 difficulty (B-09 default.*, B-16);
-//   bank.rates                    today's rate, its 30-day chart, what your balance earns tonight
-//                                 (the tiers and the $25,000 cap), the loan rate and Penny's forecast;
+//   bank.rates                    today's rate, its 30-day chart, about what your balance earns
+//                                 tonight (at the rate step's expected value: the night steps the
+//                                 rate before it pays; the tiers and the $25,000 cap), the loan
+//                                 rate and Penny's forecast;
 //   bank.cds (P1 `homesPlus`)     open a CD (≥ $1,000, r × 1.2, 7 days) and the open ones with Break.
 // Every commit goes through ctx.act with the bank's commit actions (js/data/buildings/bank.js:
 // bank.deposit, bank.withdraw, bank.loan, bank.repay, bank.openCd, bank.breakCd); every chip and
@@ -92,7 +95,11 @@
     for (var el = root.parentElement; el && !el.hasAttribute('data-scene'); el = el.parentElement) if (el.scrollTop) el.scrollTop = 0;
   }
 
-  /** Rebuilds a sub-screen's DOM, keeping focus on the control with the same data-id. */
+  /**
+   * Rebuilds a sub-screen's DOM, keeping focus on the control with the same data-id; when the
+   * rebuilt screen has no control left (all the cash deposited), the host's Breadcrumb takes it, as
+   * the host's own show() does, so focus never falls back to the page body (UI.md §8).
+   */
   function rebuild(M, build) {
     var root = M.root, a = document.activeElement;
     var inside = !!(a && root.contains(a));
@@ -102,8 +109,15 @@
     if (!inside) return;
     var el = had && root.querySelector('[data-id="' + had + '"]');
     if (!el || el.getAttribute('aria-disabled') === 'true') el = root.querySelector('[data-autofocus]') || root.querySelector('[data-nav]:not([aria-disabled="true"])');
+    if (!el) {
+      var host = root.closest ? root.closest('[data-id="subhost"]') : null;
+      el = host ? SR.ui.focus.navigables(host)[0] : null;
+    }
     if (el) SR.ui.focus.focus(el);
   }
+
+  /** @returns {number} the most an amount field offers: B-09 quickAmounts' typed range tops out at typedMax. */
+  function cap(n) { return Math.min(n, B().typedMax); }
 
   /**
    * An amount form: a NumberField (money, whole dollars), the preview chips and a commit button.
@@ -178,7 +192,7 @@
       if (have < 1) {
         root.appendChild(note('bank-nothing', 'card.bank.nothing'));
       } else {
-        var form = amountForm({ id: 'bank-' + kind, action: 'bank.' + kind, max: have, value: have, ctx: M.ctx, M: M, autofocus: true,
+        var form = amountForm({ id: 'bank-' + kind, action: 'bank.' + kind, max: cap(have), value: cap(have), ctx: M.ctx, M: M, autofocus: true,
           button: deposit ? 'card.bank.depositBtn' : 'card.bank.withdrawBtn', icon: deposit ? 'deposit' : 'withdraw',
           onCommit: function (n) { commit(M, 'bank.' + kind, { amount: n }); } });
         root.appendChild(form.el);
@@ -213,7 +227,8 @@
     var focusRepay = M.ctx.params && M.ctx.params.focus === 'repay';
     root.appendChild(balances(s, true));
     if (m.lien > 0) root.appendChild(box('bank-lien', note('bank-lien-text', 'card.bank.loan.lien', { money: money(m.lien) }, 'danger'), 'danger'));
-    if (m.creditFrozenUntil && s.clock.day < m.creditFrozenUntil) {
+    var frozen = !!(m.creditFrozenUntil && s.clock.day < m.creditFrozenUntil);
+    if (frozen) {
       root.appendChild(box('bank-frozen', note('bank-frozen-text', 'card.bank.loan.frozen', { day: m.creditFrozenUntil }, 'danger'), 'danger'));
     }
     var open = m.loan && m.loan.amount > 0;
@@ -221,13 +236,15 @@
       root.appendChild(heading('act.bank.repay'));
       root.appendChild(note('bank-loan-current', m.loan.daysLeft <= 1 ? 'card.bank.loan.lastDay' : 'card.bank.loan.current',
         { money: money(m.loan.amount), days: m.loan.daysLeft }, m.loan.daysLeft <= Math.max.apply(null, L.warn) ? 'danger' : null));
-      var canPay = Math.min(m.loan.amount, m.cash);
+      // Repayments come out of cash (SR.rules.bank.repay); money in the bank must be withdrawn first.
+      var canPay = cap(Math.min(m.loan.amount, m.cash));
       if (canPay >= 1) {
         root.appendChild(amountForm({ id: 'bank-repay', action: 'bank.repay', max: canPay, value: canPay, ctx: M.ctx, M: M, autofocus: true,
           button: 'card.bank.loan.repayBtn', icon: 'repay',
           onCommit: function (n) { commit(M, 'bank.repay', { amount: n }); } }).el);
+        if (m.cash < m.loan.amount && m.bank >= 1) root.appendChild(note('bank-repay-bank', 'card.bank.loan.repayFromBank', { money: money(m.bank) }));
       } else {
-        root.appendChild(note('bank-repay-none', 'reason.needCash', { money: money(1) }, 'danger'));
+        root.appendChild(note('bank-repay-none', m.bank >= 1 ? 'card.bank.loan.repayWithdraw' : 'card.bank.loan.repayCash', { money: money(m.bank) }, 'danger'));
       }
     } else {
       root.appendChild(heading('act.bank.loan'));
@@ -237,8 +254,11 @@
         h('strong', { 'data-id': 'bank-loan-none', style: { color: 'var(--ink-900)' } }, t('card.bank.loan.none')), ' ',
         t('card.bank.loan.limit', { money: money(limit), job: SR.text('job.' + (best || 'none')) })));
       root.appendChild(note('bank-loan-terms', 'card.bank.loan.terms', { days: L.days, pct: ratePct(m.rate + L.rateAdd), add: L.rateAdd }));
+      // While credit is frozen no amount can be borrowed: no form, so nothing focuses (and scrolls
+      // to) a dead Borrow button below the lien and the freeze, which stay in view at the top.
+      if (frozen) { root.appendChild(defaultLine(s)); return; }
       var est = note('bank-loan-estimate', 'card.bank.loan.estimate', { money: money(limit), days: L.days, total: money(loanEstimate(limit, m.rate, L.days)) });
-      var form = amountForm({ id: 'bank-borrow', action: 'bank.loan', max: Math.max(1, limit), value: limit, ctx: M.ctx, M: M, autofocus: !focusRepay,
+      var form = amountForm({ id: 'bank-borrow', action: 'bank.loan', max: Math.max(1, cap(limit)), value: cap(limit), ctx: M.ctx, M: M, autofocus: !focusRepay,
         button: 'card.bank.loan.take', icon: 'loan', quick: ['10%', '50%', 'all'],
         onUpdate: function (n) { est.textContent = t('card.bank.loan.estimate', { money: money(n), days: L.days, total: money(loanEstimate(n, m.rate, L.days)) }); },
         onCommit: function (n) {
@@ -254,6 +274,18 @@
   SR.def.subscreen('bank.loan', Object.assign({ title: 'sub.bank.loan', p: 0 }, lifecycle(loanReg, buildLoan)));
 
   // ---- bank.rates ----------------------------------------------------------------------------------------
+
+  /**
+   * Tonight's interest as the night will pay it: night step 2 steps the rate first and pays interest
+   * at the new rate (GDD §4.7), so today's rate would promise too much or too little. The estimate
+   * uses the step's expected value (B-09 rateStep: the pull toward 1.5; the jitter averages 0) on a
+   * shallow copy of the state (never mutated). @returns {number}
+   */
+  function tonightInterest(s) {
+    var p = B().rateStep;
+    var next = SR.util.clamp(s.money.rate + p.pull * (p.toward - s.money.rate), p.min, p.max);
+    return SR.rules.bank.interest(Object.assign({}, s, { money: Object.assign({}, s.money, { rate: next }) }));
+  }
 
   var ratesReg = registry();
   function buildRates(M) {
@@ -271,11 +303,13 @@
     var seized = (e.decrees || []).concat(e.decreesUsed || []).indexOf('seizeBank') >= 0;
     if (seized) root.appendChild(note('bank-rates-seized', 'card.bank.rates.seized', {}, 'danger'));
     else {
-      var tonight = SR.rules.bank.interest(s);
+      var tonight = tonightInterest(s);
       root.appendChild(note('bank-rates-tonight', tonight >= b.interestCap ? 'card.bank.rates.tonightCap' : 'card.bank.rates.tonight',
         { bank: money(m.bank), money: money(tonight) }));
     }
-    root.appendChild(note('bank-rates-tiers', 'card.bank.rates.tiers', { t1: money(b.tiers.t1), t2: money(b.tiers.t2) }));
+    // Tax Wizard (P1 perk) raises the full-rate tier (B-09 tiers).
+    var wizard = !!(SR.features.perks && SR.rules.perks && SR.rules.perks.has(s, 'taxWizard'));
+    root.appendChild(note('bank-rates-tiers', 'card.bank.rates.tiers', { t1: money(wizard ? b.tiers.taxWizardT1 : b.tiers.t1), t2: money(b.tiers.t2) }));
     root.appendChild(note('bank-rates-cap', 'card.bank.rates.cap', { money: money(b.interestCap) }));
     root.appendChild(note('bank-rates-loan', 'card.bank.rates.loan', { pct: ratePct(m.rate + b.loan.rateAdd) }));
     if (SR.features.homesPlus) root.appendChild(note('bank-rates-cds', 'card.bank.rates.cdLine', { pct: ratePct(m.rate * b.cd.rateMult), days: b.cd.days }));
@@ -296,7 +330,7 @@
     root.appendChild(balances(s, false));
     root.appendChild(note('bank-cds-intro', 'card.bank.cds.intro', { min: money(c.min), days: c.days, pct: ratePct(m.rate * c.rateMult) }));
     root.appendChild(note('bank-cds-limits', 'card.bank.cds.limits', { n: c.maxOpen, money: money(c.maxPrincipal), penalty: SR.text.pct(c.breakPenalty) }));
-    var room = Math.min(m.bank, c.maxPrincipal - SR.rules.bank.cdPrincipal(s));
+    var room = cap(Math.min(m.bank, c.maxPrincipal - SR.rules.bank.cdPrincipal(s)));
     if ((m.cds || []).length < c.maxOpen && room >= c.min) {
       root.appendChild(amountForm({ id: 'bank-cd', action: 'bank.openCd', max: room, value: Math.max(c.min, Math.min(room, c.min)), ctx: M.ctx, M: M,
         button: 'card.bank.cds.open', icon: 'cd', autofocus: true, quick: ['50%', 'all'],

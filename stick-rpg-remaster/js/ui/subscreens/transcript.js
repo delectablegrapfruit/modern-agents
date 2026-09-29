@@ -5,8 +5,9 @@
 // seminars left today, or what they still need). The Graduate rows are the U of S actions
 // uofs.graduate<Track> (a 1 h ceremony), committed through ctx.act; every number comes from
 // SR.tuning.training and every rule from SR.rules.training. The ceremony's confetti (GDD §4.5:
-// "confetti, a stamp") follows any successful graduation, from this screen or the card's row (an
-// action:done hook; skipped in fast mode, like the report's). Node-loadable: no DOM at load time.
+// "confetti, a stamp") and the degree stinger (ART_AUDIO §13.4) follow any successful graduation,
+// from this screen or the card's row (an action:done hook; the confetti is skipped in fast mode,
+// like the report's). Node-loadable: no DOM at load time.
 (function () {
   'use strict';
   var SR = window.SR;
@@ -26,6 +27,12 @@
       if (!p || !p.result || !p.result.ok || !/^uofs\.graduate/.test(String(p.id))) return;
       var fx = SR.render && SR.render.fx;
       if (fx && typeof fx.confetti === 'function' && !(SR.ui.dom && SR.ui.dom.fast())) fx.confetti();
+      // The degree stinger (ART_AUDIO §13.4: "degree (organ chord)") once W2-Music registers it;
+      // an unregistered stinger is skipped, as the stamp and the city skip theirs.
+      var A = SR.audio;
+      if (A && typeof A.stinger === 'function' && SR.reg.song && SR.reg.song['stingers.degree']) {
+        try { A.stinger('degree'); } catch (e) { SR.util.warnOnce('transcript.stinger', 'uofs: the degree stinger failed: ' + e.message); }
+      }
     });
   });
 

@@ -146,7 +146,7 @@
     'mg.holdup.sweetTalk': 'Sweet-talk',
     'mg.holdup.outwit': 'Outwit',
     'mg.holdup.clerk': 'Dee, the clerk',
-    'mg.holdup.teller': 'The teller',
+    'mg.holdup.teller': 'Penny Wise, the teller',   // the bank's proprietor works the window (W2-Money)
     'mg.holdup.store.1': 'Dee looks up from a crossword. "Seven letters, means trouble?" You have an answer.',
     'mg.holdup.store.2': 'Dee\'s hand drifts under the counter. Toward the alarm, or the gum. Hard to say.',
     'mg.holdup.store.3': 'A customer walks in, sees you, and walks straight back out. Dee is thinking fast.',
@@ -168,7 +168,7 @@
     'mg.scratch.done': 'All scratched',
     'mg.scratch.win': 'Three of a kind: you win {money}!',
     'mg.scratch.lose': 'No match this time.',
-    'mg.scratch.summary': 'Card: {money} back',
+    'mg.scratch.summary': 'The card pays {money}',
     'mg.scratch.hint.scratch': 'Scratch the next panel',
     'mg.scratch.hint.panel': 'Scratch a panel',
     'mg.scratch.hint.drag': 'Drag to scratch',

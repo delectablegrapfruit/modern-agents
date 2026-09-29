@@ -186,34 +186,40 @@
    */
   SR.def.fn('bank.pennyReacts', function (s, params) {
     var p = params || {};
-    var wins = Array.isArray(p.beats) ? p.beats.filter(Boolean).length : Number(p.wins) || 0;
+    // Counted as crime.robResolve counts them (its winsOf: `wins` first, then the beats), so
+    // Penny never cheers a robbery the rules jailed you for.
+    var wins = typeof p.wins === 'number' ? p.wins : Array.isArray(p.beats) ? p.beats.filter(Boolean).length : 0;
     var win = wins >= SR.tuning.crime.bank.need;
     return { toasts: [{ key: win ? 'bark.penny.robWin' : 'bark.penny.robLose', vars: {}, kind: 'info' }] };
   });
 
   // ---- Penny Wise's greeting (UI §5.6: first visit, time, karma, weather, job; GDD §6.2) --------
 
-  // Presentation thresholds of the greeting, not balance (CONTRACT D49).
+  // Presentation thresholds of the greeting, not balance (CONTRACT D49). "Rich" is a balance past
+  // B-09's first interest tier (tuning.bank.tiers.t1, read at run time).
   var MORNING_BEFORE = 660;     // "morning" before 11:00
   var LATE_FROM = 1320;         // "late" from 22:00
-  var RICH_FROM = 100000;       // a balance past B-09's first interest tier ($100,000) is "rich"
   var BROKE_BELOW = 10;         // under $10 in cash and bank together
 
   /**
-   * The card's greeting (CONTRACT §15.4 `greet.<building>`): the first match wins. Penny remembers
-   * a robbery (records.bankRobberies), watches the loan's countdown (B-09 loan.warn), the lien and
-   * the freeze, and your balance. Karma uses the B-04b tier bounds as words only.
+   * The card's greeting (CONTRACT §15.4 `greet.<building>`): the first match wins. What you must
+   * act on comes first: the loan's countdown (B-09 loan.warn; "due tonight" on its last day), the
+   * lien and the freeze; then Penny remembers a robbery of the last 14 days (crime.bankRobDays,
+   * the window B-11b's D counts, pruned nightly), then your balance, the weather, karma (the B-04b
+   * tier bounds as words only) and the hour.
    * @returns {{key: string, vars?: object}}
    */
   SR.def.fn('greet.bank', function (s) {
     var m = s.money, tier = SR.rules.stats.tier(s.stats.karma), min = s.clock.min;
     var warn = SR.tuning.bank.loan.warn, far = Math.max.apply(null, warn);
-    if (s.records.bankRobberies > 0) return { key: s.stats.heat > 0 ? 'greet.bank.robbed' : 'greet.bank.forgiven' };
-    if (m.loan && m.loan.amount > 0 && m.loan.daysLeft <= far) return { key: 'greet.bank.loanDue', vars: { days: m.loan.daysLeft } };
+    if (m.loan && m.loan.amount > 0 && m.loan.daysLeft <= far) {
+      return m.loan.daysLeft <= 1 ? { key: 'greet.bank.loanTonight' } : { key: 'greet.bank.loanDue', vars: { days: m.loan.daysLeft } };
+    }
     if (m.lien > 0) return { key: 'greet.bank.lien' };
     if (m.creditFrozenUntil && s.clock.day < m.creditFrozenUntil) return { key: 'greet.bank.frozen', vars: { day: m.creditFrozenUntil } };
+    if (s.crime && s.crime.bankRobDays && s.crime.bankRobDays.length) return { key: s.stats.heat > 0 ? 'greet.bank.robbed' : 'greet.bank.forgiven' };
     if (s.clock.day === 1) return { key: 'greet.bank.first' };
-    if (m.bank >= RICH_FROM) return { key: 'greet.bank.rich' };
+    if (m.bank >= SR.tuning.bank.tiers.t1) return { key: 'greet.bank.rich' };
     if (m.cash + m.bank < BROKE_BELOW) return { key: 'greet.bank.broke' };
     if (SR.features.weather && s.world && s.world.weather === 'rain') return { key: 'greet.bank.rain' };
     if (tier === 'good' || tier === 'angelic') return { key: 'greet.bank.good' };

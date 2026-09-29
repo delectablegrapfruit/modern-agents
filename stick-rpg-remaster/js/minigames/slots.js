@@ -104,6 +104,13 @@
     var flash = 0, replay = null, finished = false;
     var err = null;         // a refused pull's reason under the reels: { key, vars, t } (never the win flash)
     var holdT = 0, holdStop = false;   // Spin held down: the next pull after HOLD_S; a refusal stops it until released
+    var reelSnd = null;                // the reels' ratchet: a looping sound (js/audio/sfx.js), held while they turn
+
+    /** Stops the ratchet loop (the reels have stopped, Auto took over, or the table closed). */
+    function stopReels() {
+      if (reelSnd && typeof reelSnd.stop === 'function') { try { reelSnd.stop(); } catch (e) { /* audio is optional */ } }
+      reelSnd = null;
+    }
 
     // ---- DOM: bets, Spin, Cash out ---------------------------------------------------------------
     var side = host.el('div', { 'data-id': 'mg-slots-side', style: {
@@ -164,7 +171,8 @@
       err = null;
       spin = { t: 0, committed: false, reels: [0, 1, 2].map(function () { return { stopped: false }; }), result: null };
       last = null;
-      host.audio.sfx('reel_spin');
+      stopReels();
+      reelSnd = host.audio.sfx('reel_spin');
       host.aria(T('mg.slots.spinning'));
       renderBets();
       if (fast()) { commit(); spin.reels.forEach(function (r, i) { settleReel(i); }); done(); }
@@ -223,6 +231,7 @@
     function done() {
       var sp = spin;
       spin = null;
+      stopReels();
       renderBets();
       if (!sp || !sp.result) { mirror(); return; }
       last = sp.result;
@@ -267,7 +276,7 @@
           else { ctx.font = host.font(14, 700); ctx.fillStyle = host.color('ink-500'); ctx.textAlign = 'center'; ctx.fillText(T('mg.slots.anyThird'), x + 50 + k * 64, yy + 5); }
         }
         ctx.font = host.font(24, 900, true); ctx.fillStyle = host.color(hot ? 'money-ink' : 'ink-900'); ctx.textAlign = 'right';
-        ctx.fillText('×' + pays[r[3]], x + w - 24, yy + 8);
+        ctx.fillText(T('mg.slots.pays', { n: pays[r[3]] }), x + w - 24, yy + 8);
       });
       ctx.textAlign = 'left';
     }
@@ -394,6 +403,7 @@
       },
       /** Auto-spin: 10 pulls at the current bet, each applied by the rules like a played one. */
       auto: function () {
+        stopReels();
         if (spin && !spin.committed) spin = null;              // an uncommitted spin never happened
         else if (spin) { spin.reels.forEach(function (r, i) { if (!r.stopped && r.p1 !== undefined) pos[i] = mod(r.p1, N); }); done(); }
         var n = C().autoSpins, lastG = null;
@@ -423,7 +433,7 @@
         return { bet: bet, bets: bets.slice(), pos: pos.slice(), spinning: !!spin, committed: !!(spin && spin.committed), last: last ? SR.util.clone(last) : null,
           session: sessionResult(), finished: finished, error: err ? err.key : null };
       },
-      destroy: function () {},
+      destroy: function () { stopReels(); },
     };
   }
 

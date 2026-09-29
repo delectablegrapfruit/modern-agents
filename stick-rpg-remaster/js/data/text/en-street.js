@@ -27,6 +27,7 @@
     'act.junker.ring': 'Feel for the right wires',
     'card.dealer.grams': 'Grams',
     'card.dealer.max': 'All I can carry',
+    'card.dealer.afford': 'All I can afford',
 
     // ---- Homeless Harold ---------------------------------------------------------------------------
     'greet.harold.day': [

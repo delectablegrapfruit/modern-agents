@@ -10,8 +10,9 @@
 // the night (js/rules/night.js steps 3 and 9), jobs, bank, the world and traffic, the bus.
 // Ids are camelCase because the rules that already read them use B-17's key names
 // ('casinoLevy', 'toughOnCrime', 'seizeBank', 'beerSubsidy', 'nationalised', ...).
-// The issue-time numbers come from SR.tuning.election (seizeBank) or, where BALANCE has none, from
-// the named constants of js/rules/election.js (docs/requests/W1-C.md).
+// The issue-time and active-decree numbers come from SR.tuning.election (B-17: seizeBank,
+// universalFries.karma, publicLibrary.study, cityNameMax, casinoLevy, ...), read by the named fns
+// of js/rules/election.js; a def carries no number.
 // Pure data (Node-loadable).
 (function () {
   'use strict';

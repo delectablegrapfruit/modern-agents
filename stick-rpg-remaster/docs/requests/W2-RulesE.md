@@ -72,3 +72,16 @@ Each request names the file, the exact change, why, and the workaround used mean
 - **Why:** W2-Money request 4b asked which reading holds; the rules follow GDD §4.7's step order
   (the bank at step 2, the restore at step 6), and `tests/e2e/bank.test.cjs` pins it.
 - **Meanwhile:** the behaviour as described; documented in `decisions-w2-W2-RulesE.md`.
+
+## 6. `tests/e2e/world.test.cjs` (W1-W's; the lead's in wave 2): the fall samples meet the traffic (an observation)
+
+- **Change:** in the "edges: 200 falls" section, keep the traffic out of the 120 steps after each
+  landing (pause or clear W2-City's `SR.world.traffic` for the section, as the section already
+  resets the fall and the doors), or judge the HP of a fall from `records.falls` and the fall's own
+  Delta rather than `hp0 - tuning.world.fall.hp`.
+- **Why:** with W2-City's traffic live, samples 16, 176 and 181 land and are then hit by a car
+  (`records.carHits` +1, a `carHit` log entry, HP -10 more), so "every fall costs 10 HP and no
+  time" fails although the fall itself cost exactly 10 HP and no time (reproduced with the check
+  instrumented; the rules' `world.fall` and `world.carHit` both behave as B-15 says). Sample 182
+  (480, 1319) not falling is the same section, likely a car or a walker in the approach.
+- **Meanwhile:** nothing in this desk's files; the suite reports 74 passed, 3 failed.

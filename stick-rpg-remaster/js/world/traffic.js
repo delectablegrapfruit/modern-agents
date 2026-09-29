@@ -4,7 +4,9 @@
 // junction turns picked at spawn (T-junctions with Main the through road: straight 0.7 / turn 0.3
 // from Main, left 0.5 / right 0.5 from the avenue, never a U-turn), keep a 72 u gap with smooth
 // braking, cross a junction box one car at a time (first come, first served, and only with room to
-// leave it, so it never deadlocks), always stop for anyone on a zebra, and tumble off the far road
+// leave it, so it never deadlocks; walkers and cars take turns at the crosswalks, and a car waiting
+// at a crosswalk's stop line keeps its turn until the box is free for it, so a queue is not starved),
+// always stop for anyone on a zebra, and tumble off the far road
 // end into the clouds. A driver with the player ahead in its lane within 220 u notices with
 // clamp(0.55 + karma/250, 0.2, 0.95) (always on a zebra, always under Pedestrian Supremacy), brakes
 // at 1400 u/s² and honks; one who doesn't hits (world.carHit: -10 HP and the 1.14 s knockdown).
@@ -34,6 +36,7 @@
   var ZEBRA_PAD = 24;          // a pedestrian steps on only when every car can stop this far short
   var ZEBRA_EDGE = 10;         // someone within this of a zebra's rect counts as on it
   var CARS_TURN = 3;           // s: after a crossing held cars up, pedestrians let them go first
+  var CARS_TURN_MAX = 10;      // s: ... and longer while a car still waits at that zebra's stop line for a busy box
   var ZEBRA_HOLD = 120;        // u past a box's exit whose zebras a box holder must find empty
   var HIT_MIN_V = 40;          // slower than this a car nudges, never hits
   var IMMUNE_SEC = 1;          // after a knockdown, cars keep stopping for the player this long
@@ -58,12 +61,17 @@
   function T() { return SR.tuning.traffic; }
   function W() { return SR.world; }
   function G() { return SR.world.geometry; }
-  function wcfg() { return SR.world.cfg || (SR.world.cfg = SR.world.readCfg()); }
+  function wcfg() { return SR.world.cfg || SR.world.readCfg(); }
   function rng() { return SR.rng.world; }
   function hasFn(o, k) { return !!(o && typeof o[k] === 'function'); }
 
   var TR = {
-    /** The live cars (the renderer's list): { id, kind, x, y, a (radians, 0 east), braking, visible, px, py, ... }. */
+    /**
+     * The live cars (the renderer's list), with ARCHITECTURE §8.2's fields: { id, lane (the in-lane
+     * of its route), x, y, a (radians, 0 east), v, vTarget (the speed it may have now), kind, state
+     * ('drop' | 'drive' | 'tumble'; also `phase`), honkT (s until it may honk again), braking,
+     * visible, px, py, ... }.
+     */
     cars: [],
     /** The city scene switches the simulation on while it runs (the title may too). */
     live: false,
@@ -349,7 +357,10 @@
     return rng().int(r[0], r[1]);
   }
 
-  /** Is a route free of cars around s (a car's length plus the gap either way)? */
+  /**
+   * Is a route free around s (a car's length plus the gap either way): no traffic car, none of the
+   * player's cars (parked or driven) and not the player on foot, so no car ever lands on them?
+   */
   function clearAt(rt, s, len) {
     var span = len + T().gap + 60;
     for (var i = 0; i < TR.cars.length; i++) {
@@ -357,6 +368,9 @@
       if (c.phase === 'tumble') continue;
       if (project(rt, s - span, s + span, c.gx, c.gy, 50) >= 0) return false;
     }
+    for (var k = 0; k < PCARS.length; k += PSTRIDE) if (project(rt, s - span, s + span, PCARS[k], PCARS[k + 1], 52) >= 0) return false;
+    var P = W().player;
+    if (SR.state && P && !P.car && typeof P.x === 'number' && project(rt, s - span, s + span, P.x, P.y, 26 + wcfg().playerRadius) >= 0) return false;
     return true;
   }
 
@@ -399,15 +413,16 @@
   function addCar(rt, o) {
     o = o || {};
     var kind = o.kind || 'sedan', sz = sizeOf(kind), c = free.pop() || {};
-    c.id = nextId++; c.kind = kind; c.route = rt; c.seg = 0;
+    c.id = nextId++; c.kind = kind; c.route = rt; c.lane = rt.lane; c.seg = 0;
     c.len = sz.L; c.w = sz.W; c.half = sz.L / 2;
     c.s = o.s !== undefined ? o.s : c.half + DROP_IN;
     c.cruise = o.cruise !== undefined ? o.cruise : T().cruise[1];
+    c.vTarget = c.cruise;
     c.v = o.v !== undefined ? o.v : o.drop ? 0 : c.cruise;
-    c.phase = o.drop ? 'drop' : 'drive';
+    c.phase = c.state = o.drop ? 'drop' : 'drive';
     c.z = o.drop ? DROP_Z : 0; c.vz = 0;
     c.lock = null; c.lockExit = 0; c.stop = 0; c.req = null; c.reqSince = 0;
-    c.noticed = null; c.forget = 0; c.honk = 0; c.hit = false; c.hold = 0; c.still = 0; c.t = 0; c.why = null; c.skid = null;
+    c.noticed = null; c.forget = 0; c.honkT = 0; c.hit = false; c.hold = 0; c.still = 0; c.t = 0; c.why = null; c.skid = null;
     c.spin = (c.id % 2 ? 1 : -1) * TUMBLE_SPIN; c.visible = true; c.active = true; c.braking = false;
     place(c);
     while (c.stop < rt.stops.length && c.s - c.half > rt.stops[c.stop].exit) c.stop++;
@@ -510,6 +525,23 @@
     for (var z in occ) if (occ[z]) freedAt[z] = now;
   }
 
+  /**
+   * Is a car standing at the stop line right before this zebra, asking for the junction box beyond
+   * it? (Its turn lasts until the box is free for it, so a queue on a busy junction is not starved
+   * by a stream of walkers.)
+   */
+  function waitingAtLine(id) {
+    for (var i = 0; i < TR.cars.length; i++) {
+      var c = TR.cars[i];
+      if (c.phase !== 'drive' || c.v > 5 || !c.req) continue;
+      var st = c.route.stops[c.stop], front = c.s + c.half;
+      if (!st || st.s - LINE_PAD - front > 40) continue;
+      var zs = c.route.zebras;
+      for (var k = 0; k < zs.length; k++) if (zs[k].id === id && zs[k].s0 >= st.s - 2 && zs[k].s0 <= st.exit) return true;
+    }
+    return false;
+  }
+
   /** @returns {boolean} someone is on the zebra (or committed to cross it). */
   TR.occupied = function (id) { return !!occ[id]; };
 
@@ -523,7 +555,8 @@
     // Cars and walkers take turns: while a car is held up by this crossing, nobody new joins it,
     // and once it is empty the cars go first for a moment.
     if (waited[id]) {
-      if (occ[id] || W().time - (freedAt[id] || 0) < CARS_TURN) return false;
+      var since = W().time - (freedAt[id] || 0);
+      if (occ[id] || since < CARS_TURN || (since < CARS_TURN_MAX && waitingAtLine(id))) return false;
       waited[id] = false;
     }
     for (var i = 0; i < TR.cars.length; i++) {
@@ -567,12 +600,13 @@
       if (project(c.route, a - o.half, b + o.half, o.gx, o.gy, (c.w + o.w) / 2) >= 0) return false;
     }
     var cars = playerCars();
-    for (var k = 0; k < cars.length; k += 3) if (project(c.route, a - 48, b + 48, cars[k], cars[k + 1], 52) >= 0) return false;
+    for (var k = 0; k < cars.length; k += PSTRIDE) if (project(c.route, a - 48, b + 48, cars[k], cars[k + 1], 52) >= 0) return false;
     return true;
   }
 
-  // The player's cars as obstacles: [x, y, v, ...] (parked ones and the one being driven), refilled per step.
-  var PCARS = [];
+  // The player's cars as obstacles: [x, y, v, a, ...] (parked ones and the one being driven: its
+  // speed and heading), refilled per step.
+  var PCARS = [], PSTRIDE = 4;
   function playerCars() { return PCARS; }
   function collectPlayerCars() {
     PCARS.length = 0;
@@ -581,8 +615,8 @@
     ['junker', 'sports'].forEach(function (id) {
       var row = s.player.cars[id];
       if (!row || !row.owned || row.towed) return;
-      if (P && P.car === id) PCARS.push(P.x, P.y, Math.max(0, P.v || 0));
-      else PCARS.push(row.x, row.y, 0);
+      if (P && P.car === id) PCARS.push(P.x, P.y, Math.max(0, P.v || 0), P.a || 0);
+      else PCARS.push(row.x, row.y, 0, row.a || 0);
     });
   }
 
@@ -659,9 +693,13 @@
       cap(allow(gap - t.gap, b, lead), 'car', gap < t.gap * 0.5);
     }
     // The player's cars: parked ones and the one being driven.
-    for (var k = 0; k < PCARS.length; k += 3) {
+    for (var k = 0; k < PCARS.length; k += PSTRIDE) {
       var sp = project(rt, c.s + 1, front + LOOK + 48, PCARS[k], PCARS[k + 1], c.w / 2 + 26);
-      if (sp >= 0) cap(allow(sp - 48 - front - PLAYER_CAR_GAP, b, PCARS[k + 2]), 'playerCar', false);
+      if (sp < 0) continue;
+      // Follow your car only as far as it drives away along this lane: crossing or oncoming, it is
+      // a standing obstacle (braked for), not a leader.
+      var pa = Math.cos(PCARS[k + 3] - c.a), plead = pa > 0.5 ? PCARS[k + 2] * pa : 0;
+      cap(allow(sp - 48 - front - PLAYER_CAR_GAP, b, plead), 'playerCar', false);
     }
     // Walkers in the lane (never hit): stop for them.
     for (var w = 0; w < WALKER_KINDS.length; w++) {
@@ -689,7 +727,7 @@
         }
         if (always || c.noticed) {
           cap(allow(sP - r - PERSON_GAP - front, b, 0), 'player', always);
-          if (c.honk <= 0 && c.v > 20) { c.honk = HONK_SEC; sfx('horn', c.gx, c.gy); }
+          if (c.honkT <= 0 && c.v > 20) { c.honkT = HONK_SEC; sfx('horn', c.gx, c.gy); }
         }
       } else if (c.noticed !== null) {
         c.forget += dt;
@@ -768,6 +806,7 @@
     if (needReset) TR.reset();
     var now = W().time, t = T(), i, c;
     rangeBox();
+    collectPlayerCars();
     // Spawns per in-lane.
     for (i = 0; TR.spawning && i < net.ins.length; i++) {
       var inp = net.ins[i];
@@ -775,7 +814,6 @@
       if (timers[inp.lane] <= 0) timers[inp.lane] = trySpawn(inp) ? interval() : RETRY_SEC;
     }
     occupancy(now);
-    collectPlayerCars();
     // The conditions of this step.
     var s = SR.state, P = W().player, F = W().fall;
     ENV.brake = brakeNow();
@@ -790,7 +828,7 @@
     for (i = 0; i < TR.cars.length; i++) {
       c = TR.cars[i];
       c.px = c.x; c.py = c.y;
-      if (c.honk > 0) c.honk -= dt;
+      if (c.honkT > 0) c.honkT -= dt;
     }
     fadeSkids(dt);
     // Speeds, then motion.
@@ -801,7 +839,7 @@
         c.vz -= GRAVITY * dt; c.z += c.vz * dt;
         if (c.z <= 0) {
           c.z = 0;
-          if (c.vz < -BOUNCE_MIN) c.vz = -c.vz * BOUNCE; else { c.vz = 0; c.phase = 'drive'; }
+          if (c.vz < -BOUNCE_MIN) c.vz = -c.vz * BOUNCE; else { c.vz = 0; c.phase = c.state = 'drive'; }
         }
         c.x = c.gx; c.y = c.gy - 0.5 * c.z;
         continue;
@@ -820,7 +858,7 @@
       var lim = decide(c, now, dt, ENV);
       var target = lim.v, hard = lim.hard;
       if (c.hold > 0) { c.hold -= dt; target = 0; }
-      c.why = lim.why;
+      c.vTarget = target; c.why = lim.why;
       var v0 = c.v;
       if (c.v < target) c.v = Math.min(target, c.v + ACCEL * dt);
       else {
@@ -833,7 +871,7 @@
       if (c.s >= c.route.len - c.half) {
         // The road end: over the rim into the clouds (GDD §3.1).
         releaseLock(c);
-        c.phase = 'tumble'; c.t = 0; c.out = c.route.out; c.vz = 0; c.z = 0; c.skid = null;
+        c.phase = c.state = 'tumble'; c.t = 0; c.out = c.route.out; c.vz = 0; c.z = 0; c.skid = null;
         c.edge = c.route.end[1];
         c.v = Math.max(c.v, t.cruise[0] * 0.6);
         sfx('fall_whistle', c.gx, c.gy, { pitch: 1.4, gain: 0.35 });

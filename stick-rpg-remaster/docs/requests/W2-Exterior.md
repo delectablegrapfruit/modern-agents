@@ -7,6 +7,8 @@ Each request names the file, the exact change, why, and the workaround used mean
 
 ## 1. `js/data/text/en-world.js` (W2-City): the sign words the facades and props show
 
+- **Status:** applied by W2-City (en-world.js registers all 11 words); the sheet's fakes are now inert.
+
 - **File:** `js/data/text/en-world.js` (W2-City in wave 2; `place.*` is its namespace, CONTRACT §7).
 - **Change:** register, next to the other `place.sign.*` keys:
 
@@ -53,7 +55,8 @@ Each request names the file, the exact change, why, and the workaround used mean
 - **(d) Expose what the painter drew.** Add to `detailGeom()`: `roofSign` (the shop roof sign's board
   rect), `post` (the north porch's sign post `{ x, y, h, w }`) and `tops` (the def's tall roof
   features as rects). **Meanwhile:** the furniture and store details recompute the roof sign board
-  from the painter's formula (`g.roofSign ||` fallback in `exteriors-detail.js`) and the castle,
+  from the painter's formula (`roofBoard()` in `exteriors-detail.js`: a sign top, else `exterior.signH`,
+  else h + 70; `tests/e2e/exterior.test.cjs` checks it against Five-O's sign rect) and the castle,
   City Hall, McSticks and casino details read `exterior.tops` from the worldmap entry.
 - **(e) Optional: signatures in the occlusion cover.** Add the tall signature rects (those above the
   building's own projected rects, e.g. NLI's rooftop billboard over the north end of Bank Lane) to
@@ -90,8 +93,10 @@ Each request names the file, the exact change, why, and the workaround used mean
 
 ## 6. `tests/sheets/render.html` (W1-G; the lead): load the glyphs and the city names
 
-- **Change:** add `<script src="../../js/art/logos.js"></script>` after `skyline.js` and
-  `<script src="../../js/data/text/en-conflict.js"></script>` after `en-world.js`.
+- **Change:** add `<script src="../../js/art/logos.js"></script>` after `skyline.js`,
+  `<script src="../../js/data/text/en-conflict.js"></script>` after `en-world.js` and
+  `<script src="../../js/data/cities.js"></script>` after `worldmap.js` (the departures board lists
+  the SR.def.city entries in their board `order`, with their `name` keys).
 - **Why:** the render sheet (and the `render-*` goldens) show the city as the game does; without
   `logos.js` the bank's "$", NLI's lines, the pawn's balls, McSticks' mascot, City Hall's clock and the
   billboards' glyphs are missing there, and without the city names the depot's departures board is blank.
@@ -127,7 +132,9 @@ Each request names the file, the exact change, why, and the workaround used mean
     `sawhorse`, `plinth`, `chessTable`, `binoculars`, `car`, `fountainJet`, `duck`, `memorial`,
     `forSale`, `flagpole` (0 city, 1 President, 2 Dictator).
   - `SR.art.skyline`: besides `draw`: `screenOf(view, worldmap, island)`, `cities()`, `invalidate()`,
-    `stats()`.
+    `stats()`. Like the render core's placeholder, `draw` also reads the view's `ppu`, `tx`, `ty` and
+    `s` (world → stage) to start the Sky Ribbon under the Bus Hole; please add them to the list of
+    fields `view` carries.
   - `SR.art.logos` (`js/art/logos.js`): `draw(ctx, name, x, y, h, { lw, mono, colour, shade, min,
     outline })`, `aspect(name)`, `names()`, `has(name)`; glyphs `burger`, `lines`, `dollar`, `cloud`,
     `balls`, `mug`, `slushee`, `sofa`, `bus`, `mortarboard`, `clock`.
@@ -141,7 +148,7 @@ Each request names the file, the exact change, why, and the workaround used mean
     of (Paperview's top floor, the mansion, the castle, Edgeview) without a flag; ART_AUDIO §5.2
     lists them among the P1 reacting elements.
   - **The kid's memorial is P0.** BALANCE's `kid.givePack` row (P0) says the 10th pack leaves "a
-    memorial prop"; it shows at his corner (2090, 1110) once `npc.kid.dead`, without a flag. The
+    memorial prop"; it shows at his corner (the worldmap's `spots.kidCorner`, 2090, 1110) once `npc.kid.dead`, without a flag. The
     other reacting elements (billboard portrait, castle flags, the butler, the statue, banners,
     wanted posters) are drawn only while `cityReacts` is on.
   - The memorial is painted inside the mansion's sprite (a signature rect at the kid's corner
@@ -157,3 +164,15 @@ Each request names the file, the exact change, why, and the workaround used mean
   6 u pad, so the sprite crops a sliver of the west eave and its ink line at every zoom. The detail
   itself stays inside the bounds (`tests/e2e/exterior.test.cjs` checks it).
 - **Meanwhile:** nothing; the crop is 2 u wide.
+
+## 11. `js/ui/screens/pause.js` and `js/scenes/results.js` (W2-Front): re-bake the detail on quitting to the title
+
+- **Change:** in both `toTitle()` functions, after `SR.state = null;`, add
+  `if (SR.art.exteriorDetail && typeof SR.art.exteriorDetail.refresh === 'function') SR.art.exteriorDetail.refresh();`
+- **Why:** the title's live city (`SR.ui.title.backdrop`) draws the baked building sprites, and
+  nulling the state raises no event (CONTRACT §9.2), so a building whose detail showed the last game
+  (an owned mansion without its For Sale board, the kid's memorial, office banners, the CEO billboard)
+  keeps it behind the title menu. `refresh()` compares every baked sprite's state key with the
+  current state (`null`: no game) and invalidates only the buildings that differ.
+- **Meanwhile:** the stale detail shows on the title until the next game starts (`save:loaded`
+  refreshes it); it never reaches a game.

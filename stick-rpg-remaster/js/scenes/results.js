@@ -66,6 +66,8 @@
     if (!s) return;
     var r = SR.rules.endgame.keepPlaying(s);
     if (!r.ok) { SR.ui.toast({ key: r.reason || 'ui.refused', kind: 'warning' }); return; }
+    // A game that ended during a jail night goes back to the cell (docs/requests/W2-Transit.md 5).
+    if (s.jail && SR.reg.scene.jail) { SR.scenes.go('jail', { resume: true }); return; }
     if (SR.world && SR.world.ready && typeof SR.world.place === 'function') { try { SR.world.place('homeDoor', s); } catch (e) { /* no map */ } }
     SR.scenes.go(SR.reg.scene.city ? 'city' : 'title');
   }

@@ -41,7 +41,11 @@
   function count(v) { return Number(v) || 0; }
   function no(reason, vars) { return { ok: false, reason: reason, vars: vars || {} }; }
 
-  var KID_COUGH = 6;   // the pack from which Skid's lines are all coughs (presentation; CONTRACT D49)
+  // Presentation thresholds of the greetings and replies (CONTRACT D49), not rules:
+  var KID_COUGH = 6;          // the pack from which Skid's lines are all coughs
+  var HAROLD_FRIEND = 3;      // gifts ($10 or bottles) after which Harold greets you as a friend
+  var NIGHT_FROM = 1200;      // the street's night for greetings: 20:00 ...
+  var NIGHT_TO = 360;         // ... to 06:00
 
   // ---- costs and amounts from the B-26 row (string cost fields and numeric arguments) --------------
 
@@ -105,17 +109,25 @@
     effects: [['karma', 'street.karma'], ['fn', 'street.pack'], ['sfx', 'smoke']],
   });
 
+  /** @returns {boolean} one more of an item fits its B-06 stack (the kid's board: only if you have none). */
+  function fits(s, params, ctx, key) {
+    var f = SR.reg.fn['items.room'];
+    return typeof f === 'function' ? !!f(s, params, ctx, key, 1).ok : !(count(s.items[key]) >= 1);
+  }
+
   /**
-   * Effect: one more pack for the kid (orig). The first gives you his skateboard; the tenth kills
-   * him: another -30 karma (so -32 in all that hour), McHolland's voicemail, the `kidDied` log entry
-   * (tomorrow's headline, B-29), and he is gone for good (npc.kid.dead, stage 'dead', the day in
-   * npc.kid.diedDay for McHolland's P1 walk "within 3 days of the kid's death").
+   * Effect: one more pack for the kid (orig). The first gives you his skateboard (orig: you hold
+   * one afterwards, so a board you already have, P1's pawn board, is not doubled and no toast
+   * claims one); the tenth kills him: another -30 karma (so -32 in all that hour), McHolland's
+   * voicemail, the `kidDied` log entry (tomorrow's headline, B-29), and he is gone for good
+   * (npc.kid.dead, stage 'dead', the day in npc.kid.diedDay for McHolland's P1 walk "within 3
+   * days of the kid's death").
    */
   SR.def.fn('street.pack', function (s, params, ctx) {
     var r = row(ctx), k = npc(s, 'kid');
     k.packs = count(k.packs) + 1;
     var list = [['emit', 'gift', { npc: 'kid', item: 'smokes', n: 1 }]];
-    if (k.packs === count(r.skateboardAt)) list.push(['item', 'skateboard', 1], ['toast', 'toast.kid.skateboard', {}, 'reward']);
+    if (k.packs === count(r.skateboardAt) && fits(s, params, ctx, 'skateboard')) list.push(['item', 'skateboard', 1], ['toast', 'toast.kid.skateboard', {}, 'reward']);
     if (k.packs >= count(r.deathAt) && !k.dead) {
       k.dead = true;
       k.diedDay = s.clock.day;
@@ -231,10 +243,12 @@
   /**
    * Effect: the ring's outcome from the engine's { started, hits, misses } (leaving early gives up):
    * -15 HP per miss; 3 hits start the car (then as the P0 success: -5 karma, +15 Heat); 3 misses
-   * trip the alarm (+10 Heat, no car). Refuses (reason.notNow) unless an attempt is in progress.
+   * trip the alarm (+10 Heat, no car). Refuses (reason.notNow) unless today's attempt is still in
+   * progress (CONTRACT §8.9: a stray or late :resolve never pays; Hardcore's pending resolve comes
+   * back on the same day, from the save written when the ring opened).
    */
   SR.def.fn('junker.ringResolve', function (s, params, ctx) {
-    if (!s.flags.junkerRing) return no('reason.notNow');
+    if (!s.flags.junkerRing || s.flags.junkerRing !== s.clock.day) return no('reason.notNow');
     s.flags.junkerRing = 0;
     var r = row(ctx), H = SR.tuning.street.junker.hotwire, p = params || {};
     var misses = SR.util.clamp(Math.round(count(p.misses)), 0, count(r.misses));
@@ -272,12 +286,12 @@
   // ---- greetings (UI §5.6: by first visit, time, karma, job; variants are drawn by SR.text) ---------
 
   /** @returns {boolean} night on the street: 20:00-06:00. */
-  function night(s) { var m = s.clock.min; return m >= 1200 || m < 360; }
+  function night(s) { var m = s.clock.min; return m >= NIGHT_FROM || m < NIGHT_TO; }
 
   SR.def.fn('greet.harold', function (s) {
     var h = npcOf(s, 'harold'), gifts = count(h.gave10) + count(h.bottles);
     if (night(s)) return { key: 'greet.harold.night' };
-    return { key: gifts >= 3 ? 'greet.harold.friend' : 'greet.harold.day' };
+    return { key: gifts >= HAROLD_FRIEND ? 'greet.harold.friend' : 'greet.harold.day' };
   });
   SR.def.fn('greet.kid', function (s) {
     var packs = count(npcOf(s, 'kid').packs);

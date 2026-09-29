@@ -157,11 +157,15 @@
     return params && typeof params.item === 'string' && params.item ? no('reason.unavailable') : { ok: true };
   });
 
-  /** @returns {string[]} the Bag keys Vinnie sells (and so buys back): the `item` of every pawn row. */
+  /**
+   * @returns {string[]} the Bag keys Vinnie sells now (and so buys back, GDD §6.1 "anything bought
+   *   here"): the `item` of every pawn row whose flag is on, the same list as the counter's Sell tab
+   */
   function sold() {
     var out = [];
     SR.registry.entries('action').forEach(function (e) {
-      if (e.def.building === 'pawn' && e.def.item) out.push(e.def.item);
+      var d = e.def;
+      if (d.building === 'pawn' && d.item && (!d.feature || SR.features[d.feature])) out.push(d.item);
     });
     return out;
   }

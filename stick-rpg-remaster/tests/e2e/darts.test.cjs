@@ -6,7 +6,8 @@
 //   pointer target with a 0.2 s time constant, the arrows at 400 px/s); a dart lands exactly on the
 //   crosshair; the ring radii 19 / 40 / 138 / 220 → 50 / 35 / 15 / 5 / 0; ten darts and the result
 //   { score, throws }; the Auto equals SR.rules.casino.darts.autoThrows on the same stream; #aria per
-//   dart; the ghost board at Buzz ≥ 2 (P1); zero console errors.
+//   dart; the ghost board at Buzz ≥ 2 (P1); on Hardcore a match's tenth dart replaces the pending
+//   worst with the real score; zero console errors.
 // Screenshots: shots/W2-Night/darts-*.png.   node tests/e2e/darts.test.cjs
 'use strict';
 const K = require('./night-kit.cjs');
@@ -160,6 +161,22 @@ const K = require('./night-kit.cjs');
   await t.clickUI('mg-exit');
   await k.closed();
   await E(() => SR.debug.feature('nightlife', false));
+
+  T.section('a match on Hardcore (the engine\'s match mode; the row is P1): the last dart replaces the pending worst');
+  // The frame writes { resolve, worst: no score } before a stake opens; once the tenth dart has
+  // landed the round is decided, so a tab closed during the last dart's hold keeps the real score.
+  await atBar({ stats: { int: 100 }, difficulty: 'hardcore' });
+  await E(() => { window.__match = SR.minigame.run('darts', { mode: 'match', tier: 'rookie', target: 160, pays: 2, stake: 50, resolve: 'bar.darts:resolve' }); });
+  await t.step(3);
+  let pendM = await k.state('pending');
+  T.ok(pendM && pendM.worst && pendM.worst.score === 0, 'the match opens as a stake: pending worst = no score', pendM);
+  for (let i = 0; i < 10; i++) { await t.key('Space'); for (let j = 0; j < 40 && (await k.peek()).flying; j++) await t.step(2); await t.step(20); }
+  const pm = await k.peek();
+  pendM = await k.state('pending');
+  T.ok(pm && pm.done && pendM && pendM.worst.score === pm.score && pendM.worst.throws.length === 10,
+    'ten darts: the pending holds the round\'s real score before the result shows', [pm && pm.score, pendM && pendM.worst]);
+  await k.closed();
+  T.eq(await k.state('pending'), null, 'the round\'s end clears it');
 
   T.section('no console errors');
   T.eq(t.errors(), [], 'zero console errors, page errors or failed requests');

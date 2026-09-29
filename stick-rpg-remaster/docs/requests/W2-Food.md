@@ -88,8 +88,9 @@ Each item: file and owner, the exact change, why, and the workaround used meanwh
 
 - **W2-Street:** Mel's day-1 job offer is `vm.mel.job` in `en-food.js` (the key the wave-1 fixtures
   already use); W2-Street queues it (BUILD_PLAN §4.10).
-- **W2-Money:** the `holdup` skin serves the bank too: with `target: 'bank'` it shows the teller
-  (portrait `penny`) and the `mg.holdup.bank.1..3` situations; `crime.holdupParams` supplies the rest.
+- **W2-Money:** the `holdup` skin serves the bank too: with `target: 'bank'` it shows Penny Wise at
+  the window (portrait `penny`, labelled "Penny Wise, the teller", matching the `bark.penny.*` line
+  that follows) and the `mg.holdup.bank.1..3` situations; `crime.holdupParams` supplies the rest.
 - **W2-Music:** McSticks plays `fry_day`, Five-O `funky_aisle`, Order Up and the scratch card
   `tick_tock_trouble` (ART_AUDIO §13.4).
 - **W2-RulesE:** the goods rows use `items.room` / `items.buy` from `js/rules/effects.js` (present

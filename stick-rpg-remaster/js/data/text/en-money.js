@@ -48,6 +48,7 @@
     'greet.bank.rich': 'Our most valued customer! I have been told to smile more around you. Is this enough smile?',
     'greet.bank.broke': 'Your balance is what we in banking call "aspirational". Can I interest you in a savings plan?',
     'greet.bank.loanDue': 'Just a gentle reminder: your loan is due in {days} days. This has been a gentle reminder.',
+    'greet.bank.loanTonight': 'Your loan is due tonight. The repo men are very punctual. I have met them. Once.',
     'greet.bank.lien': 'Half your income still goes to the lien. Consider it a very committed savings plan.',
     'greet.bank.frozen': 'Your credit is frozen until day {day}. We keep it in the freezer, next to the ice cream.',
     'greet.bank.robbed': 'I recognise you. The mask was a bold choice. Please keep your hands where I can see them.',
@@ -74,7 +75,7 @@
     'card.bank.free': 'Deposits and withdrawals are free and take no time.',
     'card.bank.depositBtn': 'Deposit {money}',
     'card.bank.withdrawBtn': 'Withdraw {money}',
-    'card.bank.depositNote': 'Everything in the bank earns interest tonight at {pct} a day.',
+    'card.bank.depositNote': 'Everything in the bank earns interest every night, around {pct} a day at the moment.',
     'card.bank.withdrawNote': 'Cash in your pocket earns nothing and pays for everything.',
     'card.bank.nothing': 'Nothing to move right now.',
 
@@ -86,8 +87,11 @@
     'card.bank.loan.current': 'You owe {money}. {days} days left.',
     'card.bank.loan.lastDay': 'You owe {money}. Due tonight.',
     'card.bank.loan.repayBtn': 'Repay {money}',
+    'card.bank.loan.repayCash': 'Repayments come out of your cash, and you have none on you.',
+    'card.bank.loan.repayWithdraw': 'Repayments come out of your cash, and you have none on you. You have {money} in the bank: Withdraw it first.',
+    'card.bank.loan.repayFromBank': 'Repayments come out of your cash. You also have {money} in the bank: Withdraw first to pay more.',
     'card.bank.loan.none': 'No loan open.',
-    'card.bank.loan.lien': 'Lien: {money}. Half of every wage, rent, salary, interest, deal, fee, loot and prize goes to it until it is paid.',
+    'card.bank.loan.lien': 'Lien: {money}. Half of all you earn (wages, rent, salary, interest, deals, tour fees, loot, winnings, prizes) goes to it until it is paid.',
     'card.bank.loan.frozen': 'Credit frozen until day {day} after a default.',
     'card.bank.loan.default.standard': 'Miss the deadline and the repo men collect, in this order: the bank, your cash, CDs, stocks, furniture, then homes you do not live in. Anything left becomes a lien. Karma {karma}, HP to {hp}, credit frozen {days} days.',
     'card.bank.loan.default.relaxed': 'Miss the deadline and the repo men collect, in this order: the bank, your cash, CDs, stocks, furniture, then homes you do not live in. Anything left becomes a lien. Karma {karma}, credit frozen {days} days.',
@@ -102,7 +106,7 @@
     'card.bank.rates.chart': 'The rate over the last {n} days, in % a day',
     'card.bank.rates.tiers': 'Up to {t1}: the full rate. From {t1} to {t2}: half the rate. Above {t2}: a quarter.',
     'card.bank.rates.cap': 'Interest is capped at {money} a night.',
-    'card.bank.rates.tonight': 'Tonight your {bank} earns {money}.',
+    'card.bank.rates.tonight': 'Tonight your {bank} earns about {money}: the rate moves a little overnight, before interest is paid.',
     'card.bank.rates.tonightCap': 'Tonight your {bank} earns {money}: the nightly cap.',
     'card.bank.rates.loan': 'Loans cost {pct} a day, compounding.',
     'card.bank.rates.cdLine': 'CDs lock in {pct} a day for {days} days.',
@@ -166,7 +170,7 @@
 
     // Penny's voicemails (≤ 280; night step 2 raises the loan ones, W1-E R5)
     'vm.penny.loan5': 'Penny Wise from the bank. A friendly reminder: your loan of {money} is due in {days} days. The interest is also friendly. It visits every night.',
-    'vm.penny.loan1': 'Penny again. One day left on that loan: {money}. After tomorrow night the repo men take over, and they do not leave reminders.',
+    'vm.penny.loan1': 'Penny again. Your loan of {money} is due tonight. If it is not paid by the time you sleep, the repo men take over, and they do not leave reminders.',
     'vm.penny.default': 'Penny Wise. Your loan of {money} came due and the repo men have been. Still owed, as a lien on your income: {lienMoney}. Your credit is on ice for a while. I did call. Twice.',
     'vm.penny.homeBought': 'Penny Wise, Real Estate desk. Congratulations on {home}! The deed lives in our vault now, which is honestly the safest place for anything you care about.',
 
@@ -223,6 +227,7 @@
     'card.nli.hiredAs': 'You work here as {job}. {shifts} shifts at this rank.',
     'card.nli.moonlight': 'You also cook at McSticks as {job}. Nobody here needs to know.',
     'card.nli.bonus': 'This week: {wages} in NLI wages. Friday night bonus at {pct} %: {money}.',
+    'card.nli.ratingNow': 'Performance rating: {n}. It follows the pay of your Hustles; Vice President and CEO need {need}.',
     'card.nli.bonusFrom': 'From Executive up, Friday night pays a bonus of {from}-{to} % of the week\'s NLI wages.',
 
     // toasts
@@ -282,7 +287,7 @@
     'mg.boardroom.board': 'The board of directors',
     'mg.boardroom.safe': 'Play it safe',
     'mg.boardroom.bold': 'Make a bold call',
-    'mg.boardroom.ruthless': 'Be ruthless',
+    'mg.boardroom.ruthless': 'Be ruthless (costs karma)',
     'mg.boardroom.card.1': 'Sales are flat. The board wants a plan by the time the coffee cools.',
     'mg.boardroom.card.2': 'A rival is poaching your best people with better chairs.',
     'mg.boardroom.card.3': 'Legal asks whether "New Lines" can trademark the concept of a line.',

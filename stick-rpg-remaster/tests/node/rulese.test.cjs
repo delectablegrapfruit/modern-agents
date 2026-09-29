@@ -211,6 +211,10 @@ T.section('requests: W2-Money 3 and 4 (every missing requirement; the lien in th
   const P = row('promoteNli', { group: 'work', requires: [['fn', 'jobs.canPromote', 'nli']], effects: [['fn', 'jobs.promote', 'nli']] });
   const p = preview(s, P);
   T.eq([p.reason, SR.text(p.reason, p.vars)], ['reason.needAll', 'Need INT 75 (you: 50) · CHA 25 (you: 3) · 3 shifts (you: 0)'], 'the promotion row names every missing requirement');
+  // A rank the ladder does not know (a hand-edited save) is not "promoted" back to the first rung.
+  const odd = H.state(SR, { stats: { int: 300, cha: 300 }, job: { ranks: { nli: 'mailroom' }, shiftsAtRank: { nli: 9 } } });
+  T.eq([SR.rules.jobs.promotion(odd, 'nli').next, preview(odd, P).reason], [null, 'reason.topRank'], 'an unknown rank has no next rung');
+  T.eq([SR.rules.jobs.canWork(odd, 'nli').reason, SR.rules.jobs.bestTitle(odd)], ['reason.notHired', 'cook'], '… works no $0 shift and is no title (the results do not throw)');
   const d = H.state(SR, { money: { cash: 0, bank: 0, loan: { amount: 900, daysLeft: 1 } }, clock: { day: 3 } });
   SR.rules.night.run(d, H.ctx(SR, 1), { kind: 'sleep' });
   const vm = d.msgs.find((m) => m.key === 'vm.penny.default');

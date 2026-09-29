@@ -19,6 +19,10 @@
 // - Sound (ART_AUDIO §13.4-13.6): the day song and the night song cross-fade at 05:30 / 19:30 (the
 //   rain variant with the `weather` flag), the city bed follows the traffic near you, the wind bed
 //   the nearest unrailed edge (0 → -12 dB within 60 u), and the edge sounds of the fall.
+//   Movement: footsteps by surface, the skate roll and push, the engine by speed, the ignition, and
+//   each door's own sound as you walk in (ART_AUDIO §13.5); the fall and rescue stingers once
+//   W2-Music registers them.
+// - The player's parked sports car is drawn (an actor car source; W2-Street draws the junker).
 // - The cab stub (P1, flag `phone`): SR.world.cab(doorId) runs world.cab and sets you down there.
 (function () {
   'use strict';
@@ -43,11 +47,20 @@
   var STAR_N = 3, STAR_R = 14;               // the knockdown's circling stars
   var PERSON_BARK_Z = 64;                    // a named person's bark floats above their name tag
   var HIT_HAPTIC_MS = 30;                    // UI.md §6: 30 ms on hits
+  // Movement sounds (ART_AUDIO §13.5): footsteps by surface, the skate roll and its push clack, the
+  // engine pitched by speed; the door's own sound as you walk in.
+  var STRIDE = 70;                           // u between two footsteps (4 a second at the 280 u/s walk)
+  var STEP_PITCH = [1, 0.92];                // footsteps alternate pitch
+  var MOVE_MIN_V = 20;                       // u/s: slower is standing still
+  var SKATE_PUSH_SEC = 1.4;                  // a push clack this often while the board rolls
+  var ENGINE_PITCH = [0.7, 1.9];             // the engine loop's pitch from standstill to top speed
+  var DOOR_SFX = { shop: 'door_bell', box: 'door_bell', tower: 'door_whoosh', hall: 'door_whoosh', casino: 'door_ding' };
+  var DOOR_SFX_DEFAULT = 'door_creak';       // houses, the castle, the depot
 
   function W() { return SR.world; }
   function D() { return SR.ui && SR.ui.dom; }
   function txt(k, v) { return SR.text && k ? SR.text(k, v) : ''; }
-  function cfg() { return SR.world.cfg || (SR.world.cfg = SR.world.readCfg()); }
+  function cfg() { return SR.world.cfg || SR.world.readCfg(); }
   function setting(k) { try { return SR.settings && typeof SR.settings.get === 'function' ? SR.settings.get(k) : undefined; } catch (e) { return undefined; } }
   function audio(fn) { var A = SR.audio; if (A && typeof A[fn] === 'function') { try { return A[fn].apply(A, Array.prototype.slice.call(arguments, 1)); } catch (e) { return null; } } return null; }
 
@@ -64,6 +77,8 @@
     // press that brought the city back to the top (Esc leaving a building or closing an overlay) is
     // still being dispatched, so its `pause` does not open the pause menu.
     swallow: null, arrived: false,
+    // Movement sounds: the distance walked since the last footstep, which foot, the loops' handles.
+    stride: 0, foot: 0, skateLoop: null, pushT: 0, engine: null, car: null, doorSeen: null, miniOff: false,
   };
 
   // ------------------------------------------------------------------------------------------------
@@ -106,6 +121,7 @@
     // Time passed indoors: the street fills afresh for the new hour (the page turn hides it).
     if (C.left !== stamp() && W().pedestrians && W().pedestrians.invalidate) W().pedestrians.invalidate();
     C.phase = W().fall.phase; C.saved = W().fall.saved;
+    C.doorSeen = W().doors.last; C.car = W().player.car; C.stride = 0;
     C.hits = W().traffic ? W().traffic.stats.hits : 0;
     C.crashes = W().traffic ? W().traffic.stats.crashes : 0;
     C.plane = null;
@@ -113,6 +129,11 @@
 
   function exit() {
     C.left = stamp();
+    // Walking (or parking) into a door: its own sound (ART_AUDIO §13.5) over the door zoom.
+    var last = W().doors && W().doors.last;
+    if (last && last !== C.doorSeen) doorSound(last.id);
+    C.doorSeen = last;
+    stopLoops();
     if (SR.state && W().ready) W().sync();
     live(false);
     audio('ambience', 'city', 0);
@@ -163,6 +184,57 @@
     if (wind !== C.wind) { C.wind = wind; audio('ambience', 'wind', wind); }
   }
 
+  /** The door's sound (ART_AUDIO §13.5): a shop bell, a revolving whoosh, a creak, the casino's ding. */
+  function doorSound(doorId) {
+    var G = W().geometry, d = G.doorById && G.doorById[doorId];
+    if (!d) return;
+    var b = G.buildings && G.buildings[d.building], arch = b && b.def && b.def.exterior ? b.def.exterior.archetype : null;
+    audio('sfx', DOOR_SFX[d.building] || DOOR_SFX[arch] || DOOR_SFX_DEFAULT, { x: d.x, y: d.y });
+  }
+
+  function stopLoops() {
+    if (C.skateLoop) { C.skateLoop.stop(); C.skateLoop = null; }
+    if (C.engine) { C.engine.stop(); C.engine = null; }
+  }
+
+  /**
+   * Movement sounds each step (ART_AUDIO §13.5): a footstep every stride on foot (softer on grass,
+   * the paper creak on the Dog-Ear), the skate roll loop with a push clack now and then, the engine
+   * loop pitched by speed while you drive, and the ignition as you get in.
+   */
+  function moves(dt) {
+    var w = W(), P = w.player, F = w.fall;
+    if (P.car !== C.car) {
+      if (P.car) audio('sfx', 'ignition', { x: P.x, y: P.y });
+      C.car = P.car;
+    }
+    var down = F.active() || P.knockdown > 0;
+    var v = dt > 0 ? Math.hypot(P.x - P.px, P.y - P.py) / dt : 0;
+    // The engine idles while you sit in the car and rises with the speed.
+    if (P.car && !down) {
+      var top = typeof P.topSpeed === 'function' ? P.topSpeed() : 0, k = top > 0 ? Math.min(1, Math.abs(P.v || v) / top) : 0;
+      var pitch = ENGINE_PITCH[0] + (ENGINE_PITCH[1] - ENGINE_PITCH[0]) * k;
+      if (!C.engine) C.engine = audio('sfx', 'engine_loop', { x: P.x, y: P.y, pitch: pitch });
+      else C.engine.set({ x: P.x, y: P.y, pitch: pitch });
+    } else if (C.engine) { C.engine.stop(); C.engine = null; }
+    var skating = !P.car && !down && P.mode === 'skate' && v > MOVE_MIN_V;
+    if (skating) {
+      var skTop = typeof P.topSpeed === 'function' ? P.topSpeed(true) : 0, sk = skTop > 0 ? Math.min(1, v / skTop) : 1;
+      if (!C.skateLoop) { C.skateLoop = audio('sfx', 'skate_loop', { x: P.x, y: P.y, gain: sk }); C.pushT = 0; }
+      else C.skateLoop.set({ x: P.x, y: P.y, gain: sk });
+      C.pushT -= dt;
+      if (C.pushT <= 0) { C.pushT = SKATE_PUSH_SEC; audio('sfx', 'skate_push', { x: P.x, y: P.y }); }
+    } else if (C.skateLoop) { C.skateLoop.stop(); C.skateLoop = null; }
+    if (P.car || down || P.mode === 'skate' || v <= MOVE_MIN_V) { C.stride = 0; return; }
+    C.stride += v * dt;
+    if (C.stride < STRIDE) return;
+    C.stride -= STRIDE;
+    C.foot = 1 - C.foot;
+    var G = w.geometry, ear = G.map.features && G.map.features.dogEar;
+    var name = ear && ear.flap && G.util.inPoly(P.x, P.y, ear.flap) ? 'step_paper' : P.surface === 'lawn' ? 'step_grass' : 'step';
+    audio('sfx', name, { x: P.x, y: P.y, pitch: STEP_PITCH[C.foot] });
+  }
+
   // ------------------------------------------------------------------------------------------------
   // What the world's actions look like (fall, car hit, crash, the fished car, the nomination)
   // ------------------------------------------------------------------------------------------------
@@ -201,6 +273,13 @@
   // ------------------------------------------------------------------------------------------------
   // Per-step watching: the fall's sounds, "Phew", hits and crashes, the 24:00 state, the prompt
   // ------------------------------------------------------------------------------------------------
+  /** The fall's and the rescue's stingers (ART_AUDIO §13.4) once W2-Music registers them. */
+  function stinger(name) {
+    if (SR.reg.song && SR.reg.song['stingers.' + name] && SR.audio && typeof SR.audio.stinger === 'function') {
+      try { SR.audio.stinger(name); } catch (e) { /* the audio may still be locked */ }
+    }
+  }
+
   function particles(kind, x, y, n) {
     var Pa = SR.render && SR.render.particles;
     if (Pa && typeof Pa.burst === 'function') Pa.burst(kind, x, y, { n: n });
@@ -214,8 +293,8 @@
     // The fall's edge sounds (ART_AUDIO §13.5) and the plane's way out after the landing.
     if (F.phase !== C.phase) {
       if (F.phase === 'teeter') audio('sfx', 'teeter', { x: P.x, y: P.y });
-      else if (F.phase === 'drop') audio('sfx', 'fall_whistle', { x: F.x, y: F.y });
-      else if (F.phase === 'catch') audio('sfx', 'plane_swoop', { x: F.x, y: F.y });
+      else if (F.phase === 'drop') { audio('sfx', 'fall_whistle', { x: F.x, y: F.y }); stinger('fall'); }
+      else if (F.phase === 'catch') { audio('sfx', 'plane_swoop', { x: F.x, y: F.y }); stinger('rescue'); }
       else if (F.phase === 'none' && (C.phase === 'land' || C.phase === 'catch' || C.phase === 'drop') && F.last) {
         audio('sfx', 'landing', { x: P.x, y: P.y });
         particles('dust', P.x, P.y, 10);
@@ -445,7 +524,8 @@
   /** Click or tap the ground: walk there (GDD §3.8); a click on a building walks to its door. */
   function walkAt(cx, cy) {
     var w = W(), P = w.player;
-    if (!SR.state || !w.ready || w.fall.active() || P.car || !SR.stage || typeof SR.stage.toLogical !== 'function') return false;
+    // Not while driving, falling or knocked flat (a click then would queue a walk for later).
+    if (!SR.state || !w.ready || w.fall.active() || P.car || P.knockdown > 0 || !SR.stage || typeof SR.stage.toLogical !== 'function') return false;
     var q = SR.stage.toLogical(cx, cy), p = w.camera.toWorld(q.x, q.y);
     var ok = P.walkTo(p.x, p.y);
     if (!ok) toast({ key: 'toast.world.noRoute', kind: 'info', id: 'toast-noroute' });
@@ -529,12 +609,18 @@
     var k = ((SR.stage && SR.stage.uiK) || 1) * ((typeof window !== 'undefined' && window.devicePixelRatio) || 1), n = Math.max(1, Math.round(MINI * k));
     if (C.miniCanvas.width !== n) { C.miniCanvas.width = n; C.miniCanvas.height = n; if (SR.render.minimap) SR.render.minimap.invalidate(); }
   }
+  /** @returns {boolean} the HUD is in its minimal mode now (UI.md §4.1: only HP and the ClockRing). */
+  function hudMinimal() {
+    var H = SR.ui && SR.ui.hud, el = H && typeof H.el === 'function' ? H.el() : null;
+    return !!(el && el.classList && el.classList.contains('is-minimal'));
+  }
   function layout() {
     var touch = touchMode();
     if (C.touch) C.touch.hidden = !touch;
     if (!touch) releaseSkate();
     if (C.mini) {
-      C.mini.hidden = setting('game.minimap') === false;
+      C.miniOff = setting('game.minimap') === false;
+      C.mini.hidden = C.miniOff || hudMinimal();
       C.mini.style.top = touch ? MINI_TOP_TOUCH + 'px' : '';
       C.mini.style.bottom = touch ? '' : '16px';
       sizeMinimap();
@@ -567,7 +653,10 @@
       C.world.addEventListener('pointerdown', C.onDown);
       C.world.addEventListener('pointerup', C.onUp);
     }
-    if (SR.render.actors && typeof SR.render.actors.source === 'function') SR.render.actors.source('city.fold', foldStandIn, 'player');
+    if (SR.render.actors && typeof SR.render.actors.source === 'function') {
+      SR.render.actors.source('city.fold', foldStandIn, 'player');
+      SR.render.actors.source('city.sports', parkedSports, 'car');
+    }
     stepIn();
   }
 
@@ -576,7 +665,7 @@
     C.unsubs.length = 0;
     if (C.world && C.onDown) { C.world.removeEventListener('pointerdown', C.onDown); C.world.removeEventListener('pointerup', C.onUp); }
     C.world = null; C.tap = null;
-    if (SR.render.actors && typeof SR.render.actors.source === 'function') SR.render.actors.source('city.fold', null);
+    if (SR.render.actors && typeof SR.render.actors.source === 'function') { SR.render.actors.source('city.fold', null); SR.render.actors.source('city.sports', null); }
     if (SR.ui.hud && typeof SR.ui.hud.unmount === 'function') SR.ui.hud.unmount();
     releaseSkate();
     C.root = null; C.prompt = null; C.mini = null; C.miniCanvas = null; C.touch = null; C.target = null; C.promptKey = '';
@@ -587,6 +676,17 @@
   // The frame: barks, the render core, then the Fold Rescue, the knockdown's stars, the touch stick
   // ------------------------------------------------------------------------------------------------
   var STAND_IN = [{ kind: 'player', x: 0, y: 0, visible: false }];
+  var PARKED = [{ id: 'sports', kind: 'sports', x: 0, y: 0, a: 0, visible: true, parked: true }];
+  /**
+   * The player's parked sports car (GDD §3.8: parked cars stay where you leave them), an actor car
+   * source while the city is up. The junker is W2-Street's ('street.junker', docs/requests/W2-Street.md 2).
+   */
+  function parkedSports() {
+    var s = SR.state, P = W().player, row = s && s.player && s.player.cars && s.player.cars.sports, e = PARKED[0];
+    if (!row || !row.owned || row.towed || (P && P.car === 'sports') || typeof row.x !== 'number' || typeof row.y !== 'number') return null;
+    e.x = row.x; e.y = row.y; e.a = typeof row.a === 'number' ? row.a : 0;
+    return PARKED;
+  }
   /** While the Fold Rescue plays the city draws the player itself: a hidden stand-in replaces them. */
   function foldStandIn() {
     var F = W().fall;
@@ -748,7 +848,13 @@
       }
     }
     drawStick2(ctx);
-    if (C.mini && !C.mini.hidden && SR.render.minimap) SR.render.minimap.tick(C.miniCanvas, SR.loop && typeof SR.loop.time === 'number' ? SR.loop.time : t);
+    if (C.mini) {
+      // The minimal HUD (H) hides the minimap with the rest of the HUD, and shows it again while the
+      // HUD shows in full after a change.
+      var hide = C.miniOff || hudMinimal();
+      if (C.mini.hidden !== hide) C.mini.hidden = hide;
+      if (!hide && SR.render.minimap) SR.render.minimap.tick(C.miniCanvas, SR.loop && typeof SR.loop.time === 'number' ? SR.loop.time : t, false);
+    }
   }
 
   function update(dt) {
@@ -757,6 +863,7 @@
     if (!SR.state) return;
     watch();
     sound(dt);
+    moves(dt);
     if (isTop() && !C.talking) showPrompt(); else if (C.promptKey) hidePrompt();
   }
 
@@ -786,7 +893,7 @@
     get music() { return songFor(clock()); },
     enter: enter,
     exit: exit,
-    pause: function () { hidePrompt(); releaseSkate(); },
+    pause: function () { hidePrompt(); releaseSkate(); stopLoops(); },
     resume: function () { C.promptKey = ''; arrive(); },
     update: update,
     render: render,

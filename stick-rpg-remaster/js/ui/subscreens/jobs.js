@@ -7,7 +7,8 @@
 // limit); your rung marked "You are here", the next one "Next" with every missing requirement in
 // danger ink (or "Ready"); the Apply / Ask for a promotion button (ctx.act('nli.apply' /
 // 'nli.promote'), its refusal from ctx.preview); the week's Friday bonus from Executive up
-// (B-05 weeklyBonus). Never mutates state. Node-loadable: no DOM or browser API at load time.
+// (B-05 weeklyBonus); P1 `hustles`: your performance rating (B-05 rating). Never mutates state.
+// Node-loadable: no DOM or browser API at load time.
 (function () {
   'use strict';
   var SR = window.SR;
@@ -59,7 +60,8 @@
       here ? SR.ui.badge({ text: 'card.nli.here', kind: 'money', id: 'ladder-here' }) : null,
       next ? SR.ui.badge({ text: 'card.nli.next', kind: 'new', id: 'ladder-next' }) : null);
     var body = [
-      h('div', { class: 't-small', 'data-id': 'ladder-pay-' + id }, t('card.nli.pay', { money: money(wage), full: money(full) })),
+      // Relaxed (×1.25) and the Four-Day Week make cents of some wages ($12.50 an hour): show them.
+      h('div', { class: 't-small', 'data-id': 'ladder-pay-' + id }, t('card.nli.pay', { money: SR.text.money(wage, { cents: wage % 1 !== 0 }), full: money(full) })),
       h('div', { class: 't-small', 'data-id': 'ladder-needs-' + id, style: { color: 'var(--ink-700)' } }, needs(id, i > 0 ? list[i - 1] : null)),
       h('div', { class: 't-small', style: { color: 'var(--ink-700)' } }, t('card.nli.credit', { money: money(row.credit) })),
     ];
@@ -113,6 +115,13 @@
     var el = h('div', { role: 'list', 'data-id': 'ladder-list', 'aria-label': t('card.nli.jobs') });
     list.forEach(function (id, i) { el.appendChild(rung(s, id, i, list, cur, p)); });
     root.appendChild(el);
+    // P1 `hustles`: your performance rating (B-05 rating: the moving average of the Hustle's m),
+    // the bulletin board's other line (GDD §6.1), and the bar Vice President and CEO set.
+    if (SR.features.hustles && cur) {
+      var needR = list.reduce(function (a, id) { return Math.max(a, J()[id].rating || 0); }, 0);
+      root.appendChild(h('p', { class: 't-small', 'data-id': 'ladder-rating', style: { margin: '0', color: 'var(--ink-700)' } },
+        t('card.nli.ratingNow', { n: SR.text.num(s.job.rating, 2), need: needR })));
+    }
     // The Friday bonus (B-05 weeklyBonus): the week so far at your rank, or who gets one.
     var wb = J().weeklyBonus, pct = cur && typeof wb[cur] === 'number' ? wb[cur] : 0;
     if (pct) {
@@ -128,6 +137,11 @@
     }
     if (inside) {
       var f = root.querySelector('[data-id="ladder-go"]') || root.querySelector('[data-nav]');
+      // At the top of the ladder the button is gone: the host's Breadcrumb, never the page body.
+      if (!f) {
+        var host = root.closest ? root.closest('[data-id="subhost"]') : null;
+        f = host ? SR.ui.focus.navigables(host)[0] : null;
+      }
       if (f) SR.ui.focus.focus(f);
     }
   }

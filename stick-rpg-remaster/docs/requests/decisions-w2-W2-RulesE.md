@@ -18,6 +18,8 @@ not own, are named "not this desk".
 | 2 | mid-wave | `W2-RulesC.md` only (items 1-2 target the lead's `tests/balance/sim.cjs` and the W1-C sheet: not this desk; its proposal that the pipeline refuse non-jail rows while jailed is noted below) |
 | 3 | mid-wave | `W2-Food.md` (item 3 is this desk's: applied; 1, 2, 4, 5 are other owners'); `W2-RulesC.md` 3 (applied); `W2-Civic.md` (items 1-3 are the lead's and W2-Music's: not this desk); `W2-Goods.md` (items 1-3 are the lead's: not this desk); `W2-Exterior.md` (items 1-9 are W2-City's and the lead's; it reads `tuning.crime.police.posters`, which exists: nothing to change); `W2-Transit.md` (items 1-4 are W2-Front's, the lead's and W3-Crime's: not this desk); `W2-Night.md` (items 1-4 are the lead's; "nothing is asked of the rules desks"; its `bar.canCarry` uses this desk's `reason.stackFull`); `W2-Home.md` (item 1 is this desk's: applied, with the jail exception; 2-6 other owners'); `W2-City.md` (items 1-4 are the lead's; `world.cab` reads `tuning.world.cab`, which exists) |
 | 4 | late in the wave | `W2-Night.md` 5 (this desk's: applied); `W2-Civic.md` 4-5 (the lead's); `W2-Street.md` (1-5 other owners'; the schema part of 6 applied); `W2-Money.md` (3 and 4a applied, 4b answered; 1, 2, 5, 6 the lead's); `W2-Pocket.md` (5 applied; 1-4, 6, 7 other owners'); `W2-RulesC.md` 5 (W2-Pocket's); `W2-Front.md` (1-5 other owners'); `W2-Transit.md` 5 (W2-Front's) |
+| 5 | after the pause (resumed) | nothing new for this desk: the items added since sweep 4 name other owners' files (`W2-Food.md` 6 and `W2-Money.md` 5b: the lead's `validate.cjs --selftest`; `W2-City.md` 5, `W2-Exterior.md` 10: the lead's render files; `W2-Goods.md` 4: W2-Front's `en-ui.js`, applied there; `W2-Home.md` 7-9: the lead's `card.js` / `components.js` and GDD; `W2-RulesC.md` 4: the lead's records); the wave-1 decision files' Deferred tables still name no rules desk |
+| 6 | before finishing (resumed run) | nothing new for this desk: `W2-Civic.md` 6 (the lead's `card.js`: re-pick a greeting after an action) and its W2-Home note (W2-Music's variant); `W2-Food.md` (a W2-Money note and a status line); `W2-Pocket.md` 3 (applied by W2-City) and 7 (records); `W2-RulesC.md` 5 (applied by W2-Pocket: `phone.boardInfo` reads `election.acceptBy`). This desk's own `W2-RulesE.md` 6 records an e2e observation for the lead (the world suite's fall samples meet the traffic) |
 
 ## Requests from other wave-2 packages
 
@@ -75,7 +77,10 @@ not own, are named "not this desk".
 - **W2-Front 2** (a `world.retire` action calling this desk's `endgame.retire`) → not this desk (the
   action belongs in `js/data/actions/world.js`, W2-City's, or where the lead puts it); the named fn
   is ready and tested (Retire through `SR.act` sets `Result.over` and emits `game:over`, reason
-  `retire`). **W2-Front 1, 3-5** → not this desk. W2-Front's wizard uses `SR.rules.state.roll` /
+  `retire`). The row `world.retire` is registered now (W2-City's file, after the pause): through the
+  pipeline it ends an Unlimited run with `over.reason` `retire` and refuses a timed one
+  (`reason.timedGame`), and the action fuzz (176 actions) is clean with it. **W2-Front 1, 3-5** →
+  not this desk. W2-Front's wizard uses `SR.rules.state.roll` /
   `fair`, and its results use `SR.rules.endgame.keepPlaying` (this desk's additions).
 - **W2-Home 2-6** → not this desk (the kit, the validator, W2-Front's screens, CONTRACT records,
   W2-Money's real-estate sub-screen).
@@ -149,6 +154,11 @@ Each is a bug or a gap the wave-2 building data would have hit; tested in
   summary lacked the market mover of UI §5.12 ("Interest +$42 · NLI ▲ 2 % · 1 message") → on a market
   night `report.jail.summaryMarket` with `ticker`, `arrow`, `pct` of the biggest mover
   (`night.test.cjs`).
+- **A job rank B-05 does not know** (a hand-edited save: the save's validator checks the clock,
+  money and stats, not the ranks) was "promoted" to the track's first rung (`indexOf` -1 + 1),
+  worked $0 shifts, and made `jobs.bestTitle` throw inside `endgame.results` (found by a probe of
+  the real NLI rows after the resume) → `jobs.promotion` gives it no next rung
+  (`reason.topRank`), `jobs.canWork` refuses it (`reason.notHired`) and `bestTitle` skips it.
 
 ## Named functions and rule helpers added for the wave-2 data (additive)
 
@@ -190,5 +200,16 @@ in `docs/requests/W2-RulesE.md`.
 - Updated suites: `state.test.cjs` (`casino.card`, 13 records), `jobs.test.cjs` (`reason.needAll`),
   `night.test.cjs` (the jail summary with the mover).
 - A scratch fuzz of every registered action (117 at mid-wave, 175 at the end, the wave-2 data included; 60
-  random states each): no preview mutated the state, none threw, and no run refused what its
-  preview allowed.
+  random states each; 176 on the resumed run): no preview mutated the state, none threw, and no run
+  refused what its preview allowed.
+- Resumed run: a probe of the real P0 rows of GDD §6.1 through the pipeline (McSticks, Five-O,
+  pawn, Fine Line, bank, NLI, U of S, Sticky's, home, the Bag, the street cast: prices with B-28a,
+  HP, time, the wall, the B-06 stacks, TV limits, the three difficulties, the rank table, the cheat
+  name) matched GDD / BALANCE, save the unknown-rank case fixed above; index.html over file:// with
+  a day of those rows through `SR.act` and a Sleep to the report: zero console errors.
+- `node tools/run-all.cjs --jobs 2` on the resumed run: every Node suite of this desk passes; the
+  failures are other owners' and filed (`invariants`: W2-City 1; `validate --selftest`: W2-Food 6 /
+  W2-Money 5b; e2e `boot`: W2-Front 1; `a11y`: W2-Pocket 1; `world`: `W2-RulesE.md` 6; `minigames`,
+  `stage`, `ui-kit`, `visual`: unchanged from the runs before the pause); `shuffle`, `card` and
+  `art` failed only under the parallel load while other packages were saving files and pass alone;
+  `slice` (strict) passes.

@@ -85,9 +85,14 @@
       if (!Dz) return false;
       ev = ev || {};
       if (ev.down === false) return false;
-      if ((action === 'confirm' || action === 'back' || action === 'interact') && Dz.t >= SKIP_AFTER) {
+      if ((action === 'confirm' || action === 'back' || action === 'interact') && Dz.t >= SKIP_AFTER && !ev.repeat && !Dz.skipping) {
+        // The results come once this input event is over: one key fires several actions (Enter is
+        // `interact` and `confirm`, Esc `back` and `pause`), and the rest of the press must not also
+        // skip the Final Edition's count-up.
+        var me = Dz;
+        Dz.skipping = true;
         SR.ui.stamp.clear();
-        toResults();
+        Promise.resolve().then(function () { me.skipping = false; if (Dz === me) toResults(); });
       }
       return true;
     },

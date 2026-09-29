@@ -22,6 +22,7 @@
   var RIDE_S = 6, SKIP_AFTER = 1, HOME_S = 1.6, DEPART_U = 0.18, ARRIVE_U = 0.72;
   var RIB_Y = 470, RIB_H = 24, RIB_WAVE = 26, RIB_LEN = 260, SCROLL = 300;
   var OUT_MIN = [0, 540], HOME_MIN = [1140, 1440], POSTCARD_MIN = 720;
+  var TOUR_RIDE_MIN = 120;   // a tour leaves at boarding (06:00-10:00): its sky runs from then, two hours on
   var CLOUD_LAYERS = [{ n: 5, y: [70, 220], r: [40, 70], v: 0.3 }, { n: 5, y: [240, 400], r: [50, 90], v: 0.5 }, { n: 4, y: [560, 690], r: [80, 130], v: 0.7 }];
   var STARS = 42, STAR_LEVELS = 4, FAR_S = 0.13;
 
@@ -33,6 +34,19 @@
   function t(k, v) { return D().t(k, v); }
   function col(k) { return SR.art.draw.color(k); }
   function fast() { return !!(SR.debug && typeof SR.debug.fast === 'function' && SR.debug.fast()); }
+  /** @returns {boolean} the press came from a binding of that input action (Esc is `back` and `pause`). */
+  function boundTo(ev, action) {
+    var I = SR.input;
+    if (!ev || !ev.code || !I || typeof I.bindings !== 'function') return false;
+    try { return (I.bindings(action) || []).indexOf(ev.code) >= 0; } catch (e) { return false; }
+  }
+  /** On top again (entered, or back from the pause menu): the Esc that got us here is not a new pause. */
+  function onTop() {
+    if (!Tr) return;
+    var me = Tr;
+    me.arrived = true;
+    Promise.resolve().then(function () { me.arrived = false; });
+  }
   function cityName(id) { return id && SR.text.has('city.' + id + '.name') ? SR.text('city.' + id + '.name') : String(id || ''); }
   function pending() { return SR.state && SR.rules.trade && SR.rules.trade.pending ? SR.rules.trade.pending(SR.state) : null; }
   function tripEvent(res) {
@@ -57,7 +71,8 @@
       res: Tr.decided || Tr.res };
     var off = pending();
     if (off && off.kind === 'smuggle' && off.outcome === 'offer') return { kind: 'offer', head: 'card.trip.head.offer', text: t(off.key, off.vars), offer: off };
-    return { kind: 'stale', head: 'card.trip.head.noBuyers', text: t('card.trip.noOffer', { city: cityName(Tr.city) }) };
+    return { kind: 'stale', head: 'card.trip.head.noBuyers',
+      text: Tr.city ? t('card.trip.noOffer', { city: cityName(Tr.city) }) : t('card.trip.noOfferAny') };
   }
 
   function chipsOf(res) {
@@ -92,7 +107,8 @@
     el.leave.hidden = true;
     var body = h('div', { style: { display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)', padding: 'var(--sp-3) var(--sp-4)' } });
     body.appendChild(h('p', { class: 't-label', 'data-id': 'trip-where', style: { margin: '0', color: 'var(--ink-700)' } },
-      t(Tr.params.resume ? 'card.trip.back' : Tr.kind === 'tour' ? 'card.trip.touring' : 'card.trip.leaving', { city: cityName(Tr.city) })));
+      !Tr.city ? t('card.trip.title')
+        : t(Tr.params.resume ? 'card.trip.back' : Tr.kind === 'tour' ? 'card.trip.touring' : 'card.trip.leaving', { city: cityName(Tr.city) })));
     body.appendChild(h('p', { class: 't-body', 'data-id': 'trip-story', style: { margin: '0', lineHeight: 'var(--lh-body)' } }, c.text));
     if (c.kind === 'busted' && c.res && c.res.jailed) {
       body.appendChild(h('p', { class: 't-label', 'data-id': 'trip-booked', style: { margin: '0', color: 'var(--danger-ink)' } },
@@ -162,6 +178,21 @@
     D().sfx('air_brake');
     D().announce(t('card.trip.rideBack'));
     if (fast()) finish();
+  }
+
+  /**
+   * A press skips the ride once this input event is over: one key fires several actions (Enter is
+   * `interact` and `confirm`, Esc `back` and `pause`), and the rest of the press must not reach the
+   * card that the skip brings up (it would take the buyer's offer) or the city.
+   */
+  function skipLater() {
+    var me = Tr, phase = Tr.phase;
+    me.skipping = true;
+    Promise.resolve().then(function () {
+      me.skipping = false;
+      if (Tr !== me || me.phase !== phase) return;
+      if (phase === 'ride') arrive(); else finish();
+    });
   }
 
   /** Back in the city at 24:00, outside the depot. */
@@ -373,7 +404,7 @@
   function drawRide(ctx, u, dir) {
     if (!sky) sky = buildSky();
     var W = SR.W, Hh = SR.H;
-    var span = dir > 0 ? OUT_MIN : HOME_MIN;
+    var span = dir < 0 ? HOME_MIN : Tr.kind === 'tour' ? [Tr.boardMin, Tr.boardMin + TOUR_RIDE_MIN] : OUT_MIN;
     var min = SR.util.lerp(span[0], span[1], u);
     var T = Tr.clock;
     var sc = skyColours(min);
@@ -459,8 +490,9 @@
       var s = SR.state;
       Tr = { params: params, city: params.city || null, kind: params.kind === 'tour' ? 'tour' : 'smuggle', phase: 'ride', t: 0, clock: 0,
         res: null, decided: null, view: null, card: null, scope: null, ui: null, buttons: [], cache: null, cacheScale: 0, done: false,
-        caption: null, skip: null, others: null };
+        caption: null, skip: null, others: null, boardMin: OUT_MIN[0], arrived: false, skipping: false };
       if (!s) return;
+      Tr.boardMin = s.clock.min;
       if (params.resume) {
         var off = pending();
         Tr.city = off ? off.city : Tr.city;
@@ -470,11 +502,14 @@
         if (!Tr.res || !Tr.res.ok) Tr.phase = 'card';
       }
       Tr.postcard = SR.art && typeof SR.art.interior === 'function' && Tr.city ? SR.art.interior('trip', { city: Tr.city, min: POSTCARD_MIN, still: D().reduced() }) : null;
+      onTop();
     },
     exit: function () {
       if (Tr && Tr.scope) SR.ui.focus.pop(Tr.scope);
       Tr = null;
     },
+    // Back from the pause menu: the Esc that closed it is not a new pause.
+    resume: function () { onTop(); },
     update: function (dt) {
       if (!Tr) return;
       Tr.t += dt;
@@ -502,7 +537,7 @@
       var press = action === 'confirm' || action === 'back' || action === 'interact';
       if ((press || /^row\d$/.test(action)) && SR.ui.stamp.swallow()) return true;
       if (Tr.phase === 'ride' || Tr.phase === 'home') {
-        if (press && !ev.repeat && Tr.t >= SKIP_AFTER) { if (Tr.phase === 'ride') arrive(); else finish(); }
+        if (press && !ev.repeat && Tr.t >= SKIP_AFTER && !Tr.skipping) skipLater();
         return true;
       }
       if (Tr.phase !== 'card') return false;
@@ -514,8 +549,20 @@
         return true;
       }
       if (SR.ui.focus.handle(action, ev)) return true;
-      if (action === 'back') { primary(); return true; }
-      if (action === 'pause' && SR.reg.scene.pause) { SR.scenes.push('pause'); return true; }
+      // Esc is both `back` and `pause` (CONTRACT §12.1). On a buyer's offer a decision is due (no
+      // way back), so Esc opens the pause menu; on any other card Esc is its main button (ride home,
+      // go quietly, back to the depot) and does not also pause.
+      var offer = !!(Tr.view && Tr.view.kind === 'offer');
+      if (action === 'back') {
+        if (offer && boundTo(ev, 'pause')) return true;
+        primary();
+        return true;
+      }
+      if (action === 'pause') {
+        if (boundTo(ev, 'back') && (Tr.arrived || !offer)) return true;
+        if (SR.reg.scene.pause) SR.scenes.push('pause');
+        return true;
+      }
       return false;
     },
     ui: {
@@ -523,7 +570,11 @@
         if (!Tr) return;
         root.classList.add('scene-bustrip');
         Tr.ui = root;
-        SR.ui.hud.mount(root, { compact: true });
+        // The trip is a presentation: no Pocket (the phone's cab would leave the Sky Bus, even a
+        // bust's card with the arrest already made), so the HUD's Pocket button goes.
+        var hud = SR.ui.hud.mount(root, { compact: true });
+        var pb = hud && hud.querySelector ? hud.querySelector('[data-id="hud-pocket"]') : null;
+        if (pb) pb.hidden = true;
         if (Tr.phase === 'ride') {
           Tr.caption = h('h2', { class: 't-h2', 'data-id': 'trip-caption', style: { position: 'absolute', left: '0', right: '0', top: '72px',
             textAlign: 'center', margin: '0', color: 'var(--paper-0)', textShadow: '0 3px 0 var(--ink-900)', pointerEvents: 'none' } },

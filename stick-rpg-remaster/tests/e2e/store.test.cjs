@@ -88,6 +88,10 @@ function rules() {
   const pclip = pv(clip, 'store.pills');
   T.eq([['nachos', 'smokes', 'pills'].map((x) => pv(clip, 'store.' + x).cost.cash), pclip.badges], [[4, 10, 45].map((p) => roundHalfUp(p * (1 - CLIPPER_PCT / 100))), ['couponClipper']],
     'Coupon Clipper (P1 perks): 10 % off snacks and goods, with its badge');
+  flags(['perks', 'karmaTiers']);
+  const both = fresh({ stats: { hp: 1, karma: 60 }, perks: { owned: ['couponClipper'] } });
+  T.eq([pv(both, 'store.pills').cost.cash, pv(both, 'store.pills').badges.length], [roundHalfUp(45 * (1 - Math.max(GOOD_PCT, CLIPPER_PCT) / 100)), 1],
+    'Good karma and Coupon Clipper together: only the largest percent applies (B-28a), pills $41, one badge');
   flags([]);
 
   T.section('the robbery: preconditions (B-11b)');
@@ -165,8 +169,8 @@ function rules() {
   const sk = SR.reg.skin.holdup;
   T.eq([sk.engine, sk.stake, SR.text.has(sk.text.title)], ['duel', true, true], 'the holdup skin: Duel engine, stake-bearing');
   const ps = sk.params(fresh(), { target: 'store' }), pb = sk.params(fresh(), { target: 'bank' });
-  T.eq([ps.opponent.portrait, pb.opponent.portrait, ps.situations.length, ps.situations.concat(pb.situations).every((k) => SR.text.has(k))], ['dee', 'penny', 3, true],
-    'Dee at the store, the teller at the bank; three situations each, all written');
+  T.eq([ps.opponent.portrait, pb.opponent.portrait, ps.situations.length, ps.situations.concat(pb.situations).every((k) => SR.text.has(k)), SR.text(pb.opponent.name)], ['dee', 'penny', 3, true, 'Penny Wise, the teller'],
+    'Dee at the store, Penny at the bank\'s window; three situations each, all written');
   T.ok(['intimidate', 'sweetTalk', 'outwit'].every((k) => SR.text.has('mg.holdup.' + k)), 'the three options are labelled (W1-C 10)');
   const one = armed({ stats: { cha: 100 } });
   const open = run(one, 'store.rob').open;
@@ -281,6 +285,11 @@ function rules() {
   T.eq([g(fresh({ clock: { day: 2, min: 900 }, stats: { heat: POSTERS_HEAT - 1 } })).key, g(fresh({ clock: { day: 2, min: 900 }, stats: { heat: POSTERS_HEAT } })).key],
     ['greet.store.default', 'greet.store.hot'], 'Dee hears sirens from Heat ' + POSTERS_HEAT + ' (the wanted posters\' threshold, tuning.crime.police.posters)');
   T.ok(cases.every((c) => SR.text.has('greet.store.' + c[1])), 'every greeting is written');
+  const wet = fresh({ clock: { day: 2, min: 900 }, world: { weather: 'rain' } });
+  T.eq(g(wet).key, 'greet.store.default', 'rain is not mentioned while the weather flag is off (P0 is always Clear)');
+  flags(['weather']);
+  T.eq([g(wet).key, SR.text.has('greet.store.rain')], ['greet.store.rain', true], '... and is with it (P1 weather)');
+  flags([]);
 }
 
 async function game() {
@@ -390,6 +399,7 @@ async function game() {
 
   T.section('the Hold-up at the bank (the skin W2-Money plays)');
   await t.newGame({ seed: 14 });
+  await E(() => SR.ui.toast.clear());   // the store robbery's toasts would cover the frame in the screenshot
   await t.set({ items: { gun: 1, ammo: 20 }, stats: { str: 120 }, clock: { day: 2, min: 900 } });
   await E(() => { window.__hb = null; const p = SR.rules.crime.holdupParams(SR.state, 'bank'); SR.minigame.run('holdup', Object.assign({ skin: 'holdup' }, p)).then((r) => { window.__hb = r; }); });
   await t.step(3);

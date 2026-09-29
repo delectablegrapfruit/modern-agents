@@ -38,7 +38,7 @@
   var NOON = 720;                // the clock the title's backdrop judges schedules at (no game)
 
   var S = SR.world.streetnpcs = {
-    /** The people in the city now (the renderer's and SR.world.entities('person')'s list). */
+    /** The people in the city now (the renderer's and SR.world.entities('person')'s list; changed in place, never replaced). */
     people: [],
     /** The id of the person whose dialog is open, or null (the Bag's Give reads it, GDD §6.4). */
     talking: null,
@@ -47,6 +47,8 @@
     /** Counters for tests: { judged, barks, talks, acts }. */
     stats: { judged: 0, barks: 0, talks: 0, acts: 0 },
   };
+  /** The same array under the name of CONTRACT §15.1's convention (`SR.world.streetnpcs.list`). */
+  S.list = S.people;
 
   var byId = {};          // id → the live entity
   var sigDay = -1, sigMin = -1;   // the clock the last judgement saw
@@ -154,7 +156,11 @@
 
   /**
    * The kid gives his board away with the first pack: his look drops it (a copy of the rig's raw
-   * look, made once, so the renderer's per-object look cache keeps hitting).
+   * look, made once, so the renderer's per-object look cache keeps hitting). The street and the
+   * dialog's portrait both use it, also after he is gone. The Dialog hands its `portrait` to the
+   * Portrait component as `person`, which reads SR.reg.person[person] for its label ("Portrait:
+   * Skid") and prints it in data-person, so this look prints as its person's id (a non-enumerable
+   * toString: the rig and JSON never see it).
    */
   var boardless = null;
   function lookOf(def, s) {
@@ -164,6 +170,8 @@
       if (!raw || typeof raw !== 'object') return def.look;
       boardless = SR.util.clone(raw);
       boardless.acc = (Array.isArray(boardless.acc) ? boardless.acc : []).filter(function (a) { return a !== 'skateboard'; });
+      var who = def.id;
+      Object.defineProperty(boardless, 'toString', { value: function () { return who; } });
     }
     return boardless;
   }
@@ -254,16 +262,17 @@
     return false;
   }
 
-  /** The nearest point of a path to (x, y) and the index of the end to walk toward next. */
+  var NEAR = { x: 0, y: 0, seg: 1, d: 0 };   // scratch: nearestOnPath runs every step of a way back
+  /** The nearest point of a path to (x, y) and the index of the end to walk toward next (a reused object). */
   function nearestOnPath(path, x, y) {
-    var best = { x: path[0][0], y: path[0][1], seg: 1, d: Infinity };
+    NEAR.x = path[0][0]; NEAR.y = path[0][1]; NEAR.seg = 1; NEAR.d = Infinity;
     for (var i = 0; i + 1 < path.length; i++) {
       var a = path[i], b = path[i + 1], vx = b[0] - a[0], vy = b[1] - a[1], L = vx * vx + vy * vy;
       var t = L > 0 ? SR.util.clamp(((x - a[0]) * vx + (y - a[1]) * vy) / L, 0, 1) : 0;
       var px = a[0] + vx * t, py = a[1] + vy * t, d = (px - x) * (px - x) + (py - y) * (py - y);
-      if (d < best.d) best = { x: px, y: py, seg: i + 1, d: d };
+      if (d < NEAR.d) { NEAR.x = px; NEAR.y = py; NEAR.seg = i + 1; NEAR.d = d; }
     }
-    return best;
+    return NEAR;
   }
 
   /** Red walks his beat end to end, stopping a moment at each end (facing the street). */
@@ -317,7 +326,7 @@
         continue;
       }
       if (e.returning) {
-        var to = e.path ? nearestOnPath(e.path, e.x, e.y) : { x: e.home.x, y: e.home.y, seg: e.seg };
+        var to = e.path ? nearestOnPath(e.path, e.x, e.y) : e.home;
         e.state = 'walk'; e.clip = null;
         if (walkTo(e, to.x, to.y, RETURN_SPEED, dt)) { if (e.path) e.seg = to.seg; settle(e, def); }
       } else if (e.idle === 'pace' && e.path) {
@@ -383,7 +392,10 @@
     return 'neutral';
   }
 
-  /** Red's NumberField: 1 .. what you can carry (99 held, orig), with a quick "all I can carry". */
+  /**
+   * Red's NumberField: 1 .. what you can carry (99 held, orig), with a quick button for the most
+   * you can take: "All I can carry", or "All I can afford" when the cash runs out first.
+   */
   function numberFor(def) {
     var s = SR.state, n = Object.assign({ min: 1, step: 1, value: 1 }, def.number || {});
     if (def.id === 'street.dealer.buy' && s) {
@@ -392,7 +404,7 @@
       var afford = per > 0 ? Math.floor(s.money.cash / per) : room;
       n.max = Math.max(1, room);
       var most = Math.min(room, afford);
-      n.quick = most >= 2 ? [{ key: 'max', label: 'card.dealer.max', set: most }] : [];
+      n.quick = most >= 2 ? [{ key: 'max', label: afford < room ? 'card.dealer.afford' : 'card.dealer.max', set: most }] : [];
     }
     return n;
   }
@@ -487,9 +499,10 @@
     };
     if (p) {
       opts.person = id;
-      // The portrait follows the street look (the kid without the board he gave you).
-      var e = byId[id];
-      opts.portrait = e && e.look && typeof e.look === 'object' ? e.look : p.portrait || p.look || id;
+      // The portrait follows the street look (the kid without the board he gave you), also once he
+      // has left the street: his last words are said without it too.
+      var lk = lookOf(p, SR.state);
+      opts.portrait = lk && typeof lk === 'object' ? lk : p.portrait || p.look || id;
     }
     return SR.ui.dialog.open(opts);
   }

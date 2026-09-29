@@ -173,14 +173,15 @@
   /**
    * The card's greeting (CONTRACT §15.4 `greet.<building>`): the first match wins. Variants of a
    * key are picked by SR.text from the fx stream. Karma uses the B-04b tier bounds (Good ≥ +50,
-   * Bad ≤ -50) as words only; the tiers' perks stay behind `karmaTiers`.
+   * Bad ≤ -50) as words only; the tiers' perks stay behind `karmaTiers`. "Hungry" is the Winded
+   * state (HP below B-03's threshold of HP max, SR.rules.stats.winded).
    * @returns {{key: string}}
    */
   SR.def.fn('greet.mcsticks', function (s) {
     var tier = SR.rules.stats.tier(s.stats.karma), min = s.clock.min;
     var key;
     if (s.job.ranks.mcsticks && !s.flags.melFirstShift && !(s.job.shiftsAtRank.mcsticks > 0)) key = 'newHire';
-    else if (s.stats.hp < s.stats.hpMax * SR.tuning.training.winded.threshold) key = 'hungry';
+    else if (SR.rules.stats.winded(s)) key = 'hungry';
     else if (s.job.ranks.mcsticks === 'manager') key = 'manager';
     else if (s.job.ranks.nli) key = 'moonlight';
     else if (SR.features.weather && s.world && s.world.weather === 'rain') key = 'rain';

@@ -139,6 +139,20 @@ async function canvasShot(t, id, file) {
   T.eq(extra.warnings.filter((w) => MINE.test(w)), [], 'no game and a Dictator (flag off and on): every detail and prop draws without a warning');
   T.ok(extra.dictator[0] === 'dictator' && /^\|#/.test(extra.dictator[1]) && extra.dictator[2] === '|', "a Dictator's banners and the castle's karma flags follow the flag", extra.dictator);
 
+  // Fine Line and Five-O repaint the shop roof sign at the board the detail recomputes from the
+  // painter's formula (until the painter hands it over, docs/requests/W2-Exterior.md 2d). Five-O's
+  // west door leaves the painter's sign rect on that board, so it shows whether the two agree.
+  const board = await t.eval(() => {
+    const E = SR.art.exterior, reg = SR.reg.exterior.store, detail = reg.detail, def = SR.reg.worldmap.main.buildings.filter((b) => b.id === 'store')[0];
+    let sign = null, K = 0.5, f = null, h = 0;
+    reg.detail = function (ctx, gg) { sign = gg.sign && gg.sign.slice(); K = gg.projection; f = gg.masses[0].facade; h = gg.masses[0].h; return detail.apply(this, arguments); };
+    try { E.reset(); E.build(def, 1, 1); } finally { reg.detail = detail; E.reset(); }
+    const ex = def.exterior, sh = K * Math.max(30, (typeof ex.signH === 'number' ? ex.signH : h + 70) - h);
+    const sw = Math.min((f[2] - f[0]) * 0.55, 260), cx = (f[0] + f[2]) / 2;
+    return { painter: sign, detail: [cx - sw / 2, f[1] - sh, cx + sw / 2, f[1] - sh * 0.3] };
+  });
+  T.ok(!!board.painter && board.painter.every((v, i) => Math.abs(v - board.detail[i]) < 0.01), "the detail's roof-sign board matches the painter's (Five-O's sign rect)", board);
+
   // The detail as drawn (pixels, not rects): it stays inside the sprite's bounds (the canvas crops
   // anything outside), no building drawn after this one covers it, and it never paints over another
   // door's visible porch strip or awning (the visibility invariant with the detail drawn).

@@ -49,6 +49,8 @@ what W2-Pocket does meanwhile (BUILD_PLAN §1.3).
   on the Map tab instead of the open tab).
 - **Meanwhile:** the Pocket puts focus back on its open tab once that press is over (`setTimeout`
   0, only if focus is still on another rail tab).
+- **Status:** applied by W2-City in the wave (`js/scenes/city.js`, `case 'pocket'`); the Pocket's
+  guard stays as a no-op safety net for any other scene that opens it on Tab.
 
 ## 4. Observation for W2-Front (`js/ui/screens/pause.js`) and the lead (`js/ui/card.js`): Esc is `back` then `pause`
 
@@ -112,12 +114,15 @@ Nothing frozen changes.
   `phone.bail`, `phone.lawyer`, `phone.realty` (screen `bank.realestate`), `phone.red`,
   `phone.mcholland`, `phone.buyer1`-`5`, `phone.hospital`, `phone.board`; named fns `phone.min`,
   `phone.hasCar`, `phone.summon`, `phone.redKnown`, `phone.redInfo`, `phone.buyerKnown`,
-  `phone.buyerName`, `phone.buyerInfo`, `phone.boardInfo`. The Cab app and the map card's "Call a
-  cab" use W2-City's `SR.world.cab(door)` (`world.cab`).
+  `phone.buyerName`, `phone.buyerInfo`, `phone.boardInfo` (its day is W2-RulesC's
+  `SR.rules.election.acceptBy`: W2-RulesC's request 5 to W2-Pocket, applied), `phone.fare` (the cab
+  fare as a contact's role vars). The Cab app and the map card's "Call a cab" use W2-City's
+  `SR.world.cab(door)` (`world.cab`).
 - **Contacts** (`SR.def.contact`): `lawyer`, `realty`, `cabs`, `red`, `mcholland`, `buyer1`-`5`,
   `hospital`, `board`, with the fields of ARCHITECTURE §7 plus `role` (a text key), `icon`, `app`
-  (`'cab'`: the call opens that app), `waypoint` (a worldmap `spots` id the call pins) and
-  `nameVars` (`[fnName, ...args]`: the name's vars, a buyer's city).
+  (`'cab'`: the call opens that app), `waypoint` (a worldmap `spots` id the call pins),
+  `nameVars` and `roleVars` (`[fnName, ...args]`: the name's or the role's vars, a buyer's city,
+  the cab fare).
 - **Text keys** (`en-pocket.js`): `pocket.*`, `act.bag.*`, `desc.bag.*`, `toast.bag.*`,
   `act.phone.*`, `desc.phone.*`, `toast.phone.*`, `contact.*` (the validator's prefix map already
   gives all of them to `en-pocket.js`).

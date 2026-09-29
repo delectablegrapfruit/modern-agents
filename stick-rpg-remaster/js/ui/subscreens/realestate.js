@@ -8,8 +8,10 @@
 // first) and Let out / End the let.
 // Hosts: the bank's card (the Real Estate desk row), a home door (For Sale → Tour and Paperview's
 // "Top floor: Tour" pass `params.homeId`; Owned → Sell, P1), and the Pocket's phone (P1 Paperweight
-// Realty, SR.ui.subhost with host 'pocket'): `params.homeId` puts that property first, marked
-// "On tour", with the focus on its first button. Nothing here depends on the host building.
+// Realty, SR.ui.subhost with host 'pocket'): `params.homeId` puts that property first, framed, with
+// the focus on its first button, marked "On tour" while it is for sale (Sell takes the focus when an
+// Owned door's Sell row sent you; the home you live in is never singled out, so the Live card's
+// Properties row shows the plain list). Nothing here depends on the host building.
 // Commits: bank.buyHome, bank.moveIn, bank.sellHome, bank.letHome, bank.endLet ({ homeId };
 // js/data/buildings/bank.js), each through ctx.act; refusals and prices come from ctx.preview.
 // Never mutates state. Node-loadable: no DOM, canvas or browser API at load time.
@@ -132,11 +134,28 @@
     if (!owned) add('buy', 'bank.buyHome', 'card.bank.re.buy', { money: money(TH()[id].price) }, 'primary');
     if (owned && !living) {
       add('moveIn', 'bank.moveIn', 'card.bank.re.moveIn', {}, 'primary');
-      if (s.homes.lets && s.homes.lets[id] !== undefined) add('endLet', 'bank.endLet', 'card.bank.re.endLet', {});
-      else add('let', 'bank.letHome', 'card.bank.re.let', { money: money(TH()[id].rent) });
-      add('sell', 'bank.sellHome', 'card.bank.re.sell', { money: money(TH()[id].sell) }, 'danger');
+      // The rent-free apartment is never let or sold (SR.rules.homes: reason.cantLet / cantSell):
+      // no dead "Let out" / "Sell for $0" buttons on its card.
+      if (TH()[id].price > 0) {
+        if (s.homes.lets && s.homes.lets[id] !== undefined) add('endLet', 'bank.endLet', 'card.bank.re.endLet', {});
+        else add('let', 'bank.letHome', 'card.bank.re.let', { money: money(TH()[id].rent) });
+        add('sell', 'bank.sellHome', 'card.bank.re.sell', { money: money(TH()[id].sell) }, 'danger');
+      }
     }
     return out;
+  }
+
+  /**
+   * The home the page opens on (GDD §3.6): a door's or a row's `params.homeId`, except the home you
+   * live in (the Live card's P1 Properties row passes the door's own home: the list then keeps its
+   * B-08a order). Returns { id, tour, first }: `tour` marks a home for sale ("On tour"), `first` the
+   * offer that takes the focus (Sell when an Owned door's P1 Sell row sent you, `params.mode` 'owned').
+   */
+  function focusOf(M, ids) {
+    var s = M.ctx.state, p = M.ctx.params || {}, id = p.homeId;
+    if (ids.indexOf(id) < 0 || s.homes.living === id) return null;
+    var owned = s.homes.owned.indexOf(id) >= 0;
+    return { id: id, tour: !owned, first: owned && p.mode === 'owned' ? 'sell' : null };
   }
 
   /** Runs an offer: Buy and Sell ask first (property is irreversible, CONTRACT §8.2), the rest runs. */
@@ -152,9 +171,10 @@
       .then(function (yes) { if (yes && M.alive) { M.focusAfter = 're-' + id; M.ctx.act(o.action, { homeId: id }); } });
   }
 
-  /** One property card. */
-  function card(M, id, touring) {
+  /** One property card; `focus` is focusOf's record when this is the home the page opened on. */
+  function card(M, id, focus) {
     var s = M.ctx.state, st = status(s, id), f = facts(id), home = SR.reg.home[id] || {};
+    var touring = !!(focus && focus.tour);
     var head = h('div', { style: { display: 'flex', alignItems: 'baseline', gap: 'var(--sp-2)', flexWrap: 'wrap' } },
       h('h3', { class: 't-h3', 'data-id': 're-name-' + id, style: { margin: '0', fontSize: 'calc(18px * var(--ui-scale))' } }, homeName(id)),
       SR.ui.badge({ text: st.key, kind: st.kind, id: 're-status-' + id }),
@@ -166,9 +186,12 @@
     var top = h('div', { style: { display: 'flex', gap: 'var(--sp-3)', alignItems: 'flex-start' } }, thumbnail(id), info);
     var btns = h('div', { 'data-id': 're-actions-' + id, style: { display: 'flex', flexWrap: 'wrap', gap: 'var(--sp-2)', marginTop: 'var(--sp-2)' } });
     var reason = null;
-    offers(M, id).forEach(function (o, i) {
+    var list = offers(M, id);
+    // The focused home's first offer takes the focus, or the one its host asked for (focusOf).
+    var lead = focus ? (list.filter(function (o) { return o.kind === focus.first && o.pv.ok; })[0] || list[0]) : null;
+    list.forEach(function (o) {
       o.el = SR.ui.button({ id: 're-' + o.kind + '-' + id, label: o.label, vars: o.vars, size: 's', variant: o.variant || 'secondary',
-        disabled: !o.pv.ok, reason: o.pv.reason, reasonVars: o.pv.vars, autofocus: !!touring && i === 0,
+        disabled: !o.pv.ok, reason: o.pv.reason, reasonVars: o.pv.vars, autofocus: o === lead,
         onClick: function () { run(M, id, o); } });
       btns.appendChild(o.el);
       if (!o.pv.ok && o.kind === 'buy' && o.pv.reason) reason = t(o.pv.reason, o.pv.vars);
@@ -182,7 +205,7 @@
     }
     return h('section', { 'data-id': 're-' + id, role: 'group', 'aria-label': homeName(id),
       style: { padding: 'var(--sp-3)', margin: '0 0 var(--sp-3)', borderRadius: 'var(--r-m)', background: 'var(--paper-0)',
-        border: touring ? '3px solid var(--primary-600)' : 'var(--line-thin)' } }, top, btns.childNodes.length ? btns : null, extra);
+        border: focus ? '3px solid var(--primary-600)' : 'var(--line-thin)' } }, top, btns.childNodes.length ? btns : null, extra);
   }
 
   function render(M) {
@@ -194,11 +217,11 @@
     root.appendChild(h('p', { class: 't-small', 'data-id': 're-means', style: { margin: '0', fontWeight: '700' } },
       t('card.bank.re.means', { cash: money(s.money.cash), bank: money(s.money.bank) })));
     var ids = homeIds();
-    var focus = M.ctx.params && ids.indexOf(M.ctx.params.homeId) >= 0 ? M.ctx.params.homeId : null;
-    if (focus) ids = [focus].concat(ids.filter(function (id) { return id !== focus; }));
+    var focus = focusOf(M, ids);
+    if (focus) ids = [focus.id].concat(ids.filter(function (id) { return id !== focus.id; }));
     var list = h('div', { 'data-id': 're-list', role: 'list', 'aria-label': t('card.bank.re.list') });
     ids.forEach(function (id) {
-      var c = card(M, id, id === focus);
+      var c = card(M, id, focus && id === focus.id ? focus : null);
       c.setAttribute('role', 'listitem');
       list.appendChild(c);
     });
@@ -208,6 +231,11 @@
     if (!el || el.getAttribute('aria-disabled') === 'true') {
       var sec = M.focusAfter && root.querySelector('[data-id="' + M.focusAfter + '"]');
       el = (sec && sec.querySelector('[data-nav]:not([aria-disabled="true"])')) || root.querySelector('[data-autofocus]') || root.querySelector('[data-nav]');
+    }
+    // Nothing left to press on the page: the host's Breadcrumb, never the page body (UI.md §8).
+    if (!el) {
+      var host = root.closest ? root.closest('[data-id="subhost"]') : null;
+      el = host ? SR.ui.focus.navigables(host)[0] : null;
     }
     M.focusAfter = null;
     if (el) SR.ui.focus.focus(el);

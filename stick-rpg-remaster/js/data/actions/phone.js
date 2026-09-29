@@ -10,7 +10,8 @@
 //   Settings and Save (UI hand-offs to W2-Front's scenes).
 //   Contact fields beyond ARCHITECTURE §7: `role` (a text key under the name), `app` (the app a
 //   call opens: Sky Cabs → the Cab app), `waypoint` (a worldmap spot the call pins: Red's alley),
-//   `nameVars` (a named fn giving the name's vars: a buyer's city).
+//   `nameVars` / `roleVars` ([fnName, ...args]: a named fn giving the name's or the role's vars: a
+//   buyer's city, the cab fare).
 // Numbers: SR.tuning.civic.mchollandTip (B-27), tuning.election (B-17), tuning.bus (B-12).
 // Pure data and named fns (Node-loadable).
 (function () {
@@ -73,6 +74,11 @@
     return { toasts: [{ key: 'toast.phone.summoned', vars: {}, kind: 'info' }] };
   });
 
+  /** Role vars: the cab fare (W2-City's world.cab; tuning `world.cab.cash`). @returns {{money: string}} */
+  SR.def.fn('phone.fare', function () {
+    return { money: money(SR.tuning.world.cab.cash) };
+  });
+
   /** Condition: Red's number is in your phone after your first gram, until he is turned in. */
   SR.def.fn('phone.redKnown', function (s) {
     var d = s.npc.dealer || {};
@@ -107,11 +113,15 @@
       city: id ? SR.text('city.' + id + '.name') : '?', demand: SR.text('toast.phone.demand.' + hint) }, kind: 'info' }] };
   });
 
-  /** Effect: the Electoral Board reads the acceptance deadline and the smallest war chest (B-17). */
+  /**
+   * Effect: the Electoral Board reads the acceptance deadline and the smallest war chest (B-17).
+   * The day is SR.rules.election.acceptBy (the last day the offer can be accepted, the day whose
+   * night lapses it), the one the Board's voicemail, Clerk Plume and the Election Office name.
+   */
   SR.def.fn('phone.boardInfo', function (s) {
-    var E = SR.tuning.election;
-    if (s.election.status !== 'nominated') return { toasts: [{ key: 'toast.phone.boardNone', vars: {}, kind: 'info' }] };
-    return { toasts: [{ key: 'toast.phone.board', vars: { day: s.election.nominatedDay + E.acceptWithin, money: money(E.warChest[0].cash) }, kind: 'info' }] };
+    var E = SR.tuning.election, day = SR.rules.election && SR.rules.election.acceptBy ? SR.rules.election.acceptBy(s) : null;
+    if (s.election.status !== 'nominated' || day == null) return { toasts: [{ key: 'toast.phone.boardNone', vars: {}, kind: 'info' }] };
+    return { toasts: [{ key: 'toast.phone.board', vars: { day: day, money: money(E.warChest[0].cash) }, kind: 'info' }] };
   });
 
   // ---- actions (building 'phone': the Phone tab runs them) -----------------------------------------
@@ -161,7 +171,7 @@
     actions: ['phone.bail', 'phone.lawyer'], p: 1, feature: 'police' });
   SR.def.contact('realty', { name: 'contact.realty.name', role: 'contact.realty.role', icon: 'realestate', unlock: [],
     actions: ['phone.realty'], p: 1, feature: 'homesPlus' });
-  SR.def.contact('cabs', { name: 'contact.cabs.name', role: 'contact.cabs.role', icon: 'cab', unlock: [],
+  SR.def.contact('cabs', { name: 'contact.cabs.name', role: 'contact.cabs.role', roleVars: ['phone.fare'], icon: 'cab', unlock: [],
     actions: [], app: 'cab', p: 1, feature: 'phone' });
   SR.def.contact('red', { name: 'contact.red.name', role: 'contact.red.role', icon: 'dealer', unlock: [['fn', 'phone.redKnown']],
     actions: ['phone.red'], waypoint: 'dealerAlley', p: 1, feature: 'arcs' });

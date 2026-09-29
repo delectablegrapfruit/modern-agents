@@ -5,8 +5,11 @@
 // seizure order, the lien, the karma and the freeze, the interest tiers and the $25,000 cap, the
 // Real Estate desk's buy / move in and the P1 sell and let, the bank robbery of B-11b, Penny's
 // greetings), then the game in Chromium over file:// (every sub-screen by click and key, the loan's
-// confirm, a default seen on the loan page, the rate board at the cap, `bank.realestate` pushed
-// from the bank's desk, from a For Sale door's Tour and from a Pocket host, the robbery through the
+// confirm, the last day ("due tonight") and repayments from cash, a default seen on the loan page,
+// what a default does on each difficulty, the rate board's estimate at the stepped rate and the cap,
+// a fortune capped at $9,999,999 per move with the focus kept in the card, `bank.realestate`
+// pushed from the bank's desk, from a For Sale door's Tour, from a Pocket host, from the Live card's
+// Properties and an Owned door's Sell (P1), the P1 CDs, let and sell, the robbery through the
 // confirm and the Hold-up with Auto, a forced win and a forced loss, the weekly limit, the a11y
 // audit of each screen) with zero console errors. Screenshots go to shots/W2-Money/ (git-ignored).
 //   node tests/e2e/bank.test.cjs
@@ -123,6 +126,15 @@ function rules() {
   night(d);
   T.eq([d.money.cds.length, !!d.furniture.owned.tv, d.homes.owned, d.money.lien, d.money.bank], [0, false, ['apt'], 0, 0], 'the repo men took the bank, the cash, the CD, the TV and the top floor');
   T.ok(d.money.cash >= assets - range[1] && d.money.cash <= assets - range[0] + 10, 'the sale\'s surplus lands in cash: the seized values less the debt', [d.money.cash, assets - range[1], assets - range[0]]);
+  // Stocks come before furniture and homes: enough shares cover the debt, sold at the bid, the
+  // fewest needed; the TV and the top floor stay, and nothing is left for a lien.
+  d = due({ money: { bank: 0, cash: 0, loan: { amount: 5000 } }, stocks: { NLI: { held: 100, price: 100, basis: 100 } },
+    furniture: { owned: { tv: 1 } }, homes: { owned: ['apt', 'apt2'], living: 'apt' } });
+  night(d);
+  const soldShares = 100 - d.stocks.NLI.held;
+  T.ok(soldShares > 0 && soldShares < 100 && !!d.furniture.owned.tv && d.homes.owned.indexOf('apt2') >= 0 && d.money.lien === 0 && d.money.loan === null,
+    'the seizure order: stocks (the fewest shares) before the furniture and the homes', { sold: soldShares, tv: d.furniture.owned.tv, homes: d.homes.owned, lien: d.money.lien });
+  T.ok(d.money.cash >= 0 && d.money.cash < d.stocks.NLI.price, 'the last share sold leaves less than a share\'s price in cash', d.money.cash);
   // Nothing covers it: the lien, -10 karma, frozen 60 days, HP 1 (Standard).
   d = due({ money: { bank: 0, cash: 0 }, stats: { karma: 20 } });
   range = owedRange(20000);
@@ -248,8 +260,12 @@ function rules() {
   const cases = [
     [fresh(), 'first'], [fresh({ clock: { day: 2, min: 600 } }), 'morning'], [fresh({ clock: { day: 2, min: 1350 } }), 'late'], [fresh({ clock: { day: 2, min: 900 } }), 'default'],
     [fresh({ clock: { day: 2 }, money: { bank: 150000 } }), 'rich'], [fresh({ clock: { day: 2 }, money: { cash: 3 } }), 'broke'],
-    [fresh({ money: { loan: { amount: 100, daysLeft: 4 } } }), 'loanDue'], [fresh({ money: { lien: 50 } }), 'lien'], [fresh({ money: { creditFrozenUntil: 30 } }), 'frozen'],
-    [fresh({ records: { bankRobberies: 1 }, stats: { heat: 40 } }), 'robbed'], [fresh({ records: { bankRobberies: 1 } }), 'forgiven'],
+    [fresh({ money: { loan: { amount: 100, daysLeft: 4 } } }), 'loanDue'], [fresh({ money: { loan: { amount: 100, daysLeft: 1 } } }), 'loanTonight'],
+    [fresh({ money: { lien: 50 } }), 'lien'], [fresh({ money: { creditFrozenUntil: 30 } }), 'frozen'],
+    [fresh({ records: { bankRobberies: 1 }, crime: { bankRobDays: [1] }, stats: { heat: 40 } }), 'robbed'], [fresh({ records: { bankRobberies: 1 }, crime: { bankRobDays: [1] } }), 'forgiven'],
+    // A robbery older than 14 days (pruned from bankRobDays) is forgotten; the loan's countdown comes first.
+    [fresh({ records: { bankRobberies: 1 }, clock: { day: 20, min: 900 } }), 'default'],
+    [fresh({ records: { bankRobberies: 1 }, crime: { bankRobDays: [1] }, stats: { heat: 40 }, money: { loan: { amount: 100, daysLeft: 3 } } }), 'loanDue'],
     [fresh({ clock: { day: 2 }, stats: { karma: 60 } }), 'good'], [fresh({ clock: { day: 2 }, stats: { karma: -60 } }), 'bad'],
   ];
   T.eq(cases.map((c) => g(c[0]).key), cases.map((c) => 'greet.bank.' + c[1]), 'first visit, time, balance, the loan, the lien, the freeze, a robbery, karma');
@@ -369,6 +385,33 @@ async function game() {
   T.eq((await t.state()).money.loan, null, 'All repays the rest; the loan is closed');
   await back();
 
+  T.section('the last day: "due tonight", and repayments come out of cash');
+  await t.set({ money: { cash: 0, bank: 700, loan: { amount: 500, daysLeft: 1 } } });
+  await t.goto('city');
+  await t.enter('bank');
+  await settle();
+  T.ok(/due tonight/.test(await txt('card-greeting')), 'Penny: the loan is due tonight (never "in 1 days")', await txt('card-greeting'));
+  await E(() => { SR.ui.card.push('bank.loan', { focus: 'repay' }); });
+  await t.step(2);
+  T.ok(/Due tonight/.test(await txt('bank-loan-current')) && /\$700 in the bank: Withdraw it first/.test(await txt('bank-repay-none')),
+    'no cash on you: the page says to withdraw first (not "Need $1")', [await txt('bank-loan-current'), await txt('bank-repay-none')]);
+  await back();
+  await t.clickUI('row-bank.withdrawOpen');
+  await t.step(2);
+  await fillAmount('bank-withdraw', 300);
+  await t.clickUI('bank-withdraw-go');
+  await t.step(2);
+  await back();
+  await t.clickUI('row-bank.repayOpen');
+  await t.step(2);
+  T.ok(/\$400 in the bank: Withdraw first/.test(await txt('bank-repay-bank')) && await E(() => document.querySelector('#ui [data-id="bank-repay-input"]').value) === '300',
+    '$300 in cash: Repay offers $300 and points at the $400 still in the bank', await txt('bank-repay-bank'));
+  await t.clickUI('bank-repay-go');
+  await t.step(2);
+  T.eq((await t.state()).money.loan.amount, 200, 'repaid $300 from cash; $200 still owed');
+  await t.set({ money: { loan: null } });
+  await back();
+
   T.section('a default, seen on the loan page and the card');
   await t.set({ money: { cash: 0, bank: 0, loan: { amount: 3000, daysLeft: 1 } }, stats: { karma: 0 } });
   const rep = await t.debug('night', 'sleep');
@@ -385,11 +428,23 @@ async function game() {
   await E(() => { SR.ui.card.push('bank.loan', {}); });   // push() returns a Promise resolved on pop: do not await it
   await t.step(2);
   T.ok(/\$3,\d{3}/.test(await txt('bank-lien-text')) && /day \d+/.test(await txt('bank-frozen-text')), 'the loan page shows the lien and the freeze', [await txt('bank-lien-text'), await txt('bank-frozen-text')]);
+  T.eq(await E(() => {
+    const lien = document.querySelector('#ui [data-id="bank-lien"]'), body = document.querySelector('#ui .bcard-body');
+    const a = lien.getBoundingClientRect(), b = body.getBoundingClientRect();
+    return [!!document.querySelector('#ui [data-id="bank-borrow-go"]'), a.top >= b.top && a.bottom <= b.bottom];
+  }), [false, true], 'while frozen: no Borrow form, and the lien stays in view at the top');
   await quiet();
   await t.shot(path.join(SHOTS, 'bank-default.png'));
   await back();
 
   T.section('the rate board and the cap');
+  // Night step 2 steps the rate before it pays interest: the board estimates at the step's expected
+  // rate, 3.2 + 0.2 × (1.5 - 3.2) = 2.86 % on $50,000 = $1,430 (B-09 rateStep; the jitter averages 0).
+  await t.set({ money: { bank: 50000, rate: 3.2, lien: 0, creditFrozenUntil: 0 } });
+  await t.clickUI('row-bank.ratesOpen');
+  await t.step(2);
+  T.ok(/earns about \$1,430/.test(await txt('bank-rates-tonight')), 'tonight\'s interest: about $1,430, at the rate the night will pay', await txt('bank-rates-tonight'));
+  await back();
   await t.set({ money: { bank: 20000000, rate: 3.2, lien: 0, creditFrozenUntil: 0 } });
   await t.clickUI('row-bank.ratesOpen');
   await t.step(2);
@@ -401,6 +456,25 @@ async function game() {
   await quiet();
   await t.shot(path.join(SHOTS, 'bank-rates.png'));
   await A.check(T, t, 'W2-Money bank.rates', '#ui [data-scene="building"]');
+  await back();
+
+  T.section('a fortune: the amount tops out at $9,999,999 (B-09); focus stays in the card');
+  await t.set({ money: { cash: 0, bank: 20000000 } });
+  await t.clickUI('row-bank.withdrawOpen');
+  await t.step(2);
+  T.eq([await E(() => document.querySelector('#ui [data-id="bank-withdraw-input"]').value), await E(() => document.querySelector('#ui [data-id="bank-withdraw-go"]').getAttribute('aria-disabled'))],
+    ['9999999', null], 'Withdraw with $20,000,000 in the bank starts at $9,999,999, and the button works (not "Enter an amount")');
+  await t.clickUI('bank-withdraw-go');
+  await t.step(2);
+  s1 = await t.state();
+  T.eq([s1.money.cash, s1.money.bank], [9999999, 20000000 - 9999999], 'withdrew $9,999,999');
+  await back();
+  await t.clickUI('row-bank.depositOpen');
+  await t.step(2);
+  await t.clickUI('bank-deposit-go');
+  await t.step(2);
+  T.eq([(await t.state()).money.cash, await txt('bank-nothing') !== null, await E(() => { const a = document.activeElement; return !!a && a !== document.body && !!a.closest('[data-scene="building"]'); })],
+    [0, true, true], 'deposited it all: "Nothing to move", and the focus moved to the breadcrumb, not the page body');
   await back();
 
   T.section('Real Estate at the bank\'s desk: buy, move in');
@@ -475,6 +549,89 @@ async function game() {
   s1 = await t.state();
   T.eq([s1.homes.owned.indexOf('mansion') >= 0, s1.homes.living, s1.money.cash + s1.money.bank], [true, 'mansion', 10000], 'bought and moved in from the Pocket host, no building needed');
   await E(() => { window.__pocketHost.destroy(); const r = document.querySelector('[data-id="test-pocket"]'); r.parentNode.removeChild(r); });
+
+  T.section('what a default does, per difficulty, on the loan page (B-09, B-16)');
+  const defaultLine = async (difficulty) => {
+    await t.set({ mode: { difficulty: difficulty }, money: { loan: null, lien: 0, creditFrozenUntil: 0 } });
+    await t.goto('city');
+    await t.enter('bank');
+    await settle();
+    await t.clickUI('row-bank.loanOpen');
+    await t.step(2);
+    const line = await txt('bank-loan-default');
+    await back();
+    return line;
+  };
+  const lines = { standard: await defaultLine('standard'), relaxed: await defaultLine('relaxed'), hardcore: await defaultLine('hardcore') };
+  T.ok(/repo men/.test(lines.standard) && /HP to 1/.test(lines.standard) && /Karma -10/.test(lines.standard) && /60 days/.test(lines.standard), 'Standard: the seizure, the lien, karma -10, HP to 1, frozen 60 days', lines.standard);
+  T.ok(/repo men/.test(lines.relaxed) && !/HP/.test(lines.relaxed) && /60 days/.test(lines.relaxed), 'Relaxed: the same without the HP loss', lines.relaxed);
+  T.ok(/collection agents/.test(lines.hardcore) && !/repo men/.test(lines.hardcore), 'Hardcore: the collection agents (death)', lines.hardcore);
+  await t.set({ mode: { difficulty: 'standard' } });
+
+  T.section('P1 homesPlus: CDs, let and sell at the desk; Properties from home; Sell from an Owned door');
+  await t.newGame({ seed: 45 });
+  await t.debug('feature', 'homesPlus', true);
+  await t.set({ money: { cash: 1240, bank: 28000, rate: 2.2 }, homes: { owned: ['apt', 'apt2', 'pent'], living: 'apt2' }, clock: { day: 3, min: 660 } });
+  await t.enter('bank');
+  await settle();
+  T.ok((await rows()).some((r) => r.id === 'bank.cdsOpen' && r.enabled), 'the CDs row shows with homesPlus');
+  await t.clickUI('row-bank.cdsOpen');
+  await t.step(2);
+  T.eq(await sub(), ['bank.cds'], 'Certificates opens');
+  await fillAmount('bank-cd', 5000);
+  await t.clickUI('bank-cd-go');
+  await t.step(2);
+  s1 = await t.state();
+  T.eq([s1.money.bank, s1.money.cds.length, s1.money.cds[0] && s1.money.cds[0].amount, s1.money.cds[0] && Math.round(s1.money.cds[0].rate * 1000) / 1000],
+    [23000, 1, 5000, Math.round(2.2 * CD.mult * 1000) / 1000], 'a $5,000 CD from the bank at r × 1.2');
+  T.ok(new RegExp('matures on day ' + (3 + CD.days - 1)).test(await txt('bank-cd-0')), 'the list shows it with its maturity day', await txt('bank-cd-0'));
+  await quiet();
+  await t.shot(path.join(SHOTS, 'bank-cds-p1.png'));
+  await A.check(T, t, 'W2-Money bank.cds (P1)', '#ui [data-scene="building"]');
+  await t.clickUI('bank-cd-break-0');
+  await t.step(2);
+  T.eq((await t.scenes()).slice(-1)[0], 'confirm', 'Break asks first');
+  await t.clickUI('confirm-cd-yes');
+  await t.step(2);
+  s1 = await t.state();
+  T.eq([s1.money.bank, s1.money.cds.length], [23000 + 5000 * (1 - CD.penalty), 0], 'broken early: the principal minus 10 %, no interest');
+  await back();
+  await t.clickUI('row-bank.realestateOpen');
+  await t.step(2);
+  peek = await E(() => SR.reg.subscreen['bank.realestate'].peek());
+  T.eq(peek.find((x) => x.id === 'apt').buttons.map((x) => x.text), ['Move in'], 'the rent-free apartment: Move in only (no dead Let out / Sell for $0)');
+  T.eq(peek.find((x) => x.id === 'pent').buttons.map((x) => [x.text, x.disabled]), [['Move in', false], ['Let out', false], ['Sell for $' + SELL.pent.toLocaleString('en-US'), false]], 'the penthouse: Move in, Let out, Sell');
+  await t.clickUI('re-let-pent');
+  await t.step(2);
+  T.eq([(await t.state()).homes.lets.pent !== undefined, (await E(() => SR.reg.subscreen['bank.realestate'].peek())).find((x) => x.id === 'pent').buttons.map((x) => x.text)[1]], [true, 'End the let'], 'let out; the card offers End the let');
+  await quiet();
+  await t.shot(path.join(SHOTS, 'bank-realestate-p1.png'));
+  const bk = (await t.state()).money.bank;
+  await t.clickUI('re-sell-pent');
+  await t.step(2);
+  await t.clickUI('confirm-re-yes');
+  await t.step(2);
+  s1 = await t.state();
+  T.eq([s1.homes.owned.indexOf('pent'), s1.money.bank - bk, s1.homes.lets.pent], [-1, SELL.pent, undefined], 'sold at 90 %, into the bank; the let ends with it');
+  await back();
+  await E(() => { const r = SR.world.doors.resolve('home_apt', SR.state); SR.scenes.go('building', { id: r.id, params: r.params }, { transition: false }); });
+  await t.step(2);
+  await t.clickUI('row-home.properties');
+  await t.step(2);
+  peek = await E(() => SR.reg.subscreen['bank.realestate'].peek());
+  T.eq([await sub(), peek.map((x) => x.id), await txt('re-touring')], [['bank.realestate'], ['apt', 'apt2', 'pent', 'mansion', 'castle'], null],
+    'Properties from the home you live in: the plain list in B-08a order, nothing "On tour"');
+  await back();
+  await t.set({ money: { cash: 0, bank: 200000 }, homes: { owned: ['apt', 'apt2', 'mansion'] } });
+  await E(() => { const r = SR.world.doors.resolve('home_mansion', SR.state); SR.scenes.go('building', { id: r.id, params: r.params }, { transition: false }); });
+  await t.step(2);
+  await t.clickUI('row-home.sell');
+  await t.step(2);
+  peek = await E(() => SR.reg.subscreen['bank.realestate'].peek());
+  T.eq([peek[0].id, await txt('re-touring'), await E(() => document.activeElement.getAttribute('data-id'))], ['mansion', null, 're-sell-mansion'],
+    'Sell from the Owned mansion door: the mansion first, not "On tour", Sell focused');
+  await back();
+  await t.debug('feature', 'homesPlus', false);
 
   T.section('the bank robbery through the UI (Auto), a forced win and loss, the weekly limit');
   await t.newGame({ seed: 41 });

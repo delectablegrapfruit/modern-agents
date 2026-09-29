@@ -10,30 +10,34 @@
 // A hand left mid-play is lost: the forfeit carries its stake as `live` (casino.sessionEnd applies
 // it); a hand already decided (its cards still being revealed) is applied as played before you
 // leave, never forfeited. On Hardcore the same loss is written to `state.pending` while a hand is
-// out, so closing the tab mid-hand cannot undo it (ARCHITECTURE §10, §15).
+// out, so closing the tab mid-hand cannot undo it (ARCHITECTURE §10, §15); once the hand is decided
+// the pending becomes the hand itself, so closing the tab during the reveal applies it as played.
 // Auto ("By the book"): plays the current hand (or deals one at the current bet) with basic
 // strategy (SR.rules.casino.bj.playBook); the bet is still yours. Session result: { net, rounds,
 // wagered } (a sampled Auto without the frame carries `apply: true` for casino.settle and its
 // `shoe`, which casino.sessionEnd keeps).
 // Input: the `blackjack` context (CONTRACT §12.3: H hit, S stand, D double, P split, 1-5 chips; pad
 // A hit, B stand, X double, Y split), so H / S / D never move you or toggle the HUD; Enter (or A)
-// deals. Chips 1-4 add $5 / $25 / $100 / $500 (×5 at VIP Gold), chip 5 clears the bet (the original's
-// grey chip). Accessible state: host.label('table', ...) and #aria ("Dealer shows 10. You have 17.").
+// deals. Chips 1-4 add $5 / $25 / $100 / $500 (SR.tuning.casino.chips; ×5 at VIP Gold), chip 5
+// clears the bet (the original's grey chip). Accessible state: host.label('table', ...) and #aria
+// ("Dealer shows 10. You have 17.").
 (function () {
   'use strict';
   var SR = window.SR;
 
   // Presentation constants (UI §5.8).
   var CARD = { w: 88, h: 124, r: 10, step: 34 };
-  var DEALER_Y = 64, HAND_Y = 272;
+  var DEALER_Y = 64, HAND_Y = 272, FELT_Y = 228;
   var REVEAL_S = 0.16, DEALER_S = 0.32, OUTCOME_S = 1.3;
-  var CHIPS = [5, 25, 100, 500];       // the original's chips; the fifth is the clear chip
+  var HAND_RESOLVE = 'casino.blackjack.hand:resolve';   // one decided hand (js/data/buildings/casino.js)
   var SUITS = ['♠', '♥', '♦', '♣'];
   var RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
   var CHIP_COL = ['acc.red', 'acc.green', 'acc.black', 'acc.purple'];
 
   function B() { return SR.rules.casino.bj; }
   function BJ() { return SR.tuning.casino.bj; }
+  /** The table chips $5 / $25 / $100 / $500 (SR.tuning.casino.chips; GDD §2.1): keys 1-4, the fifth key clears. */
+  function chipsBase() { return SR.tuning.casino.chips.slice(0, 4); }
   function fast() { try { return !!(SR.debug && typeof SR.debug.fast === 'function' && SR.debug.fast() === true); } catch (e) { return false; } }
   function pal(k) { return SR.art && SR.art.draw ? SR.art.draw.color(k) : ''; }
   function money(n) { return SR.text.money(n, { cents: n % 1 !== 0 }); }
@@ -51,7 +55,7 @@
     var T = host.text;
     var lim = limits(live() || host.state);
     var gold = lim[1] > BJ().bets[1];
-    var chipVals = CHIPS.map(function (c) { return gold ? c * BJ().vipGoldMult : c; });
+    var chipVals = chipsBase().map(function (c) { return gold ? c * BJ().vipGoldMult : c; });
     var sh = B().shoeOf(live() || host.state, host.rng);
     var bet = Math.min(lim[1], Math.max(lim[0], Number(params && params.bet) || lim[0]));
     var r = null, tc = 0;                     // the round in play and the true count when it was bet
@@ -85,7 +89,9 @@
 
     function controls() {
       while (bar.firstChild) bar.removeChild(bar.firstChild);
-      var busy = phase === 'reveal' || phase === 'outcome' || finished;
+      // While a hand's outcome shows, the chips and Deal already work (they start the next bet),
+      // so they are not drawn disabled: a pointer would find them dead while the keys worked.
+      var busy = phase === 'reveal' || finished;
       if (phase === 'bet' || phase === 'outcome' || phase === 'closed') {
         chipVals.forEach(function (v, i) {
           var b = btn('chip-' + (i + 1), money(v), String(i + 1), function () { chip(i); }, { aria: T('mg.blackjack.chip', { money: money(v) }), off: busy || barred });
@@ -169,6 +175,7 @@
       // shoe this table shuffled when it opened, so no second shuffle is drawn from the rules stream.
       var st = live();
       if (B().validShoe(st && st.casino && st.casino.shoe)) sh = B().shoeOf(st, host.rng);
+      if (sh.pos === 0) host.audio.sfx('card_shuffle');   // a fresh shoe (ART_AUDIO §13: cards, deal and shuffle)
       tc = B().counts(sh).trueCount;
       r = B().deal(sh, bet, host.rng);
       vis = { dealer: 0, hole: false, hands: [0] };
@@ -194,6 +201,7 @@
     function afterMove(what) {
       if (r.phase === 'dealer') B().dealer(r, sh, host.rng);
       phase = r.phase === 'over' ? 'reveal' : 'play';
+      if (phase === 'reveal') pendDecided();
       if (phase === 'play') {
         var h = B().hand(r);
         var line = what === 'hit' || what === 'double' ? T('mg.blackjack.youDrew', { card: cardName(h.cards[h.cards.length - 1]) }) + ' ' : '';
@@ -239,7 +247,7 @@
     function apply() {
       if (!r || phase !== 'reveal') return;
       var round = r, staked = B().wagered(r);
-      var res = SR.act('casino.blackjack.hand:resolve', { round: round, shoe: sh, trueCount: tc });
+      var res = SR.act(HAND_RESOLVE, { round: round, shoe: sh, trueCount: tc });
       clearPend();
       var ev = res && res.ok ? (res.events || []).filter(function (e) { return e.name === 'gamble'; })[0] : null;
       if (!ev) {
@@ -290,6 +298,22 @@
       ownPending = { resolve: 'casino.blackjack:resolve', worst: { net: session.net - stake, rounds: session.rounds, wagered: session.wagered + stake, live: stake,
         shoe: SR.util.clone(sh) } };
       s.pending = ownPending;
+      writeIronman();
+    }
+    /**
+     * Hardcore: once every card of the hand is decided (the dealer's still being turned over), the
+     * hand is no longer a live stake: the pending loss becomes the hand itself, so a tab closed
+     * during the reveal applies it as played (casino.bjHand on the decided round), the frame's rule
+     * for a decided round (js/scenes/minigame.js settlePending). Applying it clears the pending
+     * (the save module clears a pending whose resolve an action matches).
+     */
+    function pendDecided() {
+      if (!hardcore() || !r || !ownPending) return;
+      ownPending = { resolve: HAND_RESOLVE, worst: { round: SR.util.clone(r), shoe: SR.util.clone(sh), trueCount: tc } };
+      live().pending = ownPending;
+      writeIronman();
+    }
+    function writeIronman() {
       if (SR.save && typeof SR.save.write === 'function') { try { SR.save.write('ironman'); } catch (e) { SR.util.warnOnce('bj-ironman', 'blackjack: ironman write failed (' + e.message + ')'); } }
     }
     function clearPend() {
@@ -373,10 +397,14 @@
       ctx.fillStyle = pal('kit.felt'); ctx.fillRect(0, 0, 1280, 576);
       ctx.strokeStyle = pal('kit.paper'); ctx.globalAlpha = 0.35; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.ellipse(640, -260, 760, 700, 0, 0.18 * Math.PI, 0.82 * Math.PI); ctx.stroke(); ctx.globalAlpha = 1;
-      ctx.font = host.font(16, 700); ctx.fillStyle = pal('kit.paper'); ctx.textAlign = 'center';
-      ctx.globalAlpha = 0.7;
-      ctx.fillText(T('mg.blackjack.felt', { n: 17, a: BJ().natural * 2, b: 2 }), 640, 250);
-      ctx.globalAlpha = 1;
+      if (!outcome) {
+        // The felt's legend sits between the dealer's cards (y 64-188) and your hand's label (y 260);
+        // an outcome is written across the same band, so the legend steps aside while it shows.
+        ctx.font = host.font(16, 700); ctx.fillStyle = pal('kit.paper'); ctx.textAlign = 'center';
+        ctx.globalAlpha = 0.7;
+        ctx.fillText(T('mg.blackjack.felt', { n: 17, a: BJ().natural * 2, b: 2 }), 640, FELT_Y);
+        ctx.globalAlpha = 1;
+      }
       // the shoe and the discard tray
       ctx.fillStyle = pal('kit.woodDark'); SR.art.draw.roundRect(ctx, 1110, 30, 130, 90, 12); ctx.fill();
       ctx.lineWidth = 2; ctx.strokeStyle = pal('inkLine'); ctx.stroke();
