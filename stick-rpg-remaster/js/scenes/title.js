@@ -43,6 +43,9 @@
       if (ev && ev.down === false) return false;
       if (action === 'pocket' && ev && ev.code === 'Tab') return false;       // Tab moves focus (CONTRACT §15.5)
       if (T.gateOn) {                                                         // a pad button (or an injected press) opens the menu
+        // Not on `interact` (CONTRACT §15.5): A fires it and then `confirm`, which would press the
+        // menu item that just took focus. The `confirm` of the same press folds the card instead.
+        if (action === 'interact') return true;
         T.dismissGate();
         if (ev) ev.consumed = true;
         return true;

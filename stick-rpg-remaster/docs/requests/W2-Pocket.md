@@ -108,7 +108,8 @@ Nothing frozen changes.
   def:** the Bag's Give runs the person's own gift action (`person.gifts[item]`, W2-Street's
   `SR.world.streetnpcs.giveAction`), the one the dialog row runs (GDD §6.4 "the same actions as
   the dialog's rows"); ARCHITECTURE §19's line for `bag.js` should drop `bag.give` / `bag.info`
-  (Info is the Bag's detail pane).
+  (Info is the Bag's detail pane) and name the toggle `bag.pillToggle` (GDD §6.4's name; §19 says
+  `bag.usePill toggle`).
 - **Actions** (`js/data/actions/phone.js`, all P1): `phone.summon` (`{ car, x, y, a }`, the UI
   finds the nearest road lane), `phone.stocks` (screen `home.stocks`, needs the Workstation),
   `phone.bail`, `phone.lawyer`, `phone.realty` (screen `bank.realestate`), `phone.red`,
@@ -117,7 +118,11 @@ Nothing frozen changes.
   `phone.buyerName`, `phone.buyerInfo`, `phone.boardInfo` (its day is W2-RulesC's
   `SR.rules.election.acceptBy`: W2-RulesC's request 5 to W2-Pocket, applied), `phone.fare` (the cab
   fare as a contact's role vars). The Cab app and the map card's "Call a cab" use W2-City's
-  `SR.world.cab(door)` (`world.cab`).
+  `SR.world.cab(door)` (`world.cab`). **No `phone.save` def** (ARCHITECTURE §19 lists one): the
+  phone's Save app, like Settings, is a UI hand-off that pushes W2-Front's `saveload` scene
+  (`{ mode: 'save' }`; hidden on Hardcore), so §19's line for `phone.js` should drop `phone.save`.
+- **A DOM convention inside the Pocket's page:** an element marked `data-no-swipe` (the Map's
+  canvas) keeps its own finger gestures; a sideways drag that starts on it does not turn the tab.
 - **Contacts** (`SR.def.contact`): `lawyer`, `realty`, `cabs`, `red`, `mcholland`, `buyer1`-`5`,
   `hospital`, `board`, with the fields of ARCHITECTURE §7 plus `role` (a text key), `icon`, `app`
   (`'cab'`: the call opens that app), `waypoint` (a worldmap `spots` id the call pins),

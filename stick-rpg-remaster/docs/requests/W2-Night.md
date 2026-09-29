@@ -4,7 +4,8 @@ Each request names the file, the exact change, why, and the workaround used mean
 (BUILD_PLAN §1.3). Items 1-2 are records for the lead (CONTRACT / ARCHITECTURE); item 3 is a small UI
 change in a file the lead owns in wave 2; item 4 is a contract proposal for the input contexts;
 item 5 asks W2-RulesE for one tuning row (the conflict rules needed no change: every call of
-CONTRACT §8.10 worked as recorded).
+CONTRACT §8.10 worked as recorded). Items 6-7 come from the package's review: a rounding in the
+casino rules (W2-RulesC) and the frame's exit question (lead).
 
 ## 1. CONTRACT §8.10 / ARCHITECTURE §6.12 (lead): record how the casino engines apply their rounds
 
@@ -38,7 +39,8 @@ CONTRACT §8.10 worked as recorded).
   `practice.min`), `bar.canDrink` (condition: Buzz below B-03's cut-off, `reason.tooBuzzed`),
   `bar.canCarry` (condition: the B-06 stack, `reason.stackFull`), `bar.bought` (effect: the `buy`
   rule event with the price actually paid), `bar.dartsDone` (the practice round's toast),
-  `greet.bar`; (`js/data/buildings/casino.js`) `casino.sessionEnd`, `greet.casino`.
+  `greet.bar`; (`js/data/buildings/casino.js`) `casino.sessionEnd`, `casino.minChip` (the smallest
+  table chip, `SR.tuning.casino.chips[0]`: the roulette row's `cashAtLeast`), `greet.casino`.
 - **Engine def extras** (read-only helpers for tests and sheets): `SR.reg.minigame.darts.CENTER`,
   `SR.reg.minigame.slots.symbol(ctx, host, sym, x, y, scale)`, `SR.reg.minigame.roulette.{spotAt,
   hit, ORDER}`; every engine's instance has `peek()`.
@@ -78,3 +80,29 @@ CONTRACT §8.10 worked as recorded).
   chips are those four denominations.
 - **Meanwhile:** the named constant `CHIPS` in `js/minigames/blackjack.js` and
   `js/minigames/roulette.js` (review, wave 2).
+
+## 6. `js/rules/casino.js` (W2-RulesC): a fractional blackjack payout is rounded up for the player
+
+- **Change:** in `applyRound`, round a fractional net toward the house instead of to the nearest
+  dollar: `net = net < 0 ? -Math.ceil(-net) : Math.floor(net)` (or keep cents; B-14b does not say).
+  Today `net = Mth.round(net)` (line 702) turns the 3:2 natural on a $5 bet (`bj.settle`: +7.5) into
+  +$8, and on every odd bet ($15, $25, $35, ...) adds 50 cents to each natural.
+- **Why:** B-14b sets the house edge at 0.5-0.6 % with basic strategy. A Node simulation of 400,000
+  $5 hands by the book (`bj.deal` + `bj.playBook`, seed 99) gives 0.598 % on the exact nets and
+  0.195 % on the nets `applyRound` actually pays, so at the table minimum the rounding takes two
+  thirds of the edge away (and makes W3-Nightlife's counting target of ≤ +0.3 % harder to hold).
+  The node suite's edge test measures `bj.settle`'s exact nets, so it does not see it.
+- **Meanwhile:** nothing in W2-Night: the blackjack engine applies each hand through
+  `casino.bjHand { round, shoe, trueCount }`, so the rules settle and pay it; the engine shows
+  the amount the rules paid (the `gamble` event's `net`).
+
+## 7. `js/scenes/minigame.js` (lead): ask before leaving blackjack only while a hand is out
+
+- **Change:** let an engine's `confirmExit` be a function of the round's progress
+  (`confirmExit(progress) → boolean`, called by `requestExit` with `inst.progress()`), or let the
+  instance answer `exitRisk()`. Blackjack would then return `progress.live > 0`.
+- **Why:** blackjack sets `confirmExit: true` so that leaving with a hand out never loses the
+  stake without a question (casino.sessionEnd applies the forfeit). Between hands nothing is at
+  stake, but the frame still asks, with `mg.frame.quitLoss` ("Walk away now and this round counts
+  as a loss."), which is untrue there.
+- **Meanwhile:** blackjack always asks before leaving (Cash out leaves at once between hands).

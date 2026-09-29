@@ -15,10 +15,10 @@
   'use strict';
   var SR = window.SR;
 
-  // Greeting thresholds (UI §5.6 flavour, not balance): a reputation after this many wins, late
-  // night and the lunch hour. The karma tiers (B-04b Good / Bad) and the ladder's length (B-13) are
+  // Greeting thresholds (UI §5.6 flavour, not balance): a reputation after this many wins, a new
+  // face in the first days, late night and the lunch hour. The karma tiers (B-04b Good / Bad) and the ladder's length (B-13) are
   // SR.tuning's, read when Sticky speaks.
-  var FEARED_WINS = 6, LATE_FROM = 22 * 60, LATE_TO = 4 * 60, LUNCH = [11 * 60, 14 * 60];
+  var FEARED_WINS = 6, FRESH_DAYS = 3, LATE_FROM = 22 * 60, LATE_TO = 4 * 60, LUNCH = [11 * 60, 14 * 60];
 
   /** @returns {*} the value at a dotted path of SR.tuning (read at call time). */
   function tune(path) {
@@ -97,7 +97,7 @@
       var beaten = SR.registry.entries('fighter').map(function (e) { return e.def; }).filter(function (d) { return d.ladder && d.n === Math.min(rungs, won); })[0];
       if (beaten && SR.text.has(beaten.name)) return { key: 'greet.bar.gossip', vars: { name: SR.text(beaten.name) } };
     }
-    if (won === 0 && s.clock.day <= 3) return { key: 'greet.bar.fresh', vars: {} };
+    if (won === 0 && s.clock.day <= FRESH_DAYS) return { key: 'greet.bar.fresh', vars: {} };
     if (!isNaN(good) && k >= good) return { key: 'greet.bar.saint', vars: {} };
     if (!isNaN(bad) && k <= bad) return { key: 'greet.bar.rough', vars: {} };
     if (min >= LATE_FROM || min < LATE_TO) return { key: 'greet.bar.late', vars: {} };

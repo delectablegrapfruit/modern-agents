@@ -150,6 +150,21 @@ const K = require('./night-kit.cjs');
   });
   T.ok(Math.abs(dist.mean - 145) < 4 && Math.abs(dist.p160 - 0.25) < 0.03, 'Auto at INT 100: mean ≈ 145, P(≥ 160) ≈ 0.25 (B-14f reference)', dist);
 
+  T.section('Auto never replaces a dart already in the air');
+  await atBar({ stats: { int: 100 } });
+  await k.row('bar.darts');
+  await t.step(10);
+  await t.page.keyboard.press('Space');
+  await t.step(1);
+  p = await k.peek();
+  T.ok(p.flying && p.darts.length === 0, 'a dart is in the air', [p.flying, p.darts.length]);
+  const inAir = p.flyingAt;
+  await t.clickUI('mg-auto');
+  await k.closed();
+  const fl = (await k.done()).filter((d) => d.id === 'darts').pop();
+  T.eq(fl.result.throws.length, 10, 'the Auto still ends with ten darts');
+  T.eq(fl.result.throws[0], ringPts(inAir.x, inAir.y), 'the first is the dart you threw, scored where it was aimed (the Auto threw the other nine)', [fl.result.throws[0], inAir]);
+
   T.section('Buzz (P1 `nightlife`): a wider wobble and the ghost board at Buzz ≥ 2');
   await E(() => SR.debug.feature('nightlife', true));
   await atBar({ stats: { int: 100 } }, { stats: { buzz: 2 } });

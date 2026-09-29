@@ -588,6 +588,61 @@ function rouletteNet(bets, pocket) {
   await k.closed();
   T.ok((await k.acted()).some((a) => a.id === 'casino.roulette:resolve' && a.ok), 'cash out resolves the session');
 
+  // ------------------------------------------------------------------------------------------
+  T.section('Auto with nothing to play keeps the table open');
+  await E(() => { navigator.getGamepads = () => []; });
+  await atCasino();
+  await shoe([R(10), R(9), R(6), R(9), R(10)]);
+  await k.row('casino.blackjack');
+  await key('Digit5', 2);                                    // the fifth chip clears the bet
+  T.eq((await k.peek()).bet, 0, 'the bet is cleared');
+  await t.clickUI('mg-auto');
+  await t.step(5);
+  let cz = await k.cur();
+  T.ok(cz && cz.id === 'blackjack' && !cz.finished && !cz.replaying, 'blackjack: Auto with no bet plays nothing and the table stays open', cz);
+  T.ok(await k.heard('mg.blackjack.placeBet'), 'and says why ("Place a bet, then deal.")');
+  T.eq(await gambles('casino.blackjack.hand:resolve'), [], 'no hand was applied');
+  await key('Enter', 2);
+  T.eq((await k.peek()).phase, 'bet', 'Deal with no bet does nothing either');
+
+  T.section('blackjack: the shoe and the discard tray (UI §5.8)');
+  await key('Digit1', 1);                                    // $5
+  let q = await k.peek();
+  T.eq([q.shoe.pos, q.shoe.discard], [0, 0], 'a fresh shoe: the discard tray is empty');
+  await key('Enter', 30);
+  q = await k.peek();
+  T.eq([q.phase, q.shoe.pos, q.shoe.discard], ['play', 4, 0], 'the hand on the felt is not in the tray yet');
+  await key('KeyS', 60);
+  for (let i = 0; i < 200 && (await k.peek()).phase !== 'bet'; i++) await t.step(5);
+  q = await k.peek();
+  T.eq([q.shoe.pos, q.shoe.discard], [4, 4], 'swept: its four cards are in the tray');
+  await t.clickUI('mg-auto');
+  await k.closed();
+  T.eq((await gambles('casino.blackjack.hand:resolve')).length, 2, 'with a bet, Auto plays a hand by the book and closes the table');
+
+  T.section('Paper Jackpot: Auto without the cash for the bet keeps the table open');
+  await k.quiet();
+  await k.row('casino.slots');
+  await E(() => { SR.state.money.cash = 3; });
+  await k.clearLogs();
+  await t.clickUI('mg-auto');
+  await t.step(5);
+  cz = await k.cur();
+  T.ok(cz && cz.id === 'slots' && !cz.finished && !cz.replaying, 'with $3 Auto pulls nothing and the table stays open', cz);
+  T.eq([(await gambles('casino.slots.pull:resolve')).length, (await k.peek()).error], [0, 'reason.needCash'], 'no pull; the reason shows under the reels');
+  T.ok(await k.heard('reason.needCash'), 'and is announced');
+  await E(() => { SR.state.money.cash = 5000; });
+  await t.clickUI('mg-slots-cashout');
+  await k.closed();
+
+  T.section('roulette: the row needs the smallest chip ($5)');
+  await E(() => { SR.state.money.cash = 4; });
+  let rr = await t.preview('casino.roulette');
+  T.eq([rr.ok, rr.reason], [false, 'reason.needCash'], 'with $4 the roulette row is refused: no chip could be placed');
+  await E(() => { SR.state.money.cash = 5; });
+  rr = await t.preview('casino.roulette');
+  T.ok(rr.ok, 'with $5 it opens');
+
   T.section('no console errors');
   T.eq(t.errors(), [], 'zero console errors, page errors or failed requests');
   await t.close();

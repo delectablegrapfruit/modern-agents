@@ -76,12 +76,22 @@
     return row;
   }
 
+  /**
+   * Six rows share the button labels ("Red-eye 00:00"), so each button's accessible name also names
+   * its city ("Red-eye 00:00, Crayonburg"; UI §8 screen reader). A button's update() rewrites its
+   * aria-label from the label, so this runs after every update.
+   */
+  function nameFor(btn, label, id) {
+    btn.setAttribute('aria-label', t('card.bus.ariaRow', { action: t(label), city: cityName(id) }));
+  }
+
   function refreshRow(ctx, row) {
     var s = ctx.state;
     var p = pv(ctx, 'smuggle', row.id);
     D().clear(row.ticket);
     if (p && p.cost) row.ticket.appendChild(SR.ui.chip({ kind: 'money', n: p.cost.cash, cost: true, short: s.money.cash < p.cost.cash }));
     row.redeye.update({ disabled: !(p && p.ok), reason: p && !p.ok ? p.reason : null, reasonVars: p && p.vars });
+    nameFor(row.redeye, 'act.trip.redeye', row.id);
     var on = tours();
     row.tourSlot.hidden = !on;
     var meta = [];
@@ -92,6 +102,7 @@
       if (tw[row.id] === SR.rules.time.week(s)) meta.push(t('card.bus.toured'));
       var tp = pv(ctx, 'tour', row.id);
       row.tour.update({ disabled: !(tp && tp.ok), reason: tp && !tp.ok ? tp.reason : null, reasonVars: tp && tp.vars });
+      nameFor(row.tour, 'act.trip.tour', row.id);
     }
     row.meta.textContent = meta.length ? '· ' + meta.join(' · ') : '';
   }

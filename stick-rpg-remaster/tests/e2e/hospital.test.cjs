@@ -61,19 +61,50 @@ const A = require('./a11y.test.cjs');
     T.eq([await t.scenes(), s.clock.day, s.clock.min, Math.round(s.player.x), Math.round(s.player.y)],
       [['city'], 2, 720, Math.round(door.x), Math.round(door.y)], 'fast: skipped; the city at 12:00, outside the home door');
     T.eq((await K.events(t, ['day:started'])).length, 1, 'the hospital night is finished once (day:started)');
+    // A hospital night's achievements (Report.achievements, P1 `achievements`) are announced as the
+    // report scene would, once, when this scene finishes the night itself.
+    await t.newGame({ seed: 7 });
+    await t.goto('city');
+    await t.set({ stats: { hp: 5 } });
+    const got = await ev(() => {
+      const SR = window.SR, flag = SR.features.achievements, mod = SR.rules.achievements, ids = [];
+      SR.features.achievements = true;
+      SR.rules.achievements = { evaluate: (s, e) => (e && e.name === 'night' && e.payload.kind === 'hospital' ? ['testWard'] : []) };
+      const off = SR.events.on('achievement:unlocked', (p) => ids.push(p.id));
+      SR.debug.down('fall');
+      SR.debug.step(3);
+      SR.features.achievements = flag;
+      SR.rules.achievements = mod;
+      off();
+      return { ids, scenes: SR.scenes.stack() };
+    });
+    T.eq(got, { ids: ['testWard'], scenes: ['city'] }, 'the hospital night\'s achievement: announced once');
   }
 
   T.section('the gag, the Stick General card, the discharge, the report, the city (Standard)');
   {
     await t.fast(false);
+    // The songs asked for, in order (SR.audio.music is wrapped; the engine may be locked headless).
+    await ev(() => {
+      const A = window.SR.audio, m = A.music;
+      window.__songs = [];
+      if (!A.__spied) { A.__spied = true; A.music = function (id) { window.__songs.push(id === undefined ? null : id); return m.apply(this, arguments); }; }
+    });
+    const songs = () => ev(() => window.__songs.splice(0));
     const r = await fall({ money: { cash: 300, bank: 1000 } });
     T.eq([r.down && r.down.outcome, r.down && r.down.bill, await t.scenes()], ['hospital', 130, ['hospital']],
       'a fall at 5 HP: HP 0, the bill max($50, 10 % of $1,300) = $130, the hospital scene');
     T.eq(await ev(() => window.SR.ui.stamp.current()), 'FLATLINED', 'the FLATLINED stamp');
     T.eq((await hosp()).phase, 'gag', 'the gag plays');
     T.eq(await K.visible(t, 'hud-pocket'), false, 'no Pocket button in the ward (a cab out would skip the Stick General edition)');
+    T.eq((await songs()).slice(-1), [null], 'the flat line plays over silence (and the dirge), not the ward\'s song');
+    const home = await ev(() => window.SR.world.spawnPoint('afterHospital'));
+    const sw = await t.state();
+    T.eq([Math.round(sw.player.x), Math.round(sw.player.y)], [Math.round(home.x), Math.round(home.y)],
+      'admitted: the state already stands at the home door (a save or suspend from the ward resumes there)');
     await t.step(90);
     T.eq(await K.text(t, 'hospital-word'), 'BZZT!', '"BZZT!" at 1.4 s');
+    T.eq(await songs(), ['waiting_room'], 'the ward\'s song starts with the BZZT (the heart is back)');
     await K.settle(t, 30);
     await t.shot(path.join(K.SHOTS, 'hospital-bzzt-1280.png'));
     await t.step(60);
@@ -102,6 +133,21 @@ const A = require('./a11y.test.cjs');
     T.eq([await t.scenes(), s.clock.min, Math.round(s.player.x), Math.round(s.player.y)], [['city'], 720, Math.round(door.x), Math.round(door.y)],
       'its button: the city at 12:00, outside the home door');
     T.eq((await K.events(t, ['day:started'])).length, 1, 'day:started once for the hospital night');
+  }
+
+  T.section('real keys: Esc skips the gag, then discharges (its `pause` half opens nothing); Enter turns the paper');
+  {
+    const key = async (code) => { await t.key(code); await t.step(2); await P.waitForTimeout(300); await t.step(1); };
+    await fall({ money: { cash: 300, bank: 1000 } });
+    await t.step(30);
+    await key('Escape');   // skips the FLATLINED stamp (a stamp takes the press that skips it)
+    if ((await hosp()).phase !== 'card') await key('Escape');
+    T.eq([await t.scenes(), (await hosp()).phase], [['hospital'], 'card'], 'Esc skips the gag to the card, no pause menu');
+    await key('Escape');
+    T.eq(await ev(() => window.SR.scenes.top().id), 'report', 'Esc on the card discharges: the Stick General edition (no pause menu)');
+    for (let i = 0; i < 4 && (await t.scenes()).indexOf('report') >= 0; i++) await key('Enter');
+    const s = await t.state();
+    T.eq([await t.scenes(), s.clock.min, (await K.events(t, ['day:started'])).length], [['city'], 720, 1], 'Enter: the city at 12:00, day:started once');
   }
 
   T.section('any press skips the gag; the shortfall written off; Relaxed has no bill');
@@ -179,8 +225,13 @@ const A = require('./a11y.test.cjs');
   T.section('Hardcore: FLATLINED over the greyed frame, then the results');
   {
     await t.fast(false);
-    const r = await fall({ money: { cash: 300, bank: 0 } }, { difficulty: 'hardcore' });
+    await t.newGame({ seed: 7, difficulty: 'hardcore' });
+    await t.goto('city');
+    await t.set({ clock: { min: 900 }, stats: { hp: 5 }, money: { cash: 300, bank: 0 } });
+    await ev(() => window.SR.ui.toast({ text: 'A toast from before the fall', kind: 'info' }));
+    const r = await t.act('world.fall', { x: 1, y: 2 });
     T.eq([r.down.outcome, r.over && r.over.reason], ['death', 'death'], 'HP 0 on Hardcore: death');
+    T.eq(await ev(() => window.SR.ui.toast.list().length), 0, 'FLATLINED alone: the toasts of the fatal moment are cleared');
     const st = await t.scenes();
     const hasResults = await ev(() => !!window.SR.reg.scene.results);
     await P.waitForTimeout(20);   // the results listener decides after the action's microtasks

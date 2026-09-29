@@ -82,6 +82,17 @@
   });
 
   /**
+   * The smallest table chip (SR.tuning.casino.chips: $5; GDD §6.5): a roulette bet is made of chips,
+   * so the roulette row needs at least one (casino.canPlay only asks for a dollar, and the table
+   * would open with nothing you could place).
+   * @returns {number}
+   */
+  SR.def.fn('casino.minChip', function () {
+    var chips = tune('casino.chips');
+    return chips && chips.length ? Number(chips[0]) || 0 : 0;
+  });
+
+  /**
    * The greeting (UI §5.6): the back-off, a big day, an empty wallet, karma, the hour; else one of
    * the plain lines.
    * @returns {{key: string, vars: object}}
@@ -111,11 +122,13 @@
 
   GAMES.forEach(function (game, i) {
     // The row: opens the table (casino.canPlay: blackjack's back-off (P1) and 60 hands a day, cash
-    // for the smallest bet). No time: gambling takes none (orig).
+    // for the smallest bet; roulette: cash for the smallest chip). No time: gambling takes none (orig).
+    var requires = [['fn', 'casino.canPlay', game]];
+    if (game === 'roulette') requires.push(['cashAtLeast', 'casino.minChip']);
     SR.def.action('casino.' + game, {
       building: 'casino', group: 'special', order: 10 + i * 10, icon: ICONS[game], label: 'act.casino.' + game,
       desc: 'desc.casino.' + game, p: 0,
-      requires: [['fn', 'casino.canPlay', game]],
+      requires: requires,
       effects: [['open', game, {}]],
     });
     // The session's resolve: the engine's { net, ... } (its rounds are already applied).

@@ -70,7 +70,7 @@
     'bark.harold.3': 'Fine weather for sitting!',
 
     // ---- Skid, the smokes kid ----------------------------------------------------------------------
-    'greet.kid.first': 'Yo! Hey! Got any smokes? I\'m totally old enough. My ID just, uh... blew off the edge. Happens all the time up here.',
+    'greet.kid.first': 'Psst! You! Spare a pack of smokes? I\'m legal. Super legal. My ID just, uh... blew off the edge. Happens all the time up here.',
     'greet.kid.again': [
       '*hack* Oh hey, it\'s you! My supplier. My hero. *wheeze*',
       'Dude! You came back! Got another pack? It\'s for science.',

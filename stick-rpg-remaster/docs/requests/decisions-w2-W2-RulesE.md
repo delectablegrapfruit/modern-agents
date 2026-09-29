@@ -20,6 +20,7 @@ not own, are named "not this desk".
 | 4 | late in the wave | `W2-Night.md` 5 (this desk's: applied); `W2-Civic.md` 4-5 (the lead's); `W2-Street.md` (1-5 other owners'; the schema part of 6 applied); `W2-Money.md` (3 and 4a applied, 4b answered; 1, 2, 5, 6 the lead's); `W2-Pocket.md` (5 applied; 1-4, 6, 7 other owners'); `W2-RulesC.md` 5 (W2-Pocket's); `W2-Front.md` (1-5 other owners'); `W2-Transit.md` 5 (W2-Front's) |
 | 5 | after the pause (resumed) | nothing new for this desk: the items added since sweep 4 name other owners' files (`W2-Food.md` 6 and `W2-Money.md` 5b: the lead's `validate.cjs --selftest`; `W2-City.md` 5, `W2-Exterior.md` 10: the lead's render files; `W2-Goods.md` 4: W2-Front's `en-ui.js`, applied there; `W2-Home.md` 7-9: the lead's `card.js` / `components.js` and GDD; `W2-RulesC.md` 4: the lead's records); the wave-1 decision files' Deferred tables still name no rules desk |
 | 6 | before finishing (resumed run) | nothing new for this desk: `W2-Civic.md` 6 (the lead's `card.js`: re-pick a greeting after an action) and its W2-Home note (W2-Music's variant); `W2-Food.md` (a W2-Money note and a status line); `W2-Pocket.md` 3 (applied by W2-City) and 7 (records); `W2-RulesC.md` 5 (applied by W2-Pocket: `phone.boardInfo` reads `election.acceptBy`). This desk's own `W2-RulesE.md` 6 records an e2e observation for the lead (the world suite's fall samples meet the traffic) |
+| 7 | the adversarial review | two items addressed to this desk that sweeps 5 and 6 missed, both applied (below): `W2-City.md` 6 (`tuning.crowd.turnRange` / `scurry`) and `W2-Money.md` 7 (the loan's last day on the report); `W2-City.md` 7 is the lead's world suite |
 
 ## Requests from other wave-2 packages
 
@@ -84,6 +85,16 @@ not own, are named "not this desk".
   `fair`, and its results use `SR.rules.endgame.keepPlaying` (this desk's additions).
 - **W2-Home 2-6** → not this desk (the kit, the validator, W2-Front's screens, CONTRACT records,
   W2-Money's real-estate sub-screen).
+- **W2-City 6** (`js/data/tuning.js`: two crowd numbers of GDD §3.11) → applied (review sweep 7) →
+  `tuning.crowd.turnRange: 80` (idle pedestrians within 80 u turn toward you) and
+  `tuning.crowd.scurry: 0.2` (one in five scurries at karma ≤ -50), P1 `cityReacts`, fields inside
+  a frozen table (no contract change); `js/world/pedestrians.js` already reads them by these names.
+  The B-22 rows are the lead's (the request asks for them). Pinned in `rulese.test.cjs`.
+- **W2-Money 7** (`night.js`, `en-econ.js`: the loan's last day on the report) → applied (review
+  sweep 7) → night step 2 counts down before it defaults, so the morning with 1 day left is the
+  last day: the Money line is `report.loanDueTonight` ("Loan: $515 owed, due tonight") instead of
+  "Loan: 1 days left"; other mornings keep `report.loanDays`. Pinned in `rulese.test.cjs`
+  (`tests/e2e/bank.test.cjs` checks a 14-days-left morning, unchanged).
 - **W2-RulesC 3** (`js/rules/state.js`: `casino.card: null` in `defaults()`, the scratch card in
   progress `{ roll, pay, tier, day }` between `casino.scratch` and `casino.scratchResolve`) →
   applied → an additive "in progress" record like `casino.match` (D43): deep-filled, so the schema
@@ -160,6 +171,31 @@ Each is a bug or a gap the wave-2 building data would have hit; tested in
   the real NLI rows after the resume) → `jobs.promotion` gives it no next rung
   (`reason.topRank`), `jobs.canWork` refuses it (`reason.notHired`) and `bestTitle` skips it.
 
+## Fixes from the adversarial review of the package
+
+Each is tested in `tests/node/rulese.test.cjs` ("review fixes" sections).
+
+- **An ended Keep-playing run kept playing.** `SR.rules.act.run` / `preview` refused only when
+  `over && !mode.keepPlaying`, but `endgame.keepPlaying` clears `over`; so after a Retire or a
+  Hardcore death in a Keep-playing run every row still ran (food healed, shifts paid, nights
+  passed). → both refuse with `reason.gameOver` whenever `over` is set. The screens that test
+  `!keepPlaying` the same way are other owners' (`docs/requests/W2-RulesE.md` 7).
+- **Overtime after anyone's Full shift** (P1 `hustles`). `canWork` checked only
+  `job.lastFullEnd == now` and walking is free, so a McSticks Full shift ($42) opened a CEO's
+  Overtime at NLI ($900), against B-05 "only right after a Full shift with no action in between".
+  → any other action that goes through clears the mark (entering a building runs `world.enter`);
+  Full → Overtime at the same counter is unchanged (`W2-RulesE.md` 8a).
+- **SR.act swallowed `action:done` when an action threw**: the refusal (`reason.error`) was
+  returned without the event CONTRACT §8.9 promises for refusals → it is emitted like any other
+  refusal (the state and the stream are rolled back first, as before).
+- **A night's stat gains were announced twice**: the pipeline derived `stat` rule events from the
+  Deltas of a Sleep (or a hospital or jail night), and the report scene, the jail and the hospital
+  re-emit the Report's own `stat` events → the derived event leaves out what the Report raised
+  (`W2-RulesE.md` 8b); a Jail Day workout keeps its own event.
+- **`bank.charge` as a named-fn effect gave no write-off notice** (the `charge` effect does, B-09
+  acceptance "reports the write-off") → the fn's result carries the same
+  `toast.act.writtenOff`; its `paid` / `writtenOff` fields are unchanged.
+
 ## Named functions and rule helpers added for the wave-2 data (additive)
 
 For the building, Pocket and front-end packages; CONTRACT §8.9 records are requested from the lead
@@ -184,7 +220,7 @@ in `docs/requests/W2-RulesE.md`.
   pill)` (the B-07 formula, now shared by night step 6): so the Sleep row's preview (W2-Home's
   `home.sleep` computes the formula itself today) can use the night's own numbers.
 - Text keys: `reason.inStorage`, `reason.stackFull`, `reason.notOver`, `reason.timedGame` (en-prog);
-  `toast.stocks.tip`, `report.unreadOne`, `report.jail.summaryMarket` (en-econ).
+  `toast.stocks.tip`, `report.unreadOne`, `report.jail.summaryMarket`, `report.loanDueTonight` (en-econ).
 
 ## Checks
 

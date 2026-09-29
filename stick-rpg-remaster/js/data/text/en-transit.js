@@ -34,6 +34,7 @@
     'card.bus.toured': 'Toured this week',
     'card.bus.waiting': 'Your buyer in {city} is still waiting for an answer.',
     'card.bus.resume': 'Back to the deal',
+    'card.bus.ariaRow': '{action}, {city}',
     'card.bus.poster': 'SEE THE SIX CITIES',
     'card.bus.window': 'TICKETS',
 

@@ -106,6 +106,9 @@
             textShadow: '0 3px 0 var(--ink-900)', margin: '0' } },
         D().t('card.hospital.deceased', { name: s ? s.player.name : '' })));
         if (Dz.skipFast) return;
+        // FLATLINED alone over the greyed frame (UI §5.12): the fatal action's toasts (Pilot Ori's
+        // rescue line after a fall, a fight's) would contradict it.
+        if (SR.ui.toast && typeof SR.ui.toast.clear === 'function') SR.ui.toast.clear();
         SR.ui.stamp({ key: 'stamp.hospital.flatlined', kind: 'hp' });
         if (SR.audio && typeof SR.audio.stinger === 'function' && SR.reg.song && SR.reg.song['stingers.flatlined']) Dz.dirge = SR.audio.stinger('flatlined');
       },

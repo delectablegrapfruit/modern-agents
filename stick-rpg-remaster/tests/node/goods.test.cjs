@@ -141,8 +141,44 @@ T.eq([r.ok, s.items.shirt, s.money.cash], [true, 0, Math.round(TI.shirt.price * 
 undo();
 undo = flags({ shopsPlus: true, perks: true });
 s = game({ money: { cash: 0 }, items: { vest: 1 }, perks: { owned: ['smoothTalker'] } });
+T.eq(SR.reg.fn['pawn.rate'](s), TI.pawnBuybackSmooth, 'pawn.rate (the Sell tab\'s intro) reads 55 % with Smooth Talker');
 r = act('pawn.sell', { item: 'vest' });
 T.eq(s.money.cash, Math.round(TI.vest.price * TI.pawnBuybackSmooth), 'Smooth Talker: a vest sells at 55 % ($' + Math.round(TI.vest.price * TI.pawnBuybackSmooth) + ')');
+T.eq(SR.reg.fn['pawn.rate'](game()), TI.pawnBuyback, 'and 40 % without it');
+undo();
+
+T.section('refusals change nothing (bogus parameters, previews)');
+undo = flags({ shopsPlus: true });
+s = game({ money: { cash: 1000 }, items: { knife: 1, ammo: 12 } });
+let snap = JSON.stringify(s);
+['constructor', 'toString', '__proto__', 'prodeck', 'booze', '', 42].forEach((item) => {
+  r = act('pawn.sell', { item: item });
+  T.ok(!r.ok && JSON.stringify(s) === snap, 'Sell refuses ' + JSON.stringify(item) + ' (' + r.reason + ') and changes nothing');
+});
+T.eq([act('pawn.knife', { item: 'gun' }).reason, s.items.gun], ['reason.haveItem', 0], 'a row sells its own item whatever params.item says');
+snap = JSON.stringify(s);
+['pawn.knife', 'pawn.gun', 'pawn.ammo', 'pawn.vest', 'pawn.counter'].forEach((id) => pv(id));
+[{ item: 'knife' }, { item: 'ammo' }, {}].forEach((p) => pv('pawn.sell', p));
+T.ok(JSON.stringify(s) === snap, 'previews of every pawn row and of Sell never mutate the state');
+undo();
+s = game({ money: { cash: 100000 } });
+snap = JSON.stringify(s);
+['pod', 'library', 'zzz', '', 'constructor'].forEach((piece) => {
+  r = act('furniture.buy', { piece: piece });
+  T.ok(!r.ok && JSON.stringify(s) === snap, 'Fine Line refuses to sell ' + JSON.stringify(piece) + ' (' + r.reason + ')');
+});
+['bed', 'tv', 'pc', 'books', 'treadmill', 'freezer', 'minibar', 'satellite'].forEach((k) => pv('furniture.buy', { piece: k }));
+T.ok(JSON.stringify(s) === snap, 'previews of every piece never mutate the state');
+
+T.section('the clean shirt closes with the barfly branch (B-26 harold.exclusive)');
+undo = flags({ arcs: true });
+s = game({ money: { cash: 100 } });
+const HB = SR.tuning.street.harold;
+s.npc.harold.gave10 = HB.comeback.give10s; s.npc.harold.takeout = HB.comeback.takeouts;
+s.npc.harold.bottles = HB.barfly.bottles - 1;
+T.ok(!pv('pawn.shirt').hidden, 'asked, with ' + (HB.barfly.bottles - 1) + ' bottles given: the shirt shows');
+s.npc.harold.bottles = HB.barfly.bottles;
+T.ok(pv('pawn.shirt').hidden, 'the ' + HB.barfly.bottles + 'th bottle before the shirt ends the comeback: the shirt hides');
 undo();
 
 // ------------------------------------------------------------------------------------------------
@@ -206,6 +242,18 @@ T.eq(r.toasts.map((x) => [x.key, x.vars.name]), [['toast.furniture.stored', 'Gra
 const int1 = s.stats.int;
 SR.rules.night.run(s, { rng: SR.rng.create(3), source: 'sim' }, { kind: 'sleep' });
 T.eq(s.stats.int, int1, 'indeed: no INT from a stored library');
+s = game({ money: { cash: 100000 } });
+['bed', 'tv', 'books'].forEach((k) => act('furniture.buy', { piece: k }));
+T.eq([pv('furniture.upgrade', { piece: 'books' }).reason, pv('furniture.upgrade', { piece: 'bed' }).ok], ['reason.needSlot', true],
+  'in a full apartment the Grand Library (2 slots) needs a free slot; the Pod (1 slot) does not');
+undo();
+undo = flags({ homesPlus: true, karmaTiers: true });
+s = game({ money: { cash: 100000 }, stats: { karma: 60 } });
+act('furniture.buy', { piece: 'bed' });
+const netPod = TF.pod.price - Math.floor(TF.bed.price * TF.upgradeCredit);
+const good = SR.rules.act.price(s, netPod, 'furniture.pod', {}).price;
+T.eq([good, pv('furniture.upgrade', { piece: 'bed' }).gains.find((g) => g.kind === 'cash').n], [Math.round(netPod * 0.9), -good],
+  'Good karma (B-28a furniture.*) takes 10 % off the upgrade\'s net price too ($' + good + '), the price the showroom\'s tile computes');
 undo();
 
 T.section('bought pieces work at the next sleep (night steps 6 and 7)');
@@ -229,6 +277,8 @@ r = act('furniture.buy', { piece: 'books' });
 T.eq(r.toasts.map((x) => [x.key, x.vars.name]), [['toast.furniture.nightly', 'Grand Atlas of Everything']], 'a stat piece: "it trains you every night from tonight"');
 r = act('furniture.buy', { piece: 'tv' });
 T.eq(r.toasts.map((x) => x.key), ['toast.furniture.home'], 'the TV: "waiting for you at home"');
+T.eq([act('furniture.buy', { piece: 'freezer' }).toasts.map((x) => x.key), act('furniture.buy', { piece: 'satellite' }).toasts.map((x) => x.key)],
+  [['toast.furniture.sleep'], ['toast.furniture.home']], 'the freezer restores more tonight; the satellite waits at home');
 T.eq(r.events.filter((e) => e.name === 'buy').map((e) => e.payload), [{ item: 'tv', n: 1, where: 'furniture', price: 2500 }], 'the buy rule event');
 
 // ------------------------------------------------------------------------------------------------
@@ -291,7 +341,7 @@ const keys = [];
   SR.rules.act.actions(b).forEach((id) => keys.push(SR.reg.action[id].label));
   ['plain', 'night', 'evil'].forEach((g) => keys.push('greet.' + b + '.' + g));
 });
-PIECES.concat(['satellite', 'pod', 'skydish', 'workstation', 'library', 'homegym', 'lounge', 'aquarium', 'freezerPlus']).forEach((k) => keys.push('card.furniture.effect.' + k));
+PIECES.concat(['satellite', 'pod', 'skydish', 'workstation', 'library', 'homegym', 'lounge', 'aquarium', 'freezerPlus', 'skydishBasic']).forEach((k) => keys.push('card.furniture.effect.' + k));
 keys.push('card.furniture.preview', 'card.furniture.previewHint', 'card.furniture.previewHome');
 keys.push('toast.pawn.vestTours', 'toast.furniture.stored', 'toast.furniture.sleep', 'toast.furniture.nightly', 'toast.furniture.home', 'card.pawn.sellConfirm', 'card.pawn.sellConfirmN', 'card.pawn.sellIntro', 'card.pawn.sellFor', 'card.pawn.sellEmpty');
 ['knife', 'gun', 'ammo', 'alarm', 'phone', 'knuckles', 'vest', 'skateboard', 'shirt'].forEach((k) => keys.push('card.pawn.use.' + k, k === 'ammo' ? 'card.pawn.haveMax' : 'toast.pawn.' + k));

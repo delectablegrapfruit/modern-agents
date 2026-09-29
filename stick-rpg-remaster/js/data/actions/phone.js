@@ -19,6 +19,9 @@
   var SR = window.SR;
 
   var BUYERS = 5;   // B-12 `buyerVoicemail.buyers` (orig: five buyers); the defs are listed per buyer
+  // The buyer's words for today's demand (B-12 demandDaily, rand(85..115) / 100): the top, middle
+  // and bottom thirds of that range. Presentation only; the price itself is the rules'.
+  var DEMAND_HIGH = 1.05, DEMAND_LOW = 0.95;
 
   function no(reason, vars) { return { ok: false, reason: reason, vars: vars || {} }; }
   function yes() { return { ok: true }; }
@@ -108,7 +111,7 @@
   SR.def.fn('phone.buyerInfo', function (s, params, ctx, n) {
     var id = buyerCity(s, n || 1), T = SR.rules.trade;
     var d = id && T && typeof T.dailyDemand === 'function' ? T.dailyDemand(s, id) : 1;
-    var hint = d >= 1.05 ? 'high' : d <= 0.95 ? 'low' : 'normal';
+    var hint = d >= DEMAND_HIGH ? 'high' : d <= DEMAND_LOW ? 'low' : 'normal';
     return { toasts: [{ key: 'toast.phone.buyer', vars: { name: SR.text('contact.buyer.name', { city: id ? SR.text('city.' + id + '.name') : '?' }),
       city: id ? SR.text('city.' + id + '.name') : '?', demand: SR.text('toast.phone.demand.' + hint) }, kind: 'info' }] };
   });

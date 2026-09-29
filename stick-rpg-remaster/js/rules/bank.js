@@ -341,8 +341,17 @@
   SR.def.fn('bank.repay', function (s, params, ctx, n) { return asResult(bank.repay(s, amt(params, n))); });
   SR.def.fn('bank.openCd', function (s, params, ctx, n) { return asResult(bank.openCd(s, amt(params, n))); });
   SR.def.fn('bank.breakCd', function (s, params, ctx, i) { return asResult(bank.breakCd(s, i !== undefined ? i : params && params.index)); });
-  /** The forced charge as an effect: ['fn', 'bank.charge', n, reason] (or params.amount). */
-  SR.def.fn('bank.charge', function (s, params, ctx, n, reason) { return bank.charge(s, amt(params, n), reason); });
+  /**
+   * The forced charge as an effect: ['fn', 'bank.charge', n, reason] (or params.amount). Besides
+   * { paid, writtenOff, ... } it carries the write-off toast the `charge` effect gives (a partial
+   * Result the pipeline merges), so the row reports a shortfall whichever form it uses.
+   */
+  SR.def.fn('bank.charge', function (s, params, ctx, n, reason) {
+    var r = bank.charge(s, amt(params, n), reason);
+    r.toasts = r.writtenOff > 0 ? [{ key: 'toast.act.writtenOff',
+      vars: { n: r.writtenOff, money: SR.text.money(r.writtenOff), reason: reason || null }, kind: 'warning' }] : [];
+    return r;
+  });
 
   // Conditions for the bank rows (a sub-screen row can be disabled with a reason).
   SR.def.fn('bank.canLoan', function (s) {

@@ -217,6 +217,7 @@
     'report.rate': 'Savings rate {rate} % a day',
     'report.cdMatured': 'A CD matured: {money} back, plus {interest}',
     'report.loanDays': 'Loan: {days} days left, {money} owed',
+    'report.loanDueTonight': 'Loan: {money} owed, due tonight',
     'report.loanDead': 'Loan default: the collection agents are on their way',
     'report.loanDefault': 'Loan default: the repo men collected {money}',
     'report.seized.bank': 'Taken from your account: {money}',

@@ -5,8 +5,9 @@
 //     refused at ≥ 95 ("Can't carry more (max 99)"); "Need $400" when short;
 //   - the counter (`pawn.shop`): mounts, lists the goods with the detail panel, buys by click and
 //     hotkey, closes on Back; with `shopsPlus` the P1 rows, the Buy / Sell tabs (Q / E and the
-//     `tabs` context) and a confirmed sale at 40 % (by click and by Enter; the confirm says how many;
-//     focus stays in the list when the sold row leaves it, and on the tab when the list empties);
+//     `tabs` context, popped by Back and by leaving the building) and a confirmed sale at 40 % (by
+//     click and by Enter; the confirm says how many; focus stays in the list when the sold row leaves
+//     it, and on the tab when the list empties);
 //     the detail panel pinned under the list, following it at 150 % text;
 //     with `arcs` the clean shirt once Harold asks;
 //   - the interior draws (Vinnie behind the counter), the accessibility audit of the card and the
@@ -138,6 +139,7 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-Goods');
   T.eq(await ev(() => Array.from(document.querySelectorAll('#ui [data-id="shop-list"] .arow')).map((e) => e.getAttribute('data-row'))),
     ['shop-sell-knife', 'shop-sell-ammo', 'shop-sell-alarm', 'shop-sell-phone'], 'E opens the Sell tab: what you hold that Vinnie buys back');
   T.ok(/40 %/.test(await text('[data-id="shop-intro"]')), 'at 40 % of the price');
+  T.eq(await ev(() => document.querySelector('#ui [data-id="shop-list"]').getAttribute('aria-label')), 'What Vinnie buys back', 'the list is named for the tab');
   T.ok((await text('[data-id="row-shop-sell-knife"]')).indexOf('+$40') >= 0, 'the knife sells for +$40');
   await t.shot(path.join(SHOTS, 'pawn-counter-sell.png'));
   const cash0 = (await items()).cash;
@@ -176,12 +178,16 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-Goods');
   await t.step(2);
   T.ok(await ev(() => window.SR.input.contexts().indexOf('tabs') < 0), 'closing the counter pops the tabs context');
   await t.set({ items: { knife: 1 } });
-  await ev(() => window.SR.ui.card.push('pawn.shop', { tab: 'sell' }));
+  // (card.push returns a Promise resolved only when the sub-screen pops: not returned to evaluate)
+  await ev(() => { window.SR.ui.card.push('pawn.shop', { tab: 'sell' }); });
   await t.step(2);
   T.eq([await visible('[data-id="row-shop-sell-knife"]'), await ev(() => { const e = document.querySelector('#ui [data-id="shop-tabs-sell"]'); return e && e.getAttribute('aria-selected'); })],
     [true, 'true'], 'params.tab "sell" opens the counter on the Sell tab');
-  await t.press('back');
+  // leaving the building with the counter still open (a scene change, not Back) pops the context too,
+  // or E would stay tabNext in the city and never enter a door
+  await ev(() => window.SR.scenes.go('city', {}, { transition: false }));
   await t.step(2);
+  T.ok(await ev(() => window.SR.input.contexts().indexOf('tabs') < 0), 'leaving the building from the counter pops the tabs context');
   await ev(() => window.SR.debug.feature('shopsPlus', false));
 
   // ------------------------------------------------------------ P1: arcs, the clean shirt

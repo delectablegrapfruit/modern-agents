@@ -9,7 +9,7 @@
 //   "(it froze)" joke link (a fake 2 s freeze, a wink, then the fight resumes). Hits have a 60 ms
 //   hit stop, a 6 u shake (off with Reduced Motion or the screen-shake setting) and sparks; a KO
 //   is an ink blot growing over the fight for 0.4 s before the result (ART_AUDIO §12).
-//   Win: +3 STR and the wallet (P0; -3 karma), or "Buy him a drink" (P1 `nightlife`).
+//   Win: +3 STR and the wallet (P0; -3 karma), or "Buy them a drink" (P1 `nightlife`; B-13 `drink`).
 //   Auto = the Quick fight: SR.rules.fight.autoPlay from the current position (real rolls, the best
 //   expected damage per AP, never Guard or Run), shown as a 2 s fast-forwarded log.
 // Result (CONTRACT §13): { outcome: 'win' | 'lose' | 'run', hpLeft, choice? } plus the fight's
@@ -33,7 +33,10 @@
   var REPLAY_S = 2;            // ARCHITECTURE §10: the Quick fight's fast-forwarded log (2 s)
   var KO_S = 0.4, KO_HOLD_S = 0.25;   // ART_AUDIO §12 KO: an ink blot covers the screen in 400 ms, then the result
   var KO_SPLATS = 10;          // the blot's ragged rim: satellite drops around its edge
+  var TAUNT_LOW = 0.3;         // GDD §6.3 taunt 3 "when he is nearly down": at or under 30 % of his HP (flavour, not balance)
   var BTN_Y = 478, BTN_H = 90;
+  var AREA_H = 576;            // the play area's height (CONTRACT §13.1: 1280 × 576)
+  var FROZE_GAP = 18;          // u between the move bar and the "(it froze)" link above it
   var CLIPS = { punch: 'punch', kick: 'kick', fireball: 'fireball', inkBeam: 'inkbeam', guard: 'guard' };
   var IMPACT = { punch: 0.55, kick: 0.55, fireball: 0.68, inkBeam: 0.78, guard: 0.5 };
   var DUR = { punch: 0.35, kick: 0.5, fireball: 0.7, inkBeam: 0.9, guard: 0.45 };
@@ -98,14 +101,18 @@
     var pend0 = SR.state && SR.state.pending && SR.state.pending.resolve ? SR.state.pending : null;
 
     // ---- DOM: the move bar, the "(it froze)" link and the win panel ----------------------------
+    // The bar sits on the bottom edge and grows upward when its buttons need more room than BTN_H
+    // (150 % text with the seven P1 moves wraps "Ink Beam" and the damage chips; UI §8 "no
+    // clipping at 150 %"); the "(it froze)" link keeps its place just above it (placeFroze).
+    var BAR_BOTTOM = AREA_H - BTN_Y - BTN_H;
     var bar = host.el('div', { 'data-id': 'mg-fight-moves', style: {
-      position: 'absolute', left: '16px', top: BTN_Y + 'px', width: '1248px', height: BTN_H + 'px', display: 'flex', gap: '8px',
-      pointerEvents: 'none' } });
+      position: 'absolute', left: '16px', bottom: BAR_BOTTOM + 'px', width: '1248px', minHeight: BTN_H + 'px', display: 'flex', gap: '8px',
+      alignItems: 'stretch', pointerEvents: 'none' } });
     host.ui.appendChild(bar);
     var frozeBtn = host.button({ id: 'mg-fight-froze', label: T('mg.fight.froze'), variant: 'ghost', onPress: function () { froze(); } });
     frozeBtn.style.position = 'absolute';
     frozeBtn.style.right = '12px';
-    frozeBtn.style.top = (BTN_Y - 50) + 'px';
+    frozeBtn.style.bottom = (BAR_BOTTOM + BTN_H + FROZE_GAP) + 'px';
     frozeBtn.style.font = '600 calc(14px * var(--ui-scale, 1)) var(--font-ui)';
     frozeBtn.style.color = 'var(--ink-700)';
     frozeBtn.style.background = 'var(--paper-0)';
@@ -114,7 +121,7 @@
     frozeBtn.style.height = '32px';
     frozeBtn.style.padding = '0 12px';
     host.ui.appendChild(frozeBtn);
-    var panel = host.el('div', { 'data-id': 'mg-fight-win', role: 'group', style: {
+    var panel = host.el('div', { 'data-id': 'mg-fight-win', role: 'group', 'aria-label': T('mg.fight.winTitle'), style: {
       position: 'absolute', left: '390px', top: '96px', width: '500px', boxSizing: 'border-box', padding: '20px 24px',
       background: 'var(--paper-0)', border: 'var(--line)', borderRadius: 'var(--r-l)', boxShadow: 'var(--e-3)', display: 'none',
       flexDirection: 'column', gap: '10px', pointerEvents: 'auto' } });
@@ -128,6 +135,10 @@
       return list;
     }
     function label(id) { return T('mg.fight.' + id); }
+    /** @returns {string} why a move is out of reach on your turn ("Needs 4 AP. 2 left this turn."), else ''. */
+    function shortAp(e) {
+      return e && e.move && f.phase === 'player' && f.me.ap < e.ap ? T('mg.fight.needAp', { n: e.ap, ap: f.me.ap }) : '';
+    }
     function interactive() { return phase === 'player' && !beat && !queue.length && !frozen && !replay && host.interactive(); }
 
     function renderButtons() {
@@ -150,10 +161,20 @@
         b.style.minHeight = BTN_H + 'px';
         var off = !e.ok || !interactive();
         b.setAttribute('aria-disabled', off ? 'true' : 'false');
+        // A move you cannot afford this turn says why (UI §2.3: a disabled control carries its reason).
+        var why = shortAp(e);
+        if (why) b.setAttribute('aria-description', why);
         if (off) dim(b);
         host.ring(b, i === sel && interactive() && (host.device === 'kb' || host.device === 'pad'));
         bar.appendChild(b);
       });
+      placeFroze();
+    }
+
+    /** Keeps the "(it froze)" link FROZE_GAP above the move bar, however tall large text made it. */
+    function placeFroze() {
+      var h = bar.offsetHeight || BTN_H;
+      frozeBtn.style.bottom = (BAR_BOTTOM + Math.max(BTN_H, h) + FROZE_GAP) + 'px';
     }
 
     function mirror() {
@@ -200,6 +221,8 @@
         renderButtons();
         return;
       }
+      var short = shortAp(entries().filter(function (e) { return e.id === id; })[0]);
+      if (short) { host.audio.sfx('error'); host.aria(short); return; }
       var r = F().playerMove(f, id, host.rng);
       if (!r.ok) {
         host.audio.sfx('error');
@@ -244,7 +267,7 @@
       if (b.crit) line = T('mg.fight.crit') + ' ' + line;
       host.aria(line + ' ' + T('mg.fight.mirror', { hp: disp.me, name: name, foe: disp.foe, ap: f.me.ap }));
       if (b.who === 'foe' && !tauntedHurt && f.me.hp > 0) { tauntedHurt = true; say(2); }
-      if (b.who === 'me' && !tauntedLow && f.foe.hp > 0 && f.foe.hp <= f.foe.hpMax * 0.3) { tauntedLow = true; say(3); }
+      if (b.who === 'me' && !tauntedLow && f.foe.hp > 0 && f.foe.hp <= f.foe.hpMax * TAUNT_LOW) { tauntedLow = true; say(3); }
     }
 
     /** After the last queued beat: the next turn, the win panel, or the end. */
@@ -677,6 +700,9 @@
         phase = 'over';
         ended = true;
         renderButtons();
+        // The bottom bar and the mirror follow the Quick fight (the turn's "n AP left" no longer holds).
+        host.label('status', T('mg.fight.quick'));
+        host.label('hp', T('mg.fight.mirror', { hp: f.me.hp, name: name, foe: f.foe.hp, ap: 0 }));
         host.aria(T('mg.fight.quick') + '. ' + T('mg.fight.mirror', { hp: f.me.hp, name: name, foe: f.foe.hp, ap: 0 }));
         return r;
       },

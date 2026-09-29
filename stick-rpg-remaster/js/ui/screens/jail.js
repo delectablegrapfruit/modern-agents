@@ -151,8 +151,11 @@
         var br = el.rows.bail;
         br.hidden = !v.bail;
         if (v.bail) {
-          var cost = SR.rules.crime && SR.state ? SR.rules.crime.bail(SR.state) : 0;
-          br.update({ costs: [SR.ui.chip({ kind: 'money', n: cost, cost: true, short: !v.bail.ok })], gains: [],
+          var st = SR.state, cost = SR.rules.crime && st ? SR.rules.crime.bail(st) : 0;
+          // The price reads short only when the money is (the lawyer takes cash, then the bank); a
+          // bail refused for another reason (no phone) keeps a plain price chip beside its reason.
+          var lacking = !!st && st.money.cash + st.money.bank < cost;
+          br.update({ costs: [SR.ui.chip({ kind: 'money', n: cost, cost: true, short: lacking })], gains: [],
             disabled: !v.bail.ok, reason: v.bail.ok ? null : v.bail.reason, reasonVars: v.bail.vars });
         }
       }

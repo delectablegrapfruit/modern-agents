@@ -29,12 +29,12 @@
   SR.def.song('fry_day', {
     bpm: 128, swing: 0,
     meter: [4, 4], stepsPerBeat: 2,
-    key: 'E', scale: 'major', gain: 0.68,
+    key: 'E', scale: 'major', gain: 0.66,
     inst: {
-      lead: { preset: 'pluck', gain: 0.9, pan: -0.2 },
+      lead: { preset: 'pluck', gain: 0.78, pan: -0.2 },
       echo: { preset: 'pluck', gain: 0.6, pan: 0.4 },
-      organ: { preset: 'organ', gain: 0.4, pan: 0.15 },
-      bass: { preset: 'bass', gain: 0.45, pan: 0 },
+      organ: { preset: 'organ', gain: 0.5, pan: 0.15 },
+      bass: { preset: 'bass', gain: 0.42, pan: 0 },
       drums: { preset: 'kit', gain: 0.7, pan: 0 },
       shaker: { preset: 'kit', gain: 0.95, pan: 0.3 },
     },

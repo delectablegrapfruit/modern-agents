@@ -27,6 +27,7 @@
   var BZZT_AT = 1.4, KIDDING_AT = 2.3, CARD_AT = 3.3, SKIP_AFTER = 0.3, FLASH_S = 0.25;
   var MONITOR = { x: 170, y: 150, w: 420, h: 230 };   // the big heart monitor of the gag (x 0-760)
   var BED = { x: 262, y: 590, scale: 0.9 };            // you in the ward's bed (js/art/interiors/special.js)
+  var MUSIC = 'waiting_room';                          // the ward's song (ART_AUDIO §13.4)
 
   var H = null;   // the scene's state while it is on the stack
 
@@ -52,12 +53,33 @@
   }
   function reduced() { return !!(SR.ui && SR.ui.dom && D().reduced()); }
 
-  /** Re-emits a night Report's rule events, then day:started, as the report scene does (CONTRACT §8.7). */
+  /**
+   * Re-emits a night Report's rule events and the achievements it unlocked (Report.achievements),
+   * then day:started, as the report scene does (CONTRACT §8.7, §8.9).
+   */
   function startDay(report) {
     if (!report || !SR.state || H && H.started) return;
     if (H) H.started = true;
     (report.events || []).forEach(function (e) { if (e && e.name) SR.events.emit(e.name, e.payload); });
+    (report.achievements || []).forEach(function (id) { SR.events.emit('achievement:unlocked', { id: id }); });
     SR.events.emit('day:started', { day: typeof report.day === 'number' ? report.day : SR.state.clock.day, report: report });
+  }
+
+  /**
+   * Puts the player outside the home door ('afterHospital', ARCHITECTURE §6.7) in the world and the
+   * state: done on admission, so a save or a suspend from the ward resumes there, not where you fell.
+   */
+  function placeHome() {
+    var s = SR.state;
+    if (!s || !SR.world || !SR.world.ready || typeof SR.world.place !== 'function') return;
+    try { SR.world.place('afterHospital', s); } catch (e) { SR.util.warnOnce('hospital.place', 'hospital: SR.world.place(afterHospital) failed: ' + e.message); }
+  }
+
+  /** The ward's song (a heart-monitor blip in tempo, ART_AUDIO §13.4): it starts when the heart does. */
+  function wardMusic() {
+    if (!H || H.music) return;
+    H.music = true;
+    if (SR.audio && typeof SR.audio.music === 'function') SR.audio.music(MUSIC);
   }
 
   /** Leaves the ward: the results when the story ended, else the city outside the home door. */
@@ -101,6 +123,7 @@
     if (H.dirge && typeof H.dirge.stop === 'function') { try { H.dirge.stop(); } catch (e) { /* audio gone */ } }
     H.dirge = null;
     if (H.gag) H.gag.show(null);
+    wardMusic();
     mountHud();
     if (H.ui && !H.card) {
       H.card = SR.ui.hospital.card({ down: H.down, onDischarge: discharge });
@@ -181,17 +204,22 @@
     D().sfx('ink_beam');
     if (SR.render && SR.render.fx && typeof SR.render.fx.jolt === 'function' && !reduced()) SR.render.fx.jolt();
     if (H.gag) H.gag.show('bzzt');
+    wardMusic();
   }
 
   SR.scenes.register('hospital', {
     kind: 'base',
-    music: 'waiting_room',
+    // No `music` here: the flat line plays over silence and the dirge; the ward's song (MUSIC) starts
+    // with the BZZT, when the heart does (or with the card, when the gag is skipped).
     enter: function (params) {
       params = params || {};
       H = { params: params, down: params.down || null, t: 0, phase: 'gag', beat: 0, card: null, ui: null, scope: null,
-        gag: null, dirge: null, discharged: false, started: false, cache: null, cacheScale: 0, skipFast: fast(), skipping: false, hud: null };
+        gag: null, dirge: null, discharged: false, started: false, cache: null, cacheScale: 0, skipFast: fast(), skipping: false, hud: null,
+        music: false };
       if (!H.down && SR.state) H.down = { outcome: 'hospital', cause: params.cause || 'other', bill: 0, writtenOff: 0, report: null };
       H.interior = SR.art && typeof SR.art.interior === 'function' ? SR.art.interior('hospital', {}) : null;
+      placeHome();
+      if (!H.skipFast && SR.audio && typeof SR.audio.music === 'function') SR.audio.music(null, { fade: 0.2 });
     },
     exit: function () {
       if (H && H.dirge && typeof H.dirge.stop === 'function') { try { H.dirge.stop(); } catch (e) { /* audio gone */ } }

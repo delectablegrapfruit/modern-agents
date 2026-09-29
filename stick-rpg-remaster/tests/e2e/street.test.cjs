@@ -119,6 +119,8 @@ function rules() {
   T.eq([pv(fresh(), 'street.dealer.buy', { n: 0 }).reason, pv(fresh({ money: { cash: 799 } }), 'street.dealer.buy', { n: 2 }).reason, pv(fresh({ money: { cash: 400 } }), 'street.dealer.buy').ok],
     ['reason.amount', 'reason.needCash', true], 'no grams: "Enter an amount"; short: "Need $800"; without n it is one gram');
   T.eq(pv(fresh({ money: { cash: 800 }, clock: { min: 1440 } }), 'street.dealer.buy', { n: 2 }).ok, true, 'no time, so Red still sells at 24:00 (orig: no clock check)');
+  T.eq([null, -3, 'x'].map((n) => { const p = pv(fresh({ money: { cash: 800 } }), 'street.dealer.buy', { n }); return [p.ok, p.reason, p.cost.cash, p.gains.length]; }),
+    Array(3).fill(['x']).map(() => [false, 'reason.amount', 0, 0]), 'an empty, negative or non-numeric field: "Enter an amount", priced $0 (as items.buy reads it)');
   flags(['arcs']);
   const loyal = fresh({ money: { cash: 50000 }, npc: { dealer: { bought: 100 } } });
   const week = SR.reg.fn['mods.redWeek'](loyal);
@@ -246,6 +248,16 @@ function rules() {
   T.eq((await t.state()).msgs.filter((m) => m.key === 'vm.mel.job').length, 1, 'loading that day-1 save does not queue it again');
   await ev(() => { const SR = window.SR; SR.state.msgs = []; SR.state.flags.jobOffer = true; SR.save.write('slot2'); SR.save.load('slot2'); return true; });
   T.eq((await t.state()).msgs.length, 0, '... nor after it was offered once (flags.jobOffer)');
+  const offered = (patch) => ev((p) => {
+    const SR = window.SR;
+    SR.state.msgs = []; SR.state.flags.jobOffer = false; SR.util.merge(SR.state, p);
+    SR.save.write('slot2'); SR.save.load('slot2');
+    return SR.state.msgs.map((m) => m.key);
+  }, patch);
+  T.eq([await offered({ clock: { day: 2 } }), await offered({ clock: { day: 1 }, job: { ranks: { mcsticks: null } } })], [[], []],
+    'not on a later day, nor without the McSticks job (B-02 hires you as a Fry Cook)');
+  T.eq(await ev(() => { const SR = window.SR; SR.state.job.ranks.mcsticks = 'cook'; SR.world.streetnpcs.jobOffer(); SR.world.streetnpcs.jobOffer(); return SR.state.msgs.map((m) => m.key); }), ['vm.mel.job'],
+    'SR.world.streetnpcs.jobOffer() (for a game started without SR.save.load) queues it, once');
   await ev(() => { window.SR.save.remove('slot2'); return true; });
 
   T.section('the city: the people at their spots, Red pacing, barks, the way back after a hop');
@@ -267,14 +279,18 @@ function rules() {
   });
   T.ok(hop.at.state === 'hop' && Math.abs(hop.at.y - SPOTS.harold[1]) === 24, 'your car makes him hop 24 u aside (W1-W hopAside)', hop.at);
   T.eq(hop.back, { x: SPOTS.harold[0], y: SPOTS.harold[1], state: 'pause', clip: 'sit' }, 'then he walks back to his corner and sits down again');
-  const bark = await ev(() => {
+  const approach = () => ev(() => {
     const SR = window.SR, W = SR.world;
     W.teleport(2600, 1110); for (let i = 0; i < 10; i++) W.update(SR.STEP);
     W.teleport(2090, 1250); for (let i = 0; i < 10; i++) W.update(SR.STEP);
     const e = W.streetnpcs.get('kid');
-    return { bark: e.bark, t: e.barkT };
+    return { bark: e.bark, t: e.barkT, n: W.streetnpcs.stats.barks };
   });
-  T.ok(/^bark\.kid\.[123]$/.test(bark.bark) && bark.t > 0, 'coming near, Skid calls out a bark (' + bark.bark + ')');
+  const quiet = await approach();
+  T.eq([quiet.bark, quiet.t], [null, 0], 'P0: no bark as you pass (barks are P1, GDD §3.11: the crowd\'s `cityReacts` flag)');
+  await ev(() => { window.SR.debug.feature('cityReacts', true); window.SR.world.streetnpcs.get('kid').barkAt = -1e9; return true; });
+  const bark = await approach();
+  T.ok(/^bark\.kid\.[123]$/.test(bark.bark) && bark.t > 0 && bark.n === quiet.n + 1, 'P1 cityReacts: coming near, Skid calls out a bark (' + bark.bark + ')');
   const drawnTags = await ev(() => {
     const SR = window.SR, U = SR.render.worldui, tag = U.tag, seen = [];
     U.tag = function (x, y, text) { seen.push(text); return tag.apply(this, arguments); };
@@ -282,6 +298,9 @@ function rules() {
     return seen;
   });
   T.ok(drawnTags.indexOf((await text(bark.bark))[0]) >= 0, 'the city draws his bark over him (W2-City, request 1)');
+  const again = await approach();
+  T.eq(again.n, bark.n, 'no second bark within 25 s, even after walking away and back');
+  await ev(() => { const SR = window.SR; SR.debug.feature('cityReacts', false); SR.world.streetnpcs.people.forEach((e) => { e.bark = null; e.barkT = 0; }); return true; });
   await t.teleport(2200, 2380);
   await t.step(10);
   T.ok(/Talk to Homeless Harold/.test(await t.uiText()), 'within 96 u: "[E] Talk to Homeless Harold"');
@@ -294,6 +313,7 @@ function rules() {
   await t.step(3);
   T.eq([await t.scenes(), await ev(() => window.__talks), await ev(() => window.SR.world.streetnpcs.talking)], [['city', 'dialog'], [{ npc: 'harold' }], 'harold'],
     'Interact opens the Dialog sheet over the frozen city and raises the talk rule event');
+  T.eq(await ev(() => window.SR.world.streetnpcs.speaker()), { x: SPOTS.harold[0], y: SPOTS.harold[1] }, 'speaker(): where the one you talk to stands (for UI §5.7\'s camera ease, request 7)');
   T.eq(await choices(), ['street.harold.give10', 'street.harold.giveBottle', 'leave'], 'Give $10, Give a bottle, Leave');
   const opening = await line();
   T.ok((await text('greet.harold.day')).indexOf(opening) >= 0, 'his day greeting (' + opening + ')');
@@ -331,7 +351,31 @@ function rules() {
     'the Bag\'s Give (GDD §6.4) runs his own row while the dialog is open; the sheet stays and re-reads its rows (no bottle left)');
   await t.press('back');
   await t.step(2);
-  T.eq([await t.scenes(), await ev(() => window.SR.world.streetnpcs.talking)], [['city'], null], 'Esc leaves (the dialog\'s Leave)');
+  T.eq([await t.scenes(), await ev(() => window.SR.world.streetnpcs.talking), await ev(() => window.SR.world.streetnpcs.speaker())], [['city'], null, null], 'Esc leaves (the dialog\'s Leave)');
+  await t.press('interact');
+  await t.step(3);
+  await ev(() => { window.SR.scenes.go('city', {}, { transition: false }); return true; });
+  await t.step(3);
+  const talkingAfterGo = await ev(() => window.SR.world.streetnpcs.talking);
+  await t.teleport(2200, 2380);
+  await t.step(10);
+  await t.press('interact');
+  await t.step(3);
+  T.eq([talkingAfterGo, await t.scenes()], [null, ['city', 'dialog']], 'a scene change under the sheet ends the talk; he can be talked to again');
+  await t.press('back');
+  await t.step(2);
+  const threw = await ev(() => {
+    const SR = window.SR, D = SR.ui.dialog, open = D.open;
+    D.open = function () { throw new Error('a sheet that fails to open'); };
+    let r;
+    try { r = SR.world.streetnpcs.talk('harold'); } finally { D.open = open; }
+    return { r, talking: SR.world.streetnpcs.talking };
+  });
+  await t.press('interact');
+  await t.step(3);
+  T.eq([threw, await t.scenes()], [{ r: false, talking: null }, ['city', 'dialog']], 'a sheet that throws does not leave the talk stuck: the next Interact opens it');
+  await t.press('back');
+  await t.step(2);
 
   T.section('Skid: ten packs through the dialog');
   // Records what the street dialog hands the sheet (the portrait's look), without changing it.
@@ -421,12 +465,46 @@ function rules() {
   T.eq((await quick()).value, '2', '... and it sets 2 g');
   await t.press('back');
   await t.step(2);
+  // P1 modifiers (the week's factor and the loyalty 10 %) price the whole purchase, so one gram's
+  // rounded price can overstate what you can afford: the quick amount is checked on the total.
+  const plan = await ev(() => {
+    const SR = window.SR, s = SR.state, week = SR.reg.fn['mods.redWeek'];
+    SR.debug.feature('arcs', true);
+    s.npc.dealer.bought = 100; s.items.snow = 0;
+    // A week whose factor (B-28a redWeek, drawn from the seed) makes one gram's price fractional
+    // after the loyalty 10 %: $400 × k / 100 × 0.9, so k not a multiple of 5.
+    const seed0 = s.seed;
+    for (let i = 1; i < 500 && Number.isInteger(Math.round(week(s) * 100) * 3.6); i++) s.seed = seed0 + i;
+    const total = (g) => SR.rules.act.price(s, g * 400, 'product.red', { params: { n: g } }).price;
+    // A cash for which one gram's rounded price misjudges the most grams that fit.
+    for (let n = 3; n < 98; n++) {
+      for (const cash of [total(n) - 1, total(n)]) {
+        const most = cash >= total(n) ? n : n - 1;
+        if (Math.floor(cash / total(1)) !== most) { s.money.cash = cash; return { most, cash, seed0, k: week(s), per: total(1) }; }
+      }
+    }
+    return { most: null, seed0, k: week(s) };
+  });
+  await talkTo(2920, 3480);
+  await t.clickUI('choice-street.dealer.buy-n-q-max');
+  await t.step(1);
+  const took = Number((await quick()).value);
+  const fair = await ev(([v, cash]) => {
+    const SR = window.SR, s = SR.state, total = (g) => SR.rules.act.price(s, g * 400, 'product.red', { params: { n: g } }).price;
+    return { fits: total(v) <= cash, most: total(v + 1) > cash, ok: !document.querySelector('#ui [data-choice="street.dealer.buy"]').classList.contains('is-disabled') };
+  }, [took, plan.cash]);
+  T.eq([took, fair], [plan.most, { fits: true, most: true, ok: true }],
+    'P1 prices: "All I can afford" sets the most grams whose total fits the cash (' + took + ' g with $' + plan.cash + ' at $' + plan.per + ' a gram, week ×' + plan.k + ')');
+  await t.press('back');
+  await t.step(2);
+  await ev((seed0) => { const SR = window.SR; SR.debug.feature('arcs', false); SR.state.seed = seed0; SR.state.npc.dealer.bought = 11; SR.state.items.snow = 11; return true; }, plan.seed0);
 
   T.section('the junker: the hotwire, the parked car');
   await t.set({ stats: { int: 7 } });
   await t.setTime(600);
   await talkTo(727, 1200);
-  T.eq([await choices(), await line()], [['street.junker.hotwire', 'leave'], (await text('greet.junker.look'))[0]], 'the unlocked car: Try to hotwire it, Leave');
+  T.eq([await choices(), await line(), await ev(() => window.SR.world.streetnpcs.speaker())], [['street.junker.hotwire', 'leave'], (await text('greet.junker.look'))[0], { x: 727, y: 1113 }],
+    'the unlocked car: Try to hotwire it, Leave (the speaker is the car)');
   T.ok(/0 %/.test(await ev(() => document.querySelector('#ui [data-choice="street.junker.hotwire"] .dlg-chips').textContent)), 'the chance chip warns: 0 %');
   await shot('dialog-junker.png');
   await t.clickUI('choice-street.junker.hotwire');
@@ -475,6 +553,28 @@ function rules() {
     'three sparks: the car is yours, one miss cost 15 HP, and the sheet says so');
   await t.press('back');
   await t.step(2);
+  const ringAgain = async () => {
+    await t.newGame({});
+    await t.set({ stats: { int: 250, str: 50, hpMax: 65, hp: 65 } });
+    await city();
+    await talkTo(727, 1200);
+    await t.clickUI('choice-street.junker.ring');
+    await t.step(5);
+    return ev(() => !!window.SR.minigame.current());
+  };
+  const open1 = await ringAgain();
+  await ev(() => { window.SR.scenes.go('city', {}, { transition: false }); return true; });
+  await t.step(5);
+  st = await t.state();
+  T.eq([open1, await t.scenes(), await line(), st.flags.junkerRing, st.player.cars.junker.owned, st.stats.hp],
+    [true, ['city', 'dialog'], (await text('card.junker.gaveUp'))[0], 0, false, 65], 'a scene change that removes the frame counts as leaving the round (paid once, no misses yet): "You back away"');
+  await t.press('back');
+  await t.step(2);
+  const open2 = await ringAgain();
+  await ev(() => { window.SR.ui.saveload.quit(); return true; });
+  await t.step(5);
+  T.eq([open2, (await t.scenes()).indexOf('dialog'), await ev(() => window.SR.world.streetnpcs.talking), await ev(() => window.SR.state)], [true, -1, null, null],
+    'quitting to the title mid-round: nothing is paid into a closed game, no sheet over the title');
   await ev(() => { window.SR.debug.feature('arcs', false); return true; });
 
   T.section('night and a larger window');

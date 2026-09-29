@@ -359,6 +359,124 @@ const P0_TABS = ['journal', 'map', 'stats', 'bag', 'messages'];
   });
 
   // ------------------------------------------------------------------------------------------------
+  await section('the Map never traps focus; waypoints clear at a home door and at a person', async () => {
+    await fresh();
+    await t.key('KeyM');
+    await t.step(1);
+    // Keyboard and pad: the focused map pans with the arrows up to its edge, then the arrow moves
+    // focus on like anywhere else (UI §6: every screen completable without a pointer).
+    const leave = async (key) => {
+      await ev(() => window.SR.ui.focus.focus(document.querySelector('#ui [data-id="map-canvas"]')));
+      const x0 = (await dbg()).panel.view;
+      for (let k = 0; k < 60; k++) { await t.key(key); const a = await active(); if (a !== 'map-canvas') return { to: a, moved: JSON.stringify((await dbg()).panel.view) !== JSON.stringify(x0) }; }
+      return null;
+    };
+    const l = await leave('ArrowLeft');
+    T.ok(l && l.moved && l.to !== 'map-canvas', 'Left pans the map to its edge, then focus moves on (out of the map)', l);
+    const u = await leave('ArrowUp');
+    T.ok(u && u.moved && u.to !== 'map-canvas', 'Up pans to the top edge, then focus leaves the map too', u);
+    // A home door (the Apartments): door:entered names the building 'home', the waypoint still clears.
+    const home = await ev(() => window.SR.world.homeDoor(window.SR.state).id);
+    await ev(() => { const d = window.SR.world.geometry.doorById.mcsticks; window.SR.debug.teleport(d.exit.x, d.exit.y); });
+    await ev((id) => window.SR.ui.pocket.open('map', { place: id }), home);
+    await t.step(1);
+    await t.clickUI('map-waypoint');
+    await t.step(1);
+    T.eq([await stack(), await ev(() => !!window.SR.render.minimap.wp)], [['city'], true], 'a waypoint on the home door: the Pocket closes, the minimap pins it');
+    let inside = null;
+    for (let k = 0; k < 20 && !inside; k++) {
+      await t.step(60);
+      inside = await ev(() => { const top = window.SR.scenes.top(); return top && top.id === 'building' ? top.params.id : null; });
+    }
+    T.eq([inside, await ev(() => window.SR.render.minimap.wp)], ['home', null], 'walking in at the home door clears it (the door is SR.world.doors.last)');
+    await ev(() => window.SR.ui.card.leave());
+    await t.step(2);
+    // A person: talking to them clears a waypoint set on them.
+    const hasStreet = await ev(() => !!(window.SR.world.streetnpcs && typeof window.SR.world.streetnpcs.talk === 'function'));
+    if (hasStreet) {
+      await ev(() => window.SR.ui.pocket.open('map', { place: 'person:harold' }));
+      await t.step(1);
+      T.eq((await dbg()).panel.sel, 'person:harold', 'Harold is a place on the map');
+      await t.clickUI('map-waypoint');
+      await t.step(1);
+      T.ok(await ev(() => !!window.SR.render.minimap.wp), 'a waypoint on Harold');
+      await ev(() => { const SR = window.SR, spot = SR.world.streetnpcs.placeOf('harold'); SR.world.player.cancelRoute(); SR.debug.teleport(spot.x + 30, spot.y); SR.world.streetnpcs.talk('harold'); });
+      await t.step(1);
+      T.eq(await ev(() => window.SR.render.minimap.wp), null, 'talking to him clears it');
+      // Over the dialog you are already outside: Set waypoint pins the place, no "head outside" route waits.
+      await t.clickUI('hud-pocket');
+      await t.step(1);
+      await ev(() => window.SR.ui.pocket.select('map', { place: 'bank' }));
+      await t.step(1);
+      await ev(() => window.SR.ui.toast.clear());
+      await t.clickUI('map-waypoint');
+      await t.step(1);
+      const over = await ev(() => ({ stack: window.SR.scenes.stack(), pending: window.SR.ui.pocket.debug().panel.pending, toasts: window.SR.ui.toast.list().map((x) => x.text) }));
+      const later = await ev(() => window.SR.text('pocket.map.waypointLater'));
+      T.ok(over.stack.join() === 'city,dialog,pocket' && over.pending === false && over.toasts.indexOf(later) < 0,
+        'over a street dialog the waypoint is pinned, with no route waiting for a door to step out of', over);
+      await closeAll();
+    }
+    // Inside a building Set waypoint turns into Clear waypoint, and keyboard focus follows it.
+    await t.enter('mcsticks');
+    await t.step(1);
+    await ev(() => window.SR.ui.pocket.open('map', { place: 'uofs' }));
+    await t.step(1);
+    T.ok(await exists('map-waypoint'), 'the U of S has no waypoint yet (Set waypoint)');
+    await ev(() => window.SR.ui.focus.focus(document.querySelector('#ui [data-id="map-waypoint"]')));
+    await t.key('Enter');
+    T.eq(await active(), 'map-clear-waypoint', 'Enter on Set waypoint: focus moves to Clear waypoint (not lost)');
+    await t.key('Enter');
+    T.eq([await active(), (await dbg()).panel.wp], ['map-waypoint', null], 'and Enter again clears it, focus back on Set waypoint');
+    await closeAll();
+  });
+
+  // ------------------------------------------------------------------------------------------------
+  await section('numbers from the rules and the tuning: the Give label, ranges, Winded, Road to Office', async () => {
+    const hasStreet = await ev(() => !!(window.SR.world.streetnpcs && typeof window.SR.world.streetnpcs.talk === 'function'));
+    if (hasStreet) {
+      await fresh({ items: { booze: 1 }, money: { cash: 100 } }, 23);
+      await ev(() => { const SR = window.SR, spot = SR.world.streetnpcs.placeOf('harold'); SR.debug.teleport(spot.x + 30, spot.y); SR.world.streetnpcs.talk('harold'); });
+      await t.clickUI('hud-pocket');
+      await ev(() => window.SR.ui.pocket.select('bag', { item: 'cash' }));
+      await t.step(1);
+      const give = await ev(() => (document.querySelector('#ui [data-id="bag-give"]') || {}).textContent || '');
+      const row = await ev(() => { const el = document.querySelector('#ui [data-scene="dialog"] [data-choice="street.harold.give10"]'); return el ? el.textContent : ''; });
+      const want = await ev(() => window.SR.text('act.harold.give10', { money: window.SR.text.money(window.SR.preview('street.harold.give10', {}).cost.cash) }));
+      T.ok(give.indexOf(want) >= 0 && give.indexOf('{') < 0 && row.indexOf(want) >= 0, 'the wallet\'s Give reads like the dialog row ("' + want + '"), its {money} filled in', { give, row });
+      await closeAll();
+    }
+    await fresh({ stats: { hp: 1, karma: 50 } });
+    await ev(() => window.SR.ui.pocket.open('stats'));
+    await t.step(1);
+    const factor = await ev(() => Math.round(window.SR.tuning.training.winded.factor * 100));
+    T.ok((await ev(() => (document.querySelector('#ui [data-id="stats-winded"]') || {}).textContent || '')).indexOf(factor + ' %') >= 0, 'Winded names the tuning\'s factor (' + factor + ' %)');
+    const ranges = await ev(() => {
+      const SR = window.SR, st = SR.tuning.start, keep = [st.heatRange, st.karmaRange];
+      st.heatRange = [0, 150]; st.karmaRange = [-200, 200];
+      SR.ui.pocket.select('journal'); SR.ui.pocket.select('stats');
+      const fill = document.querySelector('#ui [data-id="stats-karma-fill"]');
+      const out = { heatMax: document.querySelector('#ui [data-id="stats-heat"]').getAttribute('aria-valuemax'), karmaFill: fill ? fill.style.width : null };
+      st.heatRange = keep[0]; st.karmaRange = keep[1];
+      SR.ui.pocket.select('journal'); SR.ui.pocket.select('stats');
+      out.karmaFill0 = document.querySelector('#ui [data-id="stats-karma-fill"]').style.width;
+      return out;
+    });
+    T.eq(ranges, { heatMax: '150', karmaFill: '12.5%', karmaFill0: '25%' }, 'the Heat meter and the karma slider follow tuning.start heatRange / karmaRange');
+    // The Road to Office (P1 `advisor`) agrees with the nomination check itself.
+    await ev(() => window.SR.debug.feature('advisor', true));
+    await t.set({ homes: { living: 'castle', owned: ['apt', 'castle'] }, money: { cash: 150000, bank: 60000 }, stats: { str: 700, int: 700, cha: 600, karma: -30 } });
+    await ev(() => window.SR.ui.pocket.select('journal'));
+    await t.step(1);
+    const road = await ev(() => ({ road: window.SR.ui.pocket.debug().panel.road, missing: window.SR.rules.election.qualifies(window.SR.state).missing,
+      karma: (document.querySelector('#ui [data-id="journal-road-karma"]') || {}).textContent || '' }));
+    T.eq(road.road.filter((r) => !r.ok).map((r) => r.id), ['stats'], 'the Road to Office ticks what qualifies() ticks (castle, money, karma; not the stats)', road);
+    T.ok(road.missing.length === 1 && road.missing[0] === 'stats' && /-25/.test(road.karma) && road.karma.indexOf('{') < 0, 'the Dictator path reads "Karma -25 or less"', road);
+    await ev(() => window.SR.debug.feature('advisor', false));
+    await closeAll();
+  });
+
+  // ------------------------------------------------------------------------------------------------
   await section('Stats, Journal and Messages', async () => {
     await fresh({ stats: { str: 20, hpMax: 35, hp: 30, int: 12, cha: 9, karma: 42 }, money: { cash: 240, bank: 500 } });
     await ev(() => window.SR.ui.pocket.open('stats'));
@@ -384,7 +502,7 @@ const P0_TABS = ['journal', 'map', 'stats', 'bag', 'messages'];
     T.eq([fd1.eat, fd1.work], [true, true], 'eating and a shift tick their lines');
     T.eq(await ev(() => document.querySelector('#ui [data-id="journal-fd-work"]').getAttribute('data-done')), 'true', '… on the page too');
     await t.clickUI('journal-help-karma');
-    T.eq(await ev(() => document.querySelector('#ui [data-id="journal-help-page"] p').textContent), await ev(() => window.SR.text('pocket.help.karma.body')), 'a Help topic opens its page');
+    T.eq(await ev(() => document.querySelector('#ui [data-id="journal-help-page"] p').textContent), await ev(() => window.SR.text('pocket.help.karma.body', window.SR.ui.pocket.debug().panel.helpVars)), 'a Help topic opens its page');
     // Every page's numbers come from SR.tuning (no placeholder left, no stale number).
     const pages = [];
     for (const k of (await dbg()).panel.topics) {
@@ -409,6 +527,14 @@ const P0_TABS = ['journal', 'map', 'stats', 'bag', 'messages'];
     await ev(() => { window.SR.ui.pocket.select('stats'); window.SR.ui.pocket.select('messages'); });
     await t.step(1);
     T.eq([await exists('msg-nophone'), (await dbg()).panel.screens], [false, ['home.messages']], 'with a phone the inbox reads anywhere (home.messages in the Pocket)');
+    await closeAll();
+    await t.set({ items: { phone: 0 } });
+    await t.enter('home');
+    await t.step(1);
+    await ev(() => window.SR.ui.pocket.open('messages'));
+    await t.step(1);
+    T.eq([await stack(), await exists('msg-nophone'), (await dbg()).panel.screens], [['building', 'pocket'], false, ['home.messages']],
+      'no phone, but at home: the Pocket\'s inbox plays (the card under it is home)');
     await closeAll();
   });
 
@@ -436,6 +562,8 @@ const P0_TABS = ['journal', 'map', 'stats', 'bag', 'messages'];
     await t.clickUI('phone-app-contacts');
     T.ok((await dbg()).panel.contacts.indexOf('cabs') >= 0 && (await dbg()).panel.contacts.indexOf('hospital') >= 0, 'contacts without a flag of their own are listed');
     T.eq((await dbg()).panel.contacts.indexOf('lawyer'), -1, 'the lawyer hides with `police`');
+    T.eq(await ev(() => Object.keys(window.SR.reg.contact).filter((id) => /^buyer\d+$/.test(id)).length), await ev(() => window.SR.tuning.bus.buyerVoicemail.buyers),
+      'one buyer contact per B-12 buyer (phone.js BUYERS matches tuning.bus.buyerVoicemail.buyers)');
     const cabRole = await ev(() => { const r = Array.from(document.querySelectorAll('#ui [data-id="phone-contacts"] .list-meta')).map((e) => e.textContent); return r; });
     T.ok(cabRole.indexOf(await ev(() => window.SR.text('contact.cabs.role', { money: window.SR.text.money(window.SR.tuning.world.cab.cash) }))) >= 0,
       'Sky Cabs\' line names the fare from the tuning', cabRole);
@@ -458,6 +586,17 @@ const P0_TABS = ['journal', 'map', 'stats', 'bag', 'messages'];
     T.ok(toast && toast.vars.day === by && by === 1 + (await ev(() => window.SR.tuning.election.acceptWithin)) - 1,
       'the Board\'s call names the last day to accept, the day the voicemail and City Hall name (acceptBy: ' + by + ')', toast);
     await t.set({ election: { status: 'none', nominatedDay: 0 } });
+    // Red (P1 `arcs`, after your first gram): "Where you at?" pins Dealer Alley on the minimap.
+    await ev(() => window.SR.debug.feature('arcs', true));
+    await t.set({ npc: { dealer: { bought: 1 } } });
+    await ev(() => { window.SR.ui.pocket.select('journal'); window.SR.ui.pocket.select('phone'); });
+    await t.clickUI('phone-app-contacts');
+    await t.clickUI('phone-contacts-red');
+    await t.clickUI('row-phone.red');
+    await t.step(1);
+    const red = await ev(() => { const sp = window.SR.reg.worldmap.main.spots.dealerAlley, wp = window.SR.render.minimap.wp; return { at: !!wp && wp.x === sp[0] && wp.y === sp[1], mapWp: window.SR.ui.pocket.panelDef('map').waypoint() }; });
+    T.ok(red.at && red.mapWp && red.mapWp.id === 'dealerAlley', 'Red\'s call pins Dealer Alley (the minimap and the Map\'s waypoint)', red);
+    await ev(() => window.SR.debug.feature('arcs', false));
     await ev(() => window.SR.ui.pocket.select('achievements'));
     T.ok(await exists('ach-none') || await exists('ach-grid'), 'the Achievements tab shows its placeholder (W3-Prog fills it)');
     await ev(() => { window.SR.debug.feature('shopsPlus', true); });
@@ -573,12 +712,36 @@ const P0_TABS = ['journal', 'map', 'stats', 'bag', 'messages'];
       await u.eval(() => window.SR.ui.pocket.select('map'));
       const listCss = await u.eval(() => getComputedStyle(document.querySelector('#ui [data-id="map-places"]')).touchAction);
       T.eq(listCss, 'pan-y', 'the Map\'s place list scrolls with a finger too');
+      // A sideways finger drag on the map pans it and does not turn the page (the swipe skips it).
+      const drag = await u.eval(() => {
+        const SR = window.SR, cv = document.querySelector('#ui [data-id="map-canvas"]'), r = cv.getBoundingClientRect(), y = r.top + r.height / 2;
+        const x0 = SR.ui.pocket.debug().panel.view.x;
+        const fire = (type, x) => cv.dispatchEvent(new PointerEvent(type, { pointerType: 'touch', clientX: x, clientY: y, bubbles: true, pointerId: 9, isPrimary: true, button: 0 }));
+        fire('pointerdown', r.left + r.width / 2 + 100);
+        for (let k = 1; k <= 10; k++) fire('pointermove', r.left + r.width / 2 + 100 - k * 20);
+        fire('pointerup', r.left + r.width / 2 - 100);
+        return { tab: SR.ui.pocket.current().tab, panned: SR.ui.pocket.debug().panel.view.x !== x0 };
+      });
+      T.eq(drag, { tab: 'map', panned: true }, 'a sideways drag on the map pans it and keeps the Map tab (no page turn)');
       const clearToasts = () => u.eval(() => { if (window.SR.ui.toast.clear) window.SR.ui.toast.clear(); });
       await clearToasts();
       await u.shot(path.join(SHOTS, 'pocket-map-touch-844x390.png'));
       await u.eval(() => window.SR.ui.pocket.select('bag'));
       await clearToasts();
       await u.shot(path.join(SHOTS, 'pocket-bag-touch-844x390.png'));
+      // 150 % text on the narrow notebook: the detail pane wraps below the tiles instead of squeezing
+      // the tile column until its headings clip (UI §8: no clipping at 150 %).
+      await u.eval(() => { window.SR.settings.set('access.textScale', 1.5); window.SR.ui.pocket.select('stats'); window.SR.ui.pocket.select('bag'); });
+      await u.step(1);
+      const wrap = await u.eval(() => {
+        const q = (id) => document.querySelector('#ui [data-id="' + id + '"]').getBoundingClientRect();
+        const clipped = Array.from(document.querySelectorAll('#ui [data-id="bag-grid"] h3, #ui [data-id="bag-detail"] h3')).filter((e) => e.scrollWidth > e.clientWidth + 1).map((e) => e.textContent);
+        return { below: q('bag-detail').top >= q('bag-grid').bottom - 1, clipped };
+      });
+      T.eq(wrap, { below: true, clipped: [] }, 'at 150 % text the Bag\'s detail wraps below the tiles, nothing clipped');
+      await u.shot(path.join(SHOTS, 'pocket-bag-touch-text150.png'));
+      await u.eval(() => { window.SR.settings.set('access.textScale', 1); window.SR.ui.pocket.select('stats'); window.SR.ui.pocket.select('bag'); });
+      await u.step(1);
       // The narrow rail with every tab (P1 flags on): a long label breaks at its soft hyphen, not mid-letter.
       await u.eval(() => { window.SR.debug.feature('phone', true); window.SR.debug.feature('achievements', true); window.SR.ui.pocket.refresh(); });
       await u.step(1);

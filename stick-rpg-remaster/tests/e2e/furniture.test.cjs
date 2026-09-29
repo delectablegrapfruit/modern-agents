@@ -2,9 +2,9 @@
 // (index.html over file://; BUILD_PLAN §4.5 acceptance, GDD §4.15 / §6.1, BALANCE B-07, B-08):
 //   - the card: Sofia's greeting and the showroom row only (the commits are never rows);
 //   - the showroom (`furniture.browse`): the slot meter of the home you live in, one tile per P0
-//     piece at its B-08b price with its slots and effect; buying (click, and the spend confirm at or
-//     above `game.confirmSpendOver`); a piece that does not fit shows "Needs a free slot" and is
-//     refused; the satellite needs the TV and takes no slot; slots per home 3 / 5 / 7 / 10 / 14;
+//     piece at its B-08b price with its slots and effect; buying (click, Enter on a focused tile, and
+//     the spend confirm at or above `game.confirmSpendOver`); a piece that does not fit shows "Needs a
+//     free slot" and is refused (click or Enter); the satellite needs the TV and takes no slot; slots per home 3 / 5 / 7 / 10 / 14;
 //   - bought pieces work at the next sleep (the books' INT, the bed in the restore);
 //   - P1 `homesPlus`: the satellite retires, an owned piece offers its upgrade at the net price (no
 //     "Owned" badge on it), the freezer names its Leftovers, the selected tile is aria-current, and
@@ -83,7 +83,13 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-Goods');
   T.eq([(await owned()).bed, c0 - (await cash())], [1, 500], 'a click buys the Featherfold Bed: -$500');
   T.ok(/Owned/i.test((await tile('bed')).text), 'its tile now says Owned');
   T.eq(await meter(), [1, 3], 'the meter: 1 of 3');
-  await t.clickUI('furn-tv');
+  // the keyboard (and the pad's A): focus a tile, confirm
+  await ev(() => window.SR.ui.focus.focus(document.querySelector('#ui [data-id="furn-tv"]')));
+  await t.step(1);
+  c0 = await cash();
+  await t.press('confirm');
+  await t.step(2);
+  T.eq([(await owned()).tv, c0 - (await cash())], [1, 2500], 'Enter on a focused tile buys it: the Flatland 60 TV, -$2,500');
   await t.clickUI('furn-pc');
   await t.step(2);
   T.eq(await meter(), [3, 3], 'the bed, the TV and the PC fill the apartment');
@@ -94,6 +100,11 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-Goods');
   await ev(() => document.querySelector('#ui [data-id="furn-books"]').click());
   await t.step(2);
   T.eq([(await owned()).books, await cash()], [undefined, c0], 'and clicking it buys nothing');
+  await ev(() => window.SR.ui.focus.focus(document.querySelector('#ui [data-id="furn-books"]')));
+  await t.step(1);
+  await t.press('confirm');
+  await t.step(2);
+  T.eq([(await owned()).books, await cash(), await t.scenes()], [undefined, c0, ['building']], 'nor does Enter on it (no confirm, nothing spent)');
   await t.clickUI('furn-satellite');
   await t.step(2);
   T.eq([(await owned()).satellite, await meter()], [1, [3, 3]], 'the satellite (needs the TV, no slot) still fits');
@@ -145,6 +156,9 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-Goods');
   T.ok(bed.piece === 'pod' && /Upgrade to Hibernation Pod/.test(bed.text) && price(bed) === '$3,750', 'the bed offers the Hibernation Pod at $3,750 (4,000 less half the bed)');
   T.ok(!/Owned/i.test(bed.text), 'an upgrade tile carries no "Owned" badge (it would read as the upgrade owned)');
   T.ok(/Leftovers: \+25 HP once a day/.test((await tile('freezer')).text), 'with homesPlus the freezer tile names its Leftovers (B-07)');
+  const tv = await tile('tv');
+  T.ok(tv.piece === 'skydish' && /Adds Fitness and Dating to your TV\./.test(tv.text) && !/Market Watch/.test(tv.text),
+    'the SkyDish upgrade promises no Market Watch while its flag (stockTips) is off');
   T.ok(await ev(() => !!document.querySelector('#ui [data-id="furn-preview"]')), 'the live preview is shown');
   await ev(() => window.SR.ui.focus.focus(document.querySelector('#ui [data-id="furn-treadmill"]')));
   await t.step(1);

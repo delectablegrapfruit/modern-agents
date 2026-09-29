@@ -40,9 +40,11 @@
   function has(r, b) { return (r.banners || []).indexOf(b) >= 0; }
   /** The day the edition names: a timed game's last day, else the day it ended. */
   function dayShown(r) { return r.reason === 'time' && r.length > 0 ? Math.min(r.day, r.length) : r.day; }
-  function lengthText(r) { return r.length > 0 ? String(r.length) : text('front.res.unlimited'); }
+  /** A timed run that ended within its length; a Keep-playing run went on as an Unlimited game (GDD §5). */
+  function timed(r) { return r.length > 0 && dayShown(r) <= r.length; }
+  function lengthText(r) { return timed(r) ? String(r.length) : text('front.res.unlimited'); }
   function edition(r) {
-    return r.length > 0 && dayShown(r) <= r.length ? text('front.res.edition', { day: dayShown(r), length: r.length }) : text('front.res.editionDay', { day: dayShown(r) });
+    return timed(r) ? text('front.res.edition', { day: dayShown(r), length: r.length }) : text('front.res.editionDay', { day: dayShown(r) });
   }
   function signed(n) { return (n > 0 ? '+' : '') + SR.text.num(n); }
 
@@ -236,7 +238,7 @@
     side.appendChild(karmaLine);
     side.appendChild(h('p', { class: 'res-life', 'data-id': 'results-life' }, text('front.res.life', { title: titleText(r), home: homeText(r) || text('front.res.nowhere') })));
     side.appendChild(h('p', { class: 'res-life', 'data-id': 'results-mode' }, text('front.res.mode', { difficulty: SR.ui.title.difficultyName(r.difficulty),
-      length: r.length > 0 ? text('front.res.days', { n: r.length }) : text('front.res.unlimited') })));
+      length: timed(r) ? text('front.res.days', { n: r.length }) : text('front.res.unlimited') })));
 
     var banners = h('div', { class: 'res-banners', 'data-id': 'results-banners' });
     (r.banners || []).forEach(function (bn) {

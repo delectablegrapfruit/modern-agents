@@ -277,6 +277,8 @@ const K = require('./night-kit.cjs');
   await t.step(2);
   const qp = await k.peek();
   T.ok(qp.phase === 'over', 'Auto ends the fight at once (then the 2 s fast-forward)');
+  const qStatus = await E(() => document.querySelector('[data-id="mg-status"]').textContent);
+  T.eq(qStatus, await E(() => SR.text('mg.fight.quick')), 'the bottom bar follows the Quick fight (no stale "n AP left")');
   await k.shot('fight-quick');
   await k.closed();
   const qd = (await k.done()).filter((d) => d.id === 'fight').pop();
@@ -346,6 +348,26 @@ const K = require('./night-kit.cjs');
   await t.page.emulateMedia({ reducedMotion: 'no-preference' });
   await t.page.waitForTimeout(1100);
   T.ok((await k.peek()).shakeOk, 'and the shake returns when the system preference does');
+  await key('Digit' + ((await entries()).indexOf('run') + 1));
+  await k.closed();
+
+  // ------------------------------------------------------------------------------------------
+  T.section('a move you cannot afford says why (UI §2.3: a disabled control carries its reason)');
+  await atBar({ stats: { str: 60 } }, { fight: { won: 11 } });   // rung 12: HP 152+, a fireball never ends it
+  await k.row('bar.fight');
+  await key('Digit3', 2);                                   // fireball: 3 of 4 AP, 1 left
+  for (let i = 0; i < 60 && ((await k.peek()).queue || (await k.peek()).beat); i++) await t.step(5);
+  p = await k.peek();
+  T.eq([p.phase, p.fight.me.ap], ['player', 1], 'after a fireball 1 AP is left');
+  const inkBtn = await E(() => { const b = document.querySelector('[data-id="mg-fight-inkBeam"]'); return { dis: b.getAttribute('aria-disabled'), why: b.getAttribute('aria-description') }; });
+  const needAp = await E(() => SR.text('mg.fight.needAp', { n: 4, ap: 1 }));
+  T.eq([inkBtn.dis, inkBtn.why], ['true', needAp], 'Ink Beam is disabled and says "Needs 4 AP. 1 left this turn."');
+  const punchWhy = await E(() => document.querySelector('[data-id="mg-fight-punch"]').getAttribute('aria-description'));
+  T.eq(punchWhy, null, 'an affordable move carries no reason');
+  await k.clearLogs();
+  await key('Digit4', 2);
+  p = await k.peek();
+  T.ok(p.fight.me.ap === 1 && (await k.aria()).indexOf(needAp) >= 0, 'pressing it spends nothing and announces the reason', await k.aria());
   await key('Digit' + ((await entries()).indexOf('run') + 1));
   await k.closed();
 

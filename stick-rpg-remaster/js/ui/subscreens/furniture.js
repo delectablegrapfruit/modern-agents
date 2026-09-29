@@ -52,9 +52,15 @@
     if (id === 'aquarium') return { hp: SR.tuning.sleep.relax.hp, karma: SR.tuning.sleep.relax.karma };
     return {};
   }
-  /** @returns {string} the effect line's key: the freezer's Leftovers row is P1 (`homesPlus`, home.js). */
+  /**
+   * @returns {string} the effect line's key: the freezer's Leftovers row is P1 (`homesPlus`, home.js);
+   *   the SkyDish's Market Watch is P1 `stockTips` (js/rules/homes.js `homes.channel`), so without
+   *   that flag the line names only the two channels it adds
+   */
   function effectKey(id) {
-    return 'card.furniture.effect.' + (id === 'freezer' && SR.features.homesPlus ? 'freezerPlus' : id);
+    if (id === 'freezer' && SR.features.homesPlus) return 'card.furniture.effect.freezerPlus';
+    if (id === 'skydish' && !SR.features.stockTips) return 'card.furniture.effect.skydishBasic';
+    return 'card.furniture.effect.' + id;
   }
   function slotsText(n) {
     return n <= 0 ? t('card.furniture.slot0') : n === 1 ? t('card.furniture.slot1') : t('card.furniture.slotN', { n: n });

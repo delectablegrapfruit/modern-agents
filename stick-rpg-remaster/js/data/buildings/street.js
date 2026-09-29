@@ -138,9 +138,12 @@
 
   // ---- Red, the dealer (Dealer Alley; B-26 red.buy, B-28a product.red) -------------------------------
 
-  /** @returns {number} the grams of a purchase: params.n (the NumberField), rounded; 1 without it. */
+  /**
+   * @returns {number} the grams of a purchase: params.n (the NumberField), rounded; 1 without it.
+   * Read as items.buy reads it (an empty field, null, is 0 grams: "Enter an amount", at $0).
+   */
   function grams(params) {
-    return params && params.n !== undefined && params.n !== null ? Math.round(Number(params.n) || 0) : 1;
+    return params && params.n !== undefined ? Math.round(Number(params.n) || 0) : 1;
   }
 
   SR.def.action('street.dealer.buy', {

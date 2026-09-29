@@ -197,6 +197,7 @@
     if (!S || !S.capture || S.capture.device !== 'kb') return;
     e.preventDefault();
     e.stopPropagation();
+    if (e.repeat) return;               // the auto-repeat of the Enter that pressed "Change key" is not a choice
     var code = e.code || '';
     if (code === 'Escape' || !/^[A-Z][A-Za-z0-9]*$/.test(code)) { stopCapture(); return; }
     var c = S.capture;

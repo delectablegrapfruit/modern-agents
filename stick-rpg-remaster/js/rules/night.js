@@ -164,7 +164,10 @@
       }
       return;
     }
-    line(R, 'money', 'loan', 'report.loanDays', { days: ln.daysLeft, n: ln.amount, money: $(ln.amount) }, ln.warn ? 60 : 20);
+    // Step 2 counts down before it defaults, so the morning with 1 day left is the loan's last day:
+    // tonight's step 2 runs the default (docs/requests/W2-Money.md 7).
+    line(R, 'money', 'loan', ln.daysLeft === 1 ? 'report.loanDueTonight' : 'report.loanDays',
+      { days: ln.daysLeft, n: ln.amount, money: $(ln.amount) }, ln.warn ? 60 : 20);
     if (ln.warn) f.msgs.push({ key: 'vm.penny.loan' + ln.warn, vars: { days: ln.daysLeft, n: ln.amount, money: SR.text.money(ln.amount) } });
   };
 

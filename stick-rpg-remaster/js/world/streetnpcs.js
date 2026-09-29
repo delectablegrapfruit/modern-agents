@@ -8,14 +8,16 @@
 //   { id, x, y, px, py, facing, state, look, clip, visible, active, named, bark, barkT, hopT, ... }.
 //   Harold sits, Skid stands, Red paces his beat in Dealer Alley (the worldmap `people` path). Your
 //   car makes them hop aside (W1-W's hopAside sets the hop); afterwards they walk back to their spot.
-//   Passing within 180 u, a person calls out one of their barks (at most every 25 s).
+//   P1 (`cityReacts`, the crowd's bark flag; GDD §3.11 "Barks (P1)"): passing within 180 u, a
+//   person calls out one of their barks (at most every 25 s).
 // - Talking (the city calls talk(id, entity) on Interact, W2-City's convention): the Dialog sheet
 //   with the person's portrait, their greeting (the named fn greet.<id>), their `street:<id>` rows
 //   (Red's with a NumberField capped at what you can carry) and Leave. A picked row runs through
 //   SR.act with the card's feedback (chips, stamps, sounds), then the sheet comes back with the
 //   person's reply, as the original's street dialogs did, until you leave. A row that opens a
 //   minigame (the P1 hotwire ring) runs it and its :resolve like a building card. Opening a dialog
-//   runs the silent `street.<id>.talk` (the `talk` rule event).
+//   runs the silent `street.<id>.talk` (the `talk` rule event). speaker() says where the one you
+//   talk to stands (UI §5.7's camera ease is the city's render: docs/requests/W2-Street.md 7).
 // - The junker on the apartment lawn: its dialog (id 'junker') until it is yours, and its sprite
 //   while it stands parked (a car source of SR.render.actors; nothing else draws a parked car).
 // - The day-1 job offer: a new game (save:loaded on day 1 without it) runs `street.jobOffer`, so
@@ -289,8 +291,13 @@
     }
   }
 
-  /** A bark when you come near on foot (not while hopping, falling or driving). */
+  /**
+   * A bark when you come near on foot (not while hopping, falling or driving). Barks are P1 (GDD
+   * §3.11: "Barks (P1)"), so they wait for the flag the crowd's own barks use, `cityReacts`
+   * (js/world/pedestrians.js, en-city.js); the car's "Hey!" (GDD §3.8) is P0 and is not this.
+   */
   function barkNear(e, def, P) {
+    if (!(SR.features && SR.features.cityReacts)) return;
     if (!P || typeof P.x !== 'number' || !SR.state) return;
     var d = Math.sqrt((P.x - e.x) * (P.x - e.x) + (P.y - e.y) * (P.y - e.y));
     if (d > BARK_AWAY) e.away = true;
@@ -400,8 +407,14 @@
     var s = SR.state, n = Object.assign({ min: 1, step: 1, value: 1 }, def.number || {});
     if (def.id === 'street.dealer.buy' && s) {
       var R = SR.tuning.street.red.buy, room = Math.max(0, R.maxHeld - (Number(s.items.snow) || 0));
-      var per = SR.rules.act.price(s, R.price, 'product.red', { params: {} }).price;
-      var afford = per > 0 ? Math.floor(s.money.cash / per) : room;
+      var cash = Number(s.money.cash) || 0;
+      // B-28a prices the whole purchase (n × $400, then the modifiers, rounded once), so the most
+      // you can afford is checked on the total, not guessed from one gram's rounded price.
+      var total = function (g) { return SR.rules.act.price(s, g * R.price, 'product.red', { params: { n: g } }).price; };
+      var per = total(1);
+      var afford = per > 0 ? Math.min(room, Math.floor(cash / per)) : room;
+      while (afford > 0 && total(afford) > cash) afford--;
+      while (per > 0 && afford < room && total(afford + 1) <= cash) afford++;
       n.max = Math.max(1, room);
       var most = Math.min(room, afford);
       n.quick = most >= 2 ? [{ key: 'max', label: afford < room ? 'card.dealer.afford' : 'card.dealer.max', set: most }] : [];
@@ -479,8 +492,11 @@
     judge(false);   // at once: the world does not step under the dialog (the kid leaves, his look changes)
     if (ends(res)) return Promise.resolve(null);
     if (res && res.ok && res.open && SR.minigame && typeof SR.minigame.run === 'function') {
-      var o = res.open;
+      var o = res.open, game = SR.state;
       return SR.minigame.run(o.minigame, Object.assign({ skin: o.skin, resolve: o.resolve }, o.params)).then(function (result) {
+        // The game ended or changed under the frame (quit to the title, a load): nothing to pay here
+        // (a Hardcore round's pending resolve is the save's), and no one left to talk to.
+        if (!SR.state || SR.state !== game) return null;
         var rr = actNow(o.resolve, result || {});
         feedback(rr);
         judge(false);
@@ -507,10 +523,17 @@
     return SR.ui.dialog.open(opts);
   }
 
-  function converse(id, line) {
+  /**
+   * One exchange: the sheet, the picked row, then the next exchange with the reply. `home` is the
+   * scene the talk started on (the city): when something else is on top by the time a reply is
+   * ready (a scene change removed the minigame frame), the talk ends instead of opening a sheet there.
+   */
+  function converse(id, line, home) {
+    var top = SR.scenes.top();
+    if (!SR.state || (home && (!top || top.id !== home))) return Promise.resolve(null);
     return sheet(id, line).then(function (r) {
       if (!r || !r.choice || r.choice === 'leave' || !SR.state) return null;
-      return runRow(id, r.choice, r.n).then(function (next) { return next ? converse(id, next) : null; });
+      return runRow(id, r.choice, r.n).then(function (next) { return next ? converse(id, next, home) : null; });
     });
   }
 
@@ -542,11 +565,29 @@
     faceYou(entity || byId[id]);
     if (SR.reg.action['street.' + id + '.talk']) actNow('street.' + id + '.talk', {});
     var done = function () { busy = false; S.talking = null; dirty = true; return null; };
-    return converse(id, greeting(id)).then(done, function (e) {
+    var failed = function (e) {
       done();
       SR.util.warnOnce('streetnpcs.talk', 'SR.world.streetnpcs: the dialog failed: ' + (e && e.message));
       return null;
-    });
+    };
+    var home = SR.scenes.top();
+    // A throw before the first sheet opens must not leave `busy` set (no one could be talked to again).
+    try { return converse(id, greeting(id), home ? home.id : null).then(done, failed); } catch (e) { failed(e); return false; }
+  };
+
+  var SPEAKER = { x: 0, y: 0 };   // speaker()'s result, reused (the city may read it every frame)
+  /**
+   * Where the one you are talking to stands (UI §5.7: "the camera eases 10 % toward the speaker";
+   * the dialog freezes the world, so the city's render does the easing: docs/requests/W2-Street.md 7).
+   * @returns {{x: number, y: number}|null} a reused point: the person, or the junker on the lawn; null while no one talks
+   */
+  S.speaker = function () {
+    var id = S.talking;
+    if (!id) return null;
+    var e = id === 'junker' ? (parkedJunker() || [])[0] : byId[id];
+    if (!e || typeof e.x !== 'number') return null;
+    SPEAKER.x = e.x; SPEAKER.y = e.y;
+    return SPEAKER;
   };
 
   /**

@@ -144,11 +144,15 @@
 
   /**
    * Condition: Harold has asked for the clean shirt (B-26 harold.comeback: after 5 gifts of $10 and
-   * one takeout; not once he has it, nor on the barfly branch, which closes the comeback).
+   * one takeout; not once he has it, nor once the barfly branch closed the comeback: B-26
+   * harold.exclusive, the branch that first reaches its 3rd step, the shirt given or the 5th
+   * bottle, closes the other, so the 5th bottle before the shirt ends it even before any arc code
+   * records the branch).
    */
   SR.def.fn('pawn.shirtAsked', function (s) {
-    var h = s.npc && s.npc.harold, cb = SR.tuning.street.harold.comeback;
+    var h = s.npc && s.npc.harold, H = SR.tuning.street.harold, cb = H.comeback;
     if (!h || h.shirt || h.branch === 'barfly') return no('reason.notYet');
+    if (H.barfly && (h.bottles || 0) >= H.barfly.bottles) return no('reason.notYet');
     return (h.gave10 || 0) >= cb.give10s && (h.takeout || 0) >= cb.takeouts ? { ok: true } : no('reason.notYet');
   });
 
@@ -170,12 +174,20 @@
     return out;
   }
 
+  /** @returns {number} the share of the B-06 price Vinnie pays back: 40 %, 55 % with Smooth Talker. */
+  function rate(s) {
+    var t = items();
+    return SR.rules.perks && SR.rules.perks.has(s, 'smoothTalker') ? t.pawnBuybackSmooth : t.pawnBuyback;
+  }
+
+  /** `pawn.rate` for the UI (the Sell tab's intro): the buyback share, as `pawn.sell` pays it. */
+  SR.def.fn('pawn.rate', function (s) { return rate(s); });
+
   /** @returns {{n: number, price: number}} what one sale of an item hands over and pays (B-06). */
   function sale(s, id) {
-    var t = items(), row = t[id] || {}, per = row.per || 1;
+    var row = items()[id] || {}, per = row.per || 1;
     var n = Math.min(per, SR.rules.conditions.count(s, id));
-    var rate = SR.rules.perks && SR.rules.perks.has(s, 'smoothTalker') ? t.pawnBuybackSmooth : t.pawnBuyback;
-    return { n: n, price: Math.max(0, Math.floor((row.price || 0) * rate * n / per + 0.5)) };
+    return { n: n, price: Math.max(0, Math.floor((row.price || 0) * rate(s) * n / per + 0.5)) };
   }
 
   /** Condition: params.item is something Vinnie sells and you hold one of. */
@@ -188,7 +200,7 @@
 
   /**
    * Effect: sells one of params.item (ammo: one box of 5, or what is left) for 40 % of its B-06
-   * price (55 % with Smooth Talker), raising the `sell` rule event.
+   * price (55 % with Smooth Talker; `pawn.rate`), raising the `sell` rule event.
    */
   SR.def.fn('pawn.sell', function (s, params, ctx) {
     var id = params && params.item;

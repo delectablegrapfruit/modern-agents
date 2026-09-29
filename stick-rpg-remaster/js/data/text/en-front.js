@@ -24,7 +24,7 @@
     'front.news.title': 'What\'s new in the remaster',
     'front.news.1': 'The city is printed on one sheet of paper floating in the sky. Mind the edges.',
     'front.news.2': 'Every button shows what it costs in hours and dollars before you press it.',
-    'front.news.3': 'Walking is still free. Everything else costs time.',
+    'front.news.3': 'Walking is still free. Working, studying and sleeping cost hours.',
     'front.news.4': 'Classic mode opens the 2005 rules, untouched, from this menu.',
     'front.news.ok': 'Got it',
     'front.save.card': 'Most recent save',

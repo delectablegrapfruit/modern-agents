@@ -119,7 +119,12 @@
       I.t += dt;
       I.hint = Math.max(0, I.hint - dt);
       I.hold = holding() ? I.hold + dt : 0;
-      if (I.hold >= HOLD_SEC) { finish(); return; }
+      if (I.hold >= HOLD_SEC) {
+        // A finger still down would click the apartment row that appears under it when it lifts.
+        if (I.held.pointer && SR.ui.title && SR.ui.title.swallowClick) SR.ui.title.swallowClick();
+        finish();
+        return;
+      }
       var b = art() ? art().beatAt(I.t) : { i: Math.min(4, Math.floor(I.t / 5)), k: 0 };
       I.beat = b;
       caption(b.i);

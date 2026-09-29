@@ -85,3 +85,29 @@ Each request names the file, the exact change, why, and the workaround used mean
   instrumented; the rules' `world.fall` and `world.carHit` both behave as B-15 says). Sample 182
   (480, 1319) not falling is the same section, likely a car or a walker in the approach.
 - **Meanwhile:** nothing in this desk's files; the suite reports 74 passed, 3 failed.
+
+## 7. `js/ui/screens/saveload.js` (W2-Front), `js/ui/screens/jail.js` and `js/scenes/hospital.js` (W2-Transit): an ended Keep-playing run is over
+
+- **Change:** read "the game is over" as `s.over` alone: `saveload.js` `resume()` (`s.over &&
+  !s.mode.keepPlaying` → `s.over`), `jail.js` (`v.mode = 'over'`) and `hospital.js` `leave()`
+  (`s && s.over && !s.mode.keepPlaying` → `s && s.over`).
+- **Why:** `SR.rules.endgame.keepPlaying` clears `over` when a timed game continues, so `over` is
+  set again only when the Keep-playing run itself ends: a Retire from the pause menu, or a Hardcore
+  death (HP 0 or a loan default; GDD §4.19 *Deceased*). With `!keepPlaying` in the test, a Hardcore
+  death in a Keep-playing run leaves the ward for the city instead of the results, and a save of a
+  retired Keep-playing run resumes in the city. The pipeline now refuses every action once `over`
+  is set (review fix below; before it, a retired Keep-playing run went on playing).
+- **Meanwhile:** `SR.act` / `SR.preview` refuse with `reason.gameOver`, so nothing can change the
+  ended run; only the screens route wrongly.
+
+## 8. ARCHITECTURE §6.2 / CONTRACT §8.1 (lead): two pipeline details from the review
+
+- **Change:** record in the pipeline text: (a) an action that goes through clears `job.lastFullEnd`
+  unless it set it (a Full shift), so Overtime follows a Full shift "with no other action in
+  between" (B-05, GDD §4.6); (b) a `stat` rule event derived from the Deltas leaves out the gain a
+  night Report in the Result (`Result.report`, `Result.down.report`) raised itself, because the
+  report scene, the jail and the hospital re-emit that Report's events (§8.7).
+- **Why:** (a) with only `lastFullEnd == now`, a McSticks Full shift opened a CEO's Overtime at NLI
+  (walking is free: $900 for a cook's shift); (b) the furniture's nightly gains were emitted twice
+  (once by `SR.act`, once by the report scene).
+- **Meanwhile:** live in `js/rules/act.js`, pinned in `tests/node/rulese.test.cjs` ("review fixes").

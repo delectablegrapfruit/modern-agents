@@ -245,6 +245,19 @@ T.section('requests: W2-Night 5 (the table chips as tuning)');
   T.ok(SR.tuning.casino.chips.every((c) => c >= SR.tuning.casino.bj.minimum && c <= SR.tuning.casino.roulette.limit), 'every chip is a legal stake at the tables');
 }
 
+T.section('requests: W2-City 6 (the crowd numbers as tuning) and W2-Money 7 (the loan\'s last day)');
+{
+  T.eq([SR.tuning.crowd.turnRange, SR.tuning.crowd.scurry], [80, 0.2], 'tuning.crowd.turnRange 80 u, scurry 0.2 (GDD §3.11)');
+  const s = H.state(SR, { money: { cash: 0, bank: 0, rate: 1.5, loan: { amount: 500, daysLeft: 3 } } });
+  const keys = () => SR.rules.night.run(s, H.ctx(SR, 1), { kind: 'sleep' }).lines.filter((l) => l.section === 'money' && /^report\.loan/.test(l.key));
+  let l = keys();
+  T.eq([l.map((x) => x.key), SR.text(l[0].key, l[0].vars)], [['report.loanDays'], 'Loan: 2 days left, ' + SR.text.money(s.money.loan.amount) + ' owed'], 'two days left');
+  l = keys();
+  T.eq([s.money.loan.daysLeft, l.map((x) => x.key), SR.text(l[0].key, l[0].vars)], [1, ['report.loanDueTonight'], 'Loan: ' + SR.text.money(s.money.loan.amount) + ' owed, due tonight'],
+    'the morning with 1 day left is the last day: "due tonight", not "1 days left"');
+  T.eq([keys().map((x) => x.key), s.money.loan], [['report.loanDefault'], null], '… and that night defaults');
+}
+
 T.section('requests: W2-Home 1 (game:over after the report scene)');
 {
   const heard = [];
@@ -557,6 +570,107 @@ T.section('a long Unlimited run (history thinning, day 365)');
   T.eq(s.history.nw.length, 120 + Math.floor((400 - 120) / 7), 'daily history to day 120, then weekly');
   T.ok(Object.keys(s.stocks).every((t) => s.stocks[t].price >= 1 && s.stocks[t].hist.length <= 30), 'every ticker stays at or above $1 (reverse splits) with 30 points of history');
   T.ok(s.money.rate >= 0.25 && s.money.rate <= 3.5 && s.money.rateHist.length === 30, 'the rate stays in 0.25-3.5 with a 30-point board');
+}
+
+T.section('review fixes: an ended Keep-playing run takes no more actions (GDD §4.19, §5)');
+{
+  const g = H.state(SR, { clock: { day: 40, min: 1320 } }, { length: 40 });
+  run(g, SLEEP);
+  SR.rules.endgame.keepPlaying(g);
+  g.stats.hp = 5;
+  T.ok(run(g, FRIES).ok, 'a Keep-playing run is live: rows run');
+  g.stats.hp = 5;
+  T.eq(run(g, RETIRE).over, { reason: 'retire' }, 'Retire ends it');
+  const r = run(g, FRIES), p = preview(g, FRIES);
+  T.eq([r.ok, r.reason, p.ok, p.reason, g.stats.hp], [false, 'reason.gameOver', false, 'reason.gameOver', 5],
+    'after Retire every row refuses (run and preview) and nothing changes');
+  const d = H.state(SR, { clock: { day: 16 }, stats: { hp: 5 } }, { length: 15, difficulty: 'hardcore' });
+  d.over = true;
+  d.result = SR.rules.endgame.results(d, 'time');
+  SR.rules.endgame.keepPlaying(d);
+  const fall = run(d, 'testw2e.fall2');
+  T.eq([fall.down.outcome, fall.over, d.over], ['death', { reason: 'death' }, true], 'a Hardcore death in a Keep-playing run ends it (DECEASED)');
+  T.eq([run(d, SLEEP).reason, preview(d, STUDY).reason], ['reason.gameOver', 'reason.gameOver'], '… and the dead play no further');
+}
+
+T.section('review fixes: Overtime only right after a Full shift, nothing in between (B-05, GDD §4.6)');
+{
+  const undo = H.features(SR, { hustles: true });
+  const shift = (track) => row('shift_' + track, { group: 'work', variants: ['full', 'half', 'overtime'], cost: { min: 'shift.min', hp: 'shift.hp' },
+    requires: [['fn', 'jobs.canWork', track]], effects: [['fn', 'jobs.work', track]] });
+  const MC = shift('mcsticks'), NLI = shift('nli');
+  const ENTER = row('enterSilent', { group: 'special', timeRule: 'free', silent: true, effects: [] });
+  const s = H.state(SR, { stats: { str: 50, hp: 65, hpMax: 65 }, job: { ranks: { nli: 'ceo' } } });
+  run(s, MC, { variant: 'full' });
+  T.ok(preview(s, MC, { variant: 'overtime' }).ok, 'right after the McSticks Full shift, its Overtime is open');
+  const c0 = s.money.cash;
+  run(s, ENTER);   // walking into NLI runs world.enter (silent, free)
+  const x = run(s, NLI, { variant: 'overtime' });
+  T.eq([x.ok, x.reason, s.money.cash - c0], [false, 'reason.overtimeNotNow', 0], 'a McSticks shift opens no Overtime at NLI (a CEO\'s $900 for a cook\'s shift)');
+  run(s, NLI, { variant: 'full' });
+  const ot = run(s, NLI, { variant: 'overtime' });
+  T.eq([ot.ok, s.job.overtimeToday], [true, 1], 'the NLI Full shift, then its Overtime: allowed');
+  const t = H.state(SR, { stats: { hp: 22 } });
+  run(t, MC, { variant: 'full' });
+  run(t, ENTER);
+  T.eq([t.job.lastFullEnd, preview(t, MC, { variant: 'overtime' }).reason], [-1, 'reason.overtimeNotNow'], 'any action in between (a free one too) ends the chance');
+  const u = H.state(SR, { stats: { hp: 22 } });
+  run(u, MC, { variant: 'full' });
+  const end = u.job.lastFullEnd;
+  run(u, MC, { variant: 'full', m: 5 });
+  T.eq([run(u, ENTER).ok, u.job.lastFullEnd], [true, -1], 'the mark is cleared by the next action');
+  T.ok(end > 0, 'a Full shift sets it', end);
+  const refused = H.state(SR, { stats: { hp: 22 } });
+  run(refused, MC, { variant: 'full' });
+  run(refused, FRIES);   // full HP: refused, nothing happened
+  T.ok(preview(refused, MC, { variant: 'overtime' }).ok, 'a refused action is no action in between');
+  undo();
+}
+
+T.section('review fixes: SR.act announces an error as a refusal (CONTRACT §8.9)');
+{
+  SR.def.fn('testw2e.boom', (s) => { s.money.cash = 999999; throw new Error('boom'); });
+  const BOOM = row('boom', { group: 'special', timeRule: 'free', effects: [['fn', 'testw2e.boom']] });
+  const s = H.state(SR);
+  SR.state = s;
+  SR.rng.rules.setState(s.rng.rules);
+  const heard = [];
+  const off = SR.events.on('action:done', (p) => heard.push([p.id, p.result.ok, p.result.reason]));
+  const oe = console.error;
+  console.error = () => {};
+  const r = SR.act(BOOM);
+  console.error = oe;
+  off();
+  T.eq([r.ok, r.reason, s.money.cash, heard], [false, 'reason.error', 100, [[BOOM, false, 'reason.error']]],
+    'the state is rolled back and action:done carries the refusal');
+  SR.state = null;
+}
+
+T.section('review fixes: the bank.charge named fn reports a write-off like the charge effect (B-09)');
+{
+  const FN = row('chargeFn', { group: 'special', timeRule: 'free', effects: [['fn', 'bank.charge', 500, 'tow']] });
+  const FX = row('chargeFx', { group: 'special', timeRule: 'free', effects: [['charge', 500, 'tow']] });
+  const a = H.state(SR, { money: { cash: 100, bank: 50 } }), b = H.state(SR, { money: { cash: 100, bank: 50 } });
+  const ra = run(a, FN), rb = run(b, FX);
+  T.eq([a.money.cash, a.money.bank, ra.toasts.map((t) => [t.key, t.vars.n, t.kind])], [0, 0, [['toast.act.writtenOff', 350, 'warning']]],
+    'cash, then bank, the rest written off and said so');
+  T.eq(ra.toasts, rb.toasts, 'the same toast as the charge effect');
+  const rich = H.state(SR, { money: { cash: 400, bank: 200 } });
+  T.eq([run(rich, FN).toasts, rich.money.cash, rich.money.bank, SR.reg.fn['bank.charge'](H.state(SR), {}, {}, 30, 'tow').paid], [[], 0, 100, 30],
+    'no toast when it is paid in full');
+}
+
+T.section('review fixes: a night\'s stat gains are announced once (CONTRACT §8.7)');
+{
+  const s = H.state(SR, { furniture: { owned: { books: 1, treadmill: 1 } } });
+  const r = run(s, SLEEP);
+  const mine = r.events.filter((e) => e.name === 'stat'), theirs = r.report.events.filter((e) => e.name === 'stat');
+  T.eq([mine.length, theirs.map((e) => e.payload.key + '+' + e.payload.n).sort()], [0, ['int+2', 'str+2']],
+    'the furniture gains ride on the Report (the report scene re-emits them), not a second time on the Result');
+  T.ok(r.deltas.some((d) => d.kind === 'stat' && d.key === 'int' && d.n === 2), '… the Result still has the Delta');
+  const j = H.state(SR, { clock: { day: 3 }, jail: { daysLeft: 3, served: 0, reason: 'store', bailBase: 500 } });
+  const rj = run(j, 'testw2e.jailDay', { choice: 'str' });
+  T.eq(rj.events.filter((e) => e.name === 'stat').map((e) => e.payload), [{ key: 'str', n: 2, total: 9 }], 'a Jail Day workout (no night gain) keeps its own `stat` event');
 }
 
 T.done();

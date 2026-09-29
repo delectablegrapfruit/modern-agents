@@ -81,6 +81,9 @@ const READY = { money: { cash: 800, bank: 0 }, items: { booze: 20, snow: 0, gun:
     await K.settle(t);
     await t.shot(path.join(K.SHOTS, 'board-1280.png'));
     T.eq((await t.eval(A.audit, '#ui')).issues, [], 'the board: names, roles and contrast (the a11y audit)');
+    const names = await ev(() => Array.prototype.map.call(document.querySelectorAll('#ui [data-id^="bus-redeye-"]'), (b) => b.getAttribute('aria-label')));
+    T.eq([names.length, new Set(names).size, names[3]], [6, 6, 'Red-eye 00:00, Gustytown'],
+      'six red-eye buttons, six accessible names: each names its city (the visible label stays "Red-eye 00:00")');
     await t.set({ clock: { min: 0 } });
     await ev(() => window.SR.ui.card.refresh());
     T.eq(await ev(() => document.querySelector('#ui [data-id="bus-redeye-gusty"]').getAttribute('aria-disabled')), null, 'at 00:00 the red-eye boards');
@@ -200,6 +203,46 @@ const READY = { money: { cash: 800, bank: 0 }, items: { booze: 20, snow: 0, gun:
     await t.step(1);
     const j = await K.info(t, 'jail');
     T.eq([await t.scenes(), j && j.reason, j && j.report], [['jail'], 'bust', 'jail'], 'Go quietly: the jail scene with the arrest night');
+    // A bust on the last day of a timed game: its arrest night ends the game. The trip card still
+    // presents the bust (the results wait), and the cell leads to the Final Edition.
+    await t.newGame({ seed: 7, length: 15 });
+    await t.set(Object.assign({}, READY, { clock: { day: 15, min: 0 } }));
+    await t.set({ items: { booze: 60 } });
+    await t.enter('bus');
+    await t.clickUI('row-bus.board');
+    await t.step(1);
+    await board('gusty');
+    await P.waitForTimeout(30);
+    await t.step(1);
+    const last = await trip();
+    T.eq([(await t.state()).over, await t.scenes(), last && last.card], [true, ['bustrip'], 'busted'],
+      'a bust that ends a timed game: the trip card still shows Busted (the results wait)');
+    await t.clickUI('trip-next');
+    await t.step(1);
+    await P.waitForTimeout(30);
+    await t.step(1);
+    T.eq([await t.scenes(), (await K.info(t, 'jail')).mode, /Read the Final Edition/.test(await K.text(t, 'card-leave'))], [['jail'], 'over', true],
+      'Go quietly: the cell, where the story ends (Read the Final Edition)');
+  }
+
+  T.section('real keys: Enter and Esc on the trip card (Esc is `back` and `pause`)');
+  {
+    const key = async (code) => { await t.key(code); await t.step(2); await P.waitForTimeout(300); await t.step(1); };
+    await atDepot();
+    await key('Digit4');
+    T.ok(await K.visible(t, 'confirm-board'), 'Digit4 asks to board Gustytown');
+    await key('Enter');
+    await t.step(2);
+    T.eq([await t.scenes(), (await trip()).card], [['bustrip'], 'offer'], 'Enter boards; the same press never also decides the offer');
+    await key('Escape');
+    T.eq(await t.scenes(), ['bustrip', 'pause'], 'Esc on the offer: the pause menu (a decision is due, no way back)');
+    await key('Escape');
+    T.eq([await t.scenes(), (await trip()).card], [['bustrip'], 'offer'], 'Esc closes the pause menu; the offer is still up');
+    await key('Enter');
+    T.eq((await trip()).outcome, 'sold', 'Enter: the focused Take it');
+    await key('Escape');
+    await t.step(2);
+    T.eq(await t.scenes(), ['city'], 'Esc on the final card: Ride home to the city (no pause menu on top)');
   }
 
   T.section('a refused boarding, a buyer still waiting, and the P1 rows');

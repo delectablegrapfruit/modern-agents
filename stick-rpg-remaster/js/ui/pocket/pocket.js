@@ -22,7 +22,8 @@
 // also move focus); Esc / B close it (a panel may use `back` first to close an inner view); M, I, J
 // jump to Map, Bag and Journal (the same key again closes); Start opens Pause instead. Esc is both
 // `back` and `pause`: the close waits for the end of that key press, so its `pause` is not handed to
-// the scene below (which would open the pause menu). Touch: tap a tab, swipe the page sideways.
+// the scene below (which would open the pause menu). Touch: tap a tab, swipe the page sideways
+// (not from a `data-no-swipe` surface such as the Map's canvas, which pans instead).
 // Colours: tokens only (inline var(--…)). Load-time rule: defines functions and registers the scene.
 (function () {
   'use strict';
@@ -432,8 +433,14 @@
     P.page.addEventListener('focusin', function (e) {
       if (P && e.target && e.target.getBoundingClientRect) P.lastRect = e.target.getBoundingClientRect();
     });
-    // Swipe the page sideways on touch to turn tabs (UI §6).
-    if (SR.ui.swipe) P.unsubs.push(SR.ui.swipe(P.page, function () { step(1); }, function () { step(-1); }));
+    // Swipe the page sideways on touch to turn tabs (UI §6), except a drag that starts on a surface
+    // with its own gestures (`data-no-swipe`: the Map's canvas pans and pinches), which would
+    // otherwise turn the page under the finger.
+    P.page.addEventListener('pointerdown', function (e) {
+      if (P) P.noSwipe = !!(e.target && e.target.closest && e.target.closest('[data-no-swipe]'));
+    }, true);
+    var turn = function (d) { return function () { if (P && !P.noSwipe) step(d); }; };
+    if (SR.ui.swipe) P.unsubs.push(SR.ui.swipe(P.page, turn(1), turn(-1)));
     REFRESH_EVENTS.forEach(function (name) { P.unsubs.push(SR.events.on(name, function () { refresh(); })); });
     P.unsubs.push(SR.events.on('stage:resized', function () { layout(); }));
     if (!D().reduced() && typeof P.nb.animate === 'function') {

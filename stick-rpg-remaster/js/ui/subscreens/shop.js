@@ -70,11 +70,13 @@
     if (SR.stage && SR.stage.compact) return false;
     return (Number(D().setting('access.textScale')) || 1) < UNPIN_TEXT_SCALE;
   }
-  /** @returns {number} the share of the price Vinnie pays back (B-06 pawnBuyback; Smooth Talker). */
+  /**
+   * @returns {number} the share of the price Vinnie pays back (B-06 pawnBuyback; Smooth Talker): the
+   *   pawn data's `pawn.rate`, the rate `pawn.sell` itself pays, so the intro and the rows agree
+   */
   function buyback(state) {
-    var T = SR.tuning.items;
-    var smooth = SR.rules.perks && typeof SR.rules.perks.has === 'function' && state && SR.rules.perks.has(state, 'smoothTalker');
-    return smooth ? T.pawnBuybackSmooth : T.pawnBuyback;
+    var fn = SR.reg.fn && SR.reg.fn['pawn.rate'];
+    return fn ? fn(state, {}, { source: 'ui' }) : SR.tuning.items.pawnBuyback;
   }
 
   SR.def.subscreen('pawn.shop', {
@@ -127,6 +129,8 @@
       // The Buy list needs no intro (Vinnie's greeting is above); the Sell tab states his rate.
       M.intro.hidden = M.tab !== 'sell';
       M.intro.textContent = M.tab === 'sell' ? t('card.pawn.sellIntro', { pct: SR.text.pct(buyback(state)) }) : '';
+      // the list's name follows the tab (a screen reader otherwise hears "Goods" over what you sell)
+      M.list.setAttribute('aria-label', t(M.tab === 'sell' ? 'card.pawn.sellList' : 'card.pawn.goods'));
       if (M.tabs && M.tabs.value !== M.tab) M.tabs.select(M.tab);
       D().clear(M.list);
       M.rows = [];

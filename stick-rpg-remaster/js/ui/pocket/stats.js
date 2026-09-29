@@ -46,10 +46,11 @@
 
   /** @returns {number[]} the last 14 days of a stat: the morning points, then today's value. */
   function trend(s, key) {
-    var pts = (s.history && s.history[key]) || [];
+    var dayOf = function (p) { return Array.isArray(p) ? p[0] : p && typeof p.day === 'number' ? p.day : null; };
+    // The points of the last 14 days (history is daily to day 120, then weekly: fewer points then).
+    var pts = ((s.history && s.history[key]) || []).filter(function (p) { var d = dayOf(p); return d === null || d > s.clock.day - SPARK_DAYS; });
     var vals = pts.map(function (p) { return Array.isArray(p) ? p[1] : p && typeof p.value === 'number' ? p.value : Number(p) || 0; });
-    var last = pts.length ? pts[pts.length - 1] : null;
-    var lastDay = Array.isArray(last) ? last[0] : last && last.day;
+    var lastDay = pts.length ? dayOf(pts[pts.length - 1]) : null;
     var now = key === 'karma' ? s.stats.karma : s.stats[key];
     if (lastDay === s.clock.day && vals.length) vals[vals.length - 1] = now; else vals.push(now);
     return vals.slice(-SPARK_DAYS);
@@ -64,7 +65,7 @@
 
   function statRow(s, key) {
     var v = s.stats[key], cap = SR.tuning.start && SR.tuning.start.statCap, np = nextPerk(v);
-    var meta = cap && v >= cap ? t('pocket.stats.maxed') : np ? t('pocket.stats.nextPerk', { n: np }) : t('pocket.stats.trend');
+    var meta = cap && v >= cap ? t('pocket.stats.maxed') : np ? t('pocket.stats.nextPerk', { n: np }) : t('pocket.stats.trend', { n: SPARK_DAYS });
     return h('div', { 'data-id': 'stats-' + key, style: { display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr) 96px', alignItems: 'center',
       gap: 'var(--sp-2)', padding: '4px 0', borderBottom: 'var(--line-thin)' } },
       SR.ui.statChip({ id: 'stats-chip-' + key, stat: key, value: v }),
@@ -72,11 +73,18 @@
       SR.ui.sparkline({ id: 'stats-spark-' + key, data: trend(s, key), kind: key, label: 'ui.statLong.' + key }));
   }
 
+  /** @returns {number[]} a stat's [min, max] (GDD §4.2; tuning start.karmaRange, heatRange, buzzRange). */
+  function range(key, fallback) {
+    var r = SR.tuning.start && SR.tuning.start[key + 'Range'];
+    return Array.isArray(r) && r.length === 2 ? r : fallback;
+  }
+
   function karmaSlider(s) {
     var k = Math.round(s.stats.karma), band = SR.ui.karmaMedallion.band(k), tier = SR.ui.karmaMedallion.tier(k);
-    var pct = Math.max(-100, Math.min(100, k)) / 2;   // % of the track from its centre
+    var kr = range('karma', [-100, 100]), reach = Math.max(Math.abs(kr[0]), Math.abs(kr[1])) || 1;
+    var pct = Math.max(kr[0], Math.min(kr[1], k)) / reach * 50;   // % of the track from its centre (0 in the middle)
     var col = 'var(--karma-' + band.side + '-' + band.i + ')';
-    var fill = h('span', { 'aria-hidden': 'true', style: { position: 'absolute', top: '0', bottom: '0', left: (k >= 0 ? 50 : 50 + pct) + '%',
+    var fill = h('span', { 'aria-hidden': 'true', 'data-id': 'stats-karma-fill', style: { position: 'absolute', top: '0', bottom: '0', left: (k >= 0 ? 50 : 50 + pct) + '%',
       width: Math.abs(pct) + '%', background: col, borderLeft: k >= 0 ? '0' : 'var(--line)', borderRight: k >= 0 ? 'var(--line)' : '0' } });
     var knob = h('span', { 'aria-hidden': 'true', style: { position: 'absolute', top: '-4px', bottom: '-4px', left: 'calc(' + (50 + pct) + '% - 3px)', width: '6px',
       borderRadius: 'var(--r-xs)', background: 'var(--ink-900)' } });
@@ -101,15 +109,17 @@
         SR.ui.meter({ id: 'stats-hp', kind: 'hp', value: s.stats.hp, max: s.stats.hpMax })),
     ];
     if (SR.rules.stats && typeof SR.rules.stats.winded === 'function' && SR.rules.stats.winded(s)) {
-      list.push(h('p', { class: 't-small', 'data-id': 'stats-winded', style: { margin: '0', color: 'var(--danger-ink)', fontWeight: '600' } }, t('pocket.stats.winded')));
+      var wf = SR.tuning.training && SR.tuning.training.winded;
+      list.push(h('p', { class: 't-small', 'data-id': 'stats-winded', style: { margin: '0', color: 'var(--danger-ink)', fontWeight: '600' } },
+        t('pocket.stats.winded', { factor: wf ? Math.round(wf.factor * 100) : '?' })));
     }
     list.push(h('div', { style: { display: 'grid', gridTemplateColumns: '96px minmax(0, 1fr)', alignItems: 'center', gap: 'var(--sp-2)', padding: '4px 0' } },
       h('span', { style: { fontWeight: '700' } }, t('pocket.stats.heat')),
-      SR.ui.meter({ id: 'stats-heat', kind: 'heat', value: s.stats.heat, max: 100, w: 160 })));
+      SR.ui.meter({ id: 'stats-heat', kind: 'heat', value: s.stats.heat, max: range('heat', [0, 100])[1], w: 160 })));
     if (on('nightlife')) {
       list.push(h('div', { style: { display: 'grid', gridTemplateColumns: '96px minmax(0, 1fr)', alignItems: 'center', gap: 'var(--sp-2)', padding: '4px 0' } },
         h('span', { style: { fontWeight: '700' } }, t('pocket.stats.buzz')),
-        SR.ui.meter({ id: 'stats-buzz', kind: 'buzz', value: s.stats.buzz, max: 5, w: 160 })));
+        SR.ui.meter({ id: 'stats-buzz', kind: 'buzz', value: s.stats.buzz, max: range('buzz', [0, 5])[1], w: 160 })));
     }
     return list;
   }

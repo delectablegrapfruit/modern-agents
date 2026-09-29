@@ -35,10 +35,10 @@
     meter: [4, 4], stepsPerBeat: 2,
     key: 'G', scale: 'major', gain: 1,
     inst: {
-      lead: { preset: 'pluck', gain: 0.8, pan: -0.35 },
-      follow: { preset: 'pluck', gain: 0.75, pan: 0.35 },
+      lead: { preset: 'pluck', gain: 0.64, pan: -0.35 },
+      follow: { preset: 'pluck', gain: 0.62, pan: 0.35 },
       bassoon: { preset: 'harmonica', gain: 0.8, pan: 0 },
-      organ: { preset: 'organ', gain: 0.5, pan: 0.1 },
+      organ: { preset: 'organ', gain: 0.7, pan: 0.1 },
     },
     patterns: {
       intro: { bars: 2, tracks: {

@@ -75,7 +75,8 @@
     if (!def) return null;
     var pv = ctx.preview(id, params);
     if (!pv || pv.hidden) return null;
-    var el = SR.ui.actionRow({ id: id, icon: def.icon, label: def.label || 'act.' + id, gains: SR.ui.chip.gains(pv),
+    var el = SR.ui.actionRow({ id: id, icon: def.icon, label: def.label || 'act.' + id, vars: { money: SR.text.money(pv.cost && pv.cost.cash ? pv.cost.cash : 0) },
+      gains: SR.ui.chip.gains(pv),
       costs: def.screen ? [] : SR.ui.chip.costs(pv, { def: def }), disabled: !pv.ok, reason: pv.reason, reasonVars: pv.vars,
       onRun: function () {
         if (def.screen) { openScreen(def.screen, def.screenParams || {}); return; }

@@ -1,0 +1,559 @@
+<!doctype html>
+<!-- tests/sheets/music.html — owner: W2-Music. The music sheet (BUILD_PLAN §4.13; ART_AUDIO §13.3-§13.4):
+     one card per song of ART_AUDIO §13.4 (W2-Music's and, for reference, W1-S's three) with its
+     context, tempo, key and metre as written and as registered, its loop length and a play button
+     per variant; a button per stinger; what plays now (song, variant, order position, loops); and an
+     offline check of every song, variant and stinger through SR.audio.renderOffline, drawn as a
+     waveform per card with the objective checks of ARCHITECTURE §18 (peak ≤ -10 dBFS, RMS in
+     [-30, -16] dBFS, largest sample jump ≤ 0.25, the loop seam ≤ 0.05, no NaN or denormals, the
+     format validator, the leitmotif at every motif annotation) and the voices a second it asks of
+     the voice pool (its render cost; W1-S request 8: no song busier than crossroads_strut).
+     Opens from disk. Loads js/boot/*, js/core/*, the caption strings (en-ui.js), js/audio/** and
+     every song file, and boots with SR.boot({ scene: false }). The first click or key press unlocks
+     the audio. window.musicSheet exposes the helpers tests/e2e/songs.test.cjs uses. Query: ?render
+     (check every song at once). Colours come from css/tokens.css (no colour literals). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paper Sky · music sheet</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../../css/tokens.css">
+<link rel="stylesheet" href="../../css/base.css">
+<link rel="stylesheet" href="../../css/components.css">
+<style>
+  html, body { margin: 0; min-height: 100%; background: var(--paper-1); color: var(--ink-900); }
+  body { overflow: auto; font: 14px var(--font-ui, system-ui, sans-serif); }
+  #app { position: fixed; left: -3000px; top: 0; width: 1280px; height: 720px; visibility: hidden; }
+  #stage, #world, #fx, #ui { position: absolute; left: 0; top: 0; width: 1280px; height: 720px; }
+  #aria { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .page { padding: 16px; box-sizing: border-box; display: flex; flex-direction: column; gap: 12px; }
+  .panel { background: var(--paper-0); border: 2px solid var(--ink-900); border-radius: 10px; padding: 12px; box-shadow: var(--e-1); }
+  .panel h1 { font: 700 20px var(--font-display, system-ui); margin: 0 0 6px; }
+  .panel h2 { font: 700 15px var(--font-display, system-ui); margin: 0 0 8px; }
+  .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 2px 0; }
+  .sb { font: 600 12px var(--font-ui, system-ui); padding: 3px 8px; border: 1.5px solid var(--ink-900); border-radius: 6px;
+        background: var(--paper-0); color: var(--ink-900); cursor: pointer; }
+  .sb:hover { background: var(--paper-2); }
+  .sb.on { background: var(--primary-600); color: var(--primary-ink, var(--paper-0)); }
+  .state { font: 700 13px var(--font-ui, system-ui); padding: 4px 8px; border-radius: 6px; background: var(--paper-2); display: inline-block; }
+  .state.running { background: var(--money-100, var(--paper-2)); }
+  pre { font: 12px ui-monospace, Menlo, monospace; margin: 0; white-space: pre-wrap; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 10px; }
+  .card { background: var(--paper-0); border: 1.5px solid var(--ink-700); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; }
+  .card.fail { border: 2px solid var(--danger); }
+  .card.w1 { border-style: dashed; }
+  .card h3 { font: 700 14px var(--font-ui, system-ui); margin: 0; display: flex; justify-content: space-between; gap: 8px; }
+  .card h3 small { font: 600 11px var(--font-ui, system-ui); color: var(--ink-700); }
+  .meta { font-size: 12px; color: var(--ink-700); line-height: 1.35; }
+  .meta b { color: var(--ink-900); font-weight: 600; }
+  canvas.wave { display: block; width: 100%; height: 56px; background: var(--paper-1); border-radius: 4px; }
+  .verdict { font: 11px ui-monospace, Menlo, monospace; color: var(--ink-700); min-height: 14px; }
+  .verdict.bad { color: var(--danger); font-weight: 700; }
+  .stingers .card { min-width: 0; }
+</style>
+</head>
+<body>
+  <div id="app">
+    <div id="stage">
+      <canvas id="world"></canvas>
+      <canvas id="fx"></canvas>
+      <div id="ui"></div>
+      <div id="aria" role="status" aria-live="polite"></div>
+    </div>
+  </div>
+
+  <div class="page">
+    <div class="panel" data-id="music-status">
+      <h1>Music sheet (W2-Music)</h1>
+      <div class="row"><span class="state" data-id="audio-state">locked</span>
+        <button class="sb" data-id="unlock">Start audio</button>
+        <button class="sb" data-id="stop-all">Stop</button>
+        fade <input data-id="fade" type="number" min="0" max="8" step="0.1" value="0.6" style="width:56px"> s
+        <button class="sb" data-id="render">Render and check every song</button>
+        <span data-id="render-out"></span></div>
+      <pre data-id="now"></pre>
+    </div>
+    <div class="panel stingers">
+      <h2>Stingers (stingers.js)</h2>
+      <div class="grid" data-id="stinger-cards"></div>
+    </div>
+    <div class="panel">
+      <h2>Songs (ART_AUDIO §13.4; dashed: W1-S's, for reference)</h2>
+      <div class="grid" data-id="song-cards"></div>
+    </div>
+  </div>
+
+  <script src="../../js/boot/namespace.js"></script>
+  <script src="../../js/boot/util.js"></script>
+  <script src="../../js/boot/events.js"></script>
+  <script src="../../js/core/rng.js"></script>
+  <script src="../../js/core/loop.js"></script>
+  <script src="../../js/core/stage.js"></script>
+  <script src="../../js/core/quality.js"></script>
+  <script src="../../js/core/input.js"></script>
+  <script src="../../js/core/scenes.js"></script>
+  <script src="../../js/core/save.js"></script>
+  <script src="../../js/core/settings.js"></script>
+  <script src="../../js/core/text.js"></script>
+  <script src="../../js/core/debug.js"></script>
+  <script src="../../js/data/text/en-ui.js"></script>
+  <script src="../../js/audio/engine.js"></script>
+  <script src="../../js/audio/synth.js"></script>
+  <script src="../../js/audio/sfx.js"></script>
+  <script src="../../js/audio/music.js"></script>
+  <script src="../../js/audio/ambience.js"></script>
+  <script src="../../js/audio/songs/paper_sky.js"></script>
+  <script src="../../js/audio/songs/crossroads_strut.js"></script>
+  <script src="../../js/audio/songs/home_sweet_paper.js"></script>
+  <script src="../../js/audio/songs/streetlights.js"></script>
+  <script src="../../js/audio/songs/fry_day.js"></script>
+  <script src="../../js/audio/songs/funky_aisle.js"></script>
+  <script src="../../js/audio/songs/pawnbroker_blues.js"></script>
+  <script src="../../js/audio/songs/showroom_smooth.js"></script>
+  <script src="../../js/audio/songs/compound_interest.js"></script>
+  <script src="../../js/audio/songs/please_hold.js"></script>
+  <script src="../../js/audio/songs/campus_canon.js"></script>
+  <script src="../../js/audio/songs/last_call_shuffle.js"></script>
+  <script src="../../js/audio/songs/high_roller_lounge.js"></script>
+  <script src="../../js/audio/songs/brawl_hall.js"></script>
+  <script src="../../js/audio/songs/tick_tock_trouble.js"></script>
+  <script src="../../js/audio/songs/midnight_express.js"></script>
+  <script src="../../js/audio/songs/hail_to_the_stick.js"></script>
+  <script src="../../js/audio/songs/doing_time.js"></script>
+  <script src="../../js/audio/songs/waiting_room.js"></script>
+  <script src="../../js/audio/songs/morning_edition.js"></script>
+  <script src="../../js/audio/songs/final_edition.js"></script>
+  <script src="../../js/audio/songs/stingers.js"></script>
+  <script>
+  // The sheet's logic (inline: this page is W2-Music's one sheet file). window.musicSheet:
+  //   ready, META, STINGERS, W1S, list(), analyze(buf, o), check(id, opts), verdict(info), grid(id,
+  //   variant, seconds), tempo(id, o), checkAll(), play(id, variant)
+  (function () {
+    'use strict';
+    var SR = window.SR;
+    var $ = function (id) { return document.querySelector('[data-id="' + id + '"]'); };
+    var css = function (name, fb) {
+      var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      return v || fb;
+    };
+
+    // ART_AUDIO §13.4, as written: context and tempo / key / metre (the cards show them next to the
+    // registered def, so a drift from the table shows at a glance).
+    var META = {
+      paper_sky: ['title, credits', '92, F major, 4/4'],
+      crossroads_strut: ['city, day', '104, E dorian'],
+      home_sweet_paper: ['home', '76, C major, 3/4'],
+      streetlights: ['city, night (20:00-05:00)', '84, D minor, lazy swing'],
+      fry_day: ['McSticks', '128, E major'],
+      funky_aisle: ['Funkytown Five-O', '100, E minor'],
+      pawnbroker_blues: ['pawn shop', '76 shuffle, A'],
+      showroom_smooth: ['Fine Line', '96, B♭ major'],
+      compound_interest: ['bank', '90, F major'],
+      please_hold: ['NLI', '100, C major; restarts every 30 s'],
+      campus_canon: ['U of S, City Hall lobby', '90, G major'],
+      last_call_shuffle: ['Sticky\'s', '112, A blues'],
+      high_roller_lounge: ['casino', '118 swing, C major'],
+      brawl_hall: ['fights, the ring', '150, D minor'],
+      tick_tock_trouble: ['hustles, darts, scratch (P1)', '124, A minor'],
+      midnight_express: ['bus depot, trips', '120, E minor'],
+      hail_to_the_stick: ['campaign, City Hall in office', '116 march, B♭ major (Dictator: B♭ minor)'],
+      doing_time: ['jail', '70, E blues'],
+      waiting_room: ['hospital', '80, E major'],
+      morning_edition: ['the morning report', '4 bars, F major'],
+      final_edition: ['results', '84 → 100, D major; stamp: up a tone; minor below $1,500'],
+    };
+    var STINGERS = {
+      fall: 'whistle-down, 1 s', rescue: 'up-swoop', jail: 'low brass', flatlined: 'dirge, 3 s',
+      promotion: 'brass fanfare with the leitmotif', degree: 'organ chord', jackpot: 'bells',
+      election_win: 'march tutti', election_loss: 'sad trombone glide', stamp: 'level-up / stamp: rising triad',
+    };
+    var W1S = ['paper_sky', 'crossroads_strut', 'home_sweet_paper'];
+    var MOTIF_SONGS = ['paper_sky', 'crossroads_strut', 'morning_edition', 'stingers.promotion', 'final_edition'];
+
+    /** @returns {string[]} the song ids the sheet lists: every ART_AUDIO §13.4 song that is registered, then any other. */
+    function list() {
+      var reg = SR.reg.song || {};
+      var ids = Object.keys(META).filter(function (id) { return reg[id]; });
+      Object.keys(reg).forEach(function (id) { if (id.indexOf('stingers.') !== 0 && ids.indexOf(id) < 0) ids.push(id); });
+      return ids;
+    }
+    function stingerIds() {
+      var reg = SR.reg.song || {};
+      return Object.keys(STINGERS).map(function (n) { return 'stingers.' + n; }).filter(function (id) { return reg[id]; });
+    }
+
+    // ---- the objective checks (ARCHITECTURE §18; the same reading as W1-S's sound sheet) ----
+
+    var DB = function (x) { return x > 0 ? 20 * Math.log(x) / Math.LN10 : -Infinity; };
+
+    /**
+     * The objective measures of one rendered buffer.
+     * @param {AudioBuffer} buf
+     * @param {object} o { seam (s: where the order loops), latency (s: the compressor's), window (s) }
+     * @returns {object} { seconds, peak, peakDb, rms, rmsDb, maxDiff, maxDiffAt, nan, denormals, seamDiff }
+     */
+    function analyze(buf, o) {
+      o = o || {};
+      var sr = buf.sampleRate, n = buf.length;
+      var peak = 0, sum = 0, nan = 0, den = 0, maxDiff = 0, maxDiffAt = 0, seamDiff = null, s0 = -1, s1 = -1;
+      if (typeof o.seam === 'number') {
+        var at = Math.round((o.seam + (o.latency || 0)) * sr), w = Math.max(1, Math.round((o.window || 0.001) * sr));
+        s0 = Math.max(1, at - w); s1 = Math.min(n - 1, at + w);
+        seamDiff = 0;
+      }
+      for (var c = 0; c < buf.numberOfChannels; c++) {
+        var d = buf.getChannelData(c), prev = d[0];
+        for (var i = 0; i < n; i++) {
+          var x = d[i];
+          if (x !== x) { nan++; continue; }
+          var ax = x < 0 ? -x : x;
+          if (ax > 0 && ax < 1e-30) den++;
+          if (ax > peak) peak = ax;
+          sum += x * x;
+          if (i) {
+            var df = x - prev; if (df < 0) df = -df;
+            if (df > maxDiff) { maxDiff = df; maxDiffAt = i; }
+            if (i >= s0 && i <= s1 && df > seamDiff) seamDiff = df;
+          }
+          prev = x;
+        }
+      }
+      var rms = Math.sqrt(sum / Math.max(1, n * buf.numberOfChannels));
+      return { seconds: n / sr, peak: peak, peakDb: DB(peak), rms: rms, rmsDb: DB(rms), maxDiff: maxDiff,
+        maxDiffAt: maxDiffAt / sr, nan: nan, denormals: den, seamDiff: seamDiff };
+    }
+
+    var latency = null;
+    /** @returns {Promise<number>} the master compressor's delay (s), measured once on an offline context. */
+    function chainLatency() {
+      if (latency !== null) return Promise.resolve(latency);
+      var sr = 44100, oac = new OfflineAudioContext(2, sr / 2, sr);
+      var G = SR.audio.engine.buildGraph(oac, { live: false });
+      var o = oac.createOscillator(), g = oac.createGain();
+      g.gain.setValueAtTime(0, 0);
+      g.gain.setValueAtTime(0.0316, 0.1);
+      o.connect(g); g.connect(G.buses.sfx); o.start(0);
+      return oac.startRendering().then(function (buf) {
+        var d = buf.getChannelData(0), on = -1;
+        for (var i = 0; i < d.length && on < 0; i++) if (Math.abs(d[i]) > 1e-4) on = i;
+        latency = Math.max(0, on / sr - 0.1);
+        return latency;
+      });
+    }
+
+    var buffers = {};
+    /**
+     * Renders one song (or stinger) offline for one pass of its order plus one bar (a stinger: its
+     * order plus 1 s) and analyses it.
+     * @returns {Promise<object>} { id, variant, once, loops, seconds, a, motif, problems, voicesPerSec, stats, ms }
+     */
+    function check(id, opts) {
+      opts = opts || {};
+      var def = SR.reg.song[id];
+      return chainLatency().then(function (lat) {
+        var t0 = performance.now();
+        return SR.audio.renderOffline('song', id, opts.seconds, { variant: opts.variant }).then(function (buf) {
+          var C = SR.audio.tracker.compile(def, opts.variant);
+          var o = { latency: lat };
+          if (C.loopFrom !== null) o.seam = C.once;
+          var stats = SR.audio.engine.lastRender();
+          var info = { kind: 'song', id: id, variant: opts.variant || null, once: C.once, loops: C.loopFrom !== null,
+            ms: performance.now() - t0, stats: stats, voicesPerSec: stats.added / stats.seconds,
+            problems: SR.audio.validate('song', def),
+            motif: (def.motif || []).map(function (m) {
+              var ns = SR.audio.tracker.motifNotes(def, m, opts.variant);
+              return { at: m, intervals: ns.map(function (x) { return x - ns[0]; }), ok: SR.audio.tracker.isMotif(ns) };
+            }) };
+          info.a = analyze(buf, o);
+          buffers[id + (opts.variant ? '·' + opts.variant : '')] = buf;
+          return info;
+        });
+      });
+    }
+
+    /** @returns {string[]} the failed checks of an analysis (empty: it passes ARCHITECTURE §18). */
+    function verdict(info) {
+      var a = info.a, fails = [];
+      if (a.nan) fails.push('NaN');
+      if (a.denormals) fails.push('denormals');
+      if (a.peak > Math.pow(10, -10 / 20)) fails.push('peak ' + a.peakDb.toFixed(1) + ' dBFS');
+      if (!(a.peak > 0.003)) fails.push('silent');
+      if (a.maxDiff > 0.25) fails.push('jump ' + a.maxDiff.toFixed(3));
+      if (!(a.rmsDb >= -30 && a.rmsDb <= -16)) fails.push('RMS ' + a.rmsDb.toFixed(1) + ' dBFS');
+      if (info.loops && a.seamDiff > 0.05) fails.push('seam ' + a.seamDiff.toFixed(3));
+      if (info.problems && info.problems.length) fails.push(info.problems.length + ' format problems');
+      (info.motif || []).forEach(function (m) { if (!m.ok) fails.push('motif ' + m.intervals.join(',')); });
+      return fails;
+    }
+
+    // ---- tempo (the step grid, computed here from the format's rules, not by the tracker) ----
+
+    /**
+     * Every step time of a song, for `seconds`, from the moment its step `pos` (default the first)
+     * sounds: each pattern at its own bpm (a per-pattern bpm or the song's), steps of 60 / bpm /
+     * stepsPerBeat, every odd step late by swing × a step when stepsPerBeat is even; the order, then
+     * the loop from loopFrom. Variants never change the timing.
+     * @returns {{steps: number[], bars: number[]}} ascending step times and bar-line times (s)
+     */
+    function gridOf(id, seconds, pos) {
+      var def = SR.reg.song[id], spb = def.stepsPerBeat, spbar = def.meter[0] * spb;
+      var swing = spb % 2 === 0 ? (def.swing || 0) : 0;
+      var oi = pos ? pos.order : 0, st = pos ? pos.step : 0;
+      var P0 = def.patterns[def.order[oi]], d0 = 60 / (P0.bpm || def.bpm) / spb;
+      var out = [], barsOut = [], t0 = -(st * d0 + (st % 2 === 1 ? swing * d0 : 0)), guard = 0;
+      while (t0 < seconds && guard++ < 10000) {
+        var P = def.patterns[def.order[oi]], dur = 60 / (P.bpm || def.bpm) / spb, steps = P.bars * spbar;
+        for (var s = 0; s < steps; s++) {
+          out.push(t0 + s * dur + (s % 2 === 1 ? swing * dur : 0));
+          if (s % spbar === 0) barsOut.push(t0 + s * dur);
+        }
+        t0 += steps * dur;
+        oi++;
+        if (oi >= def.order.length) {
+          if (typeof def.loopFrom !== 'number') break;
+          oi = def.loopFrom;
+        }
+      }
+      return { steps: out, bars: barsOut };
+    }
+    /** @returns {number[]} the step times of gridOf. */
+    function grid(id, variant, seconds, pos) { return gridOf(id, seconds, pos).steps; }
+
+    function nearest(arr, x) {
+      var lo = 0, hi = arr.length - 1;
+      while (hi - lo > 1) { var mid = (lo + hi) >> 1; if (arr[mid] <= x) lo = mid; else hi = mid; }
+      return Math.min(Math.abs(arr[lo] - x), Math.abs(arr[hi] - x));
+    }
+
+    /**
+     * Plays a song live for o.ms and checks every scheduled event against the step grid.
+     * @param {string} id
+     * @param {object} o { ms (default 4000), variant, switchTo: a variant asked for after switchAt ms }
+     * @returns {Promise<object>} { n, worst (s), ahead (s), variant: { name, time, fromBarLine (s) } | null, pos }
+     */
+    function tempo(id, o) {
+      o = o || {};
+      var wait = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+      SR.audio.music(null, { fade: 0 });
+      return wait(150).then(function () {
+        SR.audio.engine.live().trace = [];
+        SR.audio.music(id, { fade: 0, variant: o.variant });
+        var start = SR.audio.stats().music.start;
+        var pos = SR.audio.stats().music.position;       // a song left within 180 s resumes where it was
+        var sw = o.switchTo ? wait(o.switchAt || 1000).then(function () { SR.audio.music(id, { variant: o.switchTo }); }) : null;
+        return Promise.resolve(sw).then(function () { return wait(o.ms || 4000); }).then(function () {
+          var tr = SR.audio.engine.live().trace.filter(function (e) { return e.song === id; });
+          var G = gridOf(id, (o.ms || 4000) / 1000 + 10, pos), g = G.steps;
+          var worst = 0, ahead = Infinity, v = null;
+          tr.forEach(function (e) {
+            var rel = e.time - start;
+            if (e.kind === 'variant') {
+              v = { name: e.variant, time: rel, fromBarLine: nearest(G.bars, rel) };
+              return;
+            }
+            worst = Math.max(worst, nearest(g, rel));
+            ahead = Math.min(ahead, e.time - e.at);
+          });
+          SR.audio.engine.live().trace = null;
+          return { n: tr.length, worst: worst, ahead: ahead, variant: v, pos: pos };
+        });
+      });
+    }
+
+    // ---- the cards ----
+
+    function button(label, id, onClick) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'sb';
+      b.textContent = label;
+      b.setAttribute('data-id', id);
+      b.addEventListener('click', onClick);
+      return b;
+    }
+    function el(tag, cls, text) {
+      var e = document.createElement(tag);
+      if (cls) e.className = cls;
+      if (text !== undefined) e.textContent = text;
+      return e;
+    }
+    function fmtKey(def) { return (def.key || '?') + ' ' + (def.scale || ''); }
+    function bpmText(def) {
+      var bpms = [];
+      Object.keys(def.patterns).forEach(function (p) { var b = def.patterns[p].bpm || def.bpm; if (bpms.indexOf(b) < 0) bpms.push(b); });
+      return bpms.join(' / ');
+    }
+
+    var cards = {};
+    var songButtons = {};
+    function card(id, isStinger) {
+      var def = SR.reg.song[id];
+      var name = isStinger ? id.slice(9) : id;
+      var c = el('div', 'card' + (W1S.indexOf(id) >= 0 ? ' w1' : ''));
+      c.setAttribute('data-id', 'card-' + id);
+      var h = el('h3');
+      h.appendChild(el('span', '', name));
+      h.appendChild(el('small', '', (SR.registry.file('song', id) || '?').replace('js/audio/songs/', '')));
+      c.appendChild(h);
+      var once = SR.audio.lengthOf('song', id);
+      var C = SR.audio.tracker.compile(def);
+      var loop = 0;
+      if (C.loopFrom !== null) for (var i = C.loopFrom; i < C.order.length; i++) { var P = C.patterns[C.order[i]]; loop += P.steps * P.dur; }
+      var m = el('div', 'meta');
+      var meta = isStinger ? ['event', STINGERS[name]] : (META[id] || ['?', '?']);
+      m.innerHTML = '';
+      m.appendChild(el('b', '', meta[0]));
+      m.appendChild(document.createTextNode(' · written: ' + meta[1]));
+      m.appendChild(el('br'));
+      m.appendChild(document.createTextNode('registered: ' + bpmText(def) + ' bpm, ' + fmtKey(def) + ', ' + def.meter.join('/') +
+        (def.swing ? ', swing ' + def.swing : '') + ' · ' + Object.keys(def.inst).map(function (t) { return t + ' (' + def.inst[t].preset + ')'; }).join(', ')));
+      m.appendChild(el('br'));
+      m.appendChild(document.createTextNode(isStinger ? 'length ' + once.toFixed(2) + ' s' :
+        'one pass ' + once.toFixed(1) + ' s' + (C.loopFrom !== null ? ' · loop ' + loop.toFixed(1) + ' s from "' + C.order[C.loopFrom] + '"' : ' · plays once') +
+        ' · ' + C.order.length + ' patterns in order' + (def.motif ? ' · motif at ' + def.motif.map(function (x) { return x.pattern + '/' + x.track + '@' + x.step; }).join(', ') : '')));
+      c.appendChild(m);
+      var row = el('div', 'row');
+      if (isStinger) {
+        row.appendChild(button('play', 'play-' + id, function () { SR.audio.unlock(); SR.audio.stinger(id); }));
+      } else {
+        var b = button('play', 'play-' + id, function () { play(id, null); });
+        songButtons[id] = b;
+        row.appendChild(b);
+        Object.keys(def.variants || {}).forEach(function (v) {
+          var bv = button(v, 'play-' + id + '-' + v, function () { play(id, v); });
+          songButtons[id + '·' + v] = bv;
+          row.appendChild(bv);
+        });
+      }
+      c.appendChild(row);
+      var cv = el('canvas', 'wave');
+      cv.setAttribute('data-id', 'wave-' + id);
+      cv.width = 400; cv.height = 56;
+      c.appendChild(cv);
+      var vd = el('div', 'verdict', 'not rendered yet');
+      vd.setAttribute('data-id', 'verdict-' + id);
+      c.appendChild(vd);
+      cards[id] = { el: c, canvas: cv, verdict: vd };
+      return c;
+    }
+
+    function play(id, variant) {
+      SR.audio.unlock();
+      SR.audio.music(id, { fade: Number($('fade').value), variant: variant || undefined });
+    }
+
+    function draw(id, infos) {
+      var k = cards[id];
+      if (!k) return;
+      var cv = k.canvas, ctx = cv.getContext('2d');
+      var W = cv.width, H = cv.height;
+      ctx.fillStyle = css('--paper-1', 'Canvas');
+      ctx.fillRect(0, 0, W, H);
+      var info = infos[0], buf = buffers[id];
+      var mid = H / 2 + 0.5;
+      ctx.strokeStyle = css('--ink-300', 'GrayText');
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(0, mid); ctx.lineTo(W, mid); ctx.stroke();
+      var lim = Math.pow(10, -10 / 20);
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(0, mid - lim * H / 2); ctx.lineTo(W, mid - lim * H / 2);
+      ctx.moveTo(0, mid + lim * H / 2); ctx.lineTo(W, mid + lim * H / 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      if (buf) {
+        var d = buf.getChannelData(0), n = d.length;
+        ctx.fillStyle = css('--int', 'CanvasText');
+        for (var x = 0; x < W; x++) {
+          var a = Math.floor(x * n / W), b = Math.max(a + 1, Math.floor((x + 1) * n / W)), lo = 0, hi = 0;
+          for (var i = a; i < b; i++) { if (d[i] < lo) lo = d[i]; if (d[i] > hi) hi = d[i]; }
+          ctx.fillRect(x, mid - hi * H / 2, 1, Math.max(1, (hi - lo) * H / 2));
+        }
+        if (info.loops) {
+          ctx.fillStyle = css('--ok', 'CanvasText');
+          ctx.fillRect(Math.round(info.once / info.a.seconds * W), 0, 1, H);
+        }
+      }
+      var bad = [];
+      var lines = infos.map(function (it) {
+        var f = verdict(it);
+        if (f.length) bad.push((it.variant || 'default') + ': ' + f.join(', '));
+        var a = it.a;
+        return (it.variant ? it.variant + ' · ' : '') + 'pk ' + a.peakDb.toFixed(1) + ' · rms ' + a.rmsDb.toFixed(1) + ' · jump ' +
+          a.maxDiff.toFixed(3) + (a.seamDiff !== null ? ' · seam ' + a.seamDiff.toFixed(3) : '') + ' · ' + it.voicesPerSec.toFixed(1) + ' v/s' +
+          (it.motif.length ? ' · motif ' + (it.motif.every(function (x) { return x.ok; }) ? 'ok' : 'NO') : '');
+      });
+      k.verdict.textContent = bad.length ? 'FAIL ' + bad.join(' / ') : lines.join('\n');
+      k.verdict.className = 'verdict' + (bad.length ? ' bad' : '');
+      k.el.classList.toggle('fail', bad.length > 0);
+    }
+
+    /** Checks every listed song (each variant) and stinger, drawing each card. @returns {Promise<object[]>} */
+    function checkAll(filter) {
+      var jobs = [];
+      list().concat(stingerIds()).forEach(function (id) {
+        if (filter && !filter(id)) return;
+        [null].concat(Object.keys(SR.reg.song[id].variants || {})).forEach(function (v) { jobs.push([id, v]); });
+      });
+      var out = [], i = 0, byId = {};
+      function next() {
+        if (i >= jobs.length) {
+          $('render-out').textContent = out.length + ' rendered, ' + out.filter(function (x) { return verdict(x).length; }).length + ' failing';
+          return Promise.resolve(out);
+        }
+        var j = jobs[i++];
+        return check(j[0], { variant: j[1] || undefined }).then(function (info) {
+          out.push(info);
+          (byId[j[0]] = byId[j[0]] || []).push(info);
+          if (!jobs[i] || jobs[i][0] !== j[0]) draw(j[0], byId[j[0]]);
+          $('render-out').textContent = i + ' / ' + jobs.length;
+          return next();
+        });
+      }
+      return next();
+    }
+
+    function build() {
+      var sc = $('stinger-cards');
+      stingerIds().forEach(function (id) { sc.appendChild(card(id, true)); });
+      if (!stingerIds().length) sc.textContent = '(no stinger registered)';
+      var songs = $('song-cards');
+      list().forEach(function (id) { songs.appendChild(card(id, false)); });
+      $('unlock').addEventListener('click', function () { SR.audio.unlock(); });
+      $('stop-all').addEventListener('click', function () { SR.audio.music(null, { fade: 0.3 }); });
+      $('render').addEventListener('click', function () { checkAll(); });
+      setInterval(function () {
+        var s = SR.audio.stats(), m = s.music || {};
+        var st = $('audio-state');
+        st.textContent = s.state;
+        st.className = 'state ' + s.state;
+        Object.keys(songButtons).forEach(function (k) {
+          var parts = k.split('·');
+          songButtons[k].classList.toggle('on', m.song === parts[0] && (m.variant || null) === (parts[1] || null));
+        });
+        var P = m.song && SR.reg.song[m.song] ? SR.reg.song[m.song].order[m.position ? m.position.order : 0] : '';
+        $('now').textContent = 'song ' + (m.song || '-') + (m.variant ? ' · ' + m.variant : '') +
+          (m.position ? ' @ order ' + m.position.order + ' ("' + P + '") step ' + m.position.step + ' · loops ' + m.loops : '') +
+          ' · gain ' + (m.gain || 0).toFixed(2) + '\nstingers ' + JSON.stringify(m.stingers || []) + ' · duck ' + s.duckDb +
+          ' dB · voices ' + s.voices + ' / ' + s.maxVoices + ' (peak ' + s.peakVoices + ')';
+      }, 150);
+    }
+
+    window.musicSheet = {
+      ready: false, META: META, STINGERS: STINGERS, W1S: W1S, MOTIF_SONGS: MOTIF_SONGS, list: list, stingerIds: stingerIds,
+      analyze: analyze, check: check, verdict: verdict, grid: grid, gridOf: gridOf, tempo: tempo, checkAll: checkAll, play: play, buffers: buffers,
+    };
+
+    function start() {
+      SR.boot({ scene: false });
+      build();
+      window.musicSheet.ready = true;
+      if (/[?&]render\b/.test(location.search)) checkAll();
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+    else start();
+  })();
+  </script>
+</body>
+</html>

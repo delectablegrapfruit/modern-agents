@@ -72,10 +72,7 @@
     SR.scenes.go(SR.reg.scene.city ? 'city' : 'title');
   }
 
-  function toTitle() {
-    SR.scenes.go('title');
-    SR.state = null;
-  }
+  function toTitle() { SR.ui.saveload.quit(); }
 
   function copy() {
     var str = SR.ui.results.summary(R.result);
@@ -135,7 +132,9 @@
       if (!R || (ev && (ev.consumed || ev.down === false))) return false;
       if (action === 'pocket' && ev && ev.code === 'Tab') return false;
       if (R.phase !== 'done') {                         // a press skips the count-up and lands the stamp
-        if (action === 'confirm' || action === 'back' || action === 'interact' || action === 'pause') { finishCount(); if (ev) ev.consumed = true; return true; }
+        // UI scenes ignore `interact` (CONTRACT §15.5): Enter, Space, E and A fire it and then
+        // `confirm`, so skipping on it would let that `confirm` press the button just focused.
+        if (action === 'confirm' || action === 'back' || action === 'pause') { finishCount(); if (ev) ev.consumed = true; }
         return true;
       }
       return SR.ui.focus.handle(action, ev);

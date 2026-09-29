@@ -108,6 +108,42 @@ const B18 = [
   ri = await info();
   T.eq([ri.phase, ri.shown], ['done', 41380], 'a press skips the count-up and lands the stamp');
   T.eq(await t.scenes(), ['results'], 'and does nothing else');
+  // Real keys: Enter, Space and E fire `interact` and then `confirm` (CONTRACT §12.1). Skipping on the
+  // first would let the second press Keep playing, which the skip has just focused.
+  /** A timed game really over (Keep playing offered), its Final Edition counting. */
+  const overPage = () => ev(() => {
+    const SR = window.SR;
+    SR.debug.newGame({ seed: 11, name: 'Rikki', length: 15 });
+    const s = SR.state;
+    s.clock.day = 16; s.over = true; s.result = SR.rules.endgame.results(s, 'time');
+    SR.scenes.go('results', { reason: 'time', result: s.result }, { transition: false });
+    return !!document.querySelector('#ui [data-id="results-keep"]');
+  });
+  const skips = [];
+  for (const key of ['Enter', 'Space', 'KeyE', 'Escape']) {
+    const keep = await overPage();
+    await t.step(10);
+    await t.key(key);
+    await t.step(3);
+    ri = await info();
+    skips.push([key, keep, (await t.scenes()).join(','), ri && ri.phase, await t.get('over')]);
+  }
+  T.eq(skips, [['Enter', true, 'results', 'done', true], ['Space', true, 'results', 'done', true], ['KeyE', true, 'results', 'done', true], ['Escape', true, 'results', 'done', true]],
+    'the real Enter, Space, E and Esc skip the count-up and press nothing (not Keep playing: the game stays over on its Final Edition)');
+  await ev(() => {
+    const idle = () => ({ pressed: false, value: 0 });
+    window.__pad = { id: 'test pad', index: 0, connected: true, mapping: 'standard', buttons: Array.from({ length: 17 }, idle), axes: [0, 0, 0, 0], timestamp: 1 };
+    navigator.getGamepads = () => [window.__pad];
+  });
+  await overPage();
+  await t.step(10);
+  await ev(() => { window.__pad.buttons[0] = { pressed: true, value: 1 }; window.__pad.timestamp++; });
+  await t.step(2);
+  await ev(() => { window.__pad.buttons[0] = { pressed: false, value: 0 }; window.__pad.timestamp++; });
+  await t.step(2);
+  T.eq([await t.scenes(), (await info()).phase], [['results'], 'done'], 'so does the pad\'s A (interact + confirm)');
+  await ev(() => { delete navigator.getGamepads; });
+  await t.step(2);
   await t.fast(true);
   await setup({ nw: -2500, karma: -60 });
   await shot('results-evil-red');
@@ -166,6 +202,20 @@ const B18 = [
     return SR.ui.results.summary(SR.state.result).split('\n')[1];
   });
   T.ok(/^Day 12 of Unlimited · Standard · Net worth \$/.test(unl), 'Unlimited runs read "Day 12 of Unlimited"', unl);
+  const kept = await ev(() => {
+    const SR = window.SR;
+    SR.debug.newGame({ seed: 13, name: 'Stayer', length: 15 });
+    const s = SR.state;
+    s.clock.day = 16; s.over = true; s.result = SR.rules.endgame.results(s, 'time');
+    SR.rules.endgame.keepPlaying(s);
+    s.clock.day = 30;
+    SR.rules.endgame.retire(s);
+    SR.scenes.go('results', { reason: 'retire', result: s.result }, { transition: false });
+    return { line: SR.ui.results.summary(s.result).split('\n')[1], edition: document.querySelector('#ui [data-id="results-edition"]').textContent,
+      mode: document.querySelector('#ui [data-id="results-mode"]').textContent };
+  });
+  T.ok(/^Day 30 of Unlimited · /.test(kept.line) && kept.edition === 'Final Edition · Day 30' && /Unlimited$/.test(kept.mode),
+    'a Keep-playing run retired on day 30 of a 15-day game reads "Day 30 of Unlimited" (it went on as an Unlimited game, GDD §5)', kept);
 
   // ------------------------------------------------------------------------------------------------
   T.section('the Hall of Fame and the profile (filed once; never the cheat name)');

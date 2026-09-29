@@ -5,8 +5,10 @@
 // the apartment, the pause menu (Hardcore, Unlimited, over a minigame; Suspend & quit → Continue;
 // Quit; Retire → the results), Classic mode (a suspend save, ../stick-rpg/index.html in the same tab,
 // Back returns and Continue resumes), the profile with no game running, the credits, the Hall of Fame
-// (P1 flag), each overlay registered in its own file, the a11y audit of every screen, zero console
-// errors. Screenshots: shots/W2-Front/.
+// (P1 flag), each overlay registered in its own file, the a11y audit of every screen, the pad's A
+// (interact + confirm) and touch taps that already acted (the boot card, the intro's hold) never
+// pressing the next screen, Hardcore's Quit keeping the last change, zero console errors.
+// Screenshots: shots/W2-Front/.
 //   node tests/e2e/frontend.test.cjs
 'use strict';
 const path = require('path');
@@ -66,6 +68,24 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-Front');
   await ev(() => { window.SR.scenes.go('title', { gate: true }, { transition: false }); });
   await t.press('confirm');
   T.eq([(await info('title')).gate, await t.scenes()], [false, ['title']], 'a pad button (an injected press) also folds the card, without choosing an item');
+  // A real pad's A is `interact` and `confirm` in one press (CONTRACT §12.1): the card must not fold on
+  // the first and let the second press the menu item that just took focus (CONTRACT §15.5).
+  await ev(() => {
+    const idle = () => ({ pressed: false, value: 0 });
+    window.__pad = { id: 'test pad', index: 0, connected: true, mapping: 'standard', buttons: Array.from({ length: 17 }, idle), axes: [0, 0, 0, 0], timestamp: 1 };
+    navigator.getGamepads = () => [window.__pad];
+  });
+  const padA = async () => {
+    await ev(() => { window.__pad.buttons[0] = { pressed: true, value: 1 }; window.__pad.timestamp++; });
+    await t.step(2);
+    await ev(() => { window.__pad.buttons[0] = { pressed: false, value: 0 }; window.__pad.timestamp++; });
+    await t.step(2);
+  };
+  await ev(() => { window.SR.scenes.go('title', { gate: true }, { transition: false }); });
+  await t.step(1);
+  await padA();
+  T.eq([(await info('title')).gate, await t.scenes()], [false, ['title']], 'the pad\'s A (interact + confirm) folds the card and opens nothing');
+  await ev(() => { delete navigator.getGamepads; });
   await ev(() => { window.SR.scenes.go('title', { gate: true }, { transition: false }); });
   await t.clickUI('title-gate');
   T.eq((await info('title')).gate, false, 'so does a click');
@@ -297,6 +317,27 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-Front');
   await t.clickUI('pause-quit'); await t.step(1);
   await t.clickUI('pause-quit-yes'); await t.step(2);
   T.eq([await t.scenes(), await ev(() => window.SR.state)], [['title'], null], 'Quit to title (confirmed) leaves the game');
+  // Hardcore: the ironman write is debounced 2 s (B-16); quitting inside it must not undo the change.
+  await clearSaves();
+  await t.newGame({ name: 'Ironside', difficulty: 'hardcore', seed: 8 });
+  await ev(() => window.SR.save.write('ironman'));
+  await t.goto('city');
+  await ev(() => {
+    const SR = window.SR;
+    window.__refresh = [];
+    const X = SR.art.exteriorDetail, orig = X.refresh;
+    X.refresh = function () { window.__refresh.push(SR.state === null); return orig.apply(this, arguments); };
+    window.__restoreRefresh = () => { X.refresh = orig; };
+  });
+  const shift = await t.act('mcsticks.work', {});
+  const hc = await ev(() => ({ now: window.SR.state.money.cash, slot: window.SR.save.read('ironman').money.cash }));
+  await t.press('pause'); await t.step(1);
+  await t.clickUI('pause-quit'); await t.step(1);
+  await t.clickUI('pause-quit-yes'); await t.step(2);
+  const kept = await ev(() => window.SR.save.read('ironman').money.cash);
+  T.ok(shift.ok && hc.slot !== hc.now && kept === hc.now, 'Hardcore: Quit to title inside the 2 s debounce still writes the last change to the ironman slot', [shift.ok, hc, kept]);
+  T.eq(await ev(() => window.__refresh), [true], 'quitting re-bakes the city\'s building details for no game (docs/requests/W2-Exterior.md 11)');
+  await ev(() => window.__restoreRefresh());
 
   // ------------------------------------------------------------------------------------------------
   T.section('the overlays register in their own files (BUILD_PLAN §4.11)');
@@ -372,9 +413,44 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-Front');
   T.ok(true, 'the recreation logged ' + classicErrors.length + ' console message(s) of its own (not counted)');
   const ours = t.errors().slice(0, errsBefore).concat(t.errors().slice(errsBefore + classicErrors.length));
 
+  // ------------------------------------------------------------------------------------------------
+  T.section('touch: a press that already acted does not also tap the next screen');
+  // A touch's click is dispatched where the finger lifts, after the boot card folded (on pointerdown)
+  // or the intro skipped (on a held press): it must not land on what the next screen put there.
+  const tt = await h.open({ fast: true, touch: true });
+  const tev = (fn, arg) => tt.eval(fn, arg);
+  await tev(() => window.SR.scenes.go('title', {}, { transition: false }));
+  const newAt = await tev(() => { const r = document.querySelector('#ui [data-id="title-new"]').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; });
+  await tev(() => window.SR.scenes.go('title', { gate: true }, { transition: false }));
+  await tt.step(1);
+  await tt.page.touchscreen.tap(newAt[0], newAt[1]);
+  await tt.step(3);
+  T.eq([await tt.scenes(), (await tt.eval(() => window.SR.reg.scene.title.info())).gate], [['title'], false], 'a tap on the boot card where New Game appears folds the card and opens nothing');
+  await tt.newGame({ name: 'Toucher' });
+  await tt.enter('home');
+  await tt.step(2);
+  const sleepAt = await tev(() => { const r = document.querySelector('#ui [data-id="row-home.sleep"]').getBoundingClientRect(); return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)]; });
+  await tev(() => { const SR = window.SR; SR.debug.newGame({ name: 'Toucher' }); SR.scenes.go('intro', null, { transition: false }); });
+  await tt.fast(false);
+  await tt.step(5);
+  await tev(() => { window.__clicks = []; document.addEventListener('click', (e) => { const el = e.target && e.target.closest && e.target.closest('[data-id]'); window.__clicks.push(el ? el.getAttribute('data-id') : String(e.target)); }, true); });
+  const cdp = await tt.context.newCDPSession(tt.page);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: sleepAt[0], y: sleepAt[1] }] });
+  for (let i = 0; i < 6 && (await tt.scenes())[0] === 'intro'; i++) await tt.step(10);
+  const skipped = await tt.scenes();
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await tt.page.waitForTimeout(200);
+  await tt.step(3);
+  const after = await tt.state();
+  T.ok(skipped[0] === 'building' && (await tev(() => window.__clicks)).length === 0 && after.clock.day === 1 && after.clock.min === 480,
+    'a touch held on the intro skips into the apartment, and lifting it does not press the row under it (Sleep)', [skipped, await tev(() => window.__clicks), after.clock]);
+  const touchErrors = tt.errors();
+  await tt.close();
+
   T.section('result');
   T.eq(await ev(() => window.SR.text.missing()), [], 'every text key the front end showed resolves');
   T.eq(ours, [], 'zero console errors in the remaster');
+  T.eq(touchErrors, [], 'zero console errors in the touch session');
   await t.close();
   T.done();
 })().catch((e) => { console.error(e); process.exit(1); });

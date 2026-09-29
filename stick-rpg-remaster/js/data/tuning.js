@@ -709,6 +709,10 @@
       speed: [90, 140],
       separation: 20,
       barkIntervalSec: 4,
+      // P1 `cityReacts` (GDD §3.11, not in BALANCE; docs/requests/W2-City.md 6): idle pedestrians
+      // within 80 u turn toward you; at karma ≤ -50 one in five scurries (the rest step away).
+      turnRange: 80,
+      scurry: 0.2,
     },
 
     // ---------------------------------------------------------------------------------------------

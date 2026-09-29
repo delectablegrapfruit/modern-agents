@@ -12,6 +12,8 @@
 //                card, the fan note and the version with the Old School badge.
 //   classic()    the Classic confirm, then ../stick-rpg/index.html in the same tab after a suspend
 //                save when a game is running (ARCHITECTURE §15; GDD §5); Sticky's cabinet (P1) calls it.
+//   swallowClick()  eats the click of a tap that already acted (the boot card, the intro's hold-to-skip)
+//                so it cannot land on the next screen.
 // Colours come from css/screens.css (tokens) and SR.art.palette; text from en-front / en-ui.
 // Load-time rule: defines functions only.
 (function () {
@@ -26,6 +28,7 @@
   var LOGO_W = 480, LOGO_H = 170;                // the menu's logo canvas (CSS px)
   var GATE_LOGO_W = 900, GATE_LOGO_H = 260;      // the boot card's logo canvas
   var PAD_NOTE_SEC = 0.5;                        // how often the pad-only sound note is re-judged
+  var SWALLOW_MS = 600;                          // a tap's click follows its release within this
   var HIDE = [{ kind: 'player', x: 0, y: 0, visible: false }];   // a hidden stand-in replaces the player
 
   function D() { return SR.ui.dom; }
@@ -117,6 +120,35 @@
 
   /** Goes to a page in the same tab (tests may replace it). */
   function navigate(url) { window.location.assign(url); }
+
+  /**
+   * Swallows the click that ends a press which has already acted: the boot card folds on
+   * pointerdown and the intro skips on a held press, and a touch's click is dispatched where the
+   * finger lifts, so without this it lands on whatever the next screen put there (a title menu item,
+   * an apartment row). Only a pointer's click counts (js/ui/focus.js activates with a scripted
+   * el.click(), and Chrome's keyboard click has pointerType ''), and only up to SWALLOW_MS after the
+   * release; the next press ends it either way. @returns {function} ends it now
+   */
+  function swallowClick() {
+    var upAt = null;
+    function off() {
+      window.removeEventListener('click', onClick, true);
+      window.removeEventListener('pointerup', onUp, true);
+      window.removeEventListener('pointerdown', off, true);
+    }
+    function onUp(e) { upAt = e.timeStamp; }
+    function onClick(e) {
+      if (!e.isTrusted || e.pointerType === '') return;
+      off();
+      if (upAt !== null && e.timeStamp - upAt > SWALLOW_MS) return;
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    window.addEventListener('click', onClick, true);
+    window.addEventListener('pointerup', onUp, true);
+    window.addEventListener('pointerdown', off, true);
+    return off;
+  }
 
   /**
    * The Classic link (GDD §5; ARCHITECTURE §15): a confirm, then the recreation in the same tab
@@ -305,7 +337,7 @@
       gate = h('button', { type: 'button', class: 'title-gate nav-inset', 'data-id': 'title-gate', 'data-nav': '' },
         h('span', { class: 'vh' }, text('game.title') + '. '), gateLogo,
         h('span', { class: 'title-gate-fan' }, text('ui.fanNote')), gatePress);
-      gate.addEventListener('pointerdown', function (e) { e.preventDefault(); T.dismissGate(); });
+      gate.addEventListener('pointerdown', function (e) { e.preventDefault(); if (T.dismissGate()) swallowClick(); });
       gateWrap = h('div', { class: 'title-gate-wrap paper' }, gate);
       el.appendChild(gateWrap);
       gateText();
@@ -377,6 +409,7 @@
     backdrop: backdrop,
     classic: classic,
     navigate: navigate,
+    swallowClick: swallowClick,
     badge: badge,
     metaLines: metaLines,
     playTime: playTime,

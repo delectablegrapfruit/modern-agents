@@ -28,6 +28,8 @@
   // Presentation constants (UI §5.8).
   var CARD = { w: 88, h: 124, r: 10, step: 34 };
   var DEALER_Y = 64, HAND_Y = 272, FELT_Y = 228;
+  var SHOE = { x: 1110, y: 30, w: 130, h: 90 }, DISCARD = { x: 1110, y: 132, w: 130, h: 56 };   // UI §5.8: the shoe and the discard tray
+  var SOFT_STAND = 17;         // B-14b: the dealer draws to 17 and stands on soft 17 (the felt's legend)
   var REVEAL_S = 0.16, DEALER_S = 0.32, OUTCOME_S = 1.3;
   var HAND_RESOLVE = 'casino.blackjack.hand:resolve';   // one decided hand (js/data/buildings/casino.js)
   var SUITS = ['♠', '♥', '♦', '♣'];
@@ -119,6 +121,7 @@
       if (!s) return { ok: false, reason: 'reason.noGame' };
       var g = SR.rules.casino.canPlay(s, 'blackjack');
       if (!g.ok) return g;
+      if (!(bet > 0)) return { ok: false, reason: 'mg.blackjack.placeBet' };   // the bet was cleared: "Place a bet, then deal."
       if (bet < lim[0]) return { ok: false, reason: 'reason.badBet', vars: { n: bet } };
       if (cash() < bet) return { ok: false, reason: 'reason.needCash', vars: { n: bet, money: SR.text.money(bet) } };
       return { ok: true };
@@ -393,6 +396,42 @@
       }
     }
 
+    /**
+     * The shoe and the discard tray (UI §5.8): the shoe's window shows the cards still to come, with
+     * the cut card's place (B-14b: 75 %); the tray's stack grows with the cards played since the
+     * last shuffle (those of the hand still on the felt are not in it yet; a new shoe empties it).
+     */
+    /** @returns {number} the cards in the discard tray: dealt since the shuffle, less those still on the felt. */
+    function discarded() {
+      var onTable = r ? r.dealer.length + r.hands.reduce(function (a, h) { return a + h.cards.length; }, 0) : 0;
+      return Math.max(0, sh.pos - onTable);
+    }
+    function drawShoe(ctx) {
+      var size = sh.cards.length, left = size - sh.pos, used = discarded();
+      var wx = SHOE.x + 12, wy = SHOE.y + 14, ww = SHOE.w - 24, wh = SHOE.h - 28;
+      ctx.fillStyle = pal('kit.woodDark'); SR.art.draw.roundRect(ctx, SHOE.x, SHOE.y, SHOE.w, SHOE.h, 12); ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = pal('inkLine'); ctx.stroke();
+      ctx.fillStyle = pal('bld.casino.walls'); ctx.fillRect(wx, wy, ww * left / size, wh);
+      ctx.strokeRect(wx, wy, ww, wh);
+      var cutX = wx + ww * (size - sh.cut) / size;   // where the cut card sits among the cards left
+      ctx.strokeStyle = pal('kit.gold'); ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(cutX, wy - 4); ctx.lineTo(cutX, wy + wh + 4); ctx.stroke();
+      // the discard tray: an open tray whose stack of face-down cards grows with the cards dealt
+      var D0 = DISCARD;
+      ctx.fillStyle = pal('kit.woodDark'); SR.art.draw.roundRect(ctx, D0.x, D0.y, D0.w, D0.h, 10); ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = pal('inkLine'); ctx.stroke();
+      var inner = D0.h - 16, hStack = used > 0 ? Math.max(3, inner * used / size) : 0;
+      if (hStack > 0) {
+        var sx = D0.x + 14, sw = D0.w - 28, sy = D0.y + D0.h - 8 - hStack;
+        ctx.fillStyle = pal('bld.casino.walls'); ctx.fillRect(sx, sy, sw, hStack);
+        ctx.lineWidth = 1.5; ctx.strokeStyle = pal('inkLine'); ctx.strokeRect(sx, sy, sw, hStack);
+        ctx.strokeStyle = pal('kit.paper'); ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (var ly = sy + 4; ly < sy + hStack - 1; ly += 5) { ctx.moveTo(sx + 3, ly); ctx.lineTo(sx + sw - 3, ly); }
+        ctx.stroke();
+      }
+    }
+
     function render(ctx) {
       ctx.fillStyle = pal('kit.felt'); ctx.fillRect(0, 0, 1280, 576);
       ctx.strokeStyle = pal('kit.paper'); ctx.globalAlpha = 0.35; ctx.lineWidth = 3;
@@ -402,15 +441,10 @@
         // an outcome is written across the same band, so the legend steps aside while it shows.
         ctx.font = host.font(16, 700); ctx.fillStyle = pal('kit.paper'); ctx.textAlign = 'center';
         ctx.globalAlpha = 0.7;
-        ctx.fillText(T('mg.blackjack.felt', { n: 17, a: BJ().natural * 2, b: 2 }), 640, FELT_Y);
+        ctx.fillText(T('mg.blackjack.felt', { n: SOFT_STAND, a: BJ().natural * 2, b: 2 }), 640, FELT_Y);
         ctx.globalAlpha = 1;
       }
-      // the shoe and the discard tray
-      ctx.fillStyle = pal('kit.woodDark'); SR.art.draw.roundRect(ctx, 1110, 30, 130, 90, 12); ctx.fill();
-      ctx.lineWidth = 2; ctx.strokeStyle = pal('inkLine'); ctx.stroke();
-      var left = sh.cards.length - sh.pos;
-      ctx.fillStyle = pal('bld.casino.walls'); ctx.fillRect(1122, 44, 106 * left / sh.cards.length, 62);
-      ctx.strokeRect(1122, 44, 106, 62);
+      drawShoe(ctx);
       // the dealer
       ctx.textAlign = 'left'; ctx.font = host.font(18, 900, true); ctx.fillStyle = pal('kit.paper');
       ctx.fillText(T('mg.blackjack.dealer').toUpperCase(), 440, DEALER_Y - 12);
@@ -494,10 +528,23 @@
         if (a === 'stand' || a === 'double' || a === 'split') act(a);
       },
       pointer: function () {},
-      /** "By the book": the current hand (or one dealt at the current bet) with basic strategy. */
+      /**
+       * "By the book": the current hand (or one dealt at the current bet) with basic strategy. With
+       * no hand out and none that can be dealt (the bet cleared, the cash short, the day's 60 hands
+       * played) there is nothing to play: the reason is announced and the table stays open (null:
+       * the frame starts no replay), so Auto never closes the table on a hand it did not play.
+       */
       auto: function (rng) {
+        if (finished) return null;
         if (phase === 'outcome') toBet();
-        if (phase === 'bet' && !finished && canDeal().ok) {
+        if (finished) return null;   // backed off (P1): toBet has already closed the table with the session
+        if (phase === 'bet') {
+          var g = canDeal();
+          if (!g.ok) {
+            host.audio.sfx('error');
+            host.aria(T(g.reason || 'reason.notNow', g.vars || {}));
+            return null;
+          }
           var st = live();
           if (B().validShoe(st && st.casino && st.casino.shoe)) sh = B().shoeOf(st, rng);
           tc = B().counts(sh).trueCount;
@@ -532,7 +579,7 @@
       },
       peek: function () {
         return { phase: phase, bet: bet, limits: lim.slice(), chips: chipVals.slice(), round: r ? SR.util.clone(r) : null, vis: vis ? SR.util.clone(vis) : null,
-          shoe: { pos: sh.pos, cut: sh.cut, running: sh.running, size: sh.cards.length }, session: sessionResult(), outcome: outcome ? outcome.key : null,
+          shoe: { pos: sh.pos, cut: sh.cut, running: sh.running, size: sh.cards.length, discard: discarded() }, session: sessionResult(), outcome: outcome ? outcome.key : null,
           barred: barred, finished: finished, pending: !!ownPending };
       },
       destroy: function () { /* a pending hand stays pending: forfeit / the Hardcore hook resolve it */ },

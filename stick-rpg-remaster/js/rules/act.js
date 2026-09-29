@@ -371,14 +371,35 @@
   }
 
   /**
+   * The stat gains a night Report the Result carries has raised as `stat` rule events already (the
+   * furniture of night step 7, the hats of step 9): the report scene, the jail and the hospital
+   * re-emit a Report's events (CONTRACT §8.7), so the pipeline does not derive them a second time.
+   * @returns {object} key → the gain those events cover
+   */
+  function nightStats(res) {
+    var out = {};
+    [res.report, res.down && res.down.report].forEach(function (rep) {
+      if (!rep || !Array.isArray(rep.events)) return;
+      rep.events.forEach(function (e) {
+        if (e && e.name === 'stat' && e.payload) out[e.payload.key] = (out[e.payload.key] || 0) + (Number(e.payload.n) || 0);
+      });
+    });
+    return out;
+  }
+
+  /**
    * Deltas, the `stat` rule events derived from them, and `over`. A positive cash or bank Delta
    * names its income source as `key` when an income credit reached that field (the source that
-   * credited the most; CONTRACT §8.3 `key?`, docs/requests/W1-Q.md 5).
+   * credited the most; CONTRACT §8.3 `key?`, docs/requests/W1-Q.md 5). A gain made inside a night
+   * whose Report is in the Result is left to that Report's own `stat` events (nightStats).
    */
   function finish(s, before, res, c) {
     res.deltas = diff(before, snapshot(s));
+    var night = nightStats(res);
     res.deltas.forEach(function (d) {
-      if (d.kind === 'stat' && d.n > 0) res.events.push({ name: 'stat', payload: { key: d.key, n: d.n, total: d.to } });
+      if (d.kind === 'stat' && d.n > 0 && d.n > (night[d.key] || 0)) {
+        res.events.push({ name: 'stat', payload: { key: d.key, n: d.n - (night[d.key] || 0), total: d.to } });
+      }
       if ((d.kind === 'cash' || d.kind === 'bank') && d.n > 0 && c && c.income) {
         var src = mainSource(c.income[d.kind]);
         if (src) d.key = src;
@@ -402,7 +423,9 @@
     params = params || {};
     var def = SR.reg.action[id];
     if (!def) return refusal(id, 'reason.unknown', { id: id });
-    if (s.over && !s.mode.keepPlaying) return refusal(id, 'reason.gameOver');
+    // An ended game takes no actions. A Keep-playing run is live again (endgame.keepPlaying clears
+    // `over`), so `over` set once more (a Retire, a Hardcore death) ends it for good.
+    if (s.over) return refusal(id, 'reason.gameOver');
     if (def.feature && !SR.features[def.feature]) return refusal(id, 'reason.featureOff');
     var c = makeCtx(s, def, id, params, ctx, false);
     if (isHidden(s, def, c)) return refusal(id, 'reason.unavailable');
@@ -410,6 +433,7 @@
     if (g) return refusal(id, g.reason, g.vars);
 
     var before = snapshot(s);
+    var fullEnd = s.job ? s.job.lastFullEnd : -1;
     var backup = JSON.stringify(s);
     var rngState = c.rng && typeof c.rng.state === 'function' ? c.rng.state() : null;
     var res = makeResult(id);
@@ -423,6 +447,11 @@
       restore(s, backup, c.rng, rngState);
       return refusal(id, c.refused.reason, c.refused.vars);
     }
+    // B-05 / GDD §4.6: Overtime follows a Full shift "with no other action in between". The mark
+    // (job.lastFullEnd) is the Full shift's end; any other action that goes through, a free one
+    // too (walking into another building runs world.enter), clears it, so a McSticks shift cannot
+    // open Overtime at NLI and a stop at the counter in between ends the chance.
+    if (s.job && fullEnd >= 0 && s.job.lastFullEnd === fullEnd) s.job.lastFullEnd = -1;
     finish(s, before, res, c);
     return res;
   }
@@ -549,7 +578,7 @@
       gains: [], chance: null, badges: c.price.applied.slice(),
       hotkey: def.hotkey || null, repeatable: !!def.repeatable, screen: def.screen || null, hidden: false,
     };
-    if (s.over && !s.mode.keepPlaying) { p.ok = false; p.reason = 'reason.gameOver'; p.vars = {}; return p; }
+    if (s.over) { p.ok = false; p.reason = 'reason.gameOver'; p.vars = {}; return p; }
     if (def.screen) {
       // A sub-screen row: its requires can disable it; it shows no cost chips (ARCHITECTURE §7.1).
       p.cost = { cash: 0, min: 0, hp: 0, items: {} };
@@ -659,8 +688,10 @@
     try {
       res = run(s, id, params, ctx);
     } catch (e) {
+      // run has rolled the state and the stream back; the refusal is announced like any other
+      // (CONTRACT §8.9: action:done for refusals too), so a listener waiting on it is not left hanging.
       reportError('act', id, e);
-      return refusal(id, 'reason.error');
+      res = refusal(id, 'reason.error');
     }
     if (s.rng) s.rng.rules = SR.rng.rules.state();
     emitAll(s, res, before);

@@ -111,7 +111,8 @@
       if (fast()) land();
     }
 
-    function land() {
+    /** The dart in the air lands and scores; `quiet` (the Auto taking over) never ends the round itself. */
+    function land(quiet) {
       var fl = flying;
       flying = null;
       var pts = R().score(fl.x, fl.y);
@@ -122,7 +123,13 @@
       if (pts === 0) line = T('mg.darts.offBoard') + ' ' + line;
       host.aria(line);
       mirror();
-      if (darts.length >= p.darts) { done = true; decided(result()); endT = fast() ? 0 : END_HOLD_S; if (!endT) finish(); }
+      if (darts.length >= p.darts) {
+        done = true;
+        if (quiet) return;
+        decided(result());
+        endT = fast() ? 0 : END_HOLD_S;
+        if (!endT) finish();
+      }
     }
 
     function result() { return { score: score(), throws: darts.map(function (d) { return d.pts; }) }; }
@@ -318,6 +325,9 @@
         if (kind === 'up' && touch) { touchAim = false; throwDart(); }
       },
       auto: function (rng) {
+        // A dart already in the air was thrown by you: it lands where you threw it, and the Auto
+        // throws only the darts still in your hand (it never replaces a throw of yours).
+        if (flying) land(true);
         var out = autoFrom(p, darts, rng);
         decided(out.r);
         replay = { spots: out.spots, shown: 0, t: 0, dur: fast() ? 0.01 : 0.9 };
@@ -330,7 +340,8 @@
       assistChanged: function () {},
       peek: function () {
         return { aim: { x: aim.x, y: aim.y }, target: { x: target.x, y: target.y }, cross: cross(), t: host.t, A: amp(), params: SR.util.clone(p),
-          darts: darts.map(function (d) { return { x: d.x, y: d.y, pts: d.pts }; }), flying: !!flying, lock: lock, done: done, ghost: ghost, score: score() };
+          darts: darts.map(function (d) { return { x: d.x, y: d.y, pts: d.pts }; }), flying: !!flying, flyingAt: flying ? { x: flying.x, y: flying.y } : null,
+          lock: lock, done: done, ghost: ghost, score: score() };
       },
       destroy: function () {},
     };

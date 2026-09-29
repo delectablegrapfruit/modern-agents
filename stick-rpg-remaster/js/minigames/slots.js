@@ -401,8 +401,21 @@
         if (kind !== 'down') return;
         if (x >= LEVER.x - 10 && x <= LEVER.x + LEVER.w + 10 && y >= LEVER.y - 30 && y <= LEVER.y + LEVER.h) press();
       },
-      /** Auto-spin: 10 pulls at the current bet, each applied by the rules like a played one. */
+      /**
+       * Auto-spin: 10 pulls at the current bet, each applied by the rules like a played one. When
+       * not even the first pull can be made (the cash no longer covers the bet) nothing is played:
+       * the refusal shows under the reels and the table stays open (null: the frame starts no
+       * replay), so Auto never closes the table on a visit it did not play.
+       */
       auto: function () {
+        if (finished || replay) return null;
+        var pv = SR.preview('casino.slots.pull:resolve', { bet: bet });
+        if (!pv.ok && !(spin && spin.committed)) {
+          host.audio.sfx('error');
+          host.aria(T(pv.reason || 'reason.notNow', pv.vars || {}));
+          err = { key: pv.reason || 'reason.notNow', vars: pv.vars || {}, t: ERR_S };
+          return null;
+        }
         stopReels();
         if (spin && !spin.committed) spin = null;              // an uncommitted spin never happened
         else if (spin) { spin.reels.forEach(function (r, i) { if (!r.stopped && r.p1 !== undefined) pos[i] = mod(r.p1, N); }); done(); }

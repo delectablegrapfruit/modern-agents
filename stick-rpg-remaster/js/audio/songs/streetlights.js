@@ -5,6 +5,9 @@
 // minor i - IV vamp for the A section (Dm9 - G13 here, Em7 - A there), a B section that leaves it,
 // so W2-City's 4 s cross-fades at 19:30 and 05:30 land on the same kind of bar. A (vamp), A' (the
 // Rhodes melody over it), B, and a four-bar breakdown; 28 bars (80 s) a loop after a two-bar intro.
+// Like the day theme it has a `rain` variant (ART_AUDIO §13.4: the rain swaps the drum pattern on
+// the bar line): the swung hats become a rain-drum of shaker and brush, and the Rhodes sit lower;
+// js/scenes/city.js asks for it whenever the song has one and it rains (the P1 `weather` flag).
 // Original music. Pure data (Node-loadable).
 (function () {
   'use strict';
@@ -23,6 +26,8 @@
 
   var HATS = 'h h? h h? h h? h h?';
   var HATS2 = 'h h? h h? h h? o? h?';
+  var RAIN = 'z z? b? z? z z? b? z?';
+  var RAIN2 = 'z z? b? z? z z? b b?';
   var BEAT1 = 'k . s . . k s .';
   var BEAT2 = 'k . s k . . s k?';
   var CRACKLE = '. r? . . z? . . . | . . . r? . . z? .';
@@ -33,7 +38,7 @@
   SR.def.song('streetlights', {
     bpm: 84, swing: 0.33,
     meter: [4, 4], stepsPerBeat: 2,
-    key: 'D', scale: 'minor', gain: 0.78,
+    key: 'D', scale: 'minor', gain: 0.74,
     inst: {
       keys: { preset: 'keys', gain: 0.5, pan: -0.15 },
       mel: { preset: 'keys', gain: 0.7, pan: 0.25 },
@@ -149,5 +154,14 @@
     // intro · A (vamp) · A' (the melody) · B · breakdown
     order: ['intro', 'A1', 'A1', 'A2', 'A3', 'M1', 'M2', 'M3', 'M4', 'B1', 'B2', 'B3', 'B4', 'brk1', 'brk2'],
     loopFrom: 1,
+    variants: {
+      rain: {
+        tracks: { hats: ['A1', 'A2', 'A3', 'M1', 'M2', 'M3', 'M4', 'B1', 'B2', 'B3', 'B4'].reduce(function (o, p) {
+          o[p] = RAIN + ' | ' + RAIN2;
+          return o;
+        }, {}) },
+        inst: { hats: { gain: 0.75 }, keys: { gain: 0.4 } },
+      },
+    },
   });
 })();

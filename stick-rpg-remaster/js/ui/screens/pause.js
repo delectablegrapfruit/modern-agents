@@ -8,7 +8,8 @@
 // named fn endgame.retire through SR.act, which emits game:over), else the rule itself and the same
 // game:over; the results follow once the menu is gone (js/scenes/results.js).
 // Suspend & quit writes the suspend slot (Hardcore: its ironman slot) and returns to the title; Quit
-// to title leaves the game without a save (the last save stays). Either way no game runs afterwards.
+// to title leaves the game without a save (the last save stays; a Hardcore run's debounced ironman
+// write lands first, B-16). Either way no game runs afterwards (SR.ui.saveload.quit).
 // Load-time rule: defines functions and registers the scene only.
 (function () {
   'use strict';
@@ -45,11 +46,8 @@
     if (top && top.id === 'pause') { D().sfx('close'); SR.scenes.pop(); }
   }
 
-  /** Leaves the game for the title; no game runs afterwards. */
-  function toTitle() {
-    SR.scenes.go('title');
-    SR.state = null;
-  }
+  /** Leaves the game for the title; no game runs afterwards (a Hardcore run's pending write lands first). */
+  function toTitle() { SR.ui.saveload.quit(); }
 
   function suspendQuit(btn) {
     try { if (running()) SR.ui.saveload.suspend(); } catch (e) {

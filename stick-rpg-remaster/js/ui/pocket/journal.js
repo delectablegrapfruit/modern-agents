@@ -62,6 +62,36 @@
     box.appendChild(ul);
   }
 
+  /**
+   * The Road to Office checklist (GDD §4.17, B-17 `election.requires`): the castle, the money, the
+   * stats and the karma of the path your karma points to. Which lines hold is W2-RulesC's
+   * SR.rules.election.qualifies (the nomination check itself), so the list never disagrees with it.
+   * @returns {{id: string, ok: boolean, key: string, vars: object}[]|null}
+   */
+  function roadToOffice(s) {
+    var R = SR.tuning.election && SR.tuning.election.requires;
+    if (!R) return null;
+    var evil = s.stats.karma < 0, path = evil ? R.dictator : R.president;
+    var missing = null;
+    var E = SR.rules.election;
+    if (E && typeof E.qualifies === 'function') { try { missing = E.qualifies(s).missing || []; } catch (e) { missing = null; } }
+    if (!missing) {
+      missing = [];
+      if (s.homes.living !== R.home) missing.push('home');
+      if (s.money.cash + s.money.bank < R.money) missing.push('money');
+      if (Math.min(s.stats.str, s.stats.int, s.stats.cha) < path.stats) missing.push('stats');
+      if (evil ? s.stats.karma > path.karmaMax : s.stats.karma < path.karmaMin) missing.push('karma');
+    }
+    var ok = function (k) { return missing.indexOf(k) < 0; };
+    return [
+      { id: 'castle', ok: ok('home'), key: 'pocket.journal.road.castle', vars: {} },
+      { id: 'money', ok: ok('money'), key: 'pocket.journal.road.money', vars: { money: SR.text.money(R.money) } },
+      { id: 'stats', ok: ok('stats'), key: 'pocket.journal.road.stats', vars: { n: path.stats } },
+      { id: 'karma', ok: ok('karma'), key: evil ? 'pocket.journal.road.karmaBad' : 'pocket.journal.road.karmaGood',
+        vars: { n: evil ? path.karmaMax : path.karmaMin } },
+    ];
+  }
+
   /** P1 `advisor`: up to 3 goals with ProgressBars, then the Road to Office (GDD §4.17, B-17). */
   function renderAdvisor(s, box) {
     if (!(SR.features && SR.features.advisor)) return;
@@ -77,17 +107,11 @@
         });
       }
     }
-    var R = SR.tuning.election && SR.tuning.election.requires;
-    if (!R) return;
-    var path = s.stats.karma < 0 ? R.dictator : R.president;
-    var low = Math.min(s.stats.str, s.stats.int, s.stats.cha);
-    var karmaOk = s.stats.karma < 0 ? s.stats.karma <= R.dictator.karmaMax : s.stats.karma >= R.president.karmaMin;
+    var road = roadToOffice(s);
+    if (!road) return;
     box.appendChild(heading('pocket.journal.road'));
     var ul = h('ul', { 'data-id': 'journal-road', style: { listStyle: 'none', margin: '0', padding: '0' } });
-    ul.appendChild(check(s.homes.living === R.home, 'pocket.journal.road.castle', 'journal-road-castle'));
-    ul.appendChild(check(s.money.cash + s.money.bank >= R.money, t('pocket.journal.road.money', { money: SR.text.money(R.money) }), 'journal-road-money'));
-    ul.appendChild(check(low >= path.stats, t('pocket.journal.road.stats', { n: path.stats }), 'journal-road-stats'));
-    ul.appendChild(check(karmaOk, t('pocket.journal.road.karma', { n: s.stats.karma < 0 ? '≤ ' + R.dictator.karmaMax : '≥ +' + R.president.karmaMin }), 'journal-road-karma'));
+    road.forEach(function (r) { ul.appendChild(check(r.ok, t(r.key, r.vars), 'journal-road-' + r.id)); });
     box.appendChild(ul);
   }
 
@@ -118,6 +142,8 @@
     put('skate', function () { return Math.round(T.world.skate.speed / T.world.walk.speed * 10) / 10; });
     put('fallHp', function () { return T.world.fall.hp; });
     put('money', function () { return SR.text.money(T.election.requires.money); });
+    put('karmaMin', function () { return T.start.karmaRange[0]; });
+    put('karmaMax', function () { var k = T.start.karmaRange[1]; return (k > 0 ? '+' : '') + k; });
     return v;
   }
 
@@ -160,6 +186,8 @@
     if (SR.events && typeof SR.events.on === 'function') {
       // Eating and studying on day 1 (the list's only facts the state may not keep).
       SR.events.on('eat', function () { if (SR.state) ate[dayKey(SR.state)] = true; });
+      // A new or loaded game starts from its own state (a new run with the same seed is a new day 1).
+      SR.events.on('save:loaded', function () { ate = {}; });
       SR.events.on('train', function (p) {
         var row = p && SR.tuning.training && SR.tuning.training[p.id];
         if (SR.state && row && row.where === 'uofs') ate['study:' + dayKey(SR.state)] = true;
@@ -175,9 +203,11 @@
       /** @returns {object} the First Day list and the Help topic (tests). */
       debug: function () {
         var s = SR.state;
-        return { firstDay: s && firstDayOn(s) ? firstDay(s) : null, topic: J ? J.topic : null, topics: HELP.slice(), helpVars: helpVars() };
+        return { firstDay: s && firstDayOn(s) ? firstDay(s) : null, topic: J ? J.topic : null, topics: HELP.slice(), helpVars: helpVars(),
+          road: s ? roadToOffice(s) : null };
       },
       firstDay: firstDay,
+      roadToOffice: roadToOffice,
     });
   });
 })();

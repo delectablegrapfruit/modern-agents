@@ -10,7 +10,9 @@
 //   SR.ui.saveload: latest() (the most recent readable save: Continue), continueLatest(),
 //   load(slot | state) (loads and resumes), resume() (where a loaded game starts: the jail, a trip
 //   buyer still waiting, else the city), suspend() (Suspend & quit, the Classic link: the suspend
-//   slot, or the ironman slot on Hardcore), hardcore(state), SLOTS.
+//   slot, or the ironman slot on Hardcore), quit() (leaves the game for the title: a Hardcore run's
+//   pending ironman write lands first; the city's building details forget the game), hardcore(state),
+//   SLOTS.
 // Load-time rule: defines functions and registers the scene only.
 (function () {
   'use strict';
@@ -94,6 +96,26 @@
     return SR.save.write('suspend');
   }
 
+  /** Writes a Hardcore run's debounced ironman save now (B-16: the slot keeps every HP, money or karma change). */
+  function flushIronman() {
+    var s = SR.state;
+    if (!s || s.over || !hardcore(s) || !SR.save || typeof SR.save.flush !== 'function') return;
+    try { SR.save.flush(); } catch (e) { SR.util.warnOnce('saveload.flush', 'saveload: the ironman save could not be written (' + e.message + ')'); }
+  }
+
+  /**
+   * Leaves the game for the title (Pause › Quit to title and Suspend & quit, the results' Title); no
+   * game runs afterwards. A Hardcore run's pending ironman write lands first (quitting inside the 2 s
+   * debounce must not undo the last change), and the city behind the title drops the last game's
+   * building details (nulling the state raises no event; docs/requests/W2-Exterior.md 11).
+   */
+  function quit() {
+    flushIronman();
+    SR.scenes.go('title');
+    SR.state = null;
+    if (SR.art.exteriorDetail && typeof SR.art.exteriorDetail.refresh === 'function') SR.art.exteriorDetail.refresh();
+  }
+
   function slotName(slot) { return text('ui.save.slot.' + slot); }
   function when(ms) {
     if (!ms) return '';
@@ -156,6 +178,7 @@
   function doLoad(slot) {
     confirmLoad().then(function (ok) {
       if (!ok) return;
+      flushIronman();                  // Hardcore: its slot is the run itself, so reloading it never steps back
       if (!load(slot)) render();
     });
   }
@@ -339,6 +362,7 @@
     load: load,
     resume: resume,
     suspend: suspend,
+    quit: quit,
     hardcore: hardcore,
     copyText: copyText,
     SLOTS: SHOWN.slice(),

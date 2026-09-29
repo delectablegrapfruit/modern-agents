@@ -8,7 +8,9 @@
 // a cab** (W2-City's SR.world.cab). A waypoint is the minimap's pin (SR.render.minimap.waypoint)
 // and leads the click-to-walk route: over the city the Pocket closes and you walk there
 // (SR.world.player.walkTo; a door's route enters it); from a building the route starts when you
-// step outside; it clears when you enter that door. The Fold Map is P1 (`scraps`, W3-Park).
+// step outside; over a street dialog it is only pinned. It clears when you enter that door (a home
+// door too) or talk to the person it marks. On the focused map the arrows pan, and an arrow at the
+// map's edge moves focus on (no keyboard trap). The Fold Map is P1 (`scraps`, W3-Park).
 // Colours: palette keys through SR.art.draw.color (canvas) and tokens (DOM). Registered with
 // SR.ui.pocket.panel at boot (prio 50). Load-time rule: defines functions only.
 (function () {
@@ -123,7 +125,14 @@
     clampView();
     draw();
   }
-  function panBy(dx, dy) { view.x -= dx / view.z; view.y -= dy / view.z; clampView(); draw(); }
+  /** Pans the view by screen pixels. @returns {boolean} the view moved (false: it is at that edge) */
+  function panBy(dx, dy) {
+    var x = view.x, y = view.y;
+    view.x -= dx / view.z; view.y -= dy / view.z;
+    clampView();
+    draw();
+    return Math.abs(view.x - x) > 1e-6 || Math.abs(view.y - y) > 1e-6;
+  }
 
   function centreOnYou() {
     var P = SR.world.player;
@@ -346,28 +355,56 @@
   function setWaypoint(p) {
     wp = { id: p.id, x: p.tx, y: p.ty, name: p.name, door: p.kind === 'door' ? p.id : null };
     if (SR.render.minimap && typeof SR.render.minimap.waypoint === 'function') SR.render.minimap.waypoint(wp.x, wp.y);
-    var ctx = M && M.ctxP, onCity = SR.scenes.stack().join() === 'city,pocket';
+    var ctx = M && M.ctxP, st = SR.scenes.stack(), onCity = st.join() === 'city,pocket';
     if (onCity) {
       var P = SR.world.player;
-      if (P && P.car) { SR.ui.toast({ key: 'pocket.map.waypointCar', kind: 'info', id: 'toast-waypoint' }); draw(); renderCard(); return false; }
+      if (P && P.car) { SR.ui.toast({ key: 'pocket.map.waypointCar', kind: 'info', id: 'toast-waypoint' }); redrawCard(); return false; }
       if (ctx) ctx.close();
       var ok = P && typeof P.walkTo === 'function' ? P.walkTo(wp.x, wp.y) : false;
       SR.ui.toast({ key: ok ? 'pocket.map.waypointSet' : 'toast.world.noRoute', vars: { place: wp.name }, kind: 'info', id: 'toast-waypoint' });
       return ok;
     }
+    if (st[0] === 'city') {
+      // Out in the city but under a street dialog: you are already outside, so no "head outside"
+      // route waits for a door; the pin is on the minimap and a click walks you there.
+      pendingRoute = false;
+      SR.ui.toast({ key: 'pocket.map.waypointSet', vars: { place: wp.name }, kind: 'info', id: 'toast-waypoint' });
+      redrawCard();
+      return false;
+    }
     pendingRoute = true;
     SR.ui.toast({ key: 'pocket.map.waypointLater', kind: 'info', id: 'toast-waypoint' });
-    draw();
-    renderCard();
+    redrawCard();
     return false;
   }
 
-  function clearWaypoint() {
+  /** Clears the waypoint (the minimap's pin and any route waiting for a door). */
+  function dropWaypoint() {
+    var had = wp;
     wp = null;
     pendingRoute = false;
-    if (SR.render.minimap && typeof SR.render.minimap.waypoint === 'function') SR.render.minimap.waypoint(null);
+    // The minimap's pin is ours only while we hold a waypoint (another package may pin one too).
+    if (had && SR.render.minimap && typeof SR.render.minimap.waypoint === 'function') SR.render.minimap.waypoint(null);
+  }
+
+  function clearWaypoint() {
+    dropWaypoint();
     SR.ui.toast({ key: 'pocket.map.waypointCleared', kind: 'info', id: 'toast-waypoint' });
-    if (M) { draw(); renderCard(); }
+    redrawCard();
+  }
+
+  /**
+   * Redraws the map and the place's card after the waypoint changed. Set becomes Clear (and back),
+   * so a focused button would be re-rendered away: focus moves to its replacement.
+   */
+  function redrawCard() {
+    if (!M) return;
+    var a = document.activeElement, inCard = !!(a && M.card.contains(a));
+    draw();
+    renderCard();
+    if (!inCard) return;
+    var again = M.card.querySelector('[data-id="map-waypoint"], [data-id="map-clear-waypoint"]');
+    if (again) SR.ui.focus.focus(again);
   }
 
   function renderCard() {
@@ -524,12 +561,14 @@
       zoomBy(e.deltaY < 0 ? Z_STEP : 1 / Z_STEP, q.x, q.y);
     }, { passive: false });
     // Keyboard and pad on the focused map: the arrows pan, confirm picks the place nearest the centre.
+    // An arrow the view cannot follow (it is at that edge already) moves focus on, as anywhere else,
+    // so the map never traps keyboard and pad focus (UI §6: every screen completable without a pointer).
     SR.ui.focus.setHandler(cv, function (action, ev) {
       if (ev && ev.down === false) return false;
-      if (action === 'left') { panBy(PAN_KEY, 0); return true; }
-      if (action === 'right') { panBy(-PAN_KEY, 0); return true; }
-      if (action === 'up') { panBy(0, PAN_KEY); return true; }
-      if (action === 'down') { panBy(0, -PAN_KEY); return true; }
+      if (action === 'left') return panBy(PAN_KEY, 0);
+      if (action === 'right') return panBy(-PAN_KEY, 0);
+      if (action === 'up') return panBy(0, PAN_KEY);
+      if (action === 'down') return panBy(0, -PAN_KEY);
       if (action === 'confirm' && !(ev && ev.repeat)) {
         var p = hit(M.W / 2, M.H / 2) || nearest(M.W / 2, M.H / 2);
         if (p) select(p.id);
@@ -570,7 +609,8 @@
     M.bar = h('div', { style: { display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-2)', marginBottom: 'var(--sp-2)' } }, M.filters, tools);
     M.list = h('ul', { class: 'list scroll-y', role: 'listbox', 'aria-label': t('pocket.map.places'), 'data-id': 'map-places',
       style: { margin: '0', padding: '0', listStyle: 'none', overflowY: 'auto', touchAction: 'pan-y' } });
-    M.cv = h('canvas', { 'data-id': 'map-canvas', role: 'img', 'data-nav': '', tabindex: '-1', 'aria-label': t('pocket.map.aria', { n: 0 }),
+    // data-no-swipe: a finger drag here pans the map; it does not turn the Pocket's page (pocket.js).
+    M.cv = h('canvas', { 'data-id': 'map-canvas', role: 'img', 'data-nav': '', 'data-no-swipe': '', tabindex: '-1', 'aria-label': t('pocket.map.aria', { n: 0 }),
       style: { display: 'block', border: 'var(--line)', borderRadius: 'var(--r-m)', touchAction: 'none', cursor: 'grab', background: 'var(--paper-2)' } });
     M.ctx = M.cv.getContext ? M.cv.getContext('2d') : null;
     M.card = h('div', { class: 'paper', 'data-id': 'map-card', role: 'group', 'aria-label': t('pocket.map.places'), hidden: true,
@@ -606,12 +646,19 @@
           P.walkTo(wp.x, wp.y);
         });
       });
-      // Arriving: the waypoint of a door clears when you walk in.
+      // Arriving: the waypoint of a door clears when you walk in. door:entered names the building
+      // (a home door's building is 'home'), so the door itself is SR.world.doors.last's.
       SR.events.on('door:entered', function (p) {
-        if (wp && wp.door && p && (p.id === wp.door || p.id === wp.id)) { wp = null; pendingRoute = false; if (SR.render.minimap && SR.render.minimap.waypoint) SR.render.minimap.waypoint(null); }
+        if (!wp || !wp.door || !p) return;
+        var last = SR.world.doors && SR.world.doors.last, lastId = last && last.resolved && last.resolved.id === p.id ? last.id : null;
+        if (p.id === wp.door || lastId === wp.door) dropWaypoint();
+      });
+      // Reaching a person: talking to them clears a waypoint set on them (the `talk` rule event).
+      SR.events.on('talk', function (p) {
+        if (wp && p && p.npc && (wp.id === 'person:' + p.npc || wp.id === p.npc)) dropWaypoint();
       });
       // A new or loaded game starts without a waypoint.
-      SR.events.on('save:loaded', function () { wp = null; pendingRoute = false; view = null; });
+      SR.events.on('save:loaded', function () { dropWaypoint(); view = null; });
     }
     if (!SR.ui.pocket || typeof SR.ui.pocket.panel !== 'function') return;
     SR.ui.pocket.panel('map', {
@@ -643,10 +690,11 @@
        */
       waypointTo: function (spec) {
         if (!spec || typeof spec.x !== 'number') return false;
-        var p = { id: spec.id || 'spot', kind: spec.door ? 'door' : 'spot', x: spec.x, y: spec.y, tx: spec.x, ty: spec.y, name: spec.name || '' };
-        wp = { id: p.id, x: p.tx, y: p.ty, name: p.name, door: spec.door || null };
+        wp = { id: spec.id || 'spot', x: spec.x, y: spec.y, name: spec.name || '', door: spec.door || null };
+        pendingRoute = false;   // a pin from elsewhere (a phone call) never starts an older waiting route
         if (SR.render.minimap && typeof SR.render.minimap.waypoint === 'function') SR.render.minimap.waypoint(wp.x, wp.y);
         SR.ui.toast({ key: 'pocket.map.waypointSet', vars: { place: wp.name }, kind: 'info', id: 'toast-waypoint' });
+        redrawCard();
         return true;
       },
       toScreen: function (id) { if (!M) return null; var p = placeById(id); return p ? toScreen(p.x, p.y) : null; },

@@ -133,6 +133,17 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-Front');
   await t.key('Escape');
   await t.step(1);
   T.eq([(await info()).capture, await ev(() => window.SR.input.bindings('bag'))], [null, ['KeyI']], 'Esc cancels a remap');
+  // "Change key" pressed with Enter: the auto-repeat of that held Enter is not the new key.
+  await ev(() => window.SR.ui.focus.focus(document.querySelector('#ui [data-id="set-kb-bag"]')));
+  await t.key('Enter');
+  await t.step(1);
+  const capturing = (await info()).capture;
+  await ev(() => window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Enter', key: 'Enter', repeat: true, bubbles: true, cancelable: true })));
+  await t.step(1);
+  const bagCap = { action: 'bag', ctx: 'global', device: 'kb' };
+  T.eq([capturing, (await info()).capture, await ev(() => window.SR.input.bindings('bag'))], [bagCap, bagCap, ['KeyI']], 'a key repeat while waiting is ignored (it still waits; Bag keeps I)');
+  await t.key('Escape');
+  await t.step(1);
   await t.clickUI('set-pad-btn-map');
   await ev(() => { window.__pad = { id: 'test pad', index: 0, connected: true, mapping: 'standard', axes: [0, 0, 0, 0], timestamp: 1, buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })) }; navigator.getGamepads = () => [window.__pad]; });
   await t.step(2);

@@ -20,6 +20,10 @@ Each item: the file and its owner, the exact change, why, and the workaround use
   `e.bark` (a `bark.<npc>.<n>` key, ≤ 60 characters) and `e.barkT` (3 s) when you walk within 180 u
   of Harold, Skid or Red, at most every 25 s. It uses the same fields the pedestrians use.
 - **Meanwhile:** the fields are set and tested (`tests/e2e/street.test.cjs`), but nothing shows them.
+- **Status (review):** applied by W2-City (`barks()` in `js/scenes/city.js`). Since the review the
+  street people's barks are P1: GDD §3.11 has "Barks (P1)", and the crowd's own barks wait for the
+  `cityReacts` flag, so `js/world/streetnpcs.js` sets a person's bark only while `cityReacts` is on.
+  The car's "Hey!" (GDD §3.8) stays P0. Nothing more is asked.
 
 ## 2. `js/scenes/city.js` (W2-City) or W3: the player's parked cars (a note, no change asked)
 
@@ -30,6 +34,8 @@ Each item: the file and its owner, the exact change, why, and the workaround use
 - The sports car (the day-365 gift, P1 catalogue) has no parked sprite yet. If W2-City draws the
   player's parked cars in general, drop the junker from that source
   (`SR.render.actors.source('street.junker', null)`), so it is not drawn twice.
+- **Status (review):** W2-City draws the parked sports car only (`'city.sports'`) and leaves the
+  junker to `'street.junker'`, so neither is drawn twice.
 
 ## 3. `docs/CONTRACT.md` §7 and `tools/validate.cjs` `textOwner` (lead): the `person.*` names
 
@@ -53,6 +59,7 @@ Each item: the file and its owner, the exact change, why, and the workaround use
   starts with 4 messages, not 3.
 - **Meanwhile:** nothing on W2-Street's side. This is the only assertion in the tree that counts the
   inbox of a new game (checked with `grep msgs tests/e2e`).
+- **Status (review):** applied by W2-Home (the section starts with `put({ msgs: [] })`).
 
 ## 5. W2-Front (the new-game wizard) and W2-Pocket (the Bag's Give): notes, no change asked
 
@@ -76,9 +83,12 @@ Nothing frozen changes. Record:
 
 - **`SR.world.streetnpcs`** (`js/world/streetnpcs.js`):
   - Fields: `people` (the live array), `talking`, `t`, `stats { judged, barks, talks, acts }`.
+  - Fields: `list` (the same array as `people`, CONTRACT §15.1's name).
   - Functions: `update(dt)`; `talk(id, entity)` → Promise, resolved when the conversation ends, or
     `false`; `judge(snap)` → the list; `reset()`; `get(id)`; `placeOf(id, s?)` →
-    `{ place, x, y, path } | null`; `giveAction(item, id?)`; `parkedJunker()`; `jobOffer()`.
+    `{ place, x, y, path } | null`; `giveAction(item, id?)`; `parkedJunker()`; `jobOffer()`;
+    `speaker()` → `{ x, y } | null` (where the one you are talking to stands; request 7).
+  - Barks are P1: a person's `bark` is set only while `cityReacts` is on (request 1's status).
   - Entity fields: `id, named, x, y, px, py, facing, state, look, clip, visible, active, talk, place,
     home, path, idle, bark, barkT, hopT, hopUntil`.
 - **Person def fields** beyond CONTRACT §3.1: `portrait`, `idle` (`sit | stand | pace`; `pace`
@@ -119,3 +129,17 @@ Nothing frozen changes. Record:
 - **Why:** so that W2-Pocket (Give), W3-Life (the arcs; the P1 schedule rows), W3-Crime (McHolland)
   and W3-Prog (the *Hot Wheels* achievement) can build on these names.
 - **Meanwhile:** implemented as listed.
+
+## 7. `js/scenes/city.js` (W2-City): the camera eases 10 % toward the speaker (UI §5.7)
+
+- **Change:** while a street dialog is open over the city (`SR.world.streetnpcs.talking` is set and
+  the top scene is `dialog`), the city's `render` eases the camera 10 % of the way from its centre
+  toward `SR.world.streetnpcs.speaker()` (Harold, Skid, Red, or the junker on the lawn) over about
+  0.3 s, moving `camera.x / y` and `camera.px / py` together so the frame's interpolation does not
+  jitter. On close, the camera's own spring brings it back once the world steps again. Reduced
+  Motion: no ease.
+- **Why:** UI §5.7 says "The camera eases 10 % toward the speaker." The Dialog scene `blocksUpdate`
+  (it freezes the world and the clock, as the original's frozen map did), so `SR.world.camera.update`
+  does not run under it and `camera.target` cannot do it; only the city's render still runs.
+  `speaker()` returns a reused point, so the render can read it every frame.
+- **Meanwhile:** the camera stays where it was when the sheet opened.

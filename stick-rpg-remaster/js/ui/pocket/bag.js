@@ -15,6 +15,7 @@
 
   var CATEGORIES = ['money', 'consumable', 'gear', 'commodity', 'key', 'document'];
   var TILE = 64;                                                         // UI §5.9: 64 px tiles
+  var GRID_MIN = 200, DETAIL_W = 320, DETAIL_MIN = 240;                  // px (× the text size): the tiles' column and the detail pane
   // The gift an action gives when its def says nothing else: the icons of ART_AUDIO §10's street row.
   var GIFT_ICON = { give10: 'cash', givebooze: 'booze', givesmokes: 'smokes', givegum: 'gum' };
   var WALLET = 'cash';                                                   // the wallet tile's id (the `gift` item of money)
@@ -124,7 +125,9 @@
   function block(id, params, dataId, labelKey, labelVars) {
     var ctx = B.ctx, def = SR.reg.action[id], pv = ctx.preview(id, params);
     if (!def || !pv || pv.hidden) return null;
-    var btn = SR.ui.button({ id: dataId, label: labelKey || def.label || 'act.' + id, vars: labelVars, icon: def.icon, variant: dataId === 'bag-use' ? 'primary' : 'secondary',
+    // A label may name its price ("Give {money}", Harold's $10 row): the vars the dialog gives it.
+    var vars = labelVars || { money: SR.text.money(pv.cost && pv.cost.cash ? pv.cost.cash : 0) };
+    var btn = SR.ui.button({ id: dataId, label: labelKey || def.label || 'act.' + id, vars: vars, icon: def.icon, variant: dataId === 'bag-use' ? 'primary' : 'secondary',
       disabled: !pv.ok, reason: pv.reason, reasonVars: pv.vars, cls: 'bag-act',
       onClick: function () {
         ctx.act(id, params, btn);
@@ -157,6 +160,9 @@
       render();
       var again = B.grid.querySelector('[data-id="bag-tile-' + tl.id + '"]');
       if (again) SR.ui.focus.focus(again);
+      // A narrow page wraps the detail pane below the tiles: bring what the tap picked into view.
+      var gr = B.grid.getBoundingClientRect(), dr = B.detail.getBoundingClientRect();
+      if (dr.top >= gr.bottom - 1 && typeof B.detail.scrollIntoView === 'function') B.detail.scrollIntoView({ block: 'nearest' });
     });
     SR.ui.tooltip(b, function () { return name; });
     return b;
@@ -301,11 +307,14 @@
     B = { root: root, ctx: ctx, sel: ctx.params && ctx.params.item ? ctx.params.item : null };
     B.grid = h('div', { class: 'bag-grid', 'data-id': 'bag-grid', style: { minWidth: '0' } });
     B.pill = h('div', { 'data-id': 'bag-pill', style: { marginTop: 'var(--sp-3)', borderTop: 'var(--line-thin)' } });
+    // The detail pane sits beside the tiles, and wraps below them when the page is too narrow for
+    // both (the touch notebook at 150 % text), so neither column squeezes its words (UI §8).
     B.detail = h('aside', { class: 'bag-detail', 'data-id': 'bag-detail', 'aria-label': t('pocket.bag.items'), 'aria-live': 'off',
-      style: { minWidth: '0', padding: 'var(--sp-3)', border: 'var(--line)', borderRadius: 'var(--r-m)', background: 'var(--paper-0)', alignSelf: 'start' } });
+      style: { flex: '0 1 calc(' + DETAIL_W + 'px * var(--ui-scale))', minWidth: 'min(100%, calc(' + DETAIL_MIN + 'px * var(--ui-scale)))', padding: 'var(--sp-3)',
+        border: 'var(--line)', borderRadius: 'var(--r-m)', background: 'var(--paper-0)', alignSelf: 'flex-start' } });
     B.owned = h('div', { class: 'bag-owned', 'data-id': 'bag-owned', style: { marginTop: 'var(--sp-4)', paddingTop: 'var(--sp-3)', borderTop: 'var(--line)' } });
-    root.appendChild(h('div', { style: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(calc(240px * var(--ui-scale)), calc(320px * var(--ui-scale)))', gap: 'var(--sp-4)' } },
-      h('div', { style: { minWidth: '0' } }, B.grid, B.pill), B.detail));
+    root.appendChild(h('div', { 'data-id': 'bag-layout', style: { display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: 'var(--sp-4)' } },
+      h('div', { style: { flex: '1 1 calc(' + GRID_MIN + 'px * var(--ui-scale))', minWidth: '0' } }, B.grid, B.pill), B.detail));
     root.appendChild(B.owned);
     render();
   }

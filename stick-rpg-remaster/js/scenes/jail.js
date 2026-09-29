@@ -10,11 +10,12 @@
 // The scene: the cell (the 'jail' interior of js/art/interiors/special.js: bars in front, the cot,
 // the calendar's tally marks, a barred window high up) and the Jail Day card (js/ui/screens/jail.js).
 // Each choice runs jail.day (the day's gain, then the jail night), plays the card's feedback, and
-// finishes that night as the report scene would for a sleep (the Report's rule events, then
-// day:started: the autosave, the HUD, the world stream) while the card shows the night's one-line
-// summary; jail nights never open the full report (UI §5.11), except an election night, whose
-// edition is pushed over the cell. On release (daysLeft 0, or Bail with P1 `police`) the card reads
-// "Released at 08:00" and Walk out places you outside City Hall ('afterJail') in the city. A timed
+// finishes that night as the report scene would for a sleep (the Report's rule events, its
+// achievements, then day:started: the autosave, the HUD, the world stream) while the card shows the
+// night's one-line summary; jail nights never open the full report (UI §5.11), except an election
+// night, whose edition is pushed over the cell. On release (daysLeft 0, or Bail with P1 `police`)
+// you stand outside City Hall ('afterJail') as far as the state goes (a save resumes there), the
+// card reads "Released at 08:00" and Walk out brings the city. A timed
 // game that ends during a jail night ends here: the card leads to the results (the Final Edition).
 // Load-time rule: defines functions, registers the scene; the listeners are added in a boot hook.
 (function () {
@@ -58,24 +59,31 @@
     return r && last.state === s && (typeof r.day !== 'number' || r.day === s.clock.day) ? r : null;
   }
 
-  /** Finishes a jail night as the report scene does for a sleep: its rule events, then day:started. */
+  /**
+   * Finishes a jail night as the report scene does for a sleep (js/scenes/report.js): its rule events,
+   * the achievements it unlocked (Report.achievements, CONTRACT §8.9), then day:started.
+   */
   function startDay(report) {
     if (!report || !SR.state || emitted.indexOf(report) >= 0) return;
     emitted.push(report);
     if (emitted.length > 8) emitted.shift();
     (report.events || []).forEach(function (e) { if (e && e.name) SR.events.emit(e.name, e.payload); });
+    (report.achievements || []).forEach(function (id) { SR.events.emit('achievement:unlocked', { id: id }); });
     SR.events.emit('day:started', { day: typeof report.day === 'number' ? report.day : SR.state.clock.day, report: report });
   }
 
   /**
    * An election night on a jail night: the report scene's election edition over the cell (UI §5.11).
-   * This scene has finished the night already, so the paper only shows it and pops back ('pop').
+   * This scene has finished the night already (its events, achievements and day:started), so the
+   * paper only shows it and pops back ('pop'); it gets a copy without the achievements, which the
+   * report scene would announce a second time.
    */
   function electionNight(report) {
     if (!report || !report.election || !SR.reg.scene.report) return;
     var top = SR.scenes.top();
     if (top && top.id === 'report') return;
-    SR.scenes.push('report', { report: report, next: 'pop', events: false, dayStarted: false }).then(function () { render(); });
+    var paper = Object.assign({}, report, { achievements: [] });
+    SR.scenes.push('report', { report: paper, next: 'pop', events: false, dayStarted: false }).then(function () { render(); });
   }
 
   function extra() {
@@ -85,10 +93,28 @@
   function render() {
     if (!J || !J.card) return;
     var v = SR.ui.jail.view(SR.state, J.report, extra());
+    var was = J.shown;
     if (v.days) J.days = v.days;
     J.mode = v.mode;
+    J.shown = v.mode;
     J.card.render(v);
+    if (was !== v.mode) {
+      // The footer button changed its meaning (refused Walk out → Walk out or Read the Final
+      // Edition): a tooltip still pending from a hover of the refused button would show its old
+      // label over the new one, so any tooltip goes.
+      if (SR.ui.tooltip && typeof SR.ui.tooltip.hide === 'function') SR.ui.tooltip.hide();
+      // Released (the last jail night, or bail): you are already on the City Hall steps as far as
+      // the state goes, so a save written before Walk out resumes there (B-11c; 'afterJail').
+      if (v.mode === 'released') placeOutside();
+    }
     if (J.mode !== 'day') SR.ui.focus.focus(J.card.leave);
+  }
+
+  /** Puts the player outside City Hall (the worldmap's 'afterJail' spawn), in the world and the state. */
+  function placeOutside() {
+    var s = SR.state;
+    if (!s || !SR.world || !SR.world.ready || typeof SR.world.place !== 'function') return;
+    try { SR.world.place('afterJail', s); } catch (e) { SR.util.warnOnce('jail.place', 'jail: SR.world.place(afterJail) failed: ' + e.message); }
   }
 
   /** Runs a Jail Day choice. */
@@ -135,7 +161,7 @@
       });
       return;
     }
-    if (s && SR.world && SR.world.ready) SR.world.place('afterJail', s);
+    placeOutside();
     SR.scenes.go(SR.reg.scene.city ? 'city' : 'title', {}, { transition: 'fade' });
   }
 
@@ -174,7 +200,7 @@
       var s = SR.state;
       var jailed = params.jailed || null;
       J = { params: params, report: params.report || (params.resume ? recalled() : null), reason: (jailed && jailed.reason) || (s && s.jail && s.jail.reason) || 'police',
-        days: (jailed && jailed.days) || 0, bailed: false, mode: 'day', pose: 'idle', poseChoice: null, t: 0,
+        days: (jailed && jailed.days) || 0, bailed: false, mode: 'day', shown: null, pose: 'idle', poseChoice: null, t: 0,
         served: s && s.jail ? s.jail.served : 0, card: null, scope: null, cache: null, cacheScale: 0, cacheServed: -2, busy: false };
       J.interior = SR.art && typeof SR.art.interior === 'function' ? SR.art.interior('jail', {}) : null;
       // The arrest night (or the night that brought you back here) is finished once, here.

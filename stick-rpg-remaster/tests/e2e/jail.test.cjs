@@ -58,13 +58,15 @@ const A = require('./a11y.test.cjs');
 
   T.section('the Jail Day card: day, why, last night, four choices');
   {
-    await arrest(60);
+    // Savings in the bank, so the arrest night earns interest (UI §5.12: "Interest +$42 · NLI ▲ 2 % · 1 message").
+    await arrest(60, { money: { cash: 100, bank: 5000 } });
     const s = await t.state();
     T.eq([await t.scenes(), s.jail.daysLeft, s.jail.served, s.clock.day, s.clock.min], [['jail'], 4, 1, 2, 480],
       'Heat 60: 3 + 2 = 5 days; the arrest night ran (day 2, 08:00 in the cell)');
     T.eq(await K.text(t, 'jail-day'), 'Day 2 of 5', '"Day 2 of 5"');
     T.eq(await K.text(t, 'jail-reason'), 'Booked for 5 days: the Five-O hold-up.', 'why you are here');
-    T.ok(/^Last night: Interest \$\d+/.test(await K.text(t, 'jail-summary')), 'last night\'s one-line summary', await K.text(t, 'jail-summary'));
+    const sum = await K.text(t, 'jail-summary');
+    T.ok(/^Last night: Interest \+\$\d+ · [A-Z]{3} [▲▼] \d+ % · \d+ messages?$/.test(sum), 'last night\'s one-line summary: interest, the mover, the messages', sum);
     const ds = (await K.events(t, ['day:started', 'night']));
     T.eq(ds.map((e) => e.n), ['night', 'day:started'], 'the arrest night is finished once: its events, then day:started');
     const rows = await ev(() => Array.prototype.map.call(document.querySelectorAll('#ui [data-id="jail-rows"] .arow:not([hidden])'), (r) => ({
@@ -110,9 +112,14 @@ const A = require('./a11y.test.cjs');
     await t.step(1);
     const s3 = await t.state();
     T.eq([s3.jail, s3.stats.heat, s3.clock.min, (await jail()).mode], [null, 20, 480, 'released'], 'the last jail night releases you: Heat 20, 08:00');
-    T.ok(/^Released at 08:00\. Heat is down to 20\./.test(await K.text(t, 'jail-day')), 'the card says so', await K.text(t, 'jail-day'));
+    const released = await ev(() => window.SR.text('card.jail.released', { time: window.SR.text.time(480), heat: 20 }));
+    T.eq(await K.text(t, 'jail-day'), released, 'the card says so ("Released at 08:00", Heat 20)');
+    T.ok(/08:00/.test(released) && /20/.test(released), 'the released line carries the time and the Heat', released);
     T.eq(await ev(() => document.querySelector('#ui [data-id="card-leave"]').getAttribute('aria-disabled')), null, 'Walk out is on');
     T.eq((await K.events(t, ['release'])).length, 1, 'one `release` event');
+    const outside = await ev(() => window.SR.world.spawnPoint('afterJail'));
+    T.eq([Math.round(s3.player.x), Math.round(s3.player.y)], [Math.round(outside.x), Math.round(outside.y)],
+      'released: the state already stands on the City Hall steps (a save before Walk out resumes there)');
     await K.settle(t, 1300);
     await t.shot(path.join(K.SHOTS, 'jail-released-1280.png'));
     await t.clickUI('card-leave');
@@ -123,9 +130,78 @@ const A = require('./a11y.test.cjs');
       'Walk out: the city at 08:00 on the City Hall steps (afterJail)');
   }
 
+  T.section('real keys: Esc is `back` and `pause`; digits choose; no stale tooltip on Walk out');
+  {
+    // A key press 300 ms apart (a stamp swallows presses for 250 ms after it is skipped).
+    const key = async (code) => { await t.key(code); await t.step(2); await P.waitForTimeout(300); await t.step(1); };
+    await arrest(0);
+    await key('Escape');
+    T.eq(await t.scenes(), ['jail', 'pause'], 'serving: Esc opens the pause menu (no way back from the cell)');
+    await key('Escape');
+    T.eq(await t.scenes(), ['jail'], 'Esc closes the pause menu, and its `pause` half does not open it again');
+    const d0 = (await t.state()).clock.day;
+    await key('Digit1');
+    const s1 = await t.state();
+    T.eq([s1.clock.day - d0, (await jail()).pose], [1, 'lift'], 'Digit1 works out (hotkey 1), the next day');
+    // Hover the refused Walk out (its tooltip starts), then serve the last day: the button becomes
+    // Walk out, and no tooltip of the refused button shows up on it. (The pointer first leaves: an
+    // earlier click may have left it resting where the button is, and a hover in place fires nothing.)
+    await P.mouse.move(10, 700);
+    await P.locator('#ui [data-id="card-leave"]').first().hover();
+    await P.waitForTimeout(100);
+    await key('Digit2');
+    await P.waitForTimeout(500);
+    const tip = await ev(() => { const e = document.querySelector('[data-id="tooltip"].is-shown'); return e ? e.textContent : null; });
+    T.eq([(await jail()).mode, tip], ['released', null], 'released: no stale tooltip of the refused Walk out');
+    await P.mouse.move(10, 700);
+    await key('Escape');
+    T.eq(await t.scenes(), ['city'], 'released: Esc walks out (and does not also pause the city)');
+  }
+
+  T.section('a jail night\'s achievements are announced once (Report.achievements; P1 `achievements`)');
+  {
+    // Four days (Heat 25): the arrest night, then a plain jail night, then election night (campaign
+    // day 7 → 8) with the election paper over the cell.
+    await arrest(25, { clock: { day: 5, min: 1440 }, election: { status: 'campaign', campaignDay: 5, poll: 70, debateDone: true, path: 'mayor' } });
+    await ev(() => {
+      const SR = window.SR;
+      window.__ach = { flag: SR.features.achievements, mod: SR.rules.achievements, got: [] };
+      SR.features.achievements = true;
+      SR.rules.achievements = { evaluate: (s, e) => (e && e.name === 'night' && e.payload.kind === 'jail' ? ['testJailNight'] : []) };
+      window.__achOff = SR.events.on('achievement:unlocked', (p) => window.__ach.got.push(p.id));
+    });
+    const got = () => ev(() => window.__ach.got.slice());
+    await t.press('row1');
+    await t.step(1);
+    T.eq([await got(), await t.scenes()], [['testJailNight'], ['jail']], 'a plain jail night: its achievement is announced (the cell finishes the night)');
+    await t.press('row2');
+    await t.step(1);
+    await P.waitForTimeout(30);
+    const paper = (await t.scenes()).indexOf('report') >= 0;
+    for (let i = 0; i < 6 && (await t.scenes()).indexOf('report') >= 0; i++) { await t.press('confirm'); await t.step(1); await P.waitForTimeout(30); }
+    const all = await got();
+    await ev(() => {
+      const SR = window.SR, a = window.__ach;
+      SR.features.achievements = a.flag;
+      SR.rules.achievements = a.mod;
+      window.__achOff();
+    });
+    T.eq([paper, all, await t.scenes()], [true, ['testJailNight', 'testJailNight'], ['jail']],
+      'election night: the paper over the cell, and the night\'s achievement once (not again by the paper)');
+  }
+
   T.section('bail (P1 `police`) and a timed game that ends in jail');
   {
     await t.debug('feature', 'police', true);
+    await arrest(0, { money: { cash: 5000, bank: 0 }, items: { phone: 0 } });
+    const nophone = await ev(() => {
+      const r = document.querySelector('#ui [data-row="jail.bail"]');
+      const b = r && r.querySelector('button, [data-nav]');
+      const d = b && document.getElementById(b.getAttribute('aria-describedby'));
+      return { short: !!(r && r.querySelector('.chip--short')), why: d ? d.textContent.trim() : '' };
+    });
+    T.eq(nophone.short, false, 'no phone, money enough: the Bail price chip is not marked short (the reason is the phone)', nophone);
+    T.ok(/phone/i.test(nophone.why), 'and the row says why', nophone.why);
     await arrest(0, { money: { cash: 5000, bank: 0 }, items: { phone: 1 } });
     const shown = await K.visible(t, 'row-jail.bail');
     T.ok(shown, 'the Bail row shows with its price');

@@ -40,7 +40,8 @@ Each entry: file, exact change, why, and the workaround used meanwhile.
   `pawn.counter` (screen `pawn.shop`), `pawn.sell` (`{ item }`, P1 `shopsPlus`),
   `furniture.showroom` (screen `furniture.browse`), `furniture.buy` (`{ piece }`),
   `furniture.upgrade` (`{ piece }`, P1 `homesPlus`); named fns `pawn.{price, per, note,
-  shirtAsked, noItem, sellable, sell}`, `furniture.{noPiece, delivered}`, `greet.pawn`,
+  shirtAsked, noItem, sellable, sell, rate}` (`pawn.rate(s)` → the buyback share `pawn.sell` pays,
+  0.40 or 0.55 with Smooth Talker; the Sell tab's intro reads it), `furniture.{noPiece, delivered}`, `greet.pawn`,
   `greet.furniture`, and `pawn.use` (`(s, params, ctx, item)` → `{ id, vars }`: what an item does,
   for the purchase toast `toast.pawn.<id>` and the counter's line `card.pawn.use.<id>`, its numbers
   read from the tables the rules use; like `greet.<building>`, a data fn the UI reads); `pawn.shop` takes `params.tab` (`'buy'` | `'sell'`) and pushes the `tabs`
