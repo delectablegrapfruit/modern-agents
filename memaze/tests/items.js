@@ -78,6 +78,28 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     touch(d);
     check('a second, separate touch before healing loses', events.includes('lose:fall') && G.state !== 'play', events.join());
     G.quit();
+    // Riding along the edge after a hit is no shelter: once the guard is over, sliding on along it is a new touch.
+    // (On a long straight corridor: pressed into its side, then slid along it.)
+    let rode = null;
+    for (let lv = 1; lv <= 20 && !rode; lv++) {
+      G.startJourney(lv);
+      const straight = (q) => { const A = q.pts[0], B = q.pts[q.pts.length - 1]; return q.pts.every((p) => MZ.segDist2(p.x, p.y, A.x, A.y, B.x, B.y) < 1); };
+      const e = G.maze.edges.find((q) => { const A = q.pts[0], B = q.pts[q.pts.length - 1];
+        return q.type !== 'blink' && !q.sw && !q.ice && !q.crawl && Math.hypot(B.x - A.x, B.y - A.y) > 360 && Math.min(Math.abs(B.x - A.x), Math.abs(B.y - A.y)) < 1 && straight(q); });
+      if (!e) { G.quit(); continue; }
+      const A = e.pts[0], B = e.pts[e.pts.length - 1], L = Math.hypot(B.x - A.x, B.y - A.y), u = { x: (B.x - A.x) / L, y: (B.y - A.y) / L }, nrm = { x: -u.y, y: u.x };
+      G.ball.x = A.x + u.x * (L * 0.3); G.ball.y = A.y + u.y * (L * 0.3);
+      G.guardT = 0; G.stuck = false; G.hp = 2; G.bonus = 0; G.hurtT = 5; events.length = 0;
+      touch(nrm);
+      const dir = { x: u.x + nrm.x * 0.35, y: u.y + nrm.y * 0.35 }, dl = Math.hypot(dir.x, dir.y);
+      dir.x /= dl; dir.y /= dl;
+      run(0.6, dir); // still in the guard: sliding along is fine
+      const inGuard = events.filter((x) => x.startsWith('hit') || x.startsWith('lose')).length;
+      run(1, dir); // past it: riding on
+      rode = { lv, inGuard, lost: events.some((x) => x.startsWith('lose')) };
+      G.quit();
+    }
+    check('riding along the edge after a hit is no shelter: past the guard it is a new touch', rode && rode.inGuard === 1 && rode.lost, JSON.stringify(rode));
 
     // ----- Extra hit -----
     G.startJourney(6); d = voidDir();

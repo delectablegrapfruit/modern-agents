@@ -22,6 +22,8 @@
   const RECHARGE = 1; // ...the last of which is the recharge
   const GUARD = 0.75; // seconds the edges hold after a hit (and after a Bullet or Launch lands)
   const CLEAR = 0.25; // after a hit, seconds off the edge before it can hurt again
+  const RIDE = 0.6;   // ...or, once the guard is over, how far you can slide along it (in picture widths): riding the
+                      // edge is a new touch, not shelter
   // Mystery boxes and items.
   const BOX_R = 16, BOX_BACK = 25, ROLL = 1.1; // touch radius; seconds until a shattered box is back; roulette length
   const SHATTER = 0.7;                         // seconds a shattered box's pieces fly
@@ -226,7 +228,7 @@
     cam: { x: 0, y: 0, zoom: 1 }, userZoom: 1,
     t: 0, flow: 0, playT: 0, clock: 0, elapsed: 0, restarts: 0, gemsTaken: 0, stateT: 0, lastTick: -1, attract: 0,
     checkpoints: [], cpIdx: -1, boxes: [],
-    hp: HEARTS, bonus: 0, hurtT: REGEN, guardT: 0, stuck: false, clearT: 0, touched: false, runT: 0, scale: 1, item: null, roll: null, fx: {}, lastSafe: null,
+    hp: HEARTS, bonus: 0, hurtT: REGEN, guardT: 0, stuck: false, clearT: 0, rideD: 0, touched: false, runT: 0, scale: 1, item: null, roll: null, fx: {}, lastSafe: null,
     FX, Player, Backdrop, GoalMedia, ITEMS, ROLL, HEARTS, MAX_BONUS, REGEN, ICE_GRIP, GEM_CHARM,
 
     init() {
@@ -488,7 +490,7 @@
 
     // Full hearts, empty item slot, no effects running.
     resetPower() {
-      this.hp = HEARTS; this.bonus = 0; this.hurtT = REGEN; this.guardT = 0; this.stuck = false; this.clearT = 0;
+      this.hp = HEARTS; this.bonus = 0; this.hurtT = REGEN; this.guardT = 0; this.stuck = false; this.clearT = 0; this.rideD = 0;
       this.stopT = 0; this.shakeT = 0; this.hitAtT = null; this.beepT = 0;
       this.item = null; this.roll = null; this.fx = {}; this.scale = 1; this.toxPin = null;
       this.lastSafe = { x: this.ball.x, y: this.ball.y };
@@ -586,7 +588,8 @@
           mx = v.x * dt; my = v.y * dt;
         } else { v.x = mx / dt; v.y = my / dt; }
       }
-      let soft = S().gameplay.rule === 'casual' || this.shielded() || this.crawlHold(); // edges hold like walls
+      const hold = S().gameplay.rule === 'casual' || this.shielded(true) || this.crawlHold(); // edges hold like walls...
+      let soft = hold || this.stuck; // (...and pressed against the edge after a hit, that touch is spent)
       this.touched = false;
       // Standing still can still go wrong: an animation frame reaching over the edge (a touch), or a bridge vanishing
       // underneath, the carpet running out over the void (a fall).
@@ -612,9 +615,12 @@
           this.touched = true;
           this.vel.x = this.vel.y = 0;
           if (!soft) { this.toEdge(sx, sy); if (this.hurt()) return; break; } // a hit: stop right at the edge
-          if (sx && !this.hitAt(b.x + sx, b.y)) b.x += sx; // Walls: slide along the edge...
-          else if (sy && !this.hitAt(b.x, b.y + sy)) b.y += sy;
+          let slid = 0;
+          if (sx && !this.hitAt(b.x + sx, b.y)) { b.x += sx; slid = Math.abs(sx); } // Walls: slide along the edge...
+          else if (sy && !this.hitAt(b.x, b.y + sy)) { b.y += sy; slid = Math.abs(sy); }
           else { this.toEdge(sx, sy); break; } // ...or stop right at it
+          // Held off only by that spent touch: sliding on along the edge soon makes it a new one.
+          if (!hold && (this.rideD += slid) > RIDE * this.box()) { this.stuck = false; soft = false; }
         }
         if (this.pickups()) return;
         if (this.warped) { this.warped = false; break; }
@@ -628,7 +634,7 @@
     offEdge(dt) {
       if (this.touched) { this.clearT = 0; return; }
       this.clearT += dt;
-      if (this.stuck && this.clearT >= CLEAR) this.stuck = false;
+      if (this.stuck && this.clearT >= CLEAR) { this.stuck = false; this.rideD = 0; }
     },
     // A moving platform carries whoever stands on it.
     carry(dt) {
@@ -789,7 +795,7 @@
     // How solid the picture looks: faded while the shield is down, filling back in as it recharges.
     shieldLook() { return this.hp >= HEARTS ? 1 : this.recharging() ? 0.45 + 0.55 * clamp((this.hurtT - REGEN + RECHARGE) / RECHARGE, 0, 1) : 0.45; },
     boxesOn() { return S().gameplay.boxes && this.mode !== 'trial'; }, // Time Trial has no mystery boxes
-    shielded() { const fx = this.fx; return this.guardT > 0 || this.stuck || fx.star > 0 || !!fx.bullet || !!fx.launch || !!fx.bubble || this.building(); },
+    shielded(spent) { const fx = this.fx; return this.guardT > 0 || (this.stuck && !spent) || fx.star > 0 || !!fx.bullet || !!fx.launch || !!fx.bubble || this.building(); },
     // Mouse Glide: where the pointer says to head (|v| <= 1). The picture's own area is a rest spot.
     glideVec() {
       const css = this.box() * this.cam.zoom;
@@ -980,7 +986,8 @@
       this.beepT = 0.6;
       try { if (navigator.vibrate) navigator.vibrate(this.hp > 1 || this.bonus ? 50 : [60, 40, 90]); } catch (e) { /* not allowed here */ }
       this.guardT = GUARD;
-      this.stuck = true; // this touch is spent: the next one has to be a new one
+      this.stuck = true; // this touch is spent: the next one has to be a new one (leaving the edge, or riding along it)
+      this.rideD = 0;
       this.clearT = 0;
       MZ.Audio.play('hurt');
       this.emit('hit', this.hp + this.bonus);
