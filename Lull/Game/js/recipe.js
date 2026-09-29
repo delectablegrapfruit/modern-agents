@@ -11,8 +11,9 @@
 //     options?: { path: [values] } (what the New board window offers, for resolve),
 //     normalize(raw, out) (writes its own keys of the recipe from raw), label(r, short), thin(r), valid(g, r),
 //     rules(r, R, w), limits(r, lim), clampSize(size, r, lim, asked), conflicts(r, out),
-//     engine(game, saved) -> ext | null (game.recipe is set; the hooks are listed in js/engine.js),
-//     controller(mode, game) -> ctl | null, summary(saved, g), stats? (store.js merges it under state.stats) }
+//     engine(game, saved, o) -> ext | null (game.recipe, rules, rng and seed are set, o the Game's options; the hooks
+//     are listed in js/engine.js), controller(play, game) -> ctl | null (Free Play's; every part's is composed over
+//     the plain one: Recipe.compose), summary(saved, g), stats? (store.js merges it under state.stats) }
 // Achievements a part adds go through Achievements.group / Achievements.add (js/achievements.js).
 // Orders: core 0, shapes 10, mirror 20, jelly 30, protect 40, battle 50.
 (function (root) {
@@ -257,22 +258,77 @@
   // ---- the engine's extensions and the stats' defaults ----------------------------------------------------------------
 
   /**
-   * A game's extensions: each part's engine(game, saved) that gives one (game.recipe is set; saved is what its ext's
-   * save() gave, from the save's x), in order, each knowing its key and order.
+   * A game's extensions: each part's engine(game, saved, o) that gives one (game.recipe is set; saved is what its ext's
+   * save() gave, from the save's x; o the Game's options), in order, each knowing its key and order.
    */
-  function engine(game, x) {
+  function engine(game, x, o) {
     const out = [];
     for (const p of PARTS) {
       if (!p.engine) continue;
-      const e = p.engine(game, x && isObj(x) ? x[p.key] : undefined);
+      const e = p.engine(game, x && isObj(x) ? x[p.key] : undefined, o || {});
       if (e) { e.key = p.key; e.order = p.order || 0; out.push(e); }
     }
     return out;
   }
-  /** The first controller a part gives for this mode and game (PlayMode's default when none does). */
-  function controller(mode, game) {
-    for (const p of PARTS) { const c = p.controller && p.controller(mode, game); if (c) return c; }
-    return null;
+  /** Every controller the parts give for this board (Free Play: play), in order, each knowing its part. */
+  function controllers(play, game) {
+    const out = [];
+    for (const p of PARTS) { const c = p.controller && p.controller(play, game); if (c) out.push({ part: p.key, ctl: c }); }
+    return out;
+  }
+  /** The first controller a part gives for this board (null: none). */
+  function controller(play, game) { const c = controllers(play, game)[0]; return c ? c.ctl : null; }
+
+  // How the controllers' hooks meet (compose): these run for every part, earlier parts first; these ask each part in
+  // turn until one takes it (true).
+  const RUN_ALL = ['frame', 'pause', 'attach', 'detach'], FIRST = ['onKey', 'action'];
+  /**
+   * Free Play's controller for a board: `plain` (today's Free Play) with each part's controller over it, in the parts'
+   * order ([{ part, ctl }] or [ctl]). A hook a part gives replaces the one before it, which that part reaches while its
+   * hook runs as this.base.<hook> (this.base: the controller as it stood before that part; plain for the first). These
+   * gather every part's instead:
+   *   frame, pause, attach, detach   each part's runs, earlier parts first
+   *   input(kind, v, pos)            chained: each gets the answer before it; null, false or true (taken) ends it
+   *   onKey(e), action(a, rep)       asked in turn until one takes it (true)
+   *   tiles(game)                    joined
+   *   status(parts, o)               each gets the list before it as o.prev, and returns the list
+   *   cards                          merged by kind
+   * Fields (timed, view, a part's own state) are copied onto the one controller every hook runs with (this = it). A
+   * controller's name is `id`; a string `key` is taken as its name, a function `key` as onKey. With no part's, plain
+   * itself.
+   */
+  function compose(plain, list) {
+    list = (list || []).map((c) => (c && c.ctl ? c.ctl : c)).filter((c) => c && typeof c === 'object');
+    if (!list.length) return plain;
+    const ctl = {};
+    const bound = (t) => { const o = {}; for (const [k, v] of Object.entries(t)) o[k] = typeof v === 'function' ? (...a) => v.apply(ctl, a) : v; return o; };
+    let table = Object.assign({}, plain);
+    for (const own0 of list) {
+      const own = Object.assign({}, own0);
+      if (typeof own.key === 'function') { if (!own.onKey) own.onKey = own.key; delete own.key; }
+      else if (typeof own.key === 'string') { if (!own.id) own.id = own.key; delete own.key; }
+      delete own.base;
+      const prev = table, base = bound(prev), next = Object.assign({}, prev);
+      // The part's hook, run with this = the controller and this.base = the controller before it.
+      const wrap = (fn) => function (...a) { const was = ctl.base; ctl.base = base; try { return fn.apply(ctl, a); } finally { ctl.base = was; } };
+      for (const [k, v] of Object.entries(own)) {
+        if (k === 'cards') { next.cards = Object.assign({}, prev.cards || {}, v || {}); continue; }
+        if (typeof v !== 'function') { next[k] = v; continue; }
+        const fn = wrap(v), was = prev[k];
+        if (typeof was !== 'function') next[k] = fn;
+        else if (RUN_ALL.includes(k)) next[k] = (...a) => { was.apply(ctl, a); return fn(...a); };
+        else if (FIRST.includes(k)) next[k] = (...a) => { const r = was.apply(ctl, a); return r === true || (k === 'action' && r) ? r : fn(...a); };
+        else if (k === 'input') next[k] = (kind, x, pos) => { const b = was.call(ctl, kind, x, pos); return b === null || b === false || b === true ? b : fn(kind, b, pos); };
+        else if (k === 'tiles') next[k] = (g) => (was.call(ctl, g) || []).concat(fn(g) || []);
+        else if (k === 'status') next[k] = (parts, o) => { const before = was.call(ctl, parts, o); return fn(parts, Object.assign({}, o, { prev: before })) || before; };
+        else next[k] = fn;
+      }
+      table = next;
+    }
+    Object.assign(ctl, table);
+    // Outside a part's hook, base is the plain controller.
+    ctl.base = bound(Object.assign({}, plain));
+    return ctl;
   }
   /**
    * A board's own numbers for its summary, by part: from a Game, each extension's summary(game); from a saved one
@@ -302,7 +358,7 @@
     DEFAULT: null, MODS, BASE,
     part, unpart, viewPart, uiPart, parts, get, views: () => VIEWS.slice(), uis: () => UIS.slice(),
     normalize, equal, key, isDefault, label, thin, limits, clampSize, sizeOk, conflicts, options, resolve, rules, valid,
-    engine, controller, stats, summary, canon, getPath, setPath,
+    engine, controller, controllers, compose, stats, summary, canon, getPath, setPath,
   };
   L.Recipe = Recipe;
   part(CORE);

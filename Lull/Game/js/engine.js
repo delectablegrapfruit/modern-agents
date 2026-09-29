@@ -66,21 +66,28 @@
   //   spawnAt(g, b, pos, type) -> { x, y, rot }         where a piece appears (chained)
   //   placed(g, b, abs, p) -> abs                        the cells a piece covers (absCells: fits, ghost, lock …)
   //   targets(g, b, kind, cells) -> cells                where bomb, blackhole, bore, patch and laser act
+  //   columns(g, b, kind, order) -> order                Tornado's shuffle ('tornado'): order[x] is the column that
+  //                                                      lands at x, drawn on the game's stream as always (chained)
   //   refuseLock(g, b, abs) -> note                      a lock that may not happen here (the piece stays)
   //   afterPlace(g, b, abs, v, res)                      after a piece's cells are set
   //   rows(g, b, rows) -> rows                           which full rows clear
   //   beforeClear(g, b, res) / afterClear(g, b, res)     around a lock's (or Settle's) clear
   //   keep(g, b, v) -> true                              a cell no item removes
   //   roomAfter(g, b)                                    inside the "would the piece still fit" test of Settle and Trapdoor
-  //   step(g, res)                                       after a piece lock is scored, before the next piece
+  //   step(g, res)                                       after a piece lock (or a drill) is scored, before the next
+  //                                                      piece; a part that ends the board here calls g.end(kind)
   //   clean(g, b) -> bool                                is the board empty (a perfect clear; an item leaving it empty)
-  //   afterChange(g, kind)                               after settle, trapdoor, tornado, flip, bore
+  //   afterChange(g, kind, what)                         after settle (what: its result), trapdoor ({ row }), tornado
+  //                                                      ({ moves, order }), flip ({ moves }), bore (its result: the
+  //                                                      drill's rows are cleared and scored as plain before it)
   //   allow(g, itemId) -> reason                         an item refused here
   //   snap(g) / restore(g, snap)                         kept with each Undo step
   //   save(g) -> data                                    kept in the save (toJSON's x), given back to the part's engine()
   //   reset(g)                                           the board was started over (resetBoard)
   //   summary(g) -> numbers                              the board's own numbers for its summary (Library.summarize)
-  // A lock a part refuses emits 'refused' with its note. Without a hook the plain code runs, exactly as before.
+  // A part's engine(game, saved, o) runs with game.recipe, game.rules, game.rng and game.seed (a new game's; a resumed
+  // one has none: the part keeps its own state in save()) set, and o the Game's own options. A lock a part refuses
+  // emits 'refused' with its note. Without a hook the plain code runs, exactly as before.
 
   class Game extends Emitter {
     /**
@@ -109,11 +116,11 @@
       const sv = o.saved;
       if (sv) {
         this.board = Board.fromArray(sv.w, sv.h, sv.cells, { wrap: sv.wrap });
-        this.setup(sv.x);
+        this.rng = RNG.from(sv.rng);
+        this.setup(sv.x, o);
         this.fixed = !!sv.fixed;
         this.queue = sv.queue.map((e) => Object.assign({}, e));
         this.bag = sv.bag.slice();
-        this.rng = RNG.from(sv.rng);
         this.hold = sv.hold;
         this.holdLocked = sv.holdLocked;
         this.s = Object.assign(freshStats(), sv.s);
@@ -128,17 +135,22 @@
           }
         }
         this.fillQueue();
-        if (!this.piece) this.spawnNext();
+        // Ended by a part (Game.end: Protect's wilt): it stays ended, with no new piece.
+        if (sv.ended) { this.over = true; this.endKind = String(sv.ended); }
+        else if (!this.piece) this.spawnNext();
         // Saved with the board full: the piece has nowhere to be.
         else if (!this.fitsAt(this.piece, this.piece.rot, this.piece.x, this.piece.y)) this.over = true;
         return;
       }
       this.board = o.board ? o.board.clone() : new Board(o.w || 10, o.h || 20, { wrap: o.wrap });
-      this.setup(null);
+      // The seed is kept on the game (a part can seed its own stream from it: Protect's guard); the stream exists
+      // before the parts' engines run.
+      this.seed = o.seed == null ? (Date.now() ^ (Math.random() * 4294967296)) >>> 0 : o.seed;
+      this.rng = new RNG(this.seed);
+      this.setup(null, o);
       this.fixed = !!o.queue;
       this.queue = o.queue ? o.queue.map((e) => Object.assign({ rot: 0 }, e)) : [];
       this.bag = [];
-      this.rng = new RNG(o.seed == null ? (Date.now() ^ (Math.random() * 4294967296)) >>> 0 : o.seed);
       this.hold = null;
       this.holdLocked = false;
       this.piece = null;
@@ -151,10 +163,10 @@
     get h() { return this.board.h; }
 
     /** The rules (Recipe.rules), the recipe's extensions and their hooks, once the board (its width) is known. */
-    setup(x) {
+    setup(x, o) {
       this.rules = Recipe ? Recipe.rules(this.recipe || Recipe.DEFAULT, this.w) : { u: 1, copies: 1, E: 4, f: 1, lk: this.w / 10, rated: true, feats: this.w >= 10, quad: 4, undo: true, hints: true, refuse: {} };
       if (!this.rules.undo) this.maxHistory = 0;
-      this.ext = this.recipe && Recipe ? Recipe.engine(this, x) : [];
+      this.ext = this.recipe && Recipe ? Recipe.engine(this, x, o || {}) : [];
       const d = this.ext.find((e) => e.dealer);
       this.dealer = d ? d.dealer : BAG_DEALER;
       // Hooks by name, for the hot paths (no hook: the plain code runs, exactly as before).
@@ -244,7 +256,8 @@
       if (!this.board.wrap) {
         const r = [rot, (rot + 1) % 4, (rot + 3) % 4, (rot + 2) % 4].find((k) => type.rotBounds[k].w <= this.w && type.rotBounds[k].h <= this.h);
         if (r != null) {
-          const b = type.rotBounds[r], at = spawnPos(this.w, this.h, type, r);
+          // Its turn's spot as the recipe's parts gave it (spawnAt), or, turned to fit, the plain one.
+          const b = type.rotBounds[r], at = r === rot ? pos : spawnPos(this.w, this.h, type, r);
           piece.rot = r;
           piece.x = Math.min(Math.max(at.x, -b.minX), this.w - 1 - b.maxX);
           piece.y = Math.min(Math.max(at.y, -b.minY), this.h - 1 - b.maxY);
@@ -562,6 +575,7 @@
       this.s = h.s;
       if (h.x) for (const e of this.hooks.restore || []) if (e.key in h.x) e.restore(this, h.x[e.key]);
       this.over = false;
+      this.endKind = null;
       this.spawn(h.entry);
       this.emit('undo');
       return { lines: linesBefore - this.s.lines, own: ownBefore - (this.s.own || 0) };
@@ -652,10 +666,35 @@
       this.s.byType[p.type.family === 'tetromino' ? p.type.id : p.type.family] = (this.s.byType[p.type.family === 'tetromino' ? p.type.id : p.type.family] || 0) + 1;
       this.holdLocked = false;
       this.piece = null;
-      this.hook('step', result);
+      this.stepOn(result);
       this.emit('lock', result);
-      if (!this.over) this.spawnNext();
+      this.afterStep();
       return result;
+    }
+
+    /** The recipe's step after a piece lock; a part ending the board in it (end) is told after the lock. */
+    stepOn(result) {
+      if (!this.hooks.step) return;
+      this.stepping = true;
+      try { this.hook('step', result); } finally { this.stepping = false; }
+    }
+    /** After a lock's event: the next piece, or the end a part called for in its step ('topout', once the lock is out). */
+    afterStep() {
+      if (this.endDue) { this.endDue = false; this.emit('topout'); return; }
+      if (!this.over) this.spawnNext();
+    }
+
+    /**
+     * A part ends the board (Protect's wilt): over, with its own kind (game.endKind, kept in the save and by Free Play's
+     * card: ctl.onEnd(kind)); 'topout' is emitted now, or, from a step, after the lock's own event. Undo and a reset
+     * take it back.
+     */
+    end(kind) {
+      this.over = true;
+      this.endKind = kind ? String(kind) : null;
+      if (this.stepping) this.endDue = true;
+      else this.emit('topout');
+      return true;
     }
 
     /** The rows that clear on a board: its full rows, as the recipe's parts decide (rows: Protect's bed never clears). */
@@ -700,7 +739,10 @@
       this.pushHistory();
       const [x, y] = this.cellsOf(p)[0];
       const result = { type: p.type.id, special: 'drill', cells: [], rows: [], removed: [], lines: 0, score: 0, drilled: [], bit: [x, y], placed: 0 };
-      for (const [bx, by] of this.targets('bore', [[x, y]])) {
+      const bits = this.targets('bore', [[x, y]]);
+      // More than one bit (the recipe's targets: Mirror's pair): each, for the view.
+      if (bits.length > 1) result.bits = bits.map(([bx, by]) => [bx, by]);
+      for (const [bx, by] of bits) {
         for (let yy = by; yy >= 0; yy--) {
           const old = this.board.get(bx, yy);
           if (!old) continue;
@@ -709,13 +751,19 @@
           result.drilled.push([bx, yy, old]); this.board.set(bx, yy, 0);
         }
       }
+      // Rows the recipe fills after a drill (Jelly's cascades, in afterClear) clear and are scored, as plain rows; a
+      // plain board's drill never fills one (nothing is scored, the combo is left as it was).
+      if (this.ext.length) {
+        this.clearInto(this.board, this.fullRows(), result);
+        if (result.lines || (result.cascade && result.cascade.length)) this.score(result);
+      }
       this.s.pieces++;
       this.holdLocked = false;
       this.piece = null;
-      this.hook('afterChange', 'bore');
-      this.hook('step', result);
+      this.hook('afterChange', 'bore', result);
+      this.stepOn(result);
       this.emit('lock', result);
-      this.spawnNext();
+      this.afterStep();
       return result;
     }
 
@@ -739,7 +787,10 @@
       if (cascade) result.plain = (result.plain || 0) + cascade;
       const n = result.lines, c = result.plain || 0, all = n + c;
       result.n = n; result.c = c; result.ownCells = ownCells; result.own = ownCells / this.w;
-      result.quad = n >= R.quad && !result.special;
+      // An unrated board (shapes other than the seven: R.rated false) has no difficult clears: no quad, no streak, no
+      // bonus (its T-spins still score their points).
+      const rated = R.rated !== false;
+      result.quad = rated && n >= R.quad && !result.special;
       let pts = 0;
       if (result.tspin) {
         pts = TSPIN_SCORE[Math.min(n, 3)];
@@ -752,7 +803,7 @@
       if (c) pts += CLEAR_SCORE[Math.min(c, CLEAR_SCORE.length - 1)];
       if (all) {
         s.combo++;
-        const difficult = result.quad || result.tspin || result.mini;
+        const difficult = rated && (result.quad || result.tspin || result.mini);
         if (difficult) { s.b2b++; if (s.b2b > 0) { pts = Math.round(pts * 1.5); result.b2b = true; } }
         else if (s.b2b >= 0 && s.net > 0) { s.net--; result.netSaved = s.b2b + 1; }
         else s.b2b = -1;
@@ -772,7 +823,7 @@
       if (!hand) { s.hb2b = -1; s.hcombo = -1; s.hquads = 0; }
       else if (all) {
         s.hcombo++;
-        if (result.quad || result.tspin || result.mini) s.hb2b++; else s.hb2b = -1;
+        if (rated && (result.quad || result.tspin || result.mini)) s.hb2b++; else s.hb2b = -1;
         s.hquads = result.quad ? (s.hquads || 0) + 1 : 0;
         if (result.tspin) { s.htspins = (s.htspins || 0) + 1; if (n >= 3) s.htst = (s.htst || 0) + 1; }
         if (result.perfect) s.hperfect = (s.hperfect || 0) + 1;
@@ -957,7 +1008,7 @@
       const result = { type: 'settle', special: 'settle', cells: [], rows: [], removed: [], lines: 0, score: 0, before, had, placed: 0 };
       this.clearInto(this.board, this.fullRows(), result);
       this.score(result);
-      this.hook('afterChange', 'settle');
+      this.hook('afterChange', 'settle', result);
       this.emit('lock', result);
       return result;
     }
@@ -971,8 +1022,14 @@
       const p = this.piece;
       if (!p || this.board.isEmpty()) return null;
       const before = this.board.snapshot(), W = this.w;
-      const order = this.rng.shuffle([...Array(W).keys()]);
+      let order = this.rng.shuffle([...Array(W).keys()]);
       if (order.every((c, i) => c === i)) order.push(order.shift());
+      // The recipe's parts can rearrange it (columns: Mirror shuffles the left half and mirrors it on the right).
+      if (this.hooks.columns) {
+        const asked = this.chain('columns', order, (e, v) => e.columns(this, this.board, 'tornado', v.slice()));
+        // Only an order of every column once (anything else is ignored).
+        if (Array.isArray(asked) && asked.length === W && new Set(asked).size === W && asked.every((c) => Number.isInteger(c) && c >= 0 && c < W)) order = asked;
+      }
       this.pushHistory();
       const moves = [];
       for (let x = 0; x < W; x++) {
@@ -980,7 +1037,7 @@
         for (let y = 0; y < this.h; y++) { const v = before[y * W + from]; this.board.cells[y * W + x] = v; if (v) moves.push([from, y, x, y, v]); }
       }
       if (!this.fitsAt(p, p.rot, p.x, p.y)) { this.board.restore(before); this.history.pop(); return null; }
-      this.hook('afterChange', 'tornado');
+      this.hook('afterChange', 'tornado', { moves, order });
       this.emit('tornado', moves);
       return moves;
     }
@@ -997,7 +1054,7 @@
       if (!this.roomAfter(() => this.board.clearRows([0]))) return null;
       this.pushHistory();
       const row = this.board.clearRows([0])[0];
-      this.hook('afterChange', 'trapdoor');
+      this.hook('afterChange', 'trapdoor', { row });
       this.emit('trapdoor', row);
       return row;
     }
@@ -1015,7 +1072,7 @@
       }
       const p = this.piece;
       if (!this.fitsAt(p, p.rot, p.x, p.y)) { this.board.restore(before); this.history.pop(); return null; }
-      this.hook('afterChange', 'flip');
+      this.hook('afterChange', 'flip', { moves });
       this.emit('flip', moves);
       return moves;
     }
@@ -1023,6 +1080,8 @@
     resetBoard() {
       this.board.cells.fill(0);
       this.over = false;
+      this.endKind = null;
+      this.endDue = false;
       this.history = [];
       this.hold = null;
       this.holdLocked = false;
@@ -1092,6 +1151,8 @@
         out.recipe = this.recipe;
         out.x = {};
         for (const e of this.hooks.save || []) out.x[e.key] = e.save(this);
+        // Ended by a part (end): it comes back ended.
+        if (this.over && this.endKind) out.ended = this.endKind;
       }
       return out;
     }

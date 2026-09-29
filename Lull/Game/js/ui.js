@@ -730,7 +730,7 @@
           h('tr', null, ['Retired', 'Size', 'Lived', 'Lines', 'Score', 'Pieces', 'Power-ups'].map((c) => h('th', c === 'Lived' ? { class: 'opt' } : null, c))),
           log.slice(0, 15).map((b) => h('tr', null,
             // A board of another recipe shows it as a muted second line (its full label as the tip).
-            h('td', null, new Date(b.at).toLocaleDateString([], { month: 'short', day: 'numeric' }) + (b.reason === 'full' ? ' · full' : ''), pastLabel(b)),
+            h('td', null, new Date(b.at).toLocaleDateString([], { month: 'short', day: 'numeric' }) + (b.reason && b.reason !== 'manual' ? ' · ' + b.reason : ''), pastLabel(b)),
             h('td', { class: 'nw' }, b.w && b.h ? L.Library.sizeLabel(b.w, b.h).replace(/ /g, '\u202f') : '—'), h('td', { class: 'opt' }, b.life ? fmtDuration(b.life) : '—'), h('td', null, fmtInt(b.lines)), h('td', null, fmtInt(b.score)), h('td', null, fmtInt(b.pieces)), h('td', null, fmtInt(b.items))))));
       }
     } else if (sub === 'puzzle') {

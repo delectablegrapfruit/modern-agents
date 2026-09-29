@@ -95,7 +95,12 @@ const STAND_INS = () => {
   const isObj = (v) => !!v && typeof v === 'object';
   R.part({
     key: 'shapes', order: 10, owns: ['shapes'], options: { 'shapes.preset': Object.keys(PRESETS) },
-    normalize(raw, out) { const p = isObj(raw.shapes) && raw.shapes.preset; if (PRESETS[p] !== undefined) out.shapes = { preset: p }; },
+    normalize(raw, out) {
+      const p = isObj(raw.shapes) && raw.shapes.preset;
+      if (PRESETS[p] !== undefined) out.shapes = { preset: p };
+      // Custom's sources (a structured value the window commits through api.choose).
+      if (p === 'custom' && isObj(raw.shapes.custom) && Array.isArray(raw.shapes.custom.groups)) out.shapes.custom = { groups: raw.shapes.custom.groups.filter((n) => Number.isInteger(n)) };
+    },
     label: (r) => PRESETS[r.shapes.preset] || '',
     limits(r, lim) { if (r.shapes.preset === 'big') { lim.w[0] = Math.max(lim.w[0], 6); lim.h[0] = Math.max(lim.h[0], 12); } },
     conflicts(r, out) { if (r.mode === 'battle') { out['shapes.preset=big'] = 'Not in Battle'; out['shapes.preset=custom'] = 'Not in Battle'; } },
@@ -107,7 +112,13 @@ const STAND_INS = () => {
       return { dealer: { next: (g) => ids[g.rng.int(3)], reroll: (g, ex) => ids.filter((i) => i !== ex)[0], candidates: () => ids.slice() } };
     },
   });
-  R.part({ key: 'mirror', order: 20, mod: 'mirror', owns: ['mods.mirror'], conflicts(r, out) { if (r.mode === 'battle') out['mods.mirror=true'] = 'Not in Battle'; }, rules(r, Rr) { if (r.mods.mirror) { Rr.copies = 2; Rr.refuse.flip = 'Not on a Mirror board'; } } });
+  R.part({ key: 'mirror', order: 20, mod: 'mirror', owns: ['mods.mirror'], conflicts(r, out) { if (r.mode === 'battle') out['mods.mirror=true'] = 'Not in Battle'; }, rules(r, Rr) { if (r.mods.mirror) { Rr.copies = 2; Rr.refuse.flip = 'Not on a Mirror board'; } },
+    // The pair (placed) and the paired items (targets); its controller counts the mouse's aims.
+    engine: (game) => (game.recipe.mods.mirror ? {
+      placed: (g, b, abs) => { const out = abs.slice(), seen = new Set(abs.map((c) => c.join(','))); for (const [x, y] of abs) { const k = (b.w - 1 - x) + ',' + y; if (!seen.has(k)) { seen.add(k); out.push([b.w - 1 - x, y]); } } return out; },
+      targets: (g, b, kind, cells) => (/^(bomb|blackhole|bore)$/.test(kind) ? cells.concat(cells.map(([x, y]) => [b.w - 1 - x, y])) : cells),
+    } : null),
+    controller: (play, game) => (game.recipe.mods.mirror ? { id: 'mirror', input(kind, v) { if (kind === 'aim') window.__aims = (window.__aims || 0) + 1; return v; } } : null) });
   R.part({ key: 'jelly', order: 30, mod: 'jelly', owns: ['mods.jelly'], rules(r, Rr) { if (r.mods.jelly) { Rr.noFeats = true; Rr.refuse.tornado = 'Not on a Jelly board'; } }, engine: (game) => (game.recipe.mods.jelly ? { key: 'jelly' } : null) });
   const LV = { protect: ['easy', 'medium', 'hard'], battle: ['easy', 'steady', 'brisk', 'swift'] };
   R.part({
@@ -116,6 +127,8 @@ const STAND_INS = () => {
     label: (r) => (r.mode === 'protect' ? 'Protect ' + r.protect.level.charAt(0).toUpperCase() + r.protect.level.slice(1) : ''),
     limits(r, lim) { if (r.mode === 'protect') { lim.w[0] = Math.max(lim.w[0], 6); lim.h[0] = Math.max(lim.h[0], 12); } },
     rules(r, Rr) { if (r.mode === 'protect') for (const id of ['tornado', 'trapdoor', 'flip']) Rr.refuse[id] = 'Not in Protect'; },
+    // A controller named with a string key (as every registry names its parts): a name, never the key hook.
+    controller: (play, game) => (game.recipe.mode === 'protect' ? { key: 'protect', leaves: 3, tiles: () => [['3', 'Leaves']], status(parts, o) { return o.prev.slice(0, 1).concat([o.stat('Leaves', String(this.leaves))]); } } : null),
   });
   R.part({
     key: 'battle', order: 50, mode: 'battle', owns: ['battle'], options: { 'battle.level': LV.battle },
@@ -123,22 +136,33 @@ const STAND_INS = () => {
     label: (r) => (r.mode === 'battle' ? 'Battle' : ''),
     limits(r, lim) { if (r.mode === 'battle') { lim.w = [6, 12]; lim.h = [6, 12]; } },
     rules(r, Rr) { if (r.mode === 'battle') { Rr.undo = false; Rr.hints = false; Rr.timed = true; } },
-    // A timed controller: it counts its pauses, and its seconds count only while it runs.
+    engine: (game) => (game.recipe.mode === 'battle' ? { summary: () => ({ rounds: '3–2' }) } : null),
+    // A timed controller: it counts its pauses, and its seconds count only while it runs. S is its key; a tap or a click
+    // on the first Next slot is its Send.
     controller(play, game) {
       if (game.recipe.mode !== 'battle') return null;
+      const onNext = (pos) => { const n = play.view.lay && play.view.lay.next; return !!(n && pos && pos[0] >= n.x && pos[0] <= n.x + n.w && pos[1] >= n.y && pos[1] <= n.y + n.h); };
       return {
-        key: 'battle', timed: true, running: false, paused: [],
+        id: 'battle', timed: true, running: false, paused: [],
         frame(now, dt, running) { this.running = running; },
         pause(why) { this.paused.push(why); this.running = false; window.__battlePaused = this.paused; },
         counts() { return this.running; },
-        tiles: () => [['3–2', 'Rounds']],
+        tiles: () => [['Steady', 'Opponent']],
+        onKey(e) { if (e.code === 'KeyS') { window.__sent = (window.__sent || 0) + 1; return true; } return false; },
+        input(kind, v, pos) {
+          if (kind === 'tap' && onNext(pos)) { window.__sent = (window.__sent || 0) + 1; return null; }
+          if (kind === 'click' && onNext(v)) { window.__sent = (window.__sent || 0) + 1; return true; }
+          return v;
+        },
       };
     },
   });
   R.uiPart({
     key: 'shapes', order: 10, tab: 'shapes',
+    // Custom's sources in words, for the live region.
+    said: (path, v) => (path === 'shapes.custom' && v && v.groups ? v.groups.join(' and ') + ' blocks' : null),
     chips: [{ value: 'tiny', name: 'Tiny', piece: 'V3' }, { value: 'frantic', name: 'Frantic', piece: 'S' }, { value: 'pentominoes', name: 'Pentominoes', piece: 'P' }, { value: 'big', name: 'Big', piece: 'O' }, { value: 'custom', name: 'Custom', piece: 'I3' }],
-    panel: (r) => (r.shapes.preset === 'custom' ? h('div', { class: 'nb-custom' }, h('span', null, '4 and 5 blocks · Even'), h('button', { type: 'button', class: 'btn sm' }, 'Edit')) : null),
+    panel: (r, api) => { window.__nbApi = api; return r.shapes.preset === 'custom' ? h('div', { class: 'nb-custom' }, h('span', null, '4 and 5 blocks · Even'), h('button', { type: 'button', class: 'btn sm' }, 'Edit')) : null; },
   });
   R.uiPart({ key: 'mirror', order: 20, mod: 'mirror', name: 'Mirror' });
   R.uiPart({ key: 'jelly', order: 30, mod: 'jelly', name: 'Jelly' });
@@ -147,8 +171,17 @@ const STAND_INS = () => {
   R.uiPart({
     key: 'battle', order: 50, mode: 'battle', name: 'Battle', levels: () => ({ path: 'battle.level', values: LV.battle.map((v) => [v, cap(v)]) }),
     stepper: (r, k) => (r.mode === 'battle' && k === 'h' ? { label: 'Rows' } : null),
+    tags: (r, x, info) => (r.mode === 'battle' ? [{ text: 'vs Steady 3–2' }] : []),
+    tiles: (ext) => [[ext.rounds, 'Rounds']],
+    // Its own control on the Mode tab: one that chooses (and carries nothing to be found by), and one with data-focus.
+    tab: 'mode', panel: (r, api) => window.__standInPanel && h('div', { class: 'stand-in-panel' },
+      h('button', { type: 'button', class: 'btn sm stand-in-plain', onclick: () => api.choose('mode', 'plain') }, 'Plain'),
+      h('button', { type: 'button', class: 'btn sm stand-in-keep', 'data-focus': 'keep', onclick: () => api.refresh() }, 'Keep')),
     presets: (r) => (r.mode === 'battle' ? [['Quick', 8, 8], ['Standard', 10, 10], ['Long', 10, 12]] : null),
   });
+  // A view part for Mirror: the copy fainter (pieceAlpha), a longer first Next slot and Hold box for an I (traySlot).
+  window.__copyAlpha = 0.8;
+  R.viewPart({ key: 'mirror', order: 20, pieceAlpha: (v, p, cell, copy) => (copy ? window.__copyAlpha : 1), traySlot: (e, v, slot, dir) => (e.id === 'I' && window.__longSlot ? 6 : null) });
   // A view part for Jelly: counts what it is asked to draw (every hook), and draws the preview's mark.
   window.__vp = { cells: 0, over: [], preview: 0, lock: 0, move: 0, turn: 0 };
   R.viewPart({
@@ -326,6 +359,8 @@ module.exports = async function recipeTests({ browser, check, PAGE, OUT }) {
     window.__vp = Object.assign(window.__vp, { cells: 0, over: [], stack: 0, piece: 0, ghost: 0, tray: 0, lock: 0, move: 0, turn: 0 });
     v.dirty = true; v.render(performance.now());
     const drew = Object.assign({}, window.__vp, { over: window.__vp.over.join(), w: g.w });
+    // A piece that turns (an O never does).
+    g.replacePiece({ id: 'T' });
     const turns = [m.action('left'), m.action('cw'), m.action('ccw')];
     m.action('drop');
     window.__turns = turns;
@@ -426,6 +461,149 @@ module.exports = async function recipeTests({ browser, check, PAGE, OUT }) {
   const canRun = await ev(() => { const m = Lull.app.modes.play; const a = m.canRun(); Lull.app.modes.play.openLibrary(); const b = m.canRun(); while (Lull.UI.modalOpen()) Lull.UI.closeTopModal(); return { a, b, focus: document.hasFocus() }; });
   check('canRun: not under a window (and only with focus)', canRun.b === false && canRun.a === canRun.focus, JSON.stringify(canRun));
   await ev(() => { const m = Lull.app.modes.play; m.setGame(new Lull.Game({ w: 10, h: 20, recipe: Lull.Recipe.DEFAULT, previewCount: 5 })); });
+  // Keys on a board whose controller names itself: they reach the game (a part's key hook is onKey, its name id or key).
+  await ev(() => { const m = Lull.app.modes.play; m.setGame(new Lull.Game({ w: 10, h: 10, recipe: Lull.Recipe.normalize({ mode: 'battle' }), seed: 4, previewCount: 5 })); window.__sent = 0; m.ctl.running = true; });
+  await page.mouse.move(2, 2);
+  const keysBefore = await ev(() => ({ x: Lull.app.modes.play.game.piece.x, errs: 0 }));
+  await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('KeyS');
+  const keysAfter = await ev(() => ({ x: Lull.app.modes.play.game.piece.x, sent: window.__sent, id: Lull.app.modes.play.ctl.id, hook: typeof Lull.app.modes.play.ctl.onKey }));
+  check('keys on a board whose controller names itself: ← moves the piece, its own key (S) goes to its onKey', keysAfter.x === keysBefore.x - 1 && keysAfter.sent === 1 && keysAfter.id === 'battle' && keysAfter.hook === 'function', JSON.stringify({ keysBefore, keysAfter }));
+  // The controller takes a click on the first Next slot (mapInput 'click'): nothing drops.
+  const click = await ev(() => { const m = Lull.app.modes.play, n = m.view.lay.next, r = m.canvas.getBoundingClientRect(); return { x: r.left + n.x + n.w / 2, y: r.top + n.y + Math.min(n.h, 30) / 2, pieces: m.game.s.pieces }; });
+  await ev(() => { Lull.app.focusedAt = -1e9; });
+  await page.mouse.click(click.x, click.y);
+  await page.waitForTimeout(100);
+  const clicked = await ev(() => ({ pieces: Lull.app.modes.play.game.s.pieces, sent: window.__sent }));
+  check('a click the controller takes (its first Next slot) sends, and drops nothing', clicked.pieces === click.pieces && clicked.sent === 2, JSON.stringify({ click, clicked }));
+  // A tap it takes (input 'tap' answers null): nothing turns.
+  const tap = await ev(() => {
+    const m = Lull.app.modes.play, n = m.view.lay.next;
+    m.game.replacePiece({ id: 'T' });
+    const rot = m.game.piece.rot;
+    m.touchAt = [n.x + n.w / 2, n.y + 10];
+    const ok = m.touchIntent({ type: 'tap', side: 'right' });
+    const taken = { ok, rot: m.game.piece.rot === rot, sent: window.__sent };
+    m.touchAt = [m.view.lay.board.x + 5, m.view.lay.board.y + 5];
+    m.touchIntent({ type: 'tap', side: 'right' });
+    return { taken, turned: m.game.piece.rot !== rot || !m.game.piece };
+  });
+  check('a tap the controller takes (null) turns nothing; any other tap turns as before', tap.taken.ok && tap.taken.rot && tap.taken.sent === 3 && tap.turned, JSON.stringify(tap));
+  // Two parts' controllers on one board (Mirror and Protect): both are asked; the one named by a string key keeps the keys.
+  const both = await ev(() => {
+    const m = Lull.app.modes.play, R = Lull.Recipe;
+    m.setGame(new Lull.Game({ w: 10, h: 20, recipe: R.normalize({ mods: { mirror: true }, mode: 'protect' }), seed: 4, previewCount: 5 }));
+    m.view.render(performance.now());
+    window.__aims = 0;
+    m.pointer = [m.view.lay.board.x + 3, m.view.lay.board.y + 20]; m.settings.mouse = true; m.follow();
+    const x0 = m.game.piece.x;
+    return { x0, aims: window.__aims, tiles: m.ctl.tiles(m.game).map((t) => t[1]).join(), status: [...document.querySelectorAll('#play-status .stats .stat i')].map((e) => e.textContent.trim()).join(), id: m.ctl.id, hook: typeof m.ctl.onKey };
+  });
+  await page.keyboard.press('ArrowRight');
+  const bothKey = await ev(() => Lull.app.modes.play.game.piece.x);
+  check('Mirror and Protect together: Mirror’s input and Protect’s tiles and status both run; keys still work', both.aims >= 1 && both.tiles === 'Leaves' && /Leaves/.test(both.status) && !/Score/.test(both.status) && both.id === 'protect' && both.hook === 'function' && bothKey === both.x0 + 1, JSON.stringify({ both, bothKey }));
+  // A Mirror board: the copy is drawn fainter (pieceAlpha), and paired items play at each spot.
+  const faint = await ev(() => {
+    const m = Lull.app.modes.play, v = m.view, g = m.game, dpr = v.dpr;
+    const own = g.absCells(g.piece)[0], copy = g.absCells(g.piece).find(([x, y]) => x === g.w - 1 - own[0] && y === own[1]);
+    const px = ([x, y]) => { const [sx, sy] = v.toScreen(x, y), s = v.lay.s; return Array.from(v.ctx.getImageData(Math.round((sx + s / 2) * dpr), Math.round((sy + s / 2) * dpr), 1, 1).data).join(); };
+    window.__copyAlpha = 1; v.dirty = true; v.render(performance.now()); const a = [px(own), px(copy)];
+    window.__copyAlpha = 0; v.dirty = true; v.render(performance.now()); const b = [px(own), px(copy)];
+    window.__copyAlpha = 0.8; v.dirty = true; v.render(performance.now());
+    return { same: a[0] === b[0], copyChanged: a[1] !== b[1] };
+  });
+  check('a view part draws the copy fainter (pieceAlpha): its cells change, the piece’s own do not', faint.same && faint.copyChanged, JSON.stringify(faint));
+  const fx = await ev(() => {
+    const m = Lull.app.modes.play, v = m.view, g = m.game, calls = [];
+    const orig = { blast: v.blastFx, drill: v.drillFx };
+    v.blastFx = (r) => calls.push('bomb ' + r.center.join(',') + ' ' + r.blast.length);
+    v.drillFx = (r) => calls.push('drill ' + r.bit.join(',') + ' ' + r.drilled.length);
+    for (let x = 0; x < g.w; x++) for (let y = 0; y < 3; y++) if (x !== 4 && x !== 5) g.board.set(x, y, 3);
+    g.replacePiece({ id: 'M1', special: 'bomb' }); g.piece.x = 1; g.piece.y = 10;
+    m.action('drop');
+    g.replacePiece({ id: 'M1', special: 'drill' }); g.piece.x = 0; g.piece.y = 10;
+    m.action('drop');
+    Object.assign(v, { blastFx: orig.blast, drillFx: orig.drill });
+    return calls;
+  });
+  check('paired items (targets) play at each spot: two blasts, two drills, each with its own cells', fx.length === 4 && /^bomb 1,/.test(fx[0]) && /^bomb 8,/.test(fx[1]) && /^drill 0,/.test(fx[2]) && /^drill 9,/.test(fx[3]) && fx.every((c) => +c.split(' ')[2] > 0), JSON.stringify(fx));
+  // A mouse slide is heard as moves by the view parts (Jelly's wobble), as keys are.
+  const slide = await ev(() => {
+    const m = Lull.app.modes.play, R = Lull.Recipe;
+    m.setGame(new Lull.Game({ w: 10, h: 20, recipe: R.normalize({ mods: { jelly: true } }), seed: 4, previewCount: 5 }));
+    window.__vp.move = 0;
+    const x0 = m.game.piece.x;
+    m.aimAt(0);
+    return { moved: x0 - m.game.piece.x, heard: window.__vp.move };
+  });
+  check('a mouse slide calls the view parts’ onMove once a step', slide.moved > 0 && slide.heard === slide.moved, JSON.stringify(slide));
+  // Tray slots a view part asks for (traySlot): the first Next slot and the Hold box grow for a long piece.
+  const slot = await ev(() => {
+    const m = Lull.app.modes.play, R = Lull.Recipe;
+    m.setGame(new Lull.Game({ w: 10, h: 20, recipe: R.normalize({ mods: { mirror: true } }), seed: 4, previewCount: 5 }));
+    const v = m.view, g = m.game;
+    g.queue[0] = { id: 'I', rot: 0 }; g.hold = { id: 'I', rot: 0 };
+    v.dirty = true; v.render(performance.now());
+    const before = { next: v.slotCells(g.queue[0], 'next', v.lay.nextDir, 2.5), hold: v.holdBox().h };
+    window.__longSlot = true;
+    v.dirty = true; v.render(performance.now());
+    const after = { next: v.slotCells(g.queue[0], 'next', v.lay.nextDir, 2.5), hold: v.holdBox().h, lay: v.lay.hold.h, wide: v.lay.wide, onHold: v.onHold(v.lay.hold.x + 2, v.lay.hold.y + v.holdBox().h - 2) };
+    window.__longSlot = false;
+    return { before, after };
+  });
+  check('a view part lengthens the first Next slot and the Hold box for a long piece (traySlot); the Hold box is hit where it is drawn', slot.before.next === 2.5 && slot.after.next === 6 && (!slot.after.wide || (slot.after.hold > slot.after.lay && slot.after.onHold)) && slot.before.hold === slot.after.lay, JSON.stringify(slot));
+  // A part's library tags and its summary tiles (from the summary's ext).
+  const tagsTiles = await ev(() => {
+    const m = Lull.app.modes.play, R = Lull.Recipe;
+    m.setGame(new Lull.Game({ w: 10, h: 10, recipe: R.normalize({ mode: 'battle' }), seed: 4, previewCount: 5 }));
+    m.openLibrary();
+    const tags = [...document.querySelectorAll('.modal-lib .lib-row.current .tag')].map((t) => t.textContent);
+    while (Lull.UI.modalOpen()) Lull.UI.closeTopModal();
+    const sum = m.boardSummary(Lull.Library.summarize(m.game.s, Date.now(), m.game), m.game.recipe, m.ctl.tiles(m.game));
+    return { tags, tiles: [...sum.querySelectorAll('.bs .l')].map((l) => l.textContent).filter((t) => /Rounds|Opponent/.test(t)) };
+  });
+  check('a part adds tags to its boards’ library rows and tiles from its summary (uiPart tags, tiles)', tagsTiles.tags.join() === 'Playing,vs Steady 3–2' && tagsTiles.tiles.join() === 'Rounds,Opponent', JSON.stringify(tagsTiles));
+  await ev(() => { const m = Lull.app.modes.play; m.setGame(new Lull.Game({ w: 10, h: 20, recipe: Lull.Recipe.DEFAULT, previewCount: 5 })); });
+
+  // The New board window: a part's panel control that chooses keeps focus in the window (Enter never becomes Create);
+  // one with data-focus keeps its own; a remembered size keeps the side not changed; a part names its own values.
+  await ev(() => { window.__standInPanel = true; });
+  await openNB();
+  await ev(() => document.querySelector('.nb-tab[data-tab="mode"]').click());
+  const nb0 = await ev(() => Lull.app.store.state.boards.list.length);
+  await page.focus('.stand-in-plain');
+  await page.keyboard.press('Space');
+  const fPlain = await ev(() => ({ inWin: !!document.activeElement.closest('.modal-newboard'), tab: document.activeElement.dataset.tab || null }));
+  await page.keyboard.press('Enter');
+  const fEnter = await ev(() => ({ open: !!document.querySelector('.modal-newboard'), n: Lull.app.store.state.boards.list.length }));
+  await page.focus('.stand-in-keep');
+  await page.keyboard.press('Space');
+  const fKeep = await ev(() => document.activeElement.dataset.focus || document.activeElement.className);
+  check('a part’s panel control that chooses leaves focus on its tab, so Enter does not Create; one with data-focus keeps focus', fPlain.inWin && fPlain.tab === 'mode' && fEnter.open && fEnter.n === nb0 && fKeep === 'keep', JSON.stringify({ fPlain, fEnter, fKeep }));
+  await ev(() => { window.__standInPanel = false; });
+  // 10 × 20 asked; Battle shows 10 × 12; More columns there; Plain again: 11 × 20.
+  await ev(() => { document.querySelector('.nb-tab[data-tab="size"]').click(); Lull.app.modes.play.lastNB.nb.choose('shapes.preset', 'normal'); });
+  const steps = await ev(() => {
+    const nb = Lull.app.modes.play.lastNB.nb, size = () => nb.size.w + 'x' + nb.size.h;
+    const w = document.querySelector('.modal-newboard .nb-val[data-k="w"]'), key = (k) => w.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
+    key('Home');
+    for (let i = 0; i < 6; i++) key('ArrowRight');
+    const hEl = document.querySelector('.modal-newboard .nb-val[data-k="h"]');
+    hEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
+    for (let i = 0; i < 12; i++) hEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+    const start = size();
+    nb.choose('mode', 'battle');
+    const battle = size();
+    document.querySelector('.nb-step[aria-label="More columns"]').click();
+    const more = size();
+    nb.choose('mode', 'plain');
+    return { start, battle, more, plain: size() };
+  });
+  check('a stepper changed while the recipe holds the size keeps the other side asked: 10 × 20, Battle 10 × 12, More columns 11 × 12, Plain 11 × 20', steps.start === '10x20' && steps.battle === '10x12' && steps.more === '11x12' && steps.plain === '11x20', JSON.stringify(steps));
+  await ev(() => { document.querySelector('.nb-tab[data-tab="shapes"]').click(); document.querySelector('.nb-chip[data-value="custom"]').click(); });
+  const said = await ev(() => { window.__nbApi.choose('shapes.custom', { groups: [4, 5] }); return { live: document.querySelector('.nb-live').textContent, r: Lull.app.modes.play.lastNB.nb.recipe.shapes }; });
+  check('a part names its own values for the live region (uiPart said), never as JSON', said.live === '4 and 5 blocks' && said.r.custom && said.r.custom.groups.join() === '4,5', JSON.stringify(said));
+  await ev(() => { while (Lull.UI.modalOpen()) Lull.UI.closeTopModal(); });
   await D.ctx.close();
 
   // ---- the window at every size, in its tallest states; screenshots of every tab ------------------------------------
@@ -455,7 +633,7 @@ module.exports = async function recipeTests({ browser, check, PAGE, OUT }) {
             inside: r.top >= 0 && r.bottom <= innerHeight + 0.5 && r.left >= 0 && r.right <= innerWidth, footer: foot.bottom <= innerHeight + 0.5 && foot.top >= 0,
             noScroll: body.scrollHeight <= body.clientHeight + 1 && body.scrollWidth <= body.clientWidth + 1, panelFits: panel.scrollHeight <= panel.clientHeight + 1,
             h: Math.round(r.height), small, why: m.querySelector('.nb-why').textContent, lvl: !!m.querySelector('.nb-lvl'), custom: !!m.querySelector('.nb-custom'),
-            ellipsis: [...m.querySelectorAll('.nb-tab .nm')].filter((e) => e.scrollWidth > e.clientWidth + 0.5).map((e) => e.textContent),
+            ellipsis: [...m.querySelectorAll('.nb-tab .nm, .nb-chip .nm')].filter((e) => e.scrollWidth > e.clientWidth + 0.5 || e.scrollHeight > e.clientHeight + 1.5).map((e) => e.textContent + ' ' + [e.scrollWidth, e.clientWidth, e.scrollHeight, e.clientHeight].join('/')),
           };
         }, touch);
         hs.push(f.h);
@@ -466,20 +644,30 @@ module.exports = async function recipeTests({ browser, check, PAGE, OUT }) {
       }
       check(vp.name + ' ' + theme + ' New board: one height across the tabs', new Set(hs).size === 1, hs.join());
       await P.ev(() => { while (Lull.UI.modalOpen()) Lull.UI.closeTopModal(); });
-      // Labelled library rows (and one plain), at 320.
-      if (vp.name === '320x568') {
+      // Labelled library rows (and one plain) at every size: Lines and Score whole, the size and when always shown (an
+      // ellipsis only ever takes the label, in full as the tip); at 320 the label's line is its own.
+      {
         await P.ev(() => {
           const m = Lull.app.modes.play, R = Lull.Recipe, st = Lull.app.store.state;
           const mk = (r, w, h) => { m.game.drop(); st.boards.recipe = R.normalize(r); m.shelveAndNew({ w, h }, st.boards.recipe); m.game.drop(); };
           mk({ shapes: { preset: 'frantic' }, mods: { jelly: true }, mode: 'protect', protect: { level: 'easy' } }, 12, 24);
           mk({ shapes: { preset: 'big' }, mods: { mirror: true } }, 6, 12);
+          mk({ shapes: { preset: 'pentominoes' }, mods: { jelly: true, mirror: true }, mode: 'protect', protect: { level: 'medium' } }, 16, 16);
           mk({}, 10, 20);
           m.openLibrary();
         });
         await P.page.waitForTimeout(300);
-        const rows = await P.ev(() => [...document.querySelectorAll('.modal-lib .lib-row .sz')].map((e) => ({ t: e.textContent, own: e.getBoundingClientRect().width > e.parentElement.getBoundingClientRect().width * 0.8 || !e.parentElement.classList.contains('labelled'), fits: e.scrollWidth <= e.clientWidth + 0.5 || !!e.title, title: e.title })));
-        check('320 ' + theme + ': library rows show the recipe after the size, on a line of their own, with ellipsis and the full label as the tip', rows.some((r) => /Frantic · Jelly · Protect Easy/.test(r.title)) && rows.some((r) => /^6 × 12 · Big · Mirror/.test(r.t)) && rows.every((r) => r.own && r.fits), JSON.stringify(rows));
-        await P.shot('recipe-lib-320x568-' + theme);
+        const rows = await P.ev(() => [...document.querySelectorAll('.modal-lib .lib-row .d')].map((d) => {
+          const e = d.querySelector('.sz'), st = d.querySelector('.st'), t = e.textContent, lab = d.classList.contains('labelled');
+          // What is left of the label: the size and when, up to its last ' · ' (measured as laid out, not as clipped).
+          const cut = !lab ? t.length : e.title && t.endsWith(' · ' + e.title) ? t.length - e.title.length - 3 : t.lastIndexOf(' · '), rg = document.createRange();
+          rg.setStart(e.firstChild, 0); rg.setEnd(e.firstChild, cut);
+          return { t, title: e.title, lab, own: e.getBoundingClientRect().width > d.getBoundingClientRect().width * 0.8 || !lab, fits: e.scrollWidth <= e.clientWidth + 0.5 || !!e.title, head: rg.getBoundingClientRect().width <= e.clientWidth + 0.5, st: st.scrollWidth <= st.clientWidth + 0.5, stText: st.textContent };
+        }));
+        const narrow = vp.name === '320x568';
+        check(vp.name + ' ' + theme + ': library rows show the recipe after the size and when (the size and when never cut), Lines and Score whole' + (narrow ? ', the label on a line of its own' : ''),
+          rows.filter((r) => r.lab).length === 3 && rows.some((r) => /Frantic · Jelly · Protect Easy/.test(r.title)) && rows.some((r) => /^6 × 12 · .+ · Big · Mirror$/.test(r.t) && r.title === 'Big · Mirror') && rows.every((r) => r.fits && r.head && r.st && (!narrow || r.own)), JSON.stringify(rows));
+        if (narrow || vp.name === '520x760') await P.shot('recipe-lib-' + vp.name + '-' + theme);
         await P.ev(() => { while (Lull.UI.modalOpen()) Lull.UI.closeTopModal(); });
       }
       await P.ctx.close();

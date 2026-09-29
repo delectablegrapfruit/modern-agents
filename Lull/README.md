@@ -408,8 +408,10 @@ A Relaxed board is made from a *recipe* as well as a size (`js/recipe.js`): its 
 chosen when the board is made and fixed for its life. The default recipe is the board described above, exactly: the
 seven in a 7-bag, no modifier, plain play (`scripts/golden.cjs` holds it to a long recorded run, lock by lock). Each
 option is a *part* that registers itself: its rules (`Recipe.rules`: what a row is worth, which feats count, which
-power-ups are refused and why), its engine hooks (where pieces come from and appear, which cells they cover, what
-clears, what an item may remove, what happens after each piece), its view and its window. Parts always run in a fixed
+power-ups are refused and why), its engine hooks (where pieces come from and appear, which cells they cover, where an
+item acts and how Tornado shuffles, what clears, what an item may remove, what happens after each piece, and ending the
+board its own way: `game.end(kind)`, told after the lock and kept in the save until Undo), its view and its window. An
+unrated board (shapes other than the seven) has no difficult clears: no quad, no back-to-back streak, no bonus, ×1. Parts always run in a fixed
 order (shapes, mirror, jelly, protect, battle), whatever order they load in. What pays and counts is measured in own
 cells: a row holding a cell the player never placed is plain and pays only the player's cells, and no option pays more
 per piece or per action than a Standard board (`f = min(1, 4 / E)`, E the mean cells a piece). Outside the board,
@@ -423,23 +425,30 @@ none: its value is on the steppers), then one panel the same height on every tab
 taller one scrolls inside itself and the footer stays): Size the presets, Shapes chips in 3 × 2 (a sample beside the
 name), Modifiers a switch each, Mode the modes and the chosen one's level. It opens on Size with focus on Width, on the
 recipe and size last chosen (`boards.recipe`, `boards.size`). The last choice wins (`Recipe.resolve`): an option it
-rules out moves to an allowed one, comes back once it is allowed again, and the change is read out; an option the other
+rules out moves to an allowed one, comes back once it is allowed again, and the change is read out (a part names its own
+values: `said`); an option the other
 choices rule out (`Recipe.conflicts`) stays in its place, off (`aria-disabled`), and a press shows why in one muted
 line. The size shown is the one asked for as a board of the recipe can be (`Recipe.clampSize`): a larger minimum raises
-it, and going back restores what was asked. The parts fill the tabs through `Recipe.uiPart` (chips, a switch, a mode and
-its levels, a panel of their own, the steppers' names, presets, Create), so the window's code never changes for them.
-A board of another recipe than the default says so: after its size on its library row (the short label, the full one
-as its tip; on a phone, a line of its own), as a Board tile on its summary, and as a muted second line in Past boards.
+it, and going back restores what was asked (a stepper changes only its own side of it). The parts fill the tabs
+through `Recipe.uiPart` (chips, a switch, a mode and its levels, a panel of their own, the steppers' names, presets,
+Create), so the window's code never changes for them; a panel's control keeps focus through a redraw by its
+`data-focus`, and focus never falls out of the window (where Enter is Create). A board of another recipe than the
+default says so: after its size and when on its library row (the short label last, so an ellipsis only takes it, the
+full one as its tip; Lines and Score on a line of their own; on a phone, the label too), as a Board tile on its summary,
+and as a muted second line in Past boards. A part can add tags to its rows (`tags`: Wilted, "vs Steady 3–2") and its
+own numbers to a board's summary (`tiles`, from the summary's `ext`).
 Retire, Delete and a full board's Retire start the next board with the same recipe; an untouched board asked for again
 with another recipe is made again, in its own record.
 
 *What runs a board* — Free Play asks the board's *controller* at every turn (`plainController` in `js/modes.js` is
-today's Free Play exactly; a part can give its own, and whatever it leaves out stays plain): its layout, a clock that
+today's Free Play exactly; each part can give its own, composed over it in the parts' order by `Recipe.compose`: a hook
+a part gives replaces the one before it, reached as `this.base`, while frame, pause, attach, detach, input, onKey,
+action, tiles, status and cards gather every part's; a controller's name is `id`): its layout, a clock that
 runs only while `canRun()` (the tab in front, no window or card over it, the page shown and the window focused), a pause
 when the window loses focus or the pointer leaves it (`app.onAway`), the page is hidden, the tab changes, a window opens
 or the window rolls up, whether a second counts as played, what a clear pays, what a lock does, how the board ends
-(`onEnd(kind)` and its card), the status figures, the bar under the board, more summary tiles, its own keys and actions,
-and what a mouse aim, a touch or a tap means. A recipe's rules can refuse power-ups (shown off in their tray, the
+(`onEnd(kind)` and its card), the status figures, the bar under the board, more summary tiles, its own keys (`onKey`) and
+actions, and what a mouse aim, a touch, a tap or a click on the board means (a tap or click it takes does nothing else). A recipe's rules can refuse power-ups (shown off in their tray, the
 reason as the tip; a press spends nothing and says why), turn off Undo (no history) and the control hints; Reroll and
 Order Slip ask the board's dealer. Stats rows come through `UI.statRow`.
 
@@ -447,8 +456,11 @@ Order Slip ask the board's dealer. Stats rows come through `UI.statRow`.
 laid out in a box (`layout(box)`; the whole canvas for one board). A part's view half (`Recipe.viewPart`) composes:
 the first painter whose `claims(v)` is true draws a stored cell, then a `claims: 'rest'` painter the own cells, the
 piece, its ghost and the trays, then the plain cell; overlays after the stack, the piece and the rim; `busy` keeps
-frames coming; move, turn and lock triggers; no red rim; which turn the trays draw; and marks on the New board preview
-and the library's thumbnails (`Render.previewBoard`, which draws both). With `?freeze=1` every frame is drawn at one
+frames coming; move (a mouse slide's steps too), turn and lock triggers; no red rim; which turn the trays draw and how
+long the first Next slot and the Hold box are for a long piece (`traySlot`); how opaque each cell of the piece in play
+is (`pieceAlpha`: Mirror's copy); and marks on the New board preview and the library's thumbnails
+(`Render.previewBoard`, which draws both). An item that acts at more than one spot (the engine's `targets`) is previewed
+and animated at each. With `?freeze=1` every frame is drawn at one
 fixed moment (`Render.clock`), for tests that compare pixels: `scripts/recipe-pixels.json` holds the board, an animated
 look, the red rim, thumbnails and previews at four window sizes in both themes, recorded from the tree before the
 render split, and the drawing now matches it pixel for pixel.

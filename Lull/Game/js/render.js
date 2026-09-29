@@ -25,6 +25,12 @@
   //   onLock(view, r, reduced) / onMove / onRotate / onLower (view, act, reduced)   animation triggers (Free Play's moves)
   //   dangerRim: false           no red rim near the top
   //   trayRot(entry, view) -> rot   which turn the Hold and Next trays draw
+  //   traySlot(entry, view, slot, dir) -> cells   how long a tray's slot must be along dir for this piece, in tray cells
+  //                              (slot 'next': the first Next slot, dir its queue's 'v' or 'h'; slot 'hold': the Hold box,
+  //                              grown down beside a tall board, 'v' only): the largest answer over today's (Next 2.5 'v',
+  //                              3.4 'h'; Hold its own), so a long piece draws larger (Shapes' 12 blocks)
+  //   pieceAlpha(view, p, cell, copy) -> alpha   how opaque a cell of the piece in play is drawn (copy: a cell the
+  //                              recipe added to the piece's own, placed: Mirror's copy at 0.8); the answers multiply
   //   preview(ctx, geom, recipe, theme)   over the New board preview and the library thumbnails (previewBoard)
   //   layout: 'battle', render(view, ctx, now)   a whole frame of its own for that controller view (BoardView.shell)
   const viewParts = () => (L.Recipe && L.Recipe.views ? L.Recipe.views() : []);
@@ -973,6 +979,57 @@
       return viewParts().find((p) => p.layout === this.layoutName && typeof p.render === 'function') || null;
     }
 
+    /** One cell of the piece in play (its look, gold, a tool's marks), at pa of its opacity (pieceAlpha). */
+    pieceCell(ctx, p, cx, cy, pa, o) {
+      const { s, now, look, color, golden, overlapping, pieceCells } = o;
+      const [sx, sy] = this.toScreen(cx, cy);
+      if (L.SINGLE_SPECIALS && L.SINGLE_SPECIALS.has(p.special)) { drawSpecial(ctx, p.special, sx, sy, s, now); return; }
+      const tint = golden ? '#f2c14e' : color;
+      // Phasing: translucent, and it shimmers (more faintly still while inside other blocks).
+      const shimmer = p.special === 'phase' && !this.reducedMotion ? 0.12 * Math.sin(now / 170 + (cx + cy) * 0.9) : 0;
+      // A view part's painter draws a plain piece in its own look (Jelly); gold and the tools keep theirs.
+      if (!this.rest || p.special || golden || !this.paintCell(ctx, p.type.color, sx, sy, s, 'piece', { x: cx, y: cy, cells: pieceCells })) drawCell(ctx, look.skin, tint, sx, sy, s, (p.special === 'phase' ? (overlapping ? 0.4 : 0.72) + shimmer : 1) * pa);
+      if (pa !== 1) ctx.globalAlpha = pa;
+      if (golden) {
+        const k = ((now / 900 + (cx + cy) * 0.12) % 1.4) - 0.2;
+        ctx.save(); ctx.beginPath(); ctx.rect(sx, sy, s, s); ctx.clip();
+        ctx.fillStyle = 'rgba(255,255,230,0.55)'; ctx.beginPath(); ctx.moveTo(sx + s * (k * 2 - 0.4), sy + s); ctx.lineTo(sx + s * (k * 2 - 0.1), sy + s); ctx.lineTo(sx + s * (k * 2 + 0.4), sy); ctx.lineTo(sx + s * (k * 2 + 0.1), sy); ctx.closePath(); ctx.fill();
+        ctx.restore();
+      }
+      if (p.special === 'laser') { ctx.save(); ctx.strokeStyle = 'rgba(255,60,80,' + (0.6 + 0.4 * Math.sin(now / 90)) + ')'; ctx.lineWidth = 2; ctx.strokeRect(sx + 2, sy + 2, s - 4, s - 4); ctx.fillStyle = '#fff'; ctx.fillRect(sx + s * 0.42, sy + s * 0.42, s * 0.16, s * 0.16); ctx.restore(); }
+      if (p.special === 'phase') {
+        ctx.save(); ctx.setLineDash([2, 3]); ctx.lineDashOffset = this.reducedMotion ? 0 : -now / 60; ctx.strokeStyle = '#ffffff'; ctx.globalAlpha = 0.7; ctx.strokeRect(sx + 1.5, sy + 1.5, s - 3, s - 3);
+        if (!this.reducedMotion) {
+          // A soft band of light drifting down through it.
+          const k = ((now / 800 + (cx - cy) * 0.11) % 1.4) - 0.2;
+          ctx.beginPath(); ctx.rect(sx, sy, s, s); ctx.clip();
+          ctx.globalAlpha = 0.35; ctx.fillStyle = '#e4dcff'; ctx.fillRect(sx, sy + s * k - s * 0.1, s, s * 0.2);
+        }
+        ctx.restore();
+      }
+    }
+
+    /**
+     * A tray slot's length along dir, in tray cells: `base` (today's), or longer where a view part asks (traySlot) for
+     * this entry.
+     */
+    slotCells(entry, slot, dir, base) {
+      if (!entry || !this.parts.length) return base;
+      let c = base;
+      for (const p of this.parts) if (typeof p.traySlot === 'function') { const v = p.traySlot(this.trayEntry(entry), this, slot, dir); if (typeof v === 'number' && isFinite(v) && v > c) c = v; }
+      return c;
+    }
+
+    /** The Hold box as drawn: the layout's, grown down (within the plate) where the held piece asks for it (traySlot). */
+    holdBox() {
+      const lay = this.lay, b = lay.hold, g = this.game;
+      if (!this.parts.length || !g || !g.hold || !lay.wide) return b;
+      const want = Math.round(lay.ts * this.slotCells(g.hold, 'hold', 'v', b.h / lay.ts));
+      const room = lay.plate.y + lay.plate.h - lay.pad - b.y;
+      const hh = Math.max(b.h, Math.min(want, room));
+      return hh === b.h ? b : Object.assign({}, b, { h: hh });
+    }
+
     /** A tray's entry, turned as a view part asks (trayRot). */
     trayEntry(e) {
       if (!e) return e;
@@ -1051,7 +1108,7 @@
       }
       // A wide board's plate can be shorter than the Next tray it holds (a short board beside a column of trays).
       if (wide) plate.h = Math.max(plate.h, next.y + next.h + P - plate.y);
-      this.lay = { s, ts, cols, rows, board: { x: bx, y: by, w: bw, h: bh }, hold, next, nextDir, wide, plate, lab, box: box || null };
+      this.lay = { s, ts, cols, rows, board: { x: bx, y: by, w: bw, h: bh }, hold, next, nextDir, wide, plate, lab, pad: P, box: box || null };
       // Words over the board (PERFECT CLEAR, a combo's name) are kept within the well (its walls included).
       this.fx.maxW = bw + WP * 2;
       this.lay.well = wellRect(this.lay.board, s);
@@ -1094,14 +1151,14 @@
     /** Is a screen point on the hold box? */
     onHold(px, py) {
       if (!this.lay || !this.game || this.game.mods.noHold) return false;
-      const b = this.lay.hold;
+      const b = this.holdBox();
       return px >= b.x - 4 && px <= b.x + b.w + 4 && py >= b.y - 4 && py <= b.y + b.h + 4;
     }
 
     /** Is a screen point on the hold box, for a finger: its hit area grown to at least 44 × 44, centred on it? */
     onHoldTouch(px, py) {
       if (!this.lay || !this.game || this.game.mods.noHold) return false;
-      const b = this.lay.hold, w = Math.max(b.w, 44), h = Math.max(b.h, 44);
+      const b = this.holdBox(), w = Math.max(b.w, 44), h = Math.max(b.h, 44);
       return Math.abs(px - (b.x + b.w / 2)) <= w / 2 && Math.abs(py - (b.y + b.h / 2)) <= h / 2;
     }
 
@@ -1252,15 +1309,19 @@
       if (p) {
         const color = this.colorOf(p.type.color);
         if (p.special === 'drill') {
-          // What goes: the drill's column.
-          const [cx, cy] = pieceCells[0];
+          // What goes: the drill's column (each, where the recipe drills more than one: targets).
           ctx.fillStyle = 'rgba(255,90,90,0.16)';
-          for (let y = cy - 1; y >= 0; y--) { const [sx, sy] = this.toScreen(cx, y); ctx.fillRect(sx, sy, s, s); }
+          for (const [cx, cy] of (g.targets ? g.targets('bore', [pieceCells[0]]) : [pieceCells[0]])) for (let y = cy - 1; y >= 0; y--) { const [sx, sy] = this.toScreen(cx, y); ctx.fillRect(sx, sy, s, s); }
         } else if (p.special === 'bomb' && gy != null) {
-          // What goes: the bomb's diamond where it will land.
-          const [cx] = pieceCells[0];
+          // What goes: the bomb's diamond where it will land (each, where the recipe sets off more than one: targets).
           ctx.fillStyle = 'rgba(255,159,67,0.14)';
-          for (const [dx, dy] of L.BOMB_PATTERN) { const x = cx + dx, y = gy + dy; if (x < 0 || x >= g.w || y < 0 || y >= g.h) continue; const [sx, sy] = this.toScreen(x, y); ctx.fillRect(sx, sy, s, s); }
+          const at = g.hooks && g.hooks.targets && g.targets ? g.targets('bomb', [[pieceCells[0][0], gy]]) : [[pieceCells[0][0], gy]], seen = at.length > 1 ? new Set() : null;
+          for (const [cx, cy] of at) for (const [dx, dy] of L.BOMB_PATTERN) {
+            const x = cx + dx, y = cy + dy;
+            if (x < 0 || x >= g.w || y < 0 || y >= g.h) continue;
+            if (seen) { if (seen.has(x + ',' + y)) continue; seen.add(x + ',' + y); }
+            const [sx, sy] = this.toScreen(x, y); ctx.fillRect(sx, sy, s, s);
+          }
           if (look.ghost !== 'off') for (const [gx, gy2] of ghostCells) { const [sx, sy] = this.toScreen(gx, gy2); ghostCell(ctx, look.ghost, '#ff9f43', sx, sy, s); }
         } else if (look.ghost !== 'off') {
           const ga = this.rest ? { cells: ghostCells, style: look.ghost } : null;
@@ -1279,31 +1340,19 @@
         const overlapping = p.special === 'phase' && !g.fitShape(p, p.rot, p.x, p.y);
         // Gold on the board (Free Play) gilds whatever plain piece is in play.
         const golden = !p.special && g.s && g.s.gold > 0;
-        for (const [cx, cy] of pieceCells) {
-          const [sx, sy] = this.toScreen(cx, cy);
-          if (L.SINGLE_SPECIALS && L.SINGLE_SPECIALS.has(p.special)) { drawSpecial(ctx, p.special, sx, sy, s, now); continue; }
-          const tint = golden ? '#f2c14e' : color;
-          // Phasing: translucent, and it shimmers (more faintly still while inside other blocks).
-          const shimmer = p.special === 'phase' && !this.reducedMotion ? 0.12 * Math.sin(now / 170 + (cx + cy) * 0.9) : 0;
-          // A view part's painter draws a plain piece in its own look (Jelly); gold and the tools keep theirs.
-          if (!this.rest || p.special || golden || !this.paintCell(ctx, p.type.color, sx, sy, s, 'piece', { x: cx, y: cy, cells: pieceCells })) drawCell(ctx, look.skin, tint, sx, sy, s, p.special === 'phase' ? (overlapping ? 0.4 : 0.72) + shimmer : 1);
-          if (golden) {
-            const k = ((now / 900 + (cx + cy) * 0.12) % 1.4) - 0.2;
-            ctx.save(); ctx.beginPath(); ctx.rect(sx, sy, s, s); ctx.clip();
-            ctx.fillStyle = 'rgba(255,255,230,0.55)'; ctx.beginPath(); ctx.moveTo(sx + s * (k * 2 - 0.4), sy + s); ctx.lineTo(sx + s * (k * 2 - 0.1), sy + s); ctx.lineTo(sx + s * (k * 2 + 0.4), sy); ctx.lineTo(sx + s * (k * 2 + 0.1), sy); ctx.closePath(); ctx.fill();
-            ctx.restore();
-          }
-          if (p.special === 'laser') { ctx.save(); ctx.strokeStyle = 'rgba(255,60,80,' + (0.6 + 0.4 * Math.sin(now / 90)) + ')'; ctx.lineWidth = 2; ctx.strokeRect(sx + 2, sy + 2, s - 4, s - 4); ctx.fillStyle = '#fff'; ctx.fillRect(sx + s * 0.42, sy + s * 0.42, s * 0.16, s * 0.16); ctx.restore(); }
-          if (p.special === 'phase') {
-            ctx.save(); ctx.setLineDash([2, 3]); ctx.lineDashOffset = this.reducedMotion ? 0 : -now / 60; ctx.strokeStyle = '#ffffff'; ctx.globalAlpha = 0.7; ctx.strokeRect(sx + 1.5, sy + 1.5, s - 3, s - 3);
-            if (!this.reducedMotion) {
-              // A soft band of light drifting down through it.
-              const k = ((now / 800 + (cx - cy) * 0.11) % 1.4) - 0.2;
-              ctx.beginPath(); ctx.rect(sx, sy, s, s); ctx.clip();
-              ctx.globalAlpha = 0.35; ctx.fillStyle = '#e4dcff'; ctx.fillRect(sx, sy + s * k - s * 0.1, s, s * 0.2);
-            }
-            ctx.restore();
-          }
+        // A view part can draw some of the piece's cells fainter (pieceAlpha: Mirror's copy, the cells past the piece's own).
+        const nOwn = p.type.rots[p.rot].length;
+        const alphaOf = this.parts.some((vp) => typeof vp.pieceAlpha === 'function') ? (i, cx, cy) => {
+          let a = 1;
+          for (const vp of this.parts) if (typeof vp.pieceAlpha === 'function') { const v = vp.pieceAlpha(this, p, [cx, cy], i >= nOwn); if (typeof v === 'number' && isFinite(v)) a *= clamp(v, 0, 1); }
+          return a;
+        } : null;
+        for (let i = 0; i < pieceCells.length; i++) {
+          const [cx, cy] = pieceCells[i];
+          const pa = alphaOf ? alphaOf(i, cx, cy) : 1;
+          if (pa !== 1) { ctx.save(); ctx.globalAlpha = pa; }
+          this.pieceCell(ctx, p, cx, cy, pa, { s, now, look, color, golden, overlapping, pieceCells });
+          if (pa !== 1) ctx.restore();
         }
       }
 
@@ -1410,8 +1459,9 @@
       const pl = { skin: look.skin, color: (c) => (this.view.mono ? look.monoColor : look.colors[c]), t: now };
       // A 'rest' painter (Jelly) draws the trays' blocks too.
       if (this.rest) pl.paint = (c2, v, x, y, sz, at) => this.paintCell(c2, v, x, y, sz, 'tray', at);
-      // Hold
+      // Hold (grown for a long piece: traySlot)
       if (!g.mods.noHold) {
+        const hold = this.holdBox();
         label('HOLD', hold.x, hold.y, hold.w);
         tray(hold, this.holdHover);
         if (g.hold) drawPieceIn(ctx, this.parts.length ? this.trayEntry(g.hold) : g.hold, hold, s * 0.72, Object.assign({}, pl, { alpha: g.holdLocked && !g.freeHold ? 0.35 : 1 }));
@@ -1420,7 +1470,7 @@
       const n = Math.min(g.fixed ? g.queue.length : g.previewCount, g.queue.length);
       label('NEXT', next.x, next.y, next.w, g.fixed ? g.queue.length + ' LEFT' : null);
       if (nextDir === 'v') {
-        const first = Math.round(s * 2.5), slot = Math.round(s * 1.95);
+        const first = Math.round(s * this.slotCells(g.queue[0], 'next', 'v', 2.5)), slot = Math.round(s * 1.95);
         let shown = 0;
         for (let i = 0; i < n; i++) if (first + i * slot <= next.h + 1 || i === 0) shown = i + 1;
         const hh = shown ? Math.min(next.h, first + (shown - 1) * slot + Math.round(s * 0.2)) : Math.round(s * 2.5);
@@ -1431,7 +1481,7 @@
           this.drawQueueItem(ctx, g.queue[i], { x: next.x, y: y0 + (i ? s * 0.1 : s * 0.05), w: next.w, h: h0 }, i, s, pl);
         }
       } else {
-        const first = Math.min(Math.round(s * 3.4), next.w), slot = Math.round(s * 2.8);
+        const first = Math.min(Math.round(s * this.slotCells(g.queue[0], 'next', 'h', 3.4)), next.w), slot = Math.round(s * 2.8);
         let shown = 0;
         for (let i = 0; i < n; i++) if (first + i * slot <= next.w + 1 || i === 0) shown = i + 1;
         tray({ x: next.x, y: next.y, w: shown ? Math.min(next.w, first + (shown - 1) * slot + Math.round(s * 0.2)) : next.w, h: next.h });
@@ -1505,10 +1555,11 @@
         for (const [x, y] of result.cells) { if (y >= this.game.h) continue; const [sx, sy] = this.toScreen(x, y); this.fx.flash(sx, sy, s, s, '#ffffff', 0.16); }
       }
       if (phys) {
-        if (sp === 'drill' && result.bit) this.drillFx(result);
+        // An item the recipe set off at more than one spot (targets: Mirror's pairs) plays once at each.
+        if (sp === 'drill' && result.bit) this.perTarget(result, (r) => this.drillFx(r));
         else if (sp === 'laser' && result.laser) this.laserFx(result);
-        else if (sp === 'blackhole' && result.center) this.blackholeFx(result);
-        else if (sp === 'bomb' && result.center) this.blastFx(result);
+        else if (sp === 'blackhole' && result.center) this.perTarget(result, (r) => this.blackholeFx(r));
+        else if (sp === 'bomb' && result.center) this.perTarget(result, (r) => this.blastFx(r));
         else if (sp === 'phase') this.phaseFx(result, pieceColor);
         else if (sp === 'patch' && falls) this.patchFx(result);
         else if (sp === 'settle' && result.before) this.settleFx(result);
@@ -1553,7 +1604,7 @@
         this.fx.shake = Math.max(this.fx.shake, 3);
       }
       const toCells = (list) => list.map(([x, y, v]) => { const [sx, sy] = this.toScreen(x, y); return { x: sx, y: sy, color: this.colorOf(v) }; });
-      if (done) { /* animated above */ } else if (result.swallowed && !reduced) {
+      if (done) { /* animated above */ } else if (result.swallowed && !reduced) this.perTarget(result, (result) => {
         const [cx0, cy0] = this.toScreen(result.center[0], result.center[1]), cx = cx0 + s / 2, cy = cy0 + s / 2;
         for (const c of toCells(result.swallowed)) {
           const dx = c.x + s / 2 - cx, dy = c.y + s / 2 - cy;
@@ -1562,7 +1613,8 @@
         this.fx.ring(cx, cy, '#b48cff', s * 4, { inward: true, max: 0.8, width: 3 });
         this.fx.ring(cx, cy, '#ffb35c', s * 2.5, { max: 0.5 });
         this.fx.shake = Math.max(this.fx.shake, 5);
-      } else if (result.swallowed) this.fx.burst('fade', toCells(result.swallowed), s, true);
+      });
+      else if (result.swallowed) this.fx.burst('fade', toCells(result.swallowed), s, true);
       if (result.laser && !reduced && !done) {
         for (const y of result.laser) {
           const [ax, ay] = this.toScreen(0, y), [bx] = this.toScreen(this.game.w - 1, y);
@@ -1594,6 +1646,28 @@
       if (result.drilled && result.drilled.length && !done) this.fx.burst(reduced ? 'fade' : 'sparks', toCells(result.drilled), s, reduced);
       if (result.patched && reduced && result.cells.length) this.fx.pop(this.screenCells(result.cells, '#8fd3ff'), '#8fd3ff', 0.3);
       this.dirty = true;
+    }
+
+    /**
+     * An item's effect once for each spot it acted at (result.centers, result.bits: the recipe's targets), each with
+     * the cells it took (a drill's: its column; a bomb's or a black hole's: those nearest it); one spot, as it is.
+     */
+    perTarget(r, fn) {
+      const w = this.game ? this.game.w : 0, wrap = !!(this.game && this.game.board.wrap);
+      if (r.bits && r.bits.length > 1) {
+        for (const bit of r.bits) fn(Object.assign({}, r, { bit, bits: null, drilled: (r.drilled || []).filter(([x]) => x === bit[0]) }));
+        return;
+      }
+      const cs = r.centers;
+      if (!cs || cs.length < 2) { fn(r); return; }
+      const dist = (x, y, c) => { let dx = Math.abs(x - c[0]); if (wrap) dx = Math.min(dx, w - dx); return dx * dx + (y - c[1]) * (y - c[1]); };
+      const near = (x, y) => { let k = 0; cs.forEach((c, i) => { if (dist(x, y, c) < dist(x, y, cs[k])) k = i; }); return k; };
+      cs.forEach((center, i) => {
+        const part = { center, centers: null };
+        if (r.blast) part.blast = r.blast.filter(([x, y]) => near(x, y) === i);
+        if (r.swallowed) part.swallowed = r.swallowed.filter(([x, y]) => near(x, y) === i);
+        fn(Object.assign({}, r, part));
+      });
     }
 
     /** A bomb: a flash, a ring, and the blocks of its diamond thrown out and up, tumbling. */

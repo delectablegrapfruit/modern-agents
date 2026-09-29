@@ -1210,7 +1210,7 @@ div.lib-open { cursor: default; }
 .lib-open .d .sz { flex: none; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .lib-open .d .sz::after { content: ' ·'; }
 .lib-open .d .sz + .st { margin-left: -2px; }
-.lib-open .tag { flex: none; height: 17px; display: inline-flex; align-items: center; padding: 0 6px; border-radius: 5px; font-size: var(--fs-2xs); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.lib-open .tag { flex: none; height: 17px; display: inline-flex; align-items: center; padding: 0 6px; border-radius: 5px; font-size: var(--fs-2xs); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); background: color-mix(in srgb, var(--fg) 7%, transparent); }
 .lib-open .tag.on { color: var(--accent-ink); background: var(--accent-soft); }
 .lib-open .tag.full { color: color-mix(in srgb, var(--warn) 80%, var(--fg)); background: color-mix(in srgb, var(--warn) 14%, transparent); }
 .modal input.lib-name { height: 26px; padding: 0 8px; font: 650 var(--fs-md) var(--font); border-radius: var(--r-sm); }
@@ -1233,8 +1233,13 @@ div.lib-open { cursor: default; }
   .lib-open .d .sz::after { content: none; }
   .lib-open .d .sz + .st { margin-left: 0; }
 }
-/* A board of another recipe: its label shares the size's line, with ellipsis (in full as its tip); on a phone, on a line of its own. */
+/* A board of another recipe: at every width Lines and Score take a line of their own, and the size, when and the label
+   (last, so an ellipsis only ever takes it; in full as its tip) share the tags' line; on a phone, a line of its own. */
+.lib-open .d.labelled { flex-wrap: wrap; row-gap: 2px; }
 .lib-open .d.labelled .sz { flex: 0 1 auto; min-width: 0; }
+.lib-open .d.labelled .st { flex: 1 1 100%; }
+.lib-open .d.labelled .sz::after { content: none; }
+.lib-open .d.labelled .sz + .st { margin-left: 0; }
 @media (max-width: 360px) { .lib-open .d.labelled .sz { flex: 1 1 100%; } }
 /* Narrow: the actions stand in a column at the row's end, so the name keeps its room. */
 @media (max-width: 360px) {
@@ -1321,6 +1326,10 @@ div.lib-open { cursor: default; }
   .nb-modes button, .nb-lvl button { height: 44px; }
 }
 @media (prefers-reduced-motion: reduce) { .nb-switch .sw, .nb-switch .sw::after { transition: none; } }
+/* Narrow: a chip's name may take two lines beside its sample (Pentominoes), never an ellipsis. */
+@media (max-width: 440px) {
+  .nb-chip .nm { white-space: normal; overflow-wrap: anywhere; hyphens: auto; font-size: var(--fs-xs); line-height: 1.1; max-height: 2.2em; }
+}
 /* A phone: a little more room across, so "Modifiers" and the chips' names fit. */
 @media (max-width: 360px) {
   .modal-newboard .body { padding-left: 12px; padding-right: 12px; }

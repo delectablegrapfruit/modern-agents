@@ -127,19 +127,20 @@
   // its share; and a won Double or Nothing doubles at most one Standard clear's worth.
 
   const Pay = {
-    /** The chain multiplier after a lock on board g (what a row there is worth: Library.worth). */
-    mult(g) { return Chain.mult(Chain.streak(g) * Math.min(1, L.Library.worth(g))); },
+    /** The chain multiplier after a lock on board g (what a row there is worth: Library.worth); ×1 on an unrated board. */
+    mult(g) { return g.rules && g.rules.rated === false ? 1 : Chain.mult(Chain.streak(g) * Math.min(1, L.Library.worth(g))); },
     /** Gold (or a boost's clears) left, in Standard clears, as clears on a board (its rules R, or its width): "3 left". */
     clearsLeft(left, R) { return left > 0 ? Math.ceil(left / lkOf(R) - 1e-9) : 0; },
     /**
      * What clear `r` pays on board state `s` (its mult already set) on a board with rules R (or, a Normal board, its
      * width), in Standard lines, rounded down to the hundredth: r.own rows at R.lk each, and one Standard line at most
-     * for a quad or T-spin. Spends gold, a boost's clears and Double or Nothing from `s`. Returns { pay, golden,
-     * goldX, boost, double }.
+     * for a quad or T-spin (none on an unrated board: R.rated false). Spends gold, a boost's clears and Double or
+     * Nothing from `s`. Returns { pay, golden, goldX, boost, double }.
      */
     clear(s, r, R) {
       const lk = lkOf(R), out = {};
-      const difficult = quadOf(r) || !!r.tspin || !!r.mini;
+      const rules = R && typeof R === 'object' ? R.rules || R : null;
+      const difficult = !(rules && rules.rated === false) && (quadOf(r) || !!r.tspin || !!r.mini);
       let pay = (ownOf(r) * lk + (difficult ? Math.min(1, lk) : 0)) * (s.mult || 1);
       /** One clear's use of something that lasts `left` Standard clears: the share of this clear it covers. */
       const use = (left) => ({ share: Math.min(1, left / lk), left: Math.max(0, Math.round((left - lk) * 1000) / 1000) });
