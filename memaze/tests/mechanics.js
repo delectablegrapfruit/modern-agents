@@ -363,7 +363,13 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     const [item] = await MZ.Media.importFiles([new File([blob], 'photo.png', { type: 'image/png' })], 'player');
     const res = { def: S.player.shape }, was = S.player.media, look = async () => { G.applySettings(); await wait(400); G.sprite.update(performance.now(), true); const k = G.sprite.mask; return k ? { maxR: k.maxR, cells: k.cells } : null; };
     S.player.media = item.id;
-    for (const sh of ['circle', 'square', 'heart', 'original']) { S.player.shape = sh; res[sh] = await look(); }
+    for (const sh of ['circle', 'square', 'heart', 'star', 'original']) {
+      S.player.shape = sh; res[sh] = await look();
+      if (sh === 'square') { // the rim: white at the edge, a dark line inside it, the picture within
+        const cv = G.sprite.canvas, n = cv.width, px = (u) => Array.from(cv.getContext('2d').getImageData(Math.round(u * n), Math.round(n / 2), 1, 1).data);
+        res.rim = [px(0.03), px(0.08), px(0.5)];
+      }
+    }
     S.player.media = 'default:sticker';
     S.player.shape = 'circle'; const b1 = await look();
     S.player.shape = 'square'; const b2 = await look();
@@ -374,7 +380,9 @@ try { ({ chromium } = require('playwright')); } catch (e) {
   });
   const full = 96 * 96;
   out.push({ name: 'your own picture is cut to a circle by default, and that is its hitbox', ok: shp.def === 'circle' && shp.circle && shp.circle.maxR < 0.53 && Math.abs(shp.circle.cells / full - Math.PI / 4) < 0.04, info: shp.circle && (shp.circle.cells / full).toFixed(3) });
-  out.push({ name: '...or to the shape you choose (square, heart...), or left as it is', ok: shp.square && shp.square.maxR > 0.69 && shp.heart && shp.heart.cells < shp.circle.cells * 0.9 && shp.original && shp.original.cells > full * 0.95, info: [shp.square, shp.heart, shp.original].map((x) => x && (x.cells / full).toFixed(2)).join(' / ') });
+  out.push({ name: '...or to the shape you choose (square, heart, star...), or left as it is', ok: shp.square && shp.square.maxR > 0.65 && shp.heart && shp.heart.cells < shp.circle.cells * 0.9 && shp.star && shp.star.cells < shp.circle.cells * 0.9 && shp.original && shp.original.cells > full * 0.95, info: [shp.square, shp.heart, shp.star, shp.original].map((x) => x && (x.cells / full).toFixed(2)).join(' / ') });
+  const [rw, rl, rp] = shp.rim || [];
+  out.push({ name: '...rimmed like the star: a white band, a dark line, the picture within', ok: !!rw && rw[0] > 240 && rw[1] > 240 && rw[2] > 240 && rw[3] > 240 && rl[0] < 60 && rl[2] < 90 && rl[3] > 240 && rp[0] > 200 && rp[1] < 90, info: shp.rim && shp.rim.map((c) => c.slice(0, 3).join(',')).join(' / ') });
   out.push({ name: '...while the built-in pictures keep their own shape', ok: shp.builtin, info: '' });
   let bad = 0;
   for (const r of out) { if (!r.ok) bad++; console.log((r.ok ? 'ok   ' : 'FAIL ') + r.name + (r.info ? '  (' + r.info + ')' : '')); }

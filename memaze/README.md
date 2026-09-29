@@ -47,8 +47,9 @@ No build step, no dependencies: plain HTML/CSS/JS, plus an optional Python serve
 - **The hitbox is your picture.** Every pixel that is at least half opaque counts; transparent parts don't. Animated GIFs,
   APNG/WebP animations and videos are checked frame by frame, and chroma-keyed pixels drop out too. A small buffer
   (3.5% of the picture's size) lets an edge graze the void without losing. A picture you add is cut to a **shape**,
-  a circle unless you choose otherwise (rounded square, square, hexagon, heart, or as it is, uncut: Media → Player),
-  filling it; the cut is its hitbox too. The built-in pictures keep their own shape.
+  a circle unless you choose otherwise (rounded square, square, hexagon, heart, star, or as it is, uncut: Media →
+  Player), filling it, and rimmed like the built-in star (a dark line, then a white band); the cut and its rim are its
+  hitbox too. The built-in pictures keep their own shape.
 - **Close camera.** Your picture fills about an eighth of the screen's shorter side, so you see only the corridors
   around you. That default is the widest view: pinch, the wheel, +/- or the Zoom setting only zoom in from it. The map in the corner starts black and shows only what has been on screen: corridors, the goal, gems,
   flags and boxes appear once you've seen them.

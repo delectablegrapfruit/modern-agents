@@ -15,8 +15,29 @@
   const MAX_FRAMES = 240, FRAME_MAX = 320;
 
   // ---------- shapes ----------
-  // An uploaded picture is cut to a shape (a circle unless you choose otherwise), filling it; 'original' keeps it whole
-  // and uncut, as the built-in pictures always are. The cut is the hitbox too. Each outline is points round a unit box.
+  // An uploaded picture is cut to a shape (a circle unless you choose otherwise), filling it, and rimmed like the
+  // built-in star: a dark line round it, a white band round that. 'original' keeps it whole and uncut, as the built-in
+  // pictures always are. The cut and its rim are the hitbox. Each outline is points round a unit box.
+  const RIM = 22 / 256, LINE = 10 / 256; // how far the white band and the dark line reach out from the cut (the star's)
+  const RIM_COLOR = '#fff', LINE_COLOR = '#1d1a3a';
+  // Points along an SVG path of M, L, Q and Z, fitted and centred in the unit box.
+  function pathPoints(d) {
+    const t = d.match(/[MLQZ]|-?[\d.]+/g), out = [];
+    let i = 0, x = 0, y = 0;
+    const num = () => +t[i++];
+    while (i < t.length) {
+      const c = t[i++];
+      if (c === 'M' || c === 'L') { x = num(); y = num(); out.push([x, y]); }
+      else if (c === 'Q') {
+        const cx = num(), cy = num(), ex = num(), ey = num();
+        for (let k = 1; k <= 6; k++) { const u = k / 6, v = 1 - u; out.push([v * v * x + 2 * u * v * cx + u * u * ex, v * v * y + 2 * u * v * cy + u * u * ey]); }
+        x = ex; y = ey;
+      }
+    }
+    const xs = out.map((p) => p[0]), ys = out.map((p) => p[1]), x0 = Math.min(...xs), y0 = Math.min(...ys);
+    const k = 1 / Math.max(Math.max(...xs) - x0, Math.max(...ys) - y0), ox = (1 - (Math.max(...xs) - x0) * k) / 2, oy = (1 - (Math.max(...ys) - y0) * k) / 2;
+    return out.map(([px, py]) => [ox + (px - x0) * k, oy + (py - y0) * k]);
+  }
   const SHAPES = {
     circle: Array.from({ length: 48 }, (_, i) => [0.5 + 0.5 * Math.cos((i / 48) * Math.PI * 2), 0.5 + 0.5 * Math.sin((i / 48) * Math.PI * 2)]),
     rounded: (() => { const r = 0.22, out = []; for (const [cx, cy, a0] of [[1 - r, r, -90], [1 - r, 1 - r, 0], [r, 1 - r, 90], [r, r, 180]]) for (let k = 0; k <= 8; k++) { const a = ((a0 + (k / 8) * 90) * Math.PI) / 180; out.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]); } return out; })(),
@@ -26,7 +47,23 @@
       const t = (i / 64) * Math.PI * 2, x = 16 * Math.sin(t) ** 3, y = -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
       return [0.5 + x / 34, 0.47 + y / 34];
     }),
+    star: pathPoints('M-16.5,-89.9Q0,-112 16.5,-89.9L22.6,-81.5Q41.1,-56.6 70.6,-46.7L80.4,-43.4Q106.5,-34.6 90.5,-12.1L84.5,-3.7Q66.6,21.6 66.2,52.7L66.1,63Q65.8,90.6 39.5,82.4L29.6,79.3Q0,70 -29.6,79.3L-39.5,82.4Q-65.8,90.6 -66.1,63L-66.2,52.7Q-66.6,21.6 -84.5,-3.7L-90.5,-12.1Q-106.5,-34.6 -80.4,-43.4L-70.6,-46.7Q-41.1,-56.6 -22.6,-81.5Z'), // the built-in star's own
   };
+  // A shape's cut, drawn in from the box's edges to leave room for its rim.
+  const cutOf = (shape) => SHAPES[shape].map(([x, y]) => [RIM + x * (1 - 2 * RIM), RIM + y * (1 - 2 * RIM)]);
+  const polygonCSS = (pts, dp) => 'polygon(' + pts.map(([x, y]) => (x * 100).toFixed(dp) + '% ' + (y * 100).toFixed(dp) + '%').join(',') + ')';
+  // The rim round a cut, behind whatever is already drawn in g.
+  function drawRim(g, pts, size) {
+    g.save();
+    g.globalCompositeOperation = 'destination-over';
+    g.lineJoin = 'round';
+    g.beginPath();
+    pts.forEach(([x, y], i) => (i ? g.lineTo(x * size, y * size) : g.moveTo(x * size, y * size)));
+    g.closePath();
+    g.fillStyle = g.strokeStyle = LINE_COLOR; g.lineWidth = 2 * LINE * size; g.fill(); g.stroke();
+    g.fillStyle = g.strokeStyle = RIM_COLOR; g.lineWidth = 2 * RIM * size; g.fill(); g.stroke();
+    g.restore();
+  }
 
   // ---------- GIF decoding ----------
   function lzw(minSize, data, count) {
@@ -266,8 +303,10 @@
       this.src = src;
       if (src && src.live) { // shown by the browser itself, which keeps it animating
         src.img.className = 'media-el' + (this.pixel ? ' pixelated' : '');
-        if (this.shape) { src.img.style.objectFit = 'cover'; src.img.style.clipPath = 'polygon(' + SHAPES[this.shape].map(([x, y]) => (x * 100).toFixed(2) + '% ' + (y * 100).toFixed(2) + '%').join(',') + ')'; }
-        this.canvas.hidden = true;
+        if (this.shape) { // (the rim goes on the canvas underneath)
+          Object.assign(src.img.style, { position: 'absolute', left: 0, top: 0, boxSizing: 'border-box', padding: (RIM * 100).toFixed(2) + '%', objectFit: 'cover', clipPath: polygonCSS(cutOf(this.shape), 2) });
+          this.clear(); drawRim(this.ctx, cutOf(this.shape), this.canvas.width);
+        } else this.canvas.hidden = true;
         this.canvas.parentNode.appendChild(src.img);
       }
       this.start = performance.now();
@@ -387,10 +426,10 @@
       if (!force && f.sig === this.lastSig) return false;
       this.lastSig = f.sig;
       if (!this.src.live) this.paint(this.ctx, this.canvas.width, f, true);
-      this.paint(this.mctx, MASK, f, false);
+      else if (this.shape && force) { this.clear(); drawRim(this.ctx, cutOf(this.shape), this.canvas.width); }
+      this.paint(this.mctx, MASK, f, true);
       let data;
       try { data = this.mctx.getImageData(0, 0, MASK, MASK).data; } catch (e) { this.mask = null; return true; }
-      if (this.key) this.key(data);
       this.mask = buildMask(data, MASK);
       return true;
     }
@@ -408,33 +447,37 @@
     }
 
     // Draw a frame into a square box the way the player sees it: whole, centred (object-fit: contain); or, cut to a
-    // shape, filling it (object-fit: cover).
-    paint(g, size, f, display) {
+    // shape, filling it (object-fit: cover), and rimmed. keyed: take out the chroma key colour (never from the rim).
+    paint(g, size, f, keyed) {
       g.setTransform(1, 0, 0, 1, 0, 0);
       g.clearRect(0, 0, size, size);
-      const k = (this.shape ? Math.max : Math.min)(size / f.w, size / f.h), w = f.w * k, h = f.h * k;
+      const cut = this.shape && cutOf(this.shape), box = cut ? size * (1 - 2 * RIM) : size;
+      const k = (cut ? Math.max : Math.min)(box / f.w, box / f.h), w = f.w * k, h = f.h * k;
       g.imageSmoothingEnabled = !this.pixel;
-      if (this.shape) {
+      if (cut) {
         g.save();
         g.beginPath();
-        SHAPES[this.shape].forEach(([x, y], i) => (i ? g.lineTo(x * size, y * size) : g.moveTo(x * size, y * size)));
+        cut.forEach(([x, y], i) => (i ? g.lineTo(x * size, y * size) : g.moveTo(x * size, y * size)));
         g.closePath();
         g.clip();
       }
       g.drawImage(f.el, (size - w) / 2, (size - h) / 2, w, h);
-      if (this.shape) g.restore();
-      if (display && this.key) {
+      if (cut) g.restore();
+      if (keyed && this.key) {
         try {
           const im = g.getImageData(0, 0, size, size);
           this.key(im.data);
           g.putImageData(im, 0, 0);
         } catch (e) { /* unreadable media: shown unkeyed */ }
       }
+      if (cut) drawRim(g, cut, size);
     }
   }
 
   MZ.Sprite = Sprite;
   MZ.SHAPES = SHAPES;
+  MZ.shapeCut = cutOf;
+  MZ.shapeRim = { rim: RIM, line: LINE, rimColor: RIM_COLOR, lineColor: LINE_COLOR };
   MZ.decodeGif = decodeGif;
   MZ.buildMask = buildMask;
 })();

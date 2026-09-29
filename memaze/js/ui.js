@@ -369,7 +369,13 @@
           v.addEventListener('loadedmetadata', () => { try { v.currentTime = Math.min(0.2, v.duration / 2); } catch (e) { /* ignore */ } });
         } else thumb.appendChild(icon(it));
         const cut = slot === 'player' && !/^default:/.test(it.id) && MZ.SHAPES[S().player.shape]; // your own pictures, shown cut as they'll play
-        if (cut && thumb.firstChild) Object.assign(thumb.firstChild.style, { objectFit: 'cover', aspectRatio: '1', clipPath: 'polygon(' + cut.map(([x, y]) => (x * 100).toFixed(1) + '% ' + (y * 100).toFixed(1) + '%').join(',') + ')' });
+        if (cut && thumb.firstChild) { // (and rimmed, the rim drawn underneath)
+          const el = thumb.firstChild, pts = MZ.shapeCut(S().player.shape), R = MZ.shapeRim, rim = h('div', { class: 'rim' });
+          const d = 'M' + pts.map(([x, y]) => (x * 100).toFixed(1) + ' ' + (y * 100).toFixed(1)).join('L') + 'Z';
+          Object.assign(el.style, { position: 'relative', boxSizing: 'border-box', padding: (R.rim * 100).toFixed(2) + '%', objectFit: 'cover', aspectRatio: '1', clipPath: 'polygon(' + pts.map(([x, y]) => (x * 100).toFixed(1) + '% ' + (y * 100).toFixed(1) + '%').join(',') + ')' });
+          rim.innerHTML = '<svg viewBox="0 0 100 100" stroke-linejoin="round"><path d="' + d + '" fill="' + R.rimColor + '" stroke="' + R.rimColor + '" stroke-width="' + (R.rim * 200).toFixed(1) + '"/><path d="' + d + '" fill="' + R.lineColor + '" stroke="' + R.lineColor + '" stroke-width="' + (R.line * 200).toFixed(1) + '"/></svg>';
+          thumb.insertBefore(rim, el);
+        }
         const tile = h('div', { class: 'tile' + (chosen(it.id) ? ' on' : ''), title: it.name, tabindex: 0 },
           thumb,
           h('div', { class: 'name' }, it.name),
@@ -528,8 +534,8 @@
       const opts = [];
       if (tab === 'player') {
         opts.push(range('Size', 'player.size', 0.6, 1.25, 0.05, times),
-          select('Shape', 'player.shape', [['circle', 'Circle'], ['rounded', 'Rounded square'], ['square', 'Square'], ['hexagon', 'Hexagon'], ['heart', 'Heart'], ['original', 'As it is (uncut)']], () => this.rebuild()),
-          h('div', { class: 'note' }, 'Your own pictures are cut to this shape, and it is their hitbox. The built-in ones keep their own.'),
+          select('Shape', 'player.shape', [['circle', 'Circle'], ['rounded', 'Rounded square'], ['square', 'Square'], ['hexagon', 'Hexagon'], ['heart', 'Heart'], ['star', 'Star'], ['original', 'As it is (uncut)']], () => this.rebuild()),
+          h('div', { class: 'note' }, 'Your own pictures are cut to this shape and rimmed like the star; that is their hitbox. The built-in ones keep their own.'),
           this.chromaControls('player.chroma'));
       } else if (tab === 'win' || tab === 'lose') {
         opts.push(toggle('Show ' + tab + ' media', tab + '.on'),
