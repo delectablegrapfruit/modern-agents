@@ -4,6 +4,18 @@ Human taste across all media, as the antidote to machine content.
 
 A visual prototype of a social network of named human curators for film, music, books, long reads, games, podcasts and art. You follow people, not feeds, and nothing is ranked by an algorithm.
 
+## Why people, when everyone has an AI
+
+Personal assistants will know each person's taste closely. Vouch doesn't compete on prediction. It offers what an assistant can't:
+
+| | What Vouch does | Where it shows |
+|---|---|---|
+| Accountable | Every curator has a public landed rate: how often people who tried a pick loved it | Reputation card, profiles |
+| Wider | Picks outside your usual are labeled. They were chosen by a person, not predicted | "Your first podcast" on cards, Discover |
+| Human-made | Each pick carries a curator's check that people made the work | Card footer |
+| Together | Clubs, asks and live rooms with people you know; "Tried by" rows on cards | Home, Club, Live room |
+| Works with your AI | Your assistant can read your follows and saved picks if you allow it. It can't post | Settings |
+
 ## Run it
 
 Open `index.html` in a browser. It is one self-contained file with no build step. On a wide screen it shows a phone frame with a screen index beside it. On a phone it runs full screen.
@@ -12,6 +24,7 @@ Open `index.html` in a browser. It is one self-contained file with no build step
 
 | Screen | What it shows |
 |---|---|
+| Welcome | The pitch in the app: picks from people who sign their name |
 | Home | Following or Everyone, newest first, and a timeline that ends |
 | Reputation check | Tap any name: landed rate, vouches, years curating, disclosure record |
 | Open in | The handoff to the app built for the medium, then "Did it land?" on return |
