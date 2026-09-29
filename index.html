@@ -200,6 +200,8 @@ p{margin:0}
 .tok b{color:var(--accent);font-weight:600;font-variant-numeric:tabular-nums}
 .tok .sep{width:3px;height:3px;border-radius:50%;background:var(--muted);opacity:.6;margin:0 2px}
 .tok .stack .av{--sz:16px;font-size:0}
+.av.pic{overflow:hidden;background:none}
+.av.pic svg{width:100%;height:100%;display:block}
 .tok .i{color:var(--muted)}
 .gauge{flex:none;transform:rotate(-90deg)}
 .gauge circle{fill:none;stroke-width:2.6}
@@ -731,7 +733,47 @@ const ICONS={
 };
 const icon=(n,c="")=>`<svg class="i ${c}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n]}</svg>`;
 const chk=(label="Verified person")=>`<svg class="chk" viewBox="0 0 24 24" ${label?`role="img" aria-label="${label}"`:'aria-hidden="true"'}><circle cx="12" cy="12" r="11"/><path d="M7.2 12.4l3.2 3.1 6.4-6.8"/></svg>`;
-const av=(u,cls="")=>`<span class="av ${cls}" style="--h:${u.hue}">${esc(u.ini)}</span>`;
+/* ---------- profile pictures: drawn portraits for people using their names, picture avatars for screen names ---------- */
+const FACES={
+ mara:{bg:"#f2d7c6",skin:"#6b4430",hair:"#1f1714",shirt:"#c8452d",style:"afro"},
+ tobias:{bg:"#d5e2ee",skin:"#ebc7a8",hair:"#7a4a2a",shirt:"#2b3a55",style:"short",beard:1,glasses:"round"},
+ lena:{bg:"#dde8d6",skin:"#c68b5f",hair:"#241b18",shirt:"#4f6b4a",style:"long"},
+ jonah:{bg:"#eee1c4",skin:"#f0ceb2",hair:"#8f8780",shirt:"#b48a3a",style:"buzz",glasses:"rect"},
+ yusra:{bg:"#e1dcf3",skin:"#b77e5c",shirt:"#2f3d6b",scarf:"#3a4a7a",style:"scarf"},
+ theo:{bg:"#d4ebe6",skin:"#e6bd99",hair:"#5a3a24",shirt:"#2f6f6a",style:"short",beard:1},
+ me:{bg:"#dce5f5",skin:"#d6a37c",hair:"#3a2a22",shirt:"#5a6fb0",style:"wavy"},
+};
+function face(f){
+  const ink="#221a17";let back="",front="",head=`<ellipse cx="32" cy="27" rx="10.5" ry="12.5" fill="${f.skin}"/>`;
+  switch(f.style){
+    case "afro":back=`<circle cx="32" cy="23" r="17" fill="${f.hair}"/>`;front=`<path d="M21 23c1-6 5-9 11-9s10 3 11 9c-3-2-7-3-11-3s-8 1-11 3z" fill="${f.hair}"/>`;break;
+    case "long":back=`<path d="M18.5 27c0-10 6-17 13.5-17s13.5 7 13.5 17v19h-27z" fill="${f.hair}"/>`;front=`<path d="M20.5 25c1-8 6-12.5 11.5-12.5S42.5 17 43.5 25c-4-5-8-6.5-11.5-6.5-4 0-8 1.5-11.5 6.5z" fill="${f.hair}"/>`;break;
+    case "short":front=`<path d="M20.5 25c0-9 5-13.5 11.5-13.5S43.5 16 43.5 25c-2-4-6-6.5-11.5-6.5S22.5 21 20.5 25z" fill="${f.hair}"/>`;break;
+    case "buzz":front=`<path d="M21.3 23.5c1-6.5 5-9.5 10.7-9.5s9.7 3 10.7 9.5c-3-2.5-7-3.5-10.7-3.5s-7.7 1-10.7 3.5z" fill="${f.hair}"/>`;break;
+    case "wavy":back=`<path d="M19 30c-2-11 4-18 13-18s15 7 13 18c-.5 3-2 5-3 6V25H22v11c-1-1-2.5-3-3-6z" fill="${f.hair}"/>`;front=`<path d="M20.5 25c1.5-8 6.5-11.5 11.5-11.5S42 17 43.5 25c-2.5-3-5-4.5-8-3.5s-4.5-.5-7.5.5-5 1-7.5 3z" fill="${f.hair}"/>`;break;
+    case "scarf":back=`<path d="M16.5 31c0-12 7-20 15.5-20s15.5 8 15.5 20v12c-4 5-9.5 7-15.5 7s-11.5-2-15.5-7z" fill="${f.scarf}"/>`;head=`<ellipse cx="32" cy="28.5" rx="9.2" ry="11" fill="${f.skin}"/>`;front=`<path d="M21.5 27c0-8 4.5-12.5 10.5-12.5S42.5 19 42.5 27c-2.5-4-6-6-10.5-6s-8 2-10.5 6z" fill="${f.scarf}"/>`;break;
+  }
+  const beard=f.beard?`<path d="M21.8 29c.2 8 4.5 12.5 10.2 12.5S42 37 42.2 29c-1.2 3-3.2 4.8-5.2 4.8h-10c-2 0-4-1.8-5.2-4.8z" fill="${f.hair}"/>`:"";
+  const mouth=f.beard?"":`<path d="M29.5 33.6q2.5 1.8 5 0" stroke="${ink}" stroke-width="1" fill="none" stroke-linecap="round" opacity=".55"/>`;
+  const gl=f.glasses==="round"?`<g fill="none" stroke="${ink}" stroke-width="1"><circle cx="28" cy="28" r="3.3"/><circle cx="36" cy="28" r="3.3"/><path d="M31.3 28h1.4"/></g>`:f.glasses==="rect"?`<g fill="none" stroke="${ink}" stroke-width="1"><rect x="24.3" y="25.6" width="7" height="5" rx="1.2"/><rect x="32.7" y="25.6" width="7" height="5" rx="1.2"/><path d="M31.3 27.8h1.4"/></g>`:"";
+  return `<rect width="64" height="64" fill="${f.bg}"/>${back}<path d="M8 67c1-13 11-20.5 24-20.5S55 54 56 67z" fill="${f.shirt}"/><rect x="27.5" y="35" width="9" height="12" rx="3" fill="${f.skin}"/><rect x="27.5" y="39.5" width="9" height="3.5" fill="#000" opacity=".1"/>${head}${front}${beard}<circle cx="28" cy="28" r="1.2" fill="${ink}"/><circle cx="36" cy="28" r="1.2" fill="${ink}"/>${mouth}${gl}`;
+}
+const PICS={
+ dev:()=>{const rows=["X.........X",".X.......X.","..X.XXX.X..","XXXXXXXXXXX","XX.XXXXX.XX","XXXXXXXXXXX",".XXX.X.XXX.","..X..X..X..",".....X....."];let o=`<rect width="64" height="64" fill="#2b1d3a"/>`;rows.forEach((r,y)=>[...r].forEach((c,x)=>{if(c==="X")o+=`<rect x="${10+x*4}" y="${14+y*4}" width="4" height="4" fill="#f2d49b"/>`;}));return o+`<rect x="26" y="26" width="4" height="4" fill="#e98a6a"/><rect x="34" y="26" width="4" height="4" fill="#e98a6a"/>`;},
+ priya:()=>`<rect width="64" height="64" fill="#d8467a"/><rect x="11" y="19" width="42" height="28" rx="3.5" fill="#f5ecde"/><rect x="15" y="22.5" width="34" height="8" rx="1" fill="#2b1d3a"/><rect x="21" y="33" width="22" height="9" rx="4.5" fill="#2b1d3a"/><circle cx="26" cy="37.5" r="2.6" fill="#f5ecde"/><circle cx="38" cy="37.5" r="2.6" fill="#f5ecde"/><path d="M19 47l3-4h20l3 4z" fill="#e3d6c2"/>`,
+ sable:()=>`<rect width="64" height="64" fill="#f3b73f"/><circle cx="32" cy="34" r="17" fill="#fbf7ef"/><circle cx="32" cy="34" r="12" fill="none" stroke="#e6dcc8" stroke-width="1.5"/><circle cx="32" cy="34" r="6" fill="#c8452d"/><path d="M29 31.5c1.5-1 4.5-1 6 0" stroke="#fbf7ef" stroke-width="1.2" fill="none" opacity=".7"/><rect x="8.5" y="20" width="2.4" height="28" rx="1.2" fill="#2a2a2a"/><path d="M7 20v7M9.7 20v7M12.4 20v7" stroke="#2a2a2a" stroke-width="1.2"/><path d="M53.5 20c3 3 3 11 0 14v14" stroke="#2a2a2a" stroke-width="2.4" fill="none" stroke-linecap="round"/>`,
+ ines:()=>`<rect width="64" height="64" fill="#7a1f2b"/>${[6,18,30,42,54].map(x=>`<rect x="${x}" y="0" width="5" height="64" fill="#5e1520"/>`).join("")}<path d="M20 52V31a12 12 0 0124 0v21l-4-3.5-4 3.5-4-3.5-4 3.5-4-3.5z" fill="#f7f3ee"/><circle cx="28" cy="31" r="2.2" fill="#1c1c1c"/><circle cx="36" cy="31" r="2.2" fill="#1c1c1c"/><ellipse cx="32" cy="38" rx="2.4" ry="3" fill="#1c1c1c"/>`,
+ rae:()=>`<rect width="64" height="64" fill="#1f5c3f"/><rect x="30.5" y="44" width="3" height="20" fill="#0f2e20"/><circle cx="32" cy="29" r="17" fill="#f7f3ea" stroke="#0f2e20" stroke-width="3"/><text x="32" y="38" text-anchor="middle" font-family="Geist,Helvetica,Arial,sans-serif" font-weight="800" font-size="25" fill="#0f2e20">9</text>`,
+ sam:()=>`<rect width="64" height="64" fill="#e9d9b8"/><circle cx="30" cy="35" r="20" fill="#141414"/><circle cx="30" cy="35" r="16" fill="none" stroke="#2f2f2f"/><circle cx="30" cy="35" r="12" fill="none" stroke="#2f2f2f"/><circle cx="30" cy="35" r="6.5" fill="#c8452d"/><circle cx="30" cy="35" r="1.2" fill="#e9d9b8"/><circle cx="53" cy="11" r="3.5" fill="#8a8a8a"/><path d="M53 11L44 30l-4 3" stroke="#8a8a8a" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`,
+ dana:()=>`<rect width="64" height="64" fill="#f4efe2"/><rect x="14" y="14" width="1.2" height="38" fill="#c8452d" opacity=".55"/>${[16,23,30,37,44].map((y,i)=>`<rect x="20" y="${y}" width="${[30,26,32,22,28][i]}" height="2.2" rx="1" fill="#2d3a55" opacity=".7"/>`).join("")}<path d="M20 34.5c3 1.5 6-1.5 9 0s6 1.5 9 0 6-1.5 8 0" stroke="#c8452d" stroke-width="1.6" fill="none" stroke-linecap="round"/><path d="M7 26l2.5 8M8.8 38.5v.1" stroke="#c8452d" stroke-width="2.2" stroke-linecap="round"/>`,
+};
+const PICCACHE={};
+function pic(u){
+  if(PICCACHE[u.id]!==undefined)return PICCACHE[u.id];
+  const inner=PICS[u.id]?PICS[u.id]():FACES[u.id]?face(FACES[u.id]):"";
+  return PICCACHE[u.id]=inner?`<svg viewBox="0 0 64 64" aria-hidden="true">${inner}</svg>`:"";
+}
+const av=(u,cls="")=>{const p=pic(u);return `<span class="av ${cls} ${p?"pic":""}" style="--h:${u.hue}">${p||esc(u.ini)}</span>`;};
 const hdr=(t,sub="",right="")=>`<header class="bar"><button class="ib" data-act="back" aria-label="Back">${icon("back")}</button><h1>${esc(t)}${sub?`<small>${esc(sub)}</small>`:""}</h1>${right}</header>`;
 function rich(s){
   return esc(s)
