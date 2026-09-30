@@ -154,7 +154,14 @@
 
   const Pay = {
     /** The chain multiplier after a lock on board g (what a row there is worth: Library.worth); ×1 on an unrated board. */
-    mult(g) { return g.rules && g.rules.rated === false ? 1 : Chain.mult(Chain.streak(g) * Math.min(1, L.Library.worth(g))); },
+    // A board wider than Standard makes streaks and quads easier, so there a link counts (10/w)² of one, the cap falls
+    // toward ×1 by (10/w)³ and the difficult bonus is (10/w)² of a Standard line (Pay.clear). Standard is unchanged; narrow
+    // boards climb more slowly, as their lines are worth less.
+    mult(g) {
+      if (g.rules && g.rules.rated === false) return 1;
+      const k = L.Library.worth(g), m = Chain.mult(Chain.streak(g) * Math.min(k, 1 / (k * k), 1));
+      return k > 1 ? Math.min(m, Math.round((1 + (Chain.RELAXED.cap - 1) / (k * k * k)) * 100) / 100) : m;
+    },
     /** Gold (or a boost's clears) left, in Standard clears, as clears on a board (its rules R, or its width): "3 left". */
     clearsLeft(left, R) { return left > 0 ? Math.ceil(left / lkOf(R) - 1e-9) : 0; },
     /**
@@ -167,7 +174,7 @@
       const lk = lkOf(R), out = {};
       const rules = R && typeof R === 'object' ? R.rules || R : null;
       const bonus = !(rules && rules.rated === false) && difficult(r);
-      let pay = (ownOf(r) * lk + (bonus ? Math.min(1, lk) : 0)) * (s.mult || 1);
+      let pay = (ownOf(r) * lk + (bonus ? Math.min(lk, 1 / (lk * lk)) : 0)) * (s.mult || 1);
       /** One clear's use of something that lasts `left` Standard clears: the share of this clear it covers. */
       const use = (left) => ({ share: Math.min(1, left / lk), left: Math.max(0, Math.round((left - lk) * 1000) / 1000) });
       if (s.gold > 0) {

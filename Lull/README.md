@@ -84,11 +84,14 @@ Best lines (Stats and the achievements' progress), Efficiency, and the line-coun
 pays is `Pay` in js/items.js, all of it in Standard lines, so for the same play no size earns faster per piece than
 Standard (`econ-test.cjs` prices every clear its bots make at eight sizes 10 wide too, and never finds one that pays
 more; casually no size pays more than Standard, within 5%, and a skilled bot does too except on 11 and 12 wide, where
-it sets up quads far more easily than on Standard — seven or eight clears in ten against four — and earns up to 1.4×
-a piece, a stated tolerance of 1.45×; a capped quad there still pays less a piece than on Standard, 0.97 of it): the
-difficult-clear bonus is at most one Standard line (a board has one T a bag however wide it is); the streak's links
-count by width, never more than one a clear (a narrow board makes difficult clears more often, each clearing fewer
-cells), so the multiplier climbs per cell cleared; gold and a boost last for Standard clears (a Golden Piece is five
+it sets up quads far more easily than on Standard — seven or eight clears in ten against four — and earns up to 1.13×
+a piece, a stated tolerance of 1.45×; a capped quad there pays well under Standard a piece, 0.83 of it 11 wide and
+0.72 12 wide): the difficult-clear bonus is at most one Standard line, and on a board wider than Standard (10/w)² of
+one (a board has one T a bag however wide it is, and a wide one makes quads easier); the streak's links count by
+width, never more than one a clear (a narrow board makes difficult clears more often, each clearing fewer cells), so
+the multiplier climbs per cell cleared, and wider than Standard, where streaks come easily, a link counts (10/w)² of
+one and the cap falls toward ×1 by (10/w)³ (×1.58 at 12 wide, ×1.24 at 16, ×1.13 at 20; a streak bot there earns
+about 1.09×, 1.01× and 0.90× Standard a piece); gold and a boost last for Standard clears (a Golden Piece is five
 Standard-width clears: two and a half on a board 20 wide, twelve and a half on one 4 wide, the last paying its share;
 Gold on the status bar counts the clears left on this board); and a won Double or Nothing adds at most one Standard
 clear's worth. Pay is rounded down to the hundredth (`Library.bank`); the wallet and its totals keep hundredths (never drifting) and the
@@ -383,9 +386,9 @@ a full streak, so at best it breaks even, and on ordinary clears about 10 — a 
 can do better than break even). Double or Nothing waits for the next clear, too: a quad set by hand (not a Noodle, a
 Giant or a Blueprint), a T-spin or a mini pays double, anything less pays nothing (the lines still count on the
 board). Safety Net is a one-time pass for the back-to-back streak: the next clear that would end it does not, and the
-multiplier stays. What it keeps is worth most on the widest board: the saved clear paid at the full streak (a triple:
-6 more on a board 20 wide) and the twenty quads it would take to climb back, 94.5 more there (52.5 on a Standard
-board, where a quad is worth less), 100.5 in all, so at 105 it too at best breaks even, at any size.
+multiplier stays. What it keeps is worth most on a Standard board: the saved clear paid at the full streak (a triple:
+3 more) and the twenty quads it would take to climb back, 52.5 more, 55.5 in all (wider, the streak climbs slower to
+a lower cap, so it keeps less: about 32 at 12 wide, 10 at 20), so at 105 it never breaks even, at any size.
 
 Each has its own animation, mostly on a small physics layer fed with what the engine actually removed or moved: the
 drill's bit spins down its column and each block it meets bursts into chips; a laser charges a line, then a beam
@@ -654,8 +657,9 @@ quad is still four rows, paying half; the streak's links count by that worth, so
 half a link. `wEff` is w/2: the feats count on a Mirror board 20 wide; Full Blast and Event Horizon count one half
 (`comboCount`: the larger half, an odd width's centre column in each). Measured with a streak bot (quads, back to back,
 hold, the real controls; `scripts/mirror-unit.cjs`), a Mirror board earns no more per action than Standard at 10, 11
-and 20 wide, and no more per piece than Standard at 10 and 11; at 20 (where a row is a Standard line) no more per piece
-than a plain board 20 wide. **Butterfly** (45): clear the whole board by hand on a Mirror board 20 wide.
+and 20 wide, and no more per piece than Standard at 10, 11 and 20; at 10 no more per piece than a plain board 10 wide.
+(At 20, where a row is a Standard line, it plays like Standard; a plain board 20 wide pays less, its easy streaks
+counting less, so Standard is the measure there.) **Butterfly** (45): clear the whole board by hand on a Mirror board 20 wide.
 
 *The look* (`js/mirrorview.js`) — the copy is drawn at 0.8 of the piece's opacity, so the piece you steer reads first;
 the pair's ghost in full. The line is still and runs through the open well, never across a block: on an even width a

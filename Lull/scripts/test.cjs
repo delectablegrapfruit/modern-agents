@@ -22,6 +22,8 @@ function test(name, fn) {
   catch (e) { failed++; console.log('  FAIL ' + name + '\n       ' + (e && e.stack || e).toString().split('\n').slice(0, 4).join('\n       ')); }
 }
 const cellKey = (cells) => cells.map((c) => c.join(',')).sort().join(';');
+// The Free Play multiplier on a plain board w wide after a streak of n (Pay.mult, the real thing), and the most it gets.
+const multAt = (w, n) => L.Pay.mult({ w, s: { b2b: n - 1 } }), capAt = (w) => multAt(w, 1000);
 
 console.log('basics');
 test('seeded randomness repeats', () => {
@@ -2200,38 +2202,39 @@ console.log('power-ups');
     assert(Luck.goldValue(best) <= price('golden'), 'gold on capped quads: ' + Luck.goldValue(best) + ' for ' + price('golden'));
     assert.strictEqual(Luck.goldValue(best), 50);
     assert(Luck.goldValue(2) < price('golden'), 'ordinary clears: well under it');
-    // At every width, what gold adds to five Standard clears' worth of capped quads (Pay.clear, the real thing).
+    // At every width, what gold adds to five Standard clears' worth of quads at that width's cap (Pay.clear, the real thing).
     for (let w = 4; w <= 20; w++) {
-      const g = new Game({ w, h: 20, seed: 1 }), lk = L.Library.scale(w);
       let extra = 0, guard = 0;
-      const s = { mult: cap, gold: Luck.GOLD_CLEARS };
-      while (s.gold > 0 && guard++ < 100) { const plain = L.Pay.clear({ mult: cap }, { lines: 4 }, w).pay; extra += L.Pay.clear(s, { lines: 4 }, w).pay - plain; }
+      const s = { mult: capAt(w), gold: Luck.GOLD_CLEARS };
+      while (s.gold > 0 && guard++ < 100) { const plain = L.Pay.clear({ mult: capAt(w) }, { lines: 4 }, w).pay; extra += L.Pay.clear(s, { lines: 4 }, w).pay - plain; }
       assert(extra <= price('golden') + 1e-9, w + ' wide: gold adds ' + extra);
-      void g; void lk;
     }
     // Double or Nothing: won on a capped, golden quad it adds one Standard clear's worth, less than its price, even
     // with an Undo to take back a loss.
     assert(best * Luck.GOLD_X * (Luck.DOUBLE_X - 1) < price('double'), 'double: ' + best * Luck.GOLD_X * (Luck.DOUBLE_X - 1));
     // Safety Net: the most it can keep, at every width (Pay.clear, the real thing): the clear it saves paid at the full
     // streak rather than ×1 (a triple, the most an ordinary clear set by a piece can be), then every quad it takes to
-    // climb back to the cap paid at the cap rather than on the climb. Its price is at least the widest board's worth.
+    // climb back to the cap paid at the cap rather than on the climb (each at that width's streak and cap, Pay.mult).
+    // Its price is at least the best board's worth; since wide boards climb slower to a lower cap, that is Standard's.
     const netWorth = (w) => {
-      const lk = L.Library.scale(w);
-      let v = L.Pay.clear({ mult: cap }, { lines: 3 }, w).pay - L.Pay.clear({ mult: 1 }, { lines: 3 }, w).pay;
-      for (let n = 1; Chain.mult(n * Math.min(1, lk)) < cap; n++) v += L.Pay.clear({ mult: cap }, { lines: 4 }, w).pay - L.Pay.clear({ mult: Chain.mult(n * Math.min(1, lk)) }, { lines: 4 }, w).pay;
+      const top = capAt(w);
+      let v = L.Pay.clear({ mult: top }, { lines: 3 }, w).pay - L.Pay.clear({ mult: 1 }, { lines: 3 }, w).pay;
+      for (let n = 1; multAt(w, n) < top; n++) v += L.Pay.clear({ mult: top }, { lines: 4 }, w).pay - L.Pay.clear({ mult: multAt(w, n) }, { lines: 4 }, w).pay;
       return v;
     };
     let netMax = 0;
     for (let w = 4; w <= 20; w++) { const v = netWorth(w); netMax = Math.max(netMax, v); assert(v <= price('net') + 1e-9, 'net ' + w + ' wide keeps ' + v.toFixed(2) + ' for ' + price('net')); }
-    assert(Math.abs(netWorth(10) - 55.5) < 1e-9 && Math.abs(netWorth(20) - 100.5) < 1e-9, 'net: 10 wide ' + netWorth(10) + ', 20 wide ' + netWorth(20));
-    assert(price('net') - netMax < 10, 'the Net is priced near its best case, not far over it: ' + netMax + ' for ' + price('net'));
-    // The engine does what the sum assumes: on a 20-wide board a saved clear keeps the streak, and pays at the cap.
+    assert(Math.abs(netWorth(10) - 55.5) < 1e-9 && netMax === netWorth(10), 'net: 10 wide ' + netWorth(10) + ', the most ' + netMax);
+    for (let w = 11; w <= 20; w++) assert(netWorth(w) < netWorth(10), 'net keeps less wider than Standard: ' + w + ' wide ' + netWorth(w));
+    // (Its price was set near the old best case, 100.5 at 20 wide; it now stands well over the most it can keep, 55.5.)
+    assert(price('net') >= netMax, 'the Net never pays for itself: ' + netMax + ' for ' + price('net'));
+    // The engine does what the sum assumes: on a 20-wide board a saved clear keeps the streak, and pays at its cap.
     {
       const g = new Game({ w: 20, h: 20, seed: 1 });
       g.s.b2b = 30; g.s.net = 1;
       const r = { lines: 3 };
       g.score(r);
-      assert(r.netSaved === 31 && g.s.b2b === 30 && L.Pay.mult(g) === cap, JSON.stringify({ r, b2b: g.s.b2b }));
+      assert(r.netSaved === 31 && g.s.b2b === 30 && L.Pay.mult(g) === capAt(20) && capAt(20) < cap, JSON.stringify({ r, b2b: g.s.b2b }));
     }
     assert.strictEqual(Luck.DOUBLE_X, 2);
   });
@@ -3082,31 +3085,37 @@ console.log('board sizes');
     assert.deepStrictEqual([L.fmtLines(12.5), L.fmtLines(0.4), L.fmtLines(1204.75), L.fmtLines(0.1 + 0.2), L.fmtLines(3), L.fmtLines(0.05)], ['12.5', '0.4', '1,204.75', '0.3', '3', '0.05']);
   });
   test('sizes: the same clear pays w/10 of Standard, at every width (and never faster per cell)', () => {
-    // What PlayMode.onLock pays (js/items.js, Pay.clear): lines x scale, plus at most one Standard line for a difficult
-    // clear, x the multiplier, rounded down to the hundredth.
+    // What PlayMode.onLock pays (js/items.js, Pay.clear): lines x scale, plus a bonus for a difficult clear (w/10 of a
+    // Standard line up to 10 wide; wider, (10/w)² of one, as quads are easier there), x the multiplier, rounded down.
     const pay = (lines, difficult, mult, w) => L.Pay.clear({ mult }, { lines, tspin: difficult && lines < 4 }, w).pay;
     const cap = L.Chain.RELAXED.cap;
     for (let w = 4; w <= 20; w++) {
       for (const [lines, diff, mult] of [[1, false, 1], [2, false, 1], [4, true, 1], [4, true, 1.75], [2, true, cap], [4, true, cap * L.Luck.GOLD_X]]) {
         const std = pay(lines, diff, mult, 10), here = pay(lines, diff, mult, w);
-        if (w <= 10 || !diff) assert(Math.abs(here - Library.bank(std * w / 10)) <= 0.01, w + ' wide: ' + here + ' vs ' + std);
+        const k = w / 10;
+        if (w <= 10 || !diff) assert(Math.abs(here - Library.bank(std * k)) <= 0.01, w + ' wide: ' + here + ' vs ' + std);
+        else assert(Math.abs(here - Library.bank((lines * k + 1 / (k * k)) * mult)) <= 0.01, w + ' wide, difficult: ' + here);
         assert(here / w <= std / 10 + 1e-9, w + ' wide pays faster per cell: ' + here + ' vs ' + std);
       }
     }
     assert.strictEqual(pay(4, true, 1.75, 10), 8.75, 'a Standard quad at x1.75');
     assert.strictEqual(pay(4, true, 1, 5), 2.5, 'a quad 5 wide');
     assert.strictEqual(pay(1, false, 1, 20), 2, 'a single 20 wide');
-    assert.strictEqual(pay(4, true, 1, 20), 9, 'a quad 20 wide: its bonus is one Standard line');
-    assert.strictEqual(pay(1, true, 1, 20), 3, 'a T-spin single 20 wide: two lines and one');
+    assert.strictEqual(pay(4, true, 1, 20), 8.25, 'a quad 20 wide: its bonus is a quarter of a Standard line');
+    assert.strictEqual(pay(1, true, 1, 20), 2.25, 'a T-spin single 20 wide: two lines and a quarter');
   });
   test('sizes: the most a clear can pay, at every width; Classic never pays more per line than Free Play', () => {
     const { Chain, Pay } = L, cap = Chain.RELAXED.cap;
     for (let w = 4; w <= 20; w++) {
-      const k = Library.scale(w);
-      assert.strictEqual(Pay.clear({ mult: cap }, { lines: 4 }, w).pay, Library.bank(cap * (4 * k + Math.min(1, k))), w + ' wide');
-      if (w <= 10) assert.strictEqual(Pay.clear({ mult: cap }, { lines: 4 }, w).pay, w, w + ' wide: a capped quad pays w');
+      // Wider than Standard the cap falls toward x1 by (10/w)³, and the bonus is (10/w)² of a Standard line.
+      const k = Library.scale(w), top = k > 1 ? Math.round((1 + (cap - 1) / (k * k * k)) * 100) / 100 : cap;
+      assert.strictEqual(capAt(w), top, w + ' wide: the cap');
+      const most = Pay.clear({ mult: top }, { lines: 4 }, w).pay;
+      assert.strictEqual(most, Library.bank(top * (4 * k + Math.min(k, 1 / (k * k)))), w + ' wide');
+      if (w <= 10) assert.strictEqual(most, w, w + ' wide: a capped quad pays w');
+      else assert(most < w, w + ' wide: a capped quad pays less than w (' + most + ')');
     }
-    assert.deepStrictEqual([12, 20].map((w) => Pay.clear({ mult: cap }, { lines: 4 }, w).pay), [11.6, 18]);
+    assert.deepStrictEqual([12, 20].map((w) => Pay.clear({ mult: capAt(w) }, { lines: 4 }, w).pay), [8.68, 9.32]);
     // Classic: a capped tetris banks four lines at its rate and its cap.
     const C = Chain.CLASSIC;
     assert.strictEqual(Library.bank(4 * C.rate * C.cap), 4.2);
@@ -3134,7 +3143,7 @@ console.log('board sizes');
       }
       return paid;
     };
-    for (const w of [4, 5, 6, 7, 8, 9]) {
+    for (const w of [4, 5, 6, 7, 8, 9, 11, 12, 14, 16, 20]) {
       for (let cells = 40; cells <= 40 * 60; cells += 40) {
         const here = run(w, cells), std = run(10, cells);
         assert(here <= std + 0.01, w + ' wide after ' + cells + ' cells: ' + here + ' vs ' + std);
@@ -3152,7 +3161,9 @@ console.log('board sizes');
     const g = { w: 7, s: { b2b: 11 } };
     assert.strictEqual(L.Chain.streak(g), 12);
     assert.strictEqual(L.Pay.mult(g), L.Chain.mult(12 * 0.7));
-    assert.strictEqual(L.Pay.mult({ w: 20, s: { b2b: 11 } }), L.Chain.mult(12), 'wider: one link a clear');
+    assert.strictEqual(L.Pay.mult({ w: 20, s: { b2b: 11 } }), L.Chain.mult(12 / 4), 'wider: a link counts (10/w)² of one');
+    assert.strictEqual(L.Pay.mult({ w: 20, s: { b2b: 999 } }), Math.round((1 + (L.Chain.RELAXED.cap - 1) / 8) * 100) / 100, 'wider: the cap falls by (10/w)³');
+    for (let w = 11; w <= 20; w++) for (let n = 0; n <= 60; n++) assert(multAt(w, n) <= multAt(10, n), w + ' wide never climbs faster than Standard: ' + n);
   });
   test('sizes: a Golden Piece, a boost and Double or Nothing are worth the same at every width (in Standard clears)', () => {
     const { Luck, Pay } = L;
@@ -3166,8 +3177,10 @@ console.log('board sizes');
     const std = golden(10);
     assert.deepStrictEqual(std, { extra: Luck.goldValue(5), clears: 5 });
     assert.strictEqual(std.extra, 25);
-    // (Wider than Standard a quad's bonus is still one Standard line, so gold there adds a little less.)
-    for (let w = 4; w <= 20; w++) assert(golden(w).extra <= std.extra + 1e-9 && golden(w).extra >= (w <= 10 ? std.extra - 0.1 : std.extra * 0.9), w + ' wide: ' + JSON.stringify(golden(w)));
+    // (Wider than Standard a quad's bonus is (10/w)² of a Standard line, so a quad there is worth (4 + (10/w)³)/5 of five
+    // Standard lines a line's worth, and gold on it adds that share of what it adds on Standard.)
+    const wideShare = (w) => { const k = w / 10; return k > 1 ? (4 + 1 / (k * k * k)) / 5 : 1; };
+    for (let w = 4; w <= 20; w++) assert(golden(w).extra <= std.extra + 1e-9 && golden(w).extra >= std.extra * wideShare(w) - 0.1, w + ' wide: ' + JSON.stringify(golden(w)));
     assert.strictEqual(golden(20).clears, 3, '20 wide: two clears and a half');
     assert.strictEqual(golden(4).clears, 13, '4 wide: twelve clears and a half');
     assert.strictEqual(Pay.clearsLeft(5, 20), 3);
@@ -3181,7 +3194,7 @@ console.log('board sizes');
       while (s.boost && n++ < 100) extra += Pay.clear(s, { lines: 4 }, w).pay - Pay.clear({ mult: 1 }, { lines: 4 }, w).pay;
       return Math.round(extra * 100) / 100;
     };
-    for (let w = 4; w <= 20; w++) assert(boost(w) <= boost(10) + 1e-9 && boost(w) >= (w <= 10 ? boost(10) - 0.1 : boost(10) * 0.9), w + ' wide boost ' + boost(w) + ' vs ' + boost(10));
+    for (let w = 4; w <= 20; w++) assert(boost(w) <= boost(10) + 1e-9 && boost(w) >= boost(10) * wideShare(w) - 0.1, w + ' wide boost ' + boost(w) + ' vs ' + boost(10));
     // A won Double or Nothing adds at most one Standard clear's worth; lost, the clear pays nothing.
     const cap = L.Chain.RELAXED.cap;
     const dbl = (w) => { const s = { mult: cap, gold: 5, double: true }, r = Pay.clear(s, { lines: 4 }, w); return [r.pay, r.double, s.double]; };

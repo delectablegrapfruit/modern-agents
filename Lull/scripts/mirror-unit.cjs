@@ -379,9 +379,12 @@ module.exports = function mirrorUnit({ L, test }) {
       assert(m.every((b) => b.quads >= 12), w + ' wide: the bot plays for quads there too (' + m.map((b) => b.quads) + ')');
       // Per action, against Standard at every width.
       assert(mean(m, 'perAct') <= stdAct, w + ' wide: ' + fmt(mean(m, 'perAct')) + ' an action vs Standard ' + fmt(stdAct));
-      // Per piece: against Standard at every width (20 included), and never above a plain board of its own width
-      // (Mirror only ever takes away from what a size pays, js/library.js).
-      const plain = w === 10 ? base : w === 20 ? run(w, {}) : null;
+      // Per piece: against Standard at every width (20 included), and never above a plain board of its own width up
+      // to Standard (Mirror only ever takes away from what a size pays, js/library.js). Wider, a plain board pays less
+      // for its easy streaks (Pay.mult); a Mirror board 20 wide is worth Standard a row (lk 1) and plays like one, so
+      // Standard is its measure there (a plain board 20 wide now pays well under both: ~0.40 a piece vs ~0.50).
+      const plain = w === 10 ? base : null;
+      if (w === 20) { const p20 = mean(run(w, {}), 'perPiece'); assert(p20 <= stdPiece, 'a plain board 20 wide: ' + fmt(p20) + ' a piece vs Standard ' + fmt(stdPiece)); }
       if (plain) assert(mean(m, 'perPiece') <= mean(plain, 'perPiece'), w + ' wide: ' + fmt(mean(m, 'perPiece')) + ' a piece vs a plain board as wide ' + fmt(mean(plain, 'perPiece')));
       assert(mean(m, 'perPiece') <= stdPiece, w + ' wide: ' + fmt(mean(m, 'perPiece')) + ' a piece vs Standard ' + fmt(stdPiece));
     }
