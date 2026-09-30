@@ -160,8 +160,8 @@ module.exports = async function undoTests({ browser, check, PAGE, OUT }) {
     const once = held ? b.lines === a.lines && b.held === held - 1 && b.used === a.used + 1 && b.bought === a.bought : paid5(a, b);
     check(D.tag + ': the Board full card\'s Undo, ' + how + ', ' + held + ' held: one Undo' + (held ? '' : ', 5 once') + ', the board plays on, no new top-out', once && !after.over && !after.card && after.hist === t.hist - 1 && to1 === to0, JSON.stringify({ a, b, after, t, to0, to1 }));
   }
-  // What the last placement banked goes back with it: none held, the wallet must hold the price and that, or a note and
-  // nothing changes; held, or lines spent while the card was up, the wallet stops at 0, never below.
+  // What the last placement banked goes back with it, in full: none held, the wallet must hold the price and that; held,
+  // it must hold that. Short, a note and nothing changes (a held Undo is kept): an Undo never pays.
   const bank = (P, extra) => P.ev((n) => { const g = Lull.app.modes.play.game, last = g.history[g.history.length - 1]; g.s.banked = (last.s.banked || 0) + n; return g.s.banked - (last.s.banked || 0); }, extra);
   t = await topout(D);
   const refund = await bank(D, 10);
@@ -184,10 +184,47 @@ module.exports = async function undoTests({ browser, check, PAGE, OUT }) {
   t = await topout(D);
   await bank(D, 10);
   await setWallet(D, 3, 1);
+  await D.ev(() => document.getElementById('toasts').replaceChildren());
   await D.page.click('#topout-undo');
   await D.page.waitForTimeout(120);
   b = await D.ev(money);
-  check(D.tag + ': one held, 3 lines, 10 banked: used, the wallet stops at 0', b.lines === 0 && b.wallet === '0' && b.held === 0, JSON.stringify(b));
+  after = await readTopUndo(D);
+  note2 = await D.ev(() => [...document.querySelectorAll('.toast')].map((x) => x.textContent + (x.classList.contains('bad') ? ' (bad)' : '')).join('|'));
+  check(D.tag + ': one held, 3 lines, 10 banked: Not enough lines, the Undo kept, nothing changes (an Undo never pays)', /Not enough lines \(bad\)/.test(note2) && b.lines === 3 && b.held === 1 && after.card && after.over && after.hist === t.hist, JSON.stringify({ b, note2, after }));
+  await setWallet(D, 12, 1);
+  await D.page.click('#topout-undo');
+  await D.page.waitForTimeout(120);
+  b = await D.ev(money);
+  after = await readTopUndo(D);
+  check(D.tag + ': one held, 12 lines, 10 banked: used, all 10 taken back', b.lines === 2 && b.held === 0 && !after.card && !after.over, JSON.stringify({ b, after }));
+  // A real clear, on the item bar: the Undo held takes back exactly what the clear banked, or nothing when the wallet
+  // has spent it; the combos' taper and the power-ups earned by lines stay as they were.
+  const clearOne = () => D.ev(() => {
+    while (Lull.UI.modalOpen()) Lull.UI.closeTopModal();
+    const m = Lull.app.modes.play, g = m.game;
+    m.hideCard(); if (g.over) m.newBoard();
+    const G = m.game;
+    G.board.cells.fill(0);
+    for (let x = 0; x < 9; x++) G.board.set(x, 0, 8);
+    G.replacePiece({ id: 'I' }); G.rotate(1); while (G.move(1));
+    const w0 = Lull.app.store.state.lines;
+    m.action('drop');
+    const S = Lull.app.store.state;
+    return { got: Math.round((S.lines - w0) * 100) / 100, banked: m.rewindRefund(), earn: JSON.stringify(S.earn), taper: JSON.stringify((S.boards || {}).taper || {}) };
+  });
+  let c = await clearOne();
+  await setWallet(D, Math.max(0, c.banked - 0.5), 1);
+  await D.ev(() => document.getElementById('toasts').replaceChildren());
+  a = await D.ev(money);
+  const cells0 = await D.ev(() => Lull.app.modes.play.game.board.cells.join(''));
+  await D.ev(() => Lull.app.modes.play.useItem('rewind'));
+  b = await D.ev(money);
+  note2 = await D.ev(() => [...document.querySelectorAll('.toast')].map((x) => x.textContent + (x.classList.contains('bad') ? ' (bad)' : '')).join('|'));
+  const cells1 = await D.ev(() => Lull.app.modes.play.game.board.cells.join(''));
+  check(D.tag + ': a line cleared, one Undo held, the wallet under what it banked: Not enough lines, the board and the Undo as they were', c.banked > 0 && /Not enough lines \(bad\)/.test(note2) && b.lines === a.lines && b.held === 1 && cells1 === cells0, JSON.stringify({ c, a, b, note2 }));
+  await setWallet(D, 50, 1);
+  const back = await D.ev(() => { const S = Lull.app.store.state, w0 = S.lines; Lull.app.modes.play.useItem('rewind'); return { back: Math.round((w0 - S.lines) * 100) / 100, earn: JSON.stringify(S.earn), taper: JSON.stringify((S.boards || {}).taper || {}), held: S.inventory.rewind }; });
+  check(D.tag + ': with the wallet enough, the Undo takes back the whole of it; the taper and Earn stay', back.back === c.banked && back.held === 0 && back.earn === c.earn && back.taper === c.taper, JSON.stringify({ c, back }));
   // The tray's Buy & use: the same guard (no question asked when it could not be paid).
   await D.ev(() => { const m = Lull.app.modes.play; m.openTray(null); m.game.board.cells.fill(0); m.game.drop(); m.view.dirty = true; });
   await bank(D, 7);

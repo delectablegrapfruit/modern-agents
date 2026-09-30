@@ -26,7 +26,8 @@
   // A Relaxed board is any size from 4 x 8 to 20 x 40, fixed for its life. Four wide is the flat I; eight tall is a
   // Giant I on end. Everything that pays or counts toward a reward is measured in Standard lines: a Standard line is ten
   // cells, so a line cleared on a board w wide is worth w/10 of one (height changes nothing). scale() is the one place
-  // that says so; bank() rounds a payout down to the hundredth, so no size ever earns faster than Standard.
+  // that says so; bank() rounds a payout down to the hundredth, so for the same play no size earns faster than Standard
+  // (scripts/econ-test.cjs prices every clear its bots make 10 wide too).
 
   const STANDARD = Object.freeze({ w: 10, h: 20 });
   const LIMITS = Object.freeze({ w: Object.freeze([4, 20]), h: Object.freeze([8, 40]) });
@@ -257,8 +258,7 @@
   function newCurrent(st, now, rnd) {
     const B = st.boards;
     // The combos' shrinking pay is the library's, not one board's (or a new board would be a fresh one for free): it
-    // starts over only when no other board is left, as when the one board used to be retired.
-    if (!B.list.length) B.taper = {};
+    // never starts over, whatever is retired or deleted.
     const rec = add(B, now, rnd);
     B.cur = rec.id;
     st.earn = { board: null, paid: 0 };

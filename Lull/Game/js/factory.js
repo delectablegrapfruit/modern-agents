@@ -1,10 +1,10 @@
 // Lull — the Factory: a slow production chain. Stamp heads stamp single minos onto a top belt, which carries them into
 // a store of raw minos; up to four presses draw minos from the store, one at a time, and assemble a polyomino each
 // (a tetromino, a pentomino, a hexomino, a heptomino); a belt carries every piece to a lift, which carries it up the
-// shipping corridor into a crate, and every four minos in the crate are one line — a quarter line per mino, nothing
-// more. Every stage waits, and nothing is lost, when the next one is full or the one before is empty. The model runs
-// in whole ticks (a quarter second each) on an integer clock, so the line on screen and the line replayed for time
-// away are the same line, whatever slices the time comes in.
+// shipping corridor into a crate, and every eight minos in the crate are one line — an eighth of a line per mino,
+// nothing more. Every stage waits, and nothing is lost, when the next one is full or the one before is empty. The
+// model runs in whole ticks (a quarter second each) on an integer clock, so the line on screen and the line replayed
+// for time away are the same line, whatever slices the time comes in.
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
@@ -26,27 +26,31 @@
     TOP: { len: 26, speed: 0.5, gap: 1 },   // the top belt, carrying raw minos (one cell wide)
     STAMP_X: [2, 8, 15, 23],                // where each stamp head sets its mino on the top belt (over the bays)
     STORE_COLS: 27,
-    STORE_ROWS: [4, 8, 12],                 // the store's sizes: 108, 216, 324 minos
+    STORE_ROWS: [2, 4, 8],                  // the store's sizes: 54, 108, 216 minos
     LIFT: { len: 10, speed: 0.125, gap: 1.5 },// the corridor lift, in model rows; a piece rides flat: its spacing is its flat width + gap.
                                             // A slow ride (80 s), so the conveyor mostly carries something: its pace, not the line's
     CRATE_COLS: [4, 6, 8, 10, 12],
-    CRATE_ROWS: [12, 16, 24, 32, 40],       // 48, 96, 192, 320, 480 minos: 12, 24, 48, 80, 120 lines
+    CRATE_ROWS: [12, 16, 24, 32, 40],       // 48, 96, 192, 320, 480 minos: 6, 12, 24, 40, 60 lines
     // ---- the economy
     CYCLE: 600,                             // seconds a press takes to assemble one piece, whatever its size
     STAMP_T: 100,                           // seconds a stamp head takes per mino (36 an hour)
-    STAMP_COST: [0, 100, 300, 800],         // stamp heads 2–4 (the first comes built)
-    STORE_COST: [0, 120, 400],              // store sizes 2–3
-    PRESS_COST: [0, 150, 450, 1200],        // presses 2–4
-    CRATE_COST: [60, 200, 500, 1000],       // crate sizes 2–5
-    PAY: 0.25,                              // lines a mino shipped (Collect pays whole lines of four)
+    // Prices rise in the order a player builds (press, stamper, press, stamper …: each the cheapest thing that adds
+    // lines an hour), and each crate costs more per line it adds than the one before.
+    STAMP_COST: [0, 350, 450, 900],         // stamp heads 2–4 (the first comes built)
+    STORE_COST: [0, 150, 280],              // store sizes 2–3
+    PRESS_COST: [0, 300, 400, 800],         // presses 2–4
+    CRATE_COST: [30, 100, 250, 500],        // crate sizes 2–5
+    PAY: 0.125,                             // lines a mino shipped (Collect pays whole lines of eight)
     START_STORE: 8,                         // raw minos a new factory's store holds
+    START_CRATE: 4,                         // minos a new factory's crate holds (its first line is ready at its first ship)
     START_STAMP_T: 200,                     // ticks into its first mino, a new factory's stamp head
     START_PRESS: { got: 3, t: 1800 },       // a new factory's first piece: minos fed, ticks along (three quarters)
     MAX_AWAY: 30 * 86400,                   // seconds of time away replayed at most
     RAW: 8,                                 // the palette slot raw minos are drawn in (the well's garbage grey)
   });
   const { TICK, MOLDS, BELT, TOP, STAMP_X, STORE_COLS, STORE_ROWS, LIFT, CRATE_COLS, CRATE_ROWS, CYCLE, STAMP_T, STAMP_COST,
-    STORE_COST, PRESS_COST, CRATE_COST, PAY, START_STORE, START_STAMP_T, START_PRESS, MAX_AWAY } = TUNE;
+    STORE_COST, PRESS_COST, CRATE_COST, PAY, START_STORE, START_CRATE, START_STAMP_T, START_PRESS, MAX_AWAY } = TUNE;
+  const MPL = Math.round(1 / PAY);                    // minos a line: 8
 
   const TICK_MS = Math.round(TICK * 1000);            // 250
   const CYCLE_T = Math.round(CYCLE / TICK);           // 2400 ticks a piece
@@ -140,9 +144,13 @@
     const m = startPiece(f, 0, { pin: -1 });
     m.got = START_PRESS.got; m.t = START_PRESS.t;
     f.molds.push(m);
-    // The minos a new factory comes with count as stamped (and those in its first mold as fed), so every mino made is
-    // always somewhere along the chain, or collected.
-    f.stats.made = START_STORE + START_PRESS.got; f.stats.fed = START_PRESS.got;
+    // A few minos already in the crate (in the first piece's colour), so the first line is ready when the first piece
+    // ships, a few minutes in.
+    f.crate = m.c.toString(16).repeat(START_CRATE);
+    // The minos a new factory comes with count as stamped (those in its first mold as fed, those in its crate as fed
+    // and shipped), so every mino made is always somewhere along the chain, or collected.
+    f.stats.made = START_STORE + START_PRESS.got + START_CRATE; f.stats.fed = START_PRESS.got + START_CRATE;
+    f.stats.minos = START_CRATE;
     return f;
   }
 
@@ -351,7 +359,7 @@
     if (ms <= 0) return null;
     const st = f.stats, m0 = st.minos, made0 = st.made;
     run(f, ms, null, true);
-    return { seconds: ms / 1000, made: st.made - made0, minos: st.minos - m0, lines: Math.floor(f.crate.length / 4), full: isFull(f) };
+    return { seconds: ms / 1000, made: st.made - made0, minos: st.minos - m0, lines: Math.floor(f.crate.length / MPL), full: isFull(f) };
   }
 
   /** Seconds until the crate holds `minos`, found by running a copy of the line tick by tick (Infinity past maxS, or
@@ -398,20 +406,21 @@
   function status(f) {
     const cap = capacity(f), len = f.crate.length, full = isFull(f);
     return {
-      cap, len, lines: Math.floor(len / 4), loose: len % 4, waiting: full, full: full || len > cap - 4, perHour: perHour(f), toFull: timeToFull(f),
+      cap, len, lines: Math.floor(len / MPL), loose: len % MPL, waiting: full, full: full || len > cap - MOLDS[0], perHour: perHour(f), toFull: timeToFull(f),
       store: f.store, storeCap: storeCap(f), supply: supply(f), demand: demand(f), waits: waits(f),
     };
   }
 
   // ---- collecting and building ------------------------------------------------------------------------------------
 
-  /** Takes every whole line: the first minos in, four to a line, whatever the crate's width (so a line is not a row, and
-   *  pay stays exactly a quarter line a mino). The last 0–3 minos stay behind, loose, at the start of the bottom row. */
+  /** Takes every whole line: the first minos in, eight to a line, whatever the crate's width (so a line is not a row,
+   *  and pay stays exactly an eighth of a line a mino). The last 0–7 minos stay behind, loose, at the start of the
+   *  bottom row. */
   function collect(f, today) {
-    const n = Math.floor(f.crate.length / 4);
+    const n = Math.floor(f.crate.length / MPL);
     if (!n) return null;
-    const taken = f.crate.slice(0, n * 4);
-    f.crate = f.crate.slice(n * 4);
+    const taken = f.crate.slice(0, n * MPL);
+    f.crate = f.crate.slice(n * MPL);
     const st = f.stats;
     st.lines += n; st.collects++; st.best = Math.max(st.best, n);
     const day = today || L.dateKey();
@@ -559,7 +568,7 @@
   }
 
   L.Factory = Object.assign({
-    VERSION, TUNE, TICK_MS, CYCLE_T, STAMP_TT, B, BAY_X, BAYS, dropX, NAMES, HOLE,
+    VERSION, TUNE, MPL, TICK_MS, CYCLE_T, STAMP_TT, B, BAY_X, BAYS, dropX, NAMES, HOLE,
     create, repair, shapes, flat, hasHole, capacity, crateMinos, crateLines, storeCap, storeCapAt, supply, demand, perHour,
     timeToFull, isFull, storeWaits, waits, status, collect, upgrade, nextUpgrade, setPin, tick, run, step, catchUp, eta,
     shapeName, seenCount, quarters, widthOf,

@@ -34,11 +34,11 @@
   /**
    * An Undo button, the same wherever it is (the Board full card, the puzzle bar and card): how many Undos are held,
    * or, with none, the one price of one (ITEMS.rewind.price, as Hint shows its price). Its tooltip and label say the
-   * same in words; foot is its key, where it has one.
+   * same in words; foot is its key, where it has one; note, a line under it (a puzzle: what the Undo costs in pay).
    */
-  function undoButton(store, attrs, glyph, label, foot) {
+  function undoButton(store, attrs, glyph, label, foot, note) {
     const it = ITEMS.rewind, n = store.state.inventory.rewind || 0;
-    const says = n ? n + ' ' + (n > 1 ? it.plural : it.name) + ' held' : 'Buys one for ' + fmtInt(it.price) + ' ' + LINE;
+    const says = (n ? n + ' ' + (n > 1 ? it.plural : it.name) + ' held' : 'Buys one for ' + fmtInt(it.price) + ' ' + LINE) + (note ? '\n' + note : '');
     return h('button', Object.assign({ 'aria-label': 'Undo, ' + (n ? n + ' held' : 'costs ' + fmtInt(it.price) + ' lines'), 'data-tip-title': 'Undo', 'data-tip': says }, foot ? { 'data-tip-foot': foot } : null, attrs),
       glyph, label ? h('span', { class: 'lbl' }, label) : null, n ? h('span', { class: 'cnt' }, String(n)) : h('span', { class: 'gem' }, LINE + fmtInt(it.price)));
   }
@@ -534,10 +534,11 @@
       this.level = 1 + Math.floor(this.lines / 10);
       this.score += (r.score || 0) * before + (r.dropDist ? r.dropDist * 2 : 0);
       this.resets = 0; this.lockT = 0; this.acc = 0;
-      // The lines Classic banks (never its score) are multiplied by the back-to-back streak: ×0.5 a link, ×10 at twenty.
+      // The lines Classic banks (never its score) are multiplied by the back-to-back streak: ×0.05 a link, ×1.5 at
+      // eleven; seven tenths of a line a line (Chain.CLASSIC.rate), to the hundredth.
       this.mult = Chain.mult(Chain.streak(this.game), 'classic');
       if (r.lines) {
-        r.mult = this.mult; r.banked = Math.round(r.lines * this.mult);
+        r.mult = this.mult; r.banked = Library.bank(r.lines * Chain.CLASSIC.rate * this.mult);
         st.addLines(r.banked, 'play'); this.app.refreshWallet(true); S.lines += r.lines;
       }
       S.pieces++;
@@ -649,8 +650,15 @@
           stat('Score', fmtInt(this.score)),
           stat('Level', String(this.level)),
           stat('Lines', String(this.lines)),
-          stat('Bank', Chain.fmt(this.mult || 1), this.mult > 1 ? 'chain opt' : 'slot-off', 'Back-to-back multiplies banked lines, up to ×10'),
+          stat('Bank', Chain.fmt(this.mult || 1), this.mult > 1 ? 'chain opt' : 'slot-off', this.bankTip()),
           stat('Best', fmtInt(Math.max(this.cs.best, this.score)), 'opt')));
+    }
+
+    /** The Bank tile's tooltip: what a line banks, in lines (the tile itself shows only the back-to-back multiplier). */
+    bankTip() {
+      const C = Chain.CLASSIC, m = this.mult || 1;
+      return 'Each line banks ' + fmtLines(C.rate) + ' ' + LINE + '; back-to-back multiplies it, up to ' + Chain.fmt(C.cap) +
+        (m > 1 ? '. Now ' + Chain.fmt(m) + ': ' + fmtLines(Library.bank(C.rate * m)) + ' ' + LINE + ' a line' : '');
     }
 
     renderControls() {
@@ -710,10 +718,10 @@
       const st = this.app.store, F = st.state.stats.free, g = this.game;
       this.syncCounters();
       if (this.armed) { this.armed = null; this.renderItems(); }
-      // What the lines pay (js/items.js, Pay): a quad or T-spin (or 5+ lines) is worth one extra; the multiplier — the
-      // back-to-back streak alone, an eighth a link, ×2.5 at most (twenty in a row) — multiplies it; gold triples that,
-      // and a combo's boost adds its share. All of it in Standard lines, by the board's width. The chain (streak plus
-      // combo) is counted beside it, for the record.
+      // What the lines pay (js/items.js, Pay): a quad set by hand or a T-spin is worth one extra; the multiplier — the
+      // back-to-back streak alone, ×0.05 a link after the first, ×2 at most (twenty-one in a row) — multiplies it; gold
+      // doubles that, and a combo's boost adds its share. All of it in Standard lines, by the board's width. The chain
+      // (streak plus combo) is counted beside it, for the record.
       const s = g.s;
       s.chain = Chain.count(g); s.bestChain = Math.max(s.bestChain || 0, s.chain);
       s.mult = Pay.mult(g); s.bestMult = Math.max(s.bestMult || 1, s.mult);
@@ -1601,12 +1609,15 @@
           done();
           break;
         case 'rewind': {
+          // What the placement banked goes back in full: a wallet that has spent it since cannot take the placement
+          // back (an Undo would pay otherwise), and the Undo held is kept.
+          const need = this.rewindRefund();
+          if (st.state.lines < need) { toast('Not enough lines', 'bad'); this.app.sound.play('error'); return; }
           const banked0 = g.s.banked || 0;
           const res = g.undo();
           if (!res) { toast('Nothing to undo', 'bad'); return; }
           if (this.app.hints) this.app.hints.undo();
-          // What the placement banked goes back, never past an empty wallet (lines spent since stay spent).
-          const refund = Math.min(Math.round(Math.max(0, banked0 - (g.s.banked || 0)) * 100) / 100, Math.max(0, st.state.lines));
+          const refund = Math.round(Math.max(0, banked0 - (g.s.banked || 0)) * 100) / 100;
           if (refund) st.addLines(-refund, 'rewind');
           if (res.lines) st.state.stats.free.lines = Math.max(0, Library.bank(st.state.stats.free.lines - res.lines * Library.scale(g.w)));
           if (refund || res.lines) this.app.refreshWallet();
@@ -1640,13 +1651,15 @@
   // The same, in gestures, for a touch player.
   const MOD_TOUCH = { spin: 'Tap left turns counter-clockwise · Two fingers: 180°', hold: 'Swipe ↑ or tap HOLD holds', side: 'Swipes follow the screen', flip: 'Swipes follow the screen' };
   const modTouch = (m, mods, tapTurn) => (m === 'spin' && tapTurn === 'cw' ? 'Two fingers: 180°' : m === 'spin' && mods.includes('invert') ? 'Tap left turns clockwise here (controls are inverted) · Two fingers: 180°' : MOD_TOUCH[m] || null);
-  const DIFF_COST = { E: 10, M: 20, H: 35 };
-  /** "2026-09-26" → "Sat, Sep 26" (with the year when it is not this one). */
-  function dayLabel(key) {
+  /** "2026-09-26" → "Sat, Sep 26" (with the year when it is not this one); short: "Sep 26", no weekday. */
+  function dayLabel(key, short) {
     if (!/^\d{4}-\d\d-\d\d$/.test(key)) return String(key);
     const [y, m, d] = key.split('-').map(Number), dt = new Date(y, m - 1, d);
-    return dt.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short', year: y === new Date().getFullYear() ? undefined : 'numeric' });
+    return dt.toLocaleDateString([], { weekday: short ? undefined : 'short', day: 'numeric', month: 'short', year: y === new Date().getFullYear() ? undefined : 'numeric' });
   }
+
+  // The info line's parts that give way, first to last: the piece count, the weekday, the difficulty, a Daily's date.
+  const FIT_ID = ['no-count', 'no-day', 'no-diff', 'no-date'];
 
   class PuzzleMode extends BoardMode {
     constructor(app) {
@@ -1674,6 +1687,7 @@
       if (root.ResizeObserver) {
         new ResizeObserver(() => { this.closePop(); this.fitMods(); }).observe(this.el.mods);
         new ResizeObserver(() => this.fitNav()).observe(this.el.daily.closest('.puz-bar'));
+        new ResizeObserver(() => this.fitId()).observe(this.el.id);
       }
       this.renderDiff();
       this.renderNav();
@@ -1747,13 +1761,22 @@
       const p = Puzzles.generate(seed);
       if (!p) { toast('Could not build that puzzle', 'bad'); return; }
       // Leaving a puzzle you had started on (and never solved) ends a run of first-try solves.
-      if (this.puzzle && !this.done && this.game && (this.game.s.pieces || (this.ps.current && this.ps.current.attempts > 1)) && !this.ps.solved[this.puzzle.seed]) this.pstats.firstRun = 0;
+      if (this.puzzle && !this.done && this.game && (this.game.s.pieces || (this.ps.current && this.ps.current.attempts > 0)) && !this.ps.solved[this.puzzle.seed]) this.pstats.firstRun = 0;
       this.puzzle = p;
       this.meta = { number: meta.number || null, daily: meta.daily || null };
       this.ps.diff = p.diff;
       const same = resume && this.ps.current && this.ps.current.seed === seed;
-      this.ps.current = { seed, number: this.meta.number, daily: this.meta.daily, attempts: same ? this.ps.current.attempts || 0 : 0, ms: same ? this.ps.current.ms || 0 : 0, hint: same ? !!this.ps.current.hint : false, undos: same ? this.ps.current.undos || 0 : 0 };
-      if (!same) this.record({ seed, diff: p.diff, title: p.title, number: this.meta.number, daily: this.meta.daily, mods: p.mods.slice(), at: Date.now(), attempts: 0, solved: !!this.ps.solved[seed], ms: 0 });
+      // Tries, a hint and Undos stay with the seed (ps.tries), whatever was played in between: what solving pays
+      // never starts over by leaving, reloading or coming back. `live`: the attempt in play has set a piece (counted).
+      const kept = this.tries(seed), was = same ? this.ps.current : {};
+      this.ps.current = {
+        seed, number: this.meta.number, daily: this.meta.daily, ms: same ? was.ms || 0 : 0,
+        attempts: kept ? kept.n : same ? was.attempts || 0 : 0, hint: kept ? kept.hint : same ? !!was.hint : false,
+        undos: kept ? kept.undos : same ? was.undos || 0 : 0, live: !!(same && was.live),
+        // The attempt's board, as it stood (keepBoard): a reload goes on with it rather than dealing a fresh one.
+        board: same && was.live && was.board ? was.board : null,
+      };
+      if (!same) this.record({ seed, diff: p.diff, title: p.title, number: this.meta.number, daily: this.meta.daily, mods: p.mods.slice(), at: Date.now(), attempts: kept ? kept.n : 0, solved: !!this.ps.solved[seed], ms: 0 });
       if (!same) {
         this.pstats[p.diff].played++;
         for (const m of p.mods) { const r = this.pstats.mods[m] || (this.pstats.mods[m] = { seen: 0, solved: 0 }); r.seen++; }
@@ -1765,38 +1788,105 @@
       this.renderNav();
     }
 
-    /** A fresh attempt, or (resume) the one a reload or relaunch interrupted, which is not counted again. */
+    /**
+     * A fresh attempt, or (resume) the one a reload or relaunch interrupted, which is not counted again: its board comes
+     * back as it stood (ps.current.board: the cells, the piece in play, the queue and hold, the lines toward the goal;
+     * the Undo history stays behind, as in Free Play). An attempt that set a piece and cannot come back — no board kept,
+     * or one that had run out — is over: the fresh board is the next try once a piece is set, as Retry is.
+     */
     start(resume) {
       const p = this.puzzle;
       const has = (m) => p.mods.includes(m);
-      const game = new Game({
-        board: Board.fromArray(p.w, p.h, p.cells, { wrap: p.wrap }),
-        queue: p.pieces,
-        mods: { noRotate: has('rigid'), heavy: has('heavy'), noHold: !has('hold'), vanish: has('vanish') },
-        previewCount: 8, maxHistory: 80,
-      });
+      const opts = { mods: { noRotate: has('rigid'), heavy: has('heavy'), noHold: !has('hold'), vanish: has('vanish') }, previewCount: 8, maxHistory: 80 };
+      const cur = this.ps.current, kept = resume && cur && cur.live ? this.restoreBoard(cur.board, opts) : null;
+      const game = kept ? kept.game : new Game(Object.assign({ board: Board.fromArray(p.w, p.h, p.cells, { wrap: p.wrap }), queue: p.pieces }, opts));
       this.inverted = has('invert');
-      this.lines = 0;
+      this.lines = kept ? kept.lines : 0;
       this.done = false;
+      this.doneHint = false;
       this.failedShown = false;
       this.startedAt = performance.now();
       // A solved puzzle has no current entry any more: Retry or Replay starts a fresh one.
-      if (!this.ps.current) this.ps.current = { seed: p.seed, number: this.meta.number, daily: this.meta.daily, attempts: 0, ms: 0 };
-      if (!resume || !this.ps.current.attempts) {
-        this.ps.current.attempts++;
-        const hEntry = this.historyEntry();
-        if (hEntry) { hEntry.attempts++; hEntry.at = Date.now(); }
-      }
+      if (!this.ps.current) this.ps.current = { seed: p.seed, number: this.meta.number, daily: this.meta.daily, attempts: 0, ms: 0, live: false };
+      // A try counts once it sets a piece (onLock), so opening a puzzle, or Retry before a piece is set, costs nothing.
+      if (!kept) { this.ps.current.live = false; this.ps.current.board = null; }
       this.attachGame(game, { rot: has('side') ? 90 : has('flip') ? 180 : 0, fog: has('fog'), mono: has('mono'), blind: has('blind'), vanish: has('vanish'), wrap: p.wrap });
       this.hideCard();
       this.updateHint();
       this.renderGoal();
       this.renderActions();
+      this.renderPay();
     }
 
     blocked() { return this.cardOpen; }
 
+    /** The saved attempt `b` ({ game, lines }) as a game to go on with, or null when it cannot be (broken, or run out). */
+    restoreBoard(b, opts) {
+      const p = this.puzzle;
+      if (!b || !b.game || b.game.w !== p.w || b.game.h !== p.h || !b.game.fixed) return null;
+      try {
+        const game = new Game(Object.assign({ saved: b.game }, opts));
+        if (!game.piece || game.over) return null;
+        return { game, lines: Math.max(0, b.lines | 0) };
+      } catch (e) { return null; }
+    }
+
+    /** Keeps the attempt in play with the seed's entry (after each piece and on every save), so a reload goes on with it. */
+    keepBoard() {
+      const cur = this.ps.current;
+      if (!cur || !this.puzzle || cur.seed !== this.puzzle.seed || !this.game) return;
+      cur.board = cur.live && !this.done ? { game: JSON.parse(JSON.stringify(this.game.toJSON())), lines: this.lines } : null;
+    }
+
+    /** The tries kept with a seed not yet solved (ps.tries): { n, hint, undos }, or null. */
+    tries(seed) {
+      const t = this.ps.tries && this.ps.tries[seed];
+      return t && typeof t === 'object' ? t : null;
+    }
+
+    /** Writes the current attempt's count, hint and Undos to the seed's record (only while it is unsolved). */
+    keepTries() {
+      const cur = this.ps.current, p = this.puzzle;
+      if (!cur || !p || this.ps.solved[p.seed]) return;
+      const T = this.ps.tries || (this.ps.tries = {});
+      if (!T[p.seed]) {
+        const keys = Object.keys(T);
+        if (keys.length >= (L.TRIES_MAX || 3000)) delete T[keys[0]];
+      }
+      T[p.seed] = { n: cur.attempts || 0, hint: !!cur.hint, undos: cur.undos || 0 };
+    }
+
+    /** What solving would pay now (Puzzles.pay, with its steps), or null for a seed already solved. A try that has not
+     *  set a piece yet is the next one. */
+    payNow() {
+      const p = this.puzzle, cur = this.ps.current;
+      if (!p || !cur || this.ps.solved[p.seed]) return null;
+      return Puzzles.pay(p.diff, { try: (cur.attempts || 0) + (cur.live ? 0 : 1), undos: cur.undos || 0, hint: !!cur.hint, daily: this.dailyX() });
+    }
+
+    /** Does solving this puzzle earn the Daily's ×2? A Daily whose date and difficulty have not had it (either turn). */
+    dailyX() { return !!(this.puzzle && this.meta.daily) && Puzzles.dailyDue(this.ps, this.meta.daily, this.puzzle.diff); }
+
+    /** The try a hint bought now would be on (the next one while this one has set nothing), and its price: nothing on
+     *  a puzzle already solved, which pays nothing. */
+    hintCost() {
+      const p = this.puzzle, cur = this.ps.current;
+      if (this.ps.solved[p.seed]) return 0;
+      return Puzzles.hintCost(p.diff, ((cur && cur.attempts) || 0) + (cur && cur.live ? 0 : 1));
+    }
+
     onLock(r) {
+      // The first piece set counts the try (ps.tries keeps it with the seed, the history row shows it).
+      const cur = this.ps.current;
+      if (cur && !cur.live && !this.done) {
+        cur.live = true;
+        cur.attempts = (cur.attempts || 0) + 1;
+        const hEntry = this.historyEntry();
+        if (hEntry) { hEntry.attempts = (hEntry.attempts || 0) + 1; hEntry.at = Date.now(); }
+        this.keepTries();
+        this.app.store.touch();
+        this.renderPay();
+      }
       this.lines += r.lines;
       this.view.onLock(r, this.reduced);
       const snd = this.app.sound, g = this.game;
@@ -1805,6 +1895,7 @@
       const last = !met && !g.queue.length && !g.hold;
       if (last) snd.play('lock'); else playLockSound(snd, r);
       if (met) this.solved();
+      else this.keepBoard();
       this.updateHint();
       this.renderGoal();
       this.renderActions();
@@ -1822,6 +1913,7 @@
       const now = performance.now();
       this.ps.current.ms = Math.round(this.elapsed());
       this.startedAt = now;
+      this.keepBoard();
     }
 
     solved() {
@@ -1830,12 +1922,12 @@
       const p = this.puzzle, st = this.app.store, S = this.pstats[p.diff], cur = this.ps.current;
       const ms = Math.round(this.elapsed());
       const first = !this.ps.solved[p.seed];
-      let reward = 0;
+      let reward = 0, paid = null;
       if (first) {
-        reward = Puzzles.DIFFS[p.diff].reward;
-        if (cur.attempts === 1) reward = Math.round(reward * 1.5);
-        if (this.meta.daily) reward *= 2;
-        if (cur.hint) reward = Math.ceil(reward / 2);
+        paid = Puzzles.pay(p.diff, { try: cur.attempts, undos: cur.undos || 0, hint: !!cur.hint, daily: this.dailyX() });
+        reward = paid.pay;
+        if (paid.daily) Puzzles.noteDaily(this.ps, this.meta.daily, p.diff);
+        if (this.ps.tries) delete this.ps.tries[p.seed];
         this.ps.solved[p.seed] = { ms: Math.round(ms), attempts: cur.attempts, at: Date.now() };
         const hEntry = this.historyEntry();
         if (hEntry) { hEntry.solved = true; hEntry.ms = Math.round(ms); hEntry.solvedAt = Date.now(); }
@@ -1857,6 +1949,7 @@
         this.app.achieve({ mode: 'puzzle', diff: p.diff, firstTry: cur.attempts === 1, hinted: !!cur.hint, undos: cur.undos || 0, ms, mods: p.mods });
       }
       if (this.meta.number && this.ps.next[p.diff] <= this.meta.number) this.ps.next[p.diff] = this.meta.number + 1;
+      this.doneHint = !!cur.hint; // the Hint button shows how it was solved, with no price, once ps.current is gone
       this.ps.current = null;
       st.touch();
       this.app.sound.play('solve');
@@ -1868,8 +1961,9 @@
         h('div', { class: 'board-sum' },
           tile(fmtClock(ms), 'Time'),
           tile(String(cur.attempts), cur.attempts === 1 ? 'Try' : 'Tries'),
-          reward ? tile(h('span', null, '+' + reward, ' ', h('span', { class: 'gem' }, LINE)), cur.hint ? 'Lines · hints ½' : this.meta.daily ? 'Lines · Daily ×2' : 'Lines', 'pay')
+          reward ? tile(h('span', null, '+' + reward, ' ', h('span', { class: 'gem' }, LINE)), 'Lines', 'pay')
             : tile('—', 'Solved before')),
+        paid ? h('p', { class: 'pz-pay-steps' }, Puzzles.paySteps(p.diff, paid)) : null,
         h('div', { class: 'row' },
           h('button', { class: 'btn', onclick: () => this.retry() }, 'Replay'),
           h('button', { class: 'btn primary', onclick: () => this.next() }, 'Next puzzle'))));
@@ -1902,10 +1996,39 @@
         prog.text ? h('p', null, prog.text) : null,
         h('div', { class: 'row' },
           this.undoBtn({ class: 'btn', id: 'puz-card-undo' }, 'Undo'),
-          h('button', { class: 'btn primary', onclick: () => this.retry() }, icon('retry'), 'Retry'))));
+          h('button', Object.assign({ class: 'btn primary', onclick: () => this.retry() }, this.retryTip()), icon('retry'), 'Retry'))));
     }
 
-    retry() { if (this.app.hints && !this.done && this.game && this.game.s.pieces >= 2) this.app.hints.attemptEnded(this); this.hideCard(); this.start(); this.renderHead(); }
+    retry() {
+      if (this.app.hints && !this.done && this.game && this.game.s.pieces >= 2) this.app.hints.attemptEnded(this);
+      const before = this.payNow();
+      this.hideCard();
+      this.start();
+      this.renderHead();
+      this.notePayDrop(before, 'Try ' + ((this.ps.current && this.ps.current.attempts) + 1));
+    }
+
+    /** A quiet note when an Undo or a Retry lowered what solving pays (the Pays line says it too; this reaches the keys). */
+    notePayDrop(before, why) {
+      const now = this.payNow();
+      if (before && now && now.pay < before.pay) toast(why + ' · Pays ' + LINE + now.pay, null, 1800);
+    }
+
+    /** The next try's pay, for Retry's tooltip, while this try has set a piece (so Retry costs one). */
+    retryTip() {
+      const now = this.payNow(), cur = this.ps.current;
+      if (!now || this.done || !cur || !cur.live) return { 'data-tip': 'Retry' };
+      const next = Puzzles.pay(this.puzzle.diff, { try: now.try + 1, undos: cur.undos || 0, hint: !!cur.hint, daily: now.daily });
+      return { 'data-tip-title': 'Retry', 'data-tip': 'The next try pays ' + LINE + next.pay + (next.pay < now.pay ? ' (now ' + LINE + now.pay + ')' : '') };
+    }
+
+    /** What one more Undo costs in pay (the first-try ×1.5 on a clean try), for its tooltip; null when nothing. */
+    undoNote() {
+      const now = this.payNow(), cur = this.ps.current;
+      if (!now || this.done || !cur || !this.game || !this.game.history.length) return null;
+      const after = Puzzles.pay(this.puzzle.diff, { try: now.try, undos: (cur.undos || 0) + 1, hint: !!cur.hint, daily: now.daily });
+      return after.pay < now.pay ? 'Ends the first-try ×' + Puzzles.PAY.CLEAN + ': Pays ' + LINE + now.pay + ' → ' + LINE + after.pay : null;
+    }
 
     /**
      * Takes back the last piece, for one Undo (the power-up 'rewind', shared with Relaxed): one held is used; with none,
@@ -1916,18 +2039,22 @@
       if (this.done || !this.game || !this.game.history.length) return false;
       const st = this.app.store, it = ITEMS.rewind;
       if (!(st.state.inventory.rewind > 0) && st.state.lines < it.price) { toast('Not enough lines', 'bad'); this.app.sound.play('error'); return false; }
+      const before = this.payNow();
       const res = this.game.undo();
       if (!res) return false;
       if (st.useOrBuy('rewind') === 'bought') this.app.refreshWallet();
       if (this.app.hints) this.app.hints.undo();
-      if (this.ps.current) this.ps.current.undos = (this.ps.current.undos || 0) + 1;
+      if (this.ps.current) { this.ps.current.undos = (this.ps.current.undos || 0) + 1; this.keepTries(); }
       this.lines -= res.lines;
+      this.keepBoard();
+      this.notePayDrop(before, 'No first-try ×' + Puzzles.PAY.CLEAN);
       this.failedShown = false;
       this.hideCard();
       this.setAt = this.now(); // a second click of the press that took it back does not set the piece (SET_GRACE_MS)
       this.updateHint();
       this.renderGoal();
       this.renderActions();
+      this.renderPay();
       this.view.dirty = true;
       return true;
     }
@@ -2022,20 +2149,31 @@
       handle = UI.openModal({ title: 'Puzzle history', width: 520, cls: 'modal-hist', body: h('div', { class: 'hist-wrap' }, h('div', { class: 'hist-head' }, seg), list, h('p', { class: 'hist-foot' }, this.volume())), onClose: () => this.renderSaveBtn() });
     }
 
-    /** A hint for this puzzle: a free one the gift gave goes first, then lines. Either way it halves the reward. */
+    /**
+     * A hint for this puzzle: a free one the gift gave goes first, then lines. Either way it halves the pay; bought, it
+     * costs half of what the puzzle pays at this try (Puzzles.hintCost), charged when it is bought.
+     */
     buyHint() {
       if (!this.puzzle || this.done || !this.ps.current) return;
-      const cost = DIFF_COST[this.puzzle.diff], st = this.app.store;
+      const st = this.app.store;
       if (this.ps.current.hint) { this.updateHint(true); return; }
+      // A puzzle already solved pays nothing, so its hint is free (never the gift's free hint): shown at once.
+      if (this.ps.solved[this.puzzle.seed]) { this.ps.current.hint = true; this.updateHint(true); this.renderActions(); return; }
       const free = () => (st.state.freebies && st.state.freebies.hint) > 0;
-      UI.confirm('Hint?', 'Halves the reward.', free() ? 'Show · free' : 'Show · ' + cost + ' ' + LINE, () => {
+      const now = this.payNow(), cost = this.hintCost();
+      const after = now ? Puzzles.pay(this.puzzle.diff, { try: now.try, undos: this.ps.current.undos || 0, hint: true, daily: now.daily }).pay : 0;
+      const body = now ? 'Pays ' + LINE + now.pay + ' now, ' + LINE + after + ' with a hint.' : 'Solved before: it pays nothing either way.';
+      UI.confirm('Hint?', body, free() ? 'Show · free' : 'Show · ' + cost + ' ' + LINE, () => {
         if (!this.ps.current || this.ps.current.hint || this.done) return;
-        if (!(free() ? st.useFreebie('hint') : st.spend(cost))) { toast('Not enough lines', 'bad'); return; }
+        const price = this.hintCost();
+        if (!(free() ? st.useFreebie('hint') : st.spend(price))) { toast('Not enough lines', 'bad'); return; }
         this.ps.current.hint = true;
+        this.keepTries();
         this.pstats[this.puzzle.diff].hints++;
         this.app.refreshWallet();
         this.updateHint(true);
         this.renderActions();
+        this.renderPay();
       });
     }
 
@@ -2122,8 +2260,15 @@
       const solved = this.ps.solved[p.seed];
       this.el.dot.style.background = d.color;
       this.el.title.replaceChildren(...[h('span', { class: 't' }, p.title), solved ? h('span', { class: 'done', title: 'Solved' + (solved.ms ? ' in ' + fmtClock(solved.ms) : ''), 'aria-label': 'Solved', html: L.Icons.icon('check') }) : null].filter(Boolean));
-      const where = this.meta.daily ? ['Daily', dayLabel(this.meta.daily), d.name] : this.meta.number ? [d.name, '#' + this.meta.number] : [d.name, 'from a seed'];
-      this.el.id.replaceChildren(where.join(' · ') + ' · ' + p.pieces.length + ' pieces');
+      // Where it comes from, its piece count, and what solving pays now (renderPay). Whole parts give way when the
+      // line is short (fitId), never a character of a date or a number: the piece count, then the weekday, then the
+      // difficulty (its tab and the dot say it), then a Daily's date (the seed's tooltip still has it).
+      const where = this.meta.daily
+        ? ['Daily', h('span', { class: 'date' }, h('span', { class: 'long' }, ' · ' + dayLabel(this.meta.daily)), h('span', { class: 'short' }, ' · ' + dayLabel(this.meta.daily, true))), h('span', { class: 'diff' }, ' · ' + d.name)]
+        : [h('span', { class: 'diff' }, d.name + ' · '), this.meta.number ? '#' + this.meta.number : 'from a seed'];
+      this.payEl = h('span', { class: 'pz-pays' });
+      this.el.id.replaceChildren(h('span', { class: 'pz-where' }, ...where), h('span', { class: 'pz-count' }, ' · ' + p.pieces.length + ' pieces'), this.payEl);
+      this.renderPay();
       this.el.seed.replaceChildren(h('span', { class: 'code' }, p.seed), icon('copy'));
       this.renderSaveBtn();
       // Every seed is some date's Daily (a tooltip, so a long press shows it too).
@@ -2133,6 +2278,15 @@
       this.renderMods();
     }
 
+    /** Fits the info line: drops whole parts (FIT_ID, in order) until where it comes from shows in full. */
+    fitId() {
+      const box = this.el.id, where = box && box.querySelector('.pz-where');
+      if (!where || !box.clientWidth) return;
+      box.classList.remove(...FIT_ID);
+      const over = () => where.scrollWidth > where.clientWidth + 1 || box.scrollWidth > box.clientWidth + 1;
+      for (const c of FIT_ID) { if (!over()) break; box.classList.add(c); }
+    }
+
     /** How far along the goal is, in words: "4 of 6 lines", "1 gem left", "12 blocks left". */
     progress() {
       const p = this.puzzle, g = this.game;
@@ -2140,7 +2294,7 @@
       if (p.goal.type === 'lines') { const n = Math.min(this.lines, p.goal.lines); return { text: n + ' of ' + p.goal.lines + ' lines', frac: n / p.goal.lines }; }
       if (p.goal.type === 'gems') { const left = g.board.count((v) => v & CELL.GEM); return { text: left ? left + (left === 1 ? ' gem' : ' gems') + ' left' : 'all gems cleared', frac: 1 - left / (p.goal.gems || 1) }; }
       const left = g.board.count();
-      if (this.startCells == null || this.startGame !== g) { this.startCells = Math.max(1, left); this.startGame = g; }
+      if (this.startCells == null || this.startGame !== g) { this.startCells = Math.max(1, p.cells.filter(Boolean).length); this.startGame = g; } // the puzzle's own board, even for an attempt resumed part way
       return { text: left ? left + (left === 1 ? ' block' : ' blocks') + ' left' : 'board clear', frac: 1 - left / this.startCells };
     }
 
@@ -2212,21 +2366,40 @@
      * (as Hint shows its price). Its tooltip and label say the same in words.
      */
     undoBtn(attrs, label) {
-      return undoButton(this.app.store, Object.assign({ onclick: () => this.undo() }, attrs), icon('undo'), label, '⌫');
+      return undoButton(this.app.store, Object.assign({ onclick: () => this.undo() }, attrs), icon('undo'), label, '⌫', this.undoNote());
+    }
+
+    /** "Pays ⦵14" at the end of the card's info line, with a tooltip saying why: nothing once the seed is solved. */
+    renderPay() {
+      const el = this.payEl;
+      if (!el || !this.puzzle) return;
+      const r = this.payNow();
+      if (!r) { el.replaceChildren(); el.removeAttribute('data-tip'); el.removeAttribute('aria-label'); el.hidden = true; this.fitId(); return; }
+      el.hidden = false;
+      const D = Puzzles.DIFFS[this.puzzle.diff];
+      el.replaceChildren(' · Pays ', h('span', { class: 'gem' }, LINE + r.pay));
+      el.setAttribute('aria-label', 'Pays ' + r.pay + (r.pay === 1 ? ' line' : ' lines'));
+      el.dataset.tip = [D.name + ' pays ' + D.reward + ', less each try that sets a piece (never under ' + D.min + ')',
+        r.try > 1 ? 'Try ' + r.try + ': ' + r.byTries : null,
+        r.clean ? 'First try, no Undo or hint: ×' + Puzzles.PAY.CLEAN : null,
+        r.daily ? 'Daily: ×' + Puzzles.PAY.DAILY : this.meta.daily ? 'Daily ×' + Puzzles.PAY.DAILY + ' already paid for this date' : null,
+        r.hint ? 'Hint: half' : null].filter(Boolean).join('\n');
+      this.fitId();
     }
 
     renderActions() {
       if (!this.puzzle) return;
-      const cost = DIFF_COST[this.puzzle.diff];
-      const hinted = this.ps.current && this.ps.current.hint;
-      const freeHints = (this.app.store.state.freebies && this.app.store.state.freebies.hint) || 0;
+      // Solved (the button is off) or a replay of a solved seed: no price. Solved, it still says whether hints were on.
+      const cost = this.hintCost(), unpriced = this.done || !cost;
+      const hinted = this.done ? this.doneHint : this.ps.current && this.ps.current.hint;
+      const freeHints = unpriced ? 0 : (this.app.store.state.freebies && this.app.store.state.freebies.hint) || 0;
       this.el.actions.replaceChildren(
         h('div', { class: 'grp' },
           this.undoBtn({ class: 'btn', id: 'puz-undo', disabled: !this.game || !this.game.history.length || this.done }, 'Undo'),
-          h('button', { class: 'btn', id: 'puz-retry', 'aria-label': 'Retry', 'data-tip': 'Retry', 'data-tip-foot': 'R', onclick: () => this.retry() }, icon('retry'), h('span', { class: 'lbl' }, 'Retry'))),
+          h('button', Object.assign({ class: 'btn', id: 'puz-retry', 'aria-label': 'Retry', 'data-tip-foot': 'R', onclick: () => this.retry() }, this.retryTip()), icon('retry'), h('span', { class: 'lbl' }, 'Retry'))),
         h('div', { class: 'grp' },
-          h('button', { class: 'btn' + (hinted ? ' on' : ''), id: 'puz-hint', disabled: this.done, 'aria-label': hinted ? 'Hints on' : freeHints ? (freeHints > 1 ? 'Hint, ' + freeHints + ' free' : 'Hint, free') : 'Hint, costs ' + cost + ' lines', 'aria-pressed': String(!!hinted), 'data-tip': hinted ? 'Hints on' : freeHints ? 'Hint · ' + (freeHints > 1 ? freeHints + ' free' : 'free') : 'Hint', 'data-tip-foot': 'H', onclick: () => this.buyHint() },
-            icon('hint'), h('span', { class: 'lbl' }, hinted ? 'Hints on' : 'Hint'), hinted ? null : freeHints ? h('span', { class: 'cnt free' }, freeHints > 1 ? freeHints + ' free' : 'free') : h('span', { class: 'gem' }, LINE + cost)),
+          h('button', { class: 'btn' + (hinted ? ' on' : ''), id: 'puz-hint', disabled: this.done, 'aria-label': hinted ? 'Hints on' : unpriced ? 'Hint' : freeHints ? (freeHints > 1 ? 'Hint, ' + freeHints + ' free' : 'Hint, free') : 'Hint, costs ' + cost + ' lines', 'aria-pressed': String(!!hinted), 'data-tip': hinted ? 'Hints on' : !this.done && !cost ? 'Hint · free on a puzzle solved before' : freeHints ? 'Hint · ' + (freeHints > 1 ? freeHints + ' free' : 'free') : 'Hint', 'data-tip-foot': 'H', onclick: () => this.buyHint() },
+            icon('hint'), h('span', { class: 'lbl' }, hinted ? 'Hints on' : 'Hint'), hinted || unpriced ? null : freeHints ? h('span', { class: 'cnt free' }, freeHints > 1 ? freeHints + ' free' : 'free') : h('span', { class: 'gem' }, LINE + cost)),
           h('button', { class: 'btn' + (this.done ? ' primary' : ''), id: 'puz-next', 'aria-label': this.done ? 'Next' : 'Skip', 'data-tip': this.done ? 'Next' : 'Skip', 'data-tip-foot': 'N', onclick: () => this.next() }, h('span', { class: 'lbl' }, this.done ? 'Next' : 'Skip'), icon(this.done ? 'next' : 'skip'))));
     }
   }
@@ -2326,7 +2499,7 @@
           if (this.visible) {
             this.away = null;
             this.view.caughtUp(store0, crate0, f);
-            if (f.crate.length > crate0 && !this.reduced) this.count = { from: crate0 / 4, to: f.crate.length / 4, t0: performance.now(), dur: 800 };
+            if (f.crate.length > crate0 && !this.reduced) this.count = { from: crate0 * Factory.TUNE.PAY, to: f.crate.length * Factory.TUNE.PAY, t0: performance.now(), dur: 800 };
           } else this.away = { seconds: (this.away ? this.away.seconds : 0) + res.seconds, minos: (this.away ? this.away.minos : 0) + res.minos };
           this.afterChange();
           this.app.setBadge('factory', Factory.isFull(f));
@@ -2335,8 +2508,8 @@
       if (announce && this.away && !this.visible) {
         const a = this.away;
         this.away = null;
-        if (a.seconds > 90 && a.minos >= 4) {
-          const lines = Factory.quarters(a.minos / 4);
+        if (a.seconds > 90 && a.minos >= Factory.MPL) {
+          const lines = Factory.quarters(a.minos * Factory.TUNE.PAY);
           toast('While you were away: ' + lines + (lines === '1' ? ' line' : ' lines') + (Factory.isFull(f) ? ' · Crate full' : ''), 'good', 5000);
         }
       }
@@ -2468,11 +2641,11 @@
 
     // ---- verbs --------------------------------------------------------------------------------------------------------
 
-    /** Banks every four minos in the crate as a line; the 0–3 loose ones stay. Minos still on their way land first. */
+    /** Banks every eight minos in the crate as a line; the 0–7 loose ones stay. Minos still on their way land first. */
     collect() {
       const f = this.f;
       this.view.flushLift();
-      if (f.crate.length < 4) { this.app.sound.play('blocked'); return false; }
+      if (f.crate.length < Factory.MPL) { this.app.sound.play('blocked'); return false; }
       const look = this.app.look(), reduced = this.reduced, shown = this.visible ? this.displayed() : 0;
       const snap = this.visible ? this.view.snapshot(f, look) : null;
       const res = Factory.collect(f);
@@ -2481,7 +2654,7 @@
       this.app.sound.play('golden');
       if (snap) {
         this.view.collected(snap, look, reduced);
-        this.count = reduced ? null : { from: shown, to: res.loose / 4, t0: performance.now(), dur: 450 };
+        this.count = reduced ? null : { from: shown, to: res.loose * Factory.TUNE.PAY, t0: performance.now(), dur: 450 };
         this.flyLines(res.collected, reduced);
       } else this.app.refreshWallet(true);
       const ev = { mode: 'factory', collected: res.collected, loose: res.loose };
@@ -2636,12 +2809,21 @@
     /** What building the next of a kind changes, in plain words: its title, a short one for a card, and the line under
      *  it (lines an hour, where the rate would rise). */
     describe(kind, u) {
-      const f = this.f, ph = Factory.perHour(f), gain = (to) => '+' + Factory.quarters((to - ph) / 4) + ' lines / hour';
+      const f = this.f, ph = Factory.perHour(f), gain = (to) => '+' + Factory.quarters((to - ph) * Factory.TUNE.PAY) + ' lines / hour';
       if (kind === 'stamp') {
         const to = Math.min(u.to, Factory.demand(f));
         return { title: ORDINAL[f.stampers] + ' stamper', short: 'Stamper', icon: 'fac-stamp', meta: to > ph ? gain(to) : u.from + ' → ' + u.to + ' minos / hour' };
       }
-      if (kind === 'store') return { title: 'Bigger store', short: 'Store', icon: 'fac-store', meta: fmtInt(u.from) + ' → ' + fmtInt(u.to) + ' minos' };
+      if (kind === 'store') {
+        // A bigger store only matters while the presses use more than the stampers make: then it is how long it feeds
+        // them from full (to the nearest half hour) while the stampers fall behind (the store only drains then: it
+        // refills when the presses stop). The row keeps it short (a phone's row has room for little more); its tooltip
+        // says it whole.
+        const S = Factory.supply(f), D = Factory.demand(f), hrs = Math.max(0.5, Math.round((u.to / (D - S)) * 2) / 2);
+        const sizes = fmtInt(u.from) + ' → ' + fmtInt(u.to) + ' minos';
+        return D > S ? { title: 'Bigger store', short: 'Store', icon: 'fac-store', meta: 'Feeds the presses ' + hrs + ' h', tip: 'A full store keeps the presses going ' + hrs + ' h while the stampers fall behind\n' + sizes }
+          : { title: 'Bigger store', short: 'Store', icon: 'fac-store', meta: sizes, tip: 'Stampers keep up · ' + sizes };
+      }
       if (kind === 'press') {
         const to = Math.min(Factory.supply(f), u.to);
         return { title: Factory.NAMES[u.n] + ' press', short: 'Press', icon: 'fac-press', meta: to > ph ? gain(to) : 'Uses ' + (u.to - u.from) + ' minos / hour' };
@@ -2684,7 +2866,7 @@
         if (!u) continue;
         const d = this.describe(kind, u), price = fmtInt(u.cost) + ' ' + LINE;
         if (cards) {
-          const words = 'Build ' + d.title + ', ' + d.meta.replace(' → ', ' to ').replace(' / hour', ' an hour') + ', ' + fmtInt(u.cost) + ' lines';
+          const words = 'Build ' + d.title + ', ' + (d.tip || d.meta).replace(/\n/g, ', ').replace(' → ', ' to ').replace(' / hour', ' an hour') + ', ' + fmtInt(u.cost) + ' lines';
           const el = h('button', { class: 'fac-up', 'data-up': kind, 'aria-label': words, 'data-tip': words, onclick: buy(kind) },
             facIcon(d.icon), h('span', { class: 'txt' }, h('span', { class: 't' }, d.short), h('span', { class: 'p' }, price)));
           this.buildEls[kind] = el;
@@ -2692,7 +2874,7 @@
         } else {
           const btn = h('button', { class: 'btn sm', onclick: buy(kind) }, 'Build · ' + price);
           this.buildEls[kind] = btn;
-          entries.push(h('div', { class: 'fac-up', 'data-up': kind }, facIcon(d.icon), h('div', { class: 'txt' }, h('div', { class: 't' }, d.title), h('div', { class: 'd' }, d.meta)), btn));
+          entries.push(h('div', { class: 'fac-up', 'data-up': kind }, facIcon(d.icon), h('div', { class: 'txt' }, h('div', { class: 't' }, d.title), h('div', Object.assign({ class: 'd' }, d.tip ? { 'data-tip': d.tip } : null), d.meta)), btn));
         }
       }
       this.list.classList.toggle('cards', cards);
@@ -2832,15 +3014,16 @@
     /** What the crate figure shows: the minos drawn in it, or a count on its way to a new value. */
     displayed() {
       const c = this.count;
-      if (!c) return this.view.landed(this.f) / 4;
+      if (!c) return this.view.landed(this.f) * Factory.TUNE.PAY;
       const k = c.dur ? Math.min(1, (performance.now() - c.t0) / c.dur) : 1;
-      if (k >= 1) { this.count = null; return this.view.landed(this.f) / 4; }
+      if (k >= 1) { this.count = null; return this.view.landed(this.f) * Factory.TUNE.PAY; }
       return c.from + (c.to - c.from) * easeOut3(k);
     }
 
     /** Lines in crate, every frame (only written when it changes, so it follows the minos as they land). */
     updateCrate() {
-      const q = Math.round(this.displayed() * 4), cap = Factory.crateLines(this.f.crateLevel);
+      // To the quarter line below (a mino is an eighth: one alone never shows as a quarter).
+      const q = Math.floor(this.displayed() * 4 + 1e-9), cap = Factory.crateLines(this.f.crateLevel);
       if (q === this.crateQ && cap === this.crateCap) return;
       this.crateQ = q; this.crateCap = cap;
       this.crateV.nodeValue = Factory.quarters(q / 4);
@@ -2849,7 +3032,7 @@
 
     update() {
       const f = this.f, st = Factory.status(f), wallet = this.store.state.lines;
-      const rate = Factory.quarters(st.perHour / 4);
+      const rate = Factory.quarters(st.perHour * Factory.TUNE.PAY);
       if (rate !== this.rateTxt) { this.rateTxt = rate; this.sRate.b.textContent = rate; }
       // The rate's tooltip: both ends of the chain, in minos, so a line short of minos says why.
       const tip = 'Stampers make ' + st.supply + ' minos an hour\nPresses use ' + st.demand + ' minos an hour';
@@ -2864,7 +3047,7 @@
       let key;
       if (lines) key = 'c' + lines;
       else {
-        if (performance.now() - this.etaAt > 2000) { this.etaAt = performance.now(); this.etaV = Factory.eta(f, 4, 4 * 3600); }
+        if (performance.now() - this.etaAt > 2000) { this.etaAt = performance.now(); this.etaV = Factory.eta(f, Factory.MPL, 4 * 3600); }
         key = 'n' + (isFinite(this.etaV) ? soon(this.etaV) : '');
       }
       if (key !== this.cKey) {

@@ -20,16 +20,19 @@ no button carries a line of explanation or a key cap), so nothing wraps or crowd
 
 ## Play
 
-**Free Play** — endless, relaxed. Every cleared line is banked as ⦵ *lines*, the currency. A quad or T-spin is worth one
-line more, and the back-to-back streak multiplies it: an eighth for each quad or T-spin in the streak, so it starts to
-pay past eight in a row and stops at ×2.5 (twenty in a row) — a quad on a full streak pays 12.5 (pay is kept to the hundredth, rounded down). The *chain* — the streak
-plus the combo, the number to be proud of — is counted apart and shown beside the multiplier (`Chain 16 · ×1.75`).
+**Free Play** — endless, relaxed. Every cleared line is banked as ⦵ *lines*, the currency. A quad set by hand or a
+T-spin (or a mini) is worth one line more — a quad made by a Noodle, a Giant or a Blueprint is not — and the
+back-to-back streak multiplies it: an extra ×0.05 for each quad or T-spin after the first, up to ×2 (twenty-one in a
+row) — a quad on a full streak pays 10 (pay is kept to the hundredth, rounded down). The *chain* — the streak
+plus the combo, the number to be proud of — is counted apart and shown beside the multiplier (`Chain 16 · ×1.65`).
 A piece that has no room where it appears (a new one, one swapped in from hold, or one an item makes) is fitted into the nearest open spot above the stack it could get to — beside a tall column, stood on end, in another turn — never down inside the stack. Only when it fits nowhere is the board full; a hold swap or an item with no room is just refused (a short note says so, nothing is used up).
 A full board just ends that board; the lines stay yours. Its Board full card shows the board's numbers (they scroll on
 a short screen, the cut edge fading while there is more; the buttons always show) with Undo — there whenever a placement
 can be taken back, with how many Undos you hold or its price, paid as in Puzzles: one held is used, with none one is
 bought for 5 ⦵ and used at once, short of lines a note says Not enough lines — then Boards and Retire. An Undo also
-takes back what that placement banked, so buying one needs the 5 and those lines (the wallet never goes below 0); and
+takes back what that placement banked, in full, so buying one needs the 5 and those lines, and using one held needs
+those lines (short, a note says Not enough lines and the Undo is kept: an Undo never pays, and the wallet never goes
+below 0); and
 like a set piece, an Undo that closes a card starts the set grace, so a double click does not drop the piece it
 brought back. The ⦵ glyph is a cleared line running into a small black hole; in the wallet it is drawn large, a dark disc in a thin glowing ring. Everywhere else it is one character, `L.LINE` (U+29B5, never an emoji), drawn by a one-glyph font of the page's own (`scripts/line-glyph.py`) that is first in every font list and in the canvas fonts, so text, prices, toasts and the boards all show the same shape. Retiring a board (Boards ▸ Retire, or Retire when it fills up) shows its whole life: how long it
 lived and was played, pieces, lines, score, quads, T-spins, perfect clears, best combo and back-to-back, holds and
@@ -76,9 +79,13 @@ hint wider than the well goes under, over or beside the plate instead.
 
 *Pay per cell* — a Standard line is ten cells, so a line cleared on a board w wide is worth w/10 of one: half on a board
 5 wide, two on one 20 wide; height changes nothing. `Library.scale(w)` is the one place that says so, and every reward
-goes through it: a clear's pay, combos' lines, the power-up every hundred lines (Standard lines), lifetime Lines and
+goes through it: a clear's pay, combos' lines, the power-up every two hundred lines (Standard lines), lifetime Lines and
 Best lines (Stats and the achievements' progress), Efficiency, and the line-count and pace achievements. What a clear
-pays is `Pay` in js/items.js, all of it in Standard lines, so no size earns faster per piece than Standard: the
+pays is `Pay` in js/items.js, all of it in Standard lines, so for the same play no size earns faster per piece than
+Standard (`econ-test.cjs` prices every clear its bots make at eight sizes 10 wide too, and never finds one that pays
+more; casually no size pays more than Standard, within 5%, and a skilled bot does too except on 11 and 12 wide, where
+it sets up quads far more easily than on Standard — seven or eight clears in ten against four — and earns up to 1.4×
+a piece, a stated tolerance of 1.45×; a capped quad there still pays less a piece than on Standard, 0.97 of it): the
 difficult-clear bonus is at most one Standard line (a board has one T a bag however wide it is); the streak's links
 count by width, never more than one a clear (a narrow board makes difficult clears more often, each clearing fewer
 cells), so the multiplier climbs per cell cleared; gold and a boost last for Standard clears (a Golden Piece is five
@@ -115,9 +122,9 @@ Delete question is Cancel) and nothing under it can be reached, and afterwards f
 library in a save that has been edited by hand is made safe when it loads: broken records are dropped.
 
 The combos' shrinking pay is the library's, not a board's: a new board beside the others is no fresh start, and it
-starts over only when a board begins with no other left. Everything else about a board belongs to it: its stats, its hand-play record for the
+never starts over, whatever is retired or deleted. Everything else about a board belongs to it: its stats, its hand-play record for the
 achievements ("no power-ups on the board", "on one board", Old Growth's age) and its share of the power-ups paid every
-hundred lines (the save's per-board Earn record is parked with the board, so leaving and coming back never pays a
+two hundred lines (the save's per-board Earn record is parked with the board, so leaving and coming back never pays a
 milestone twice). Lifetime totals count play once, whichever board it was on, and switching adds nothing. There is no
 duplicate: a copy would be a way to replay a board's future. The daily gift, the factory and the control hints do not
 look at boards at all.
@@ -133,8 +140,8 @@ sound), each over the last, see-through where they overlap and traced round thei
 one before so the layers show in any palette; then the game over sound,
 the announcer and the card, the pile still behind it. Nothing counts any more by then (score, lines, best and stats
 are final and saved at the top out); Space or a tap skips to the card, pausing or leaving ends it there, and under
-reduced motion the pile is all there at once. Lines you clear still bank as ⦵, multiplied by the back-to-back streak — ×0.5 for each tetris or T-spin in a
-row, up to ×10 at twenty (the status bar's *Bank*); the score is never multiplied. Music: Korobeiniki (the public-domain folk tune), note for note in its own
+reduced motion the pile is all there at once. Lines you clear still bank as ⦵: each line banks 0.7 ⦵, multiplied by the back-to-back streak — ×0.05 a
+link after the first, up to ×1.5 at eleven (the status bar's *Bank*); the score is never multiplied. Music: Korobeiniki (the public-domain folk tune), note for note in its own
 key, A minor, slowed to 80 and dressed as calm ambient electronica with a little IDM in its detail — a soft, round
 lead (a sine with a breath of FM and a triangle under it, gliding between notes that touch, a late vibrato on long
 ones) over warm, detuned analog-style saw pads of min9, min11 and maj9 chords, breathing through a slightly resonant
@@ -165,8 +172,8 @@ too, and so does the pointer leaving the window (Settings ▸ Controls ▸ Pause
 carries on.
 
 **Puzzles** — procedurally generated, infinite, short, in Easy, Medium and Hard. Each has a seed (`M-3K7Q2XA`): the
-same seed is the same puzzle for everyone, so it can be shared, replayed or retried (R) as often as you like (Retry is
-free). Undo takes back the last piece for one Undo, the power-up shared with Free Play: one you hold is used, and with
+same seed is the same puzzle for everyone, so it can be shared, replayed or retried (R) as often as you like (Retry
+costs only a try, and only once a piece has been set). Undo takes back the last piece for one Undo, the power-up shared with Free Play: one you hold is used, and with
 none it buys one for its price, 5 ⦵ (the one price of an Undo, everywhere), and uses it at once (the price is on the button, so it never asks; short of lines, a
 note says Not enough lines and nothing changes). Only an undo that happens is paid for, once — ⌫, U or ⌘Z held down
 undo once. Every puzzle is built backwards from a solution — rows are filled solid, pieces are lifted out only where they
@@ -176,7 +183,20 @@ Every puzzle takes every piece: the board and the lines hold exactly the pieces'
 last piece completes, kept only when an exhaustive search (every move the engine allows, every order a Hold slot
 allows, pruned by counting the holes the gem rows still need) proves no fewer pieces take every gem; a search that
 gives up counts as a shortcut. A gem seed that runs out of tries settles for a lines puzzle on its last board.
-Solving pays lines (more on the first try, double for the Daily). Dailies are the same in every copy of Lull: day
+Solving pays lines the first time a seed is solved: Easy 3, Medium 7, Hard 18, falling ×0.8 for each try that set a
+piece (rounded, never under 1, 3 or 6). A clean solve (the first try, no Undo, no hint) pays ×1.5: 5, 11, 27. The Daily
+doubles it, once a date for each difficulty: the clockwise and the both-ways Daily of a date are two puzzles but one
+Daily, so solving the second pays without the ×2 (its Pays tooltip says so). A hint halves it (rounded up) and costs
+half of the puzzle's pay for that try before the first-try and Daily bonuses (Hard try 1: 9), so a hinted solve nets
+nothing except on a Daily; on a puzzle already solved, which pays nothing, a hint is free (and never takes the gift's
+free hint). Undo and Retry say what they cost in pay before you press them: on a clean first try the Undo's tooltip
+gives the drop ("Ends the first-try ×1.5: Pays ⦵27 → ⦵18"), and once a piece is set Retry's gives the next try's pay; a
+short note says it again when one of them lowers it. Tries, a hint and Undos stay with the seed when you leave or reload
+(`puzzle.tries` in the save, until it is solved). A reload or relaunch goes on with the attempt in play exactly as it
+stood — the board, the piece in play, the queue and hold, the lines toward the goal (`puzzle.current.board`, kept after
+every piece and on every save; the Undo history stays behind) — so it is still the same try; an attempt that cannot come
+back (one that had run out) is over, and like Retry, or coming back to the seed from another, a new board is the next
+try once a piece is set. Dailies are the same in every copy of Lull: day
 numbers run through a fixed, keyed shuffle of all 2³² seeds per difficulty, so every date has one seed and every seed
 belongs to exactly one date (hover a seed, or press and hold it, to see which). That is 4,294,967,296 seeds per difficulty, 12,884,901,888 in all. History lists every puzzle you opened — solved or
 not, tries, time — with its seed and a play button; the star saves a seed (from a row, or the star on the puzzle's card
@@ -207,12 +227,16 @@ that single button alone cannot solve it. Wildcards:
 
 The tab reads top to bottom: a slim bar (difficulty; Daily, pressed while today's is in play and ticked once it is
 solved; Seed; History — icons alone in a narrow window), then the puzzle's card — its name (a small tick once solved), where it
-comes from (number, Daily date or seed) and piece count, the seed (click to copy) and the star; the goal with how far along
+comes from (number, Daily date or seed), piece count and what solving pays now (Pays ⦵14; its tooltip says why, one
+fact a line; whole parts give way when the line is short, never a character of a date: the piece count first (always
+under 440 px), then the weekday, then the difficulty, then a Daily's date), the seed (click to copy) and the star; the goal with how far along
 it is (lines, gems or blocks left, and a thin meter); a chip per wildcard, each with its own icon (hover, or click for a
 note that stays; Both Ways is tinted and names Z and A) — then the board, and a bar of Undo (with how many Undos you hold, or its price), Retry, Hint (with its price, or *free*
-while the daily gift's free hint is held — a free hint goes before lines and still halves the reward) and
+while the daily gift's free hint is held — a free hint goes before lines and still halves the pay) and
 Skip, which turns into Next once solved. Every row has a fixed height and chips shorten (then drop to icons) rather
-than wrap, so no puzzle and no state moves the board. Solving brings a small card with the time, tries and pay; a
+than wrap, so no puzzle and no state moves the board. Solving brings a small card with the time, tries and pay, and a
+line saying how the pay was made (Hard 18 · try 2 → 14 · Daily ×2 → 28; Medium 7 · Undo: no ×1.5 when an Undo cost the
+first-try ×1.5), the Hint button then priceless (Hints on if the solve used one); a
 board that runs out shows how far it got, with Undo (its count or price, paid the same way) and Retry (on a phone as
 small as 320 × 568 both cards tighten so their buttons show: a smaller ring, and Solved without its tick). Play a seed reads a seed as it is typed (difficulty,
 both ways, solved, which Daily) and refuses a bad one in place; History has counts on its tabs and marks the puzzle in
@@ -221,32 +245,41 @@ Counter-clockwise puzzles on); each difficulty button's tooltip gives its own sh
 
 **Factory** — a slow production chain: minos are stamped, stored, assembled, shipped and collected. Up to four
 stamp heads each stamp a raw grey mino every 100 s (36 an hour) onto a top belt, which rolls them into the store (27
-minos wide, 4, 8 or 12 rows: 108, 216, 324). Up to four presses (tetromino, pentomino, hexomino, heptomino) each
+minos wide, 2, 4 or 8 rows: 54, 108, 216). Up to four presses (tetromino, pentomino, hexomino, heptomino) each
 assemble one piece every ten minutes, a mino at a time: each mino is fed from the store down the press's own tube
 (first come, first served; a press waits while the store is empty), then set in the piece's colour. A finished piece
 drops onto the belt, which carries it to the shipping corridor on the right; there it slides onto the conveyor, rides up
 it lying flat to the station at the top (a slow ride, 80 s, so the conveyor mostly carries something), and its minos
-go one by one up the chute and into the crate (the collector) that hangs across the top of the corridor. Every four
-minos in the crate are one ⦵ line — a quarter line per mino shipped, never more. The line runs as fast as its slower
-end: 6 lines an hour with one head and one press; building in the natural order (a press, a head, a press …) gives 9,
-13.5, 18, 22.5, 27 and 33 with four of each (every factory figure is a decimal, to the quarter line; Lines / hour's
-tooltip gives both ends, "Stampers make 36 minos an hour" and "Presses use 54 minos an hour"). The crate is 4 columns
-by 12 rows (48 minos, 12 lines); each bigger crate adds two columns and some rows: 6 × 16 (24 lines), 8 × 24 (48),
-10 × 32 (80), 12 × 40 (120). Nothing is ever lost: when the crate cannot take the next piece, the lift stops, the belt
-backs up behind it, the presses hold their finished pieces, the store fills, the top belt packs and the heads hold —
-calmly, all the way back — until you Collect (the button, a click on the crate, or C), which banks every whole line
-(the first minos in, four at a time, so where the width is not a multiple of four a line can end partway along a row)
-and leaves the last 0–3 loose (every crate holds whole lines, so a full one empties); a ship follows within the
-minute. Four things to build, in the chain's order: stamp heads (100, 300, 800 ⦵), a bigger store (120, 400 ⦵),
-presses (150, 450, 1,200 ⦵) and bigger crates (60, 200, 500, 1,000 ⦵); every number lives in one frozen block,
-`Factory.TUNE` in `js/factory.js`.
+go one by one up the chute and into the crate (the collector) that hangs across the top of the corridor. Every eight
+minos in the crate are one ⦵ line — an eighth of a line per mino shipped, never more. The line runs as fast as its
+slower end: 3 lines an hour with one head and one press; building in the natural order (a press, a head, a press …)
+gives 4.5, 6.75, 9, 11.25, 13.5 and 16.5 with four of each (every factory figure is a decimal, to the quarter line
+below; Lines / hour's tooltip gives both ends, "Stampers make 36 minos an hour" and "Presses use 54 minos an hour").
+The crate is 4 columns by 12 rows (48 minos, 6 lines); each bigger crate adds two columns and some rows: 6 × 16 (12
+lines), 8 × 24 (24), 10 × 32 (40), 12 × 40 (60). A new factory's crate starts with four minos, so its first line is
+ready when its first piece ships, in under five minutes. Nothing is ever lost: when the crate cannot take the next
+piece, the lift stops, the belt backs up behind it, the presses hold their finished pieces, the store fills, the top
+belt packs and the heads hold — calmly, all the way back — until you Collect (the button, a click on the crate, or C),
+which banks every whole line (the first minos in, eight at a time, so where the width is not a multiple of eight a
+line can end partway along a row) and leaves the last 0–7 loose (every crate holds whole lines, so a crate filled to
+the brim empties); a ship follows within the minute, and what stood backed up — the lift, the belt, the presses'
+held pieces, some 60 minos (seven and a half lines) with the whole line built — follows it into the crate over the next few
+minutes, so a second Collect a quarter of an hour later takes that and the quarter hour's making, a few lines more
+(`econ-test.cjs` bounds it, and holds the line collected that way to 0.32 of a casual day's play, against 0.2–0.3 once). Four things to build, in the chain's order: stamp heads (350,
+450, 900 ⦵), a bigger store (150, 280 ⦵), presses (300, 400, 800 ⦵) and bigger crates (30, 100, 250, 500 ⦵), priced
+so the cheapest way to more lines an hour is always the next one in the natural order. Each row says what it adds (a
+press or a head in lines an hour, a crate in lines); the store's row says how long a bigger store feeds the presses
+("Feeds the presses 6 h"; its tooltip: a full store keeps them going that long while the stampers fall behind), or, when the stampers keep up, only its sizes
+(then it just holds more, and its tooltip says so). The line is never slowed to make
+it pay less: a press makes a piece every ten minutes and a head a mino every 100 s, whatever the rebalance (a test
+holds that floor). Every number lives in one frozen block, `Factory.TUNE` in `js/factory.js`.
 
 The model moves in quarter-second ticks on an integer clock (whole milliseconds), downstream first — the lift, the
 belt, the presses, the top belt, the heads — so a place freed early in a tick is taken in the same tick. On screen and
 for time away it is the same run: any slicing of the same time gives exactly the same line. Time away is replayed on
 return (up to 30 days; once a tick changes nothing the chain is at rest, and the rest of the time is only counted as
 time the crate was full). On the Factory tab the new minos just fade into the store and the crate; elsewhere a toast
-gives the lines made ("While you were away: 12.5 lines · Crate full").
+gives the lines made ("While you were away: 6.25 lines · Crate full").
 
 The tab reads like Play: the floor on the board's own plate, a bar under it (Lines / hour, Lines in crate, Full in, and
 Collect at the right), and the things to build below, from the top of the window like the other tabs. The plate's cell
@@ -302,11 +335,11 @@ clicking it asks once (its name and a Buy & use button with the price) — dimme
 
 | Type | Power-ups (price ⦵, rarity) |
 |---|---|
-| Shapers | Reroll (15, common: a different piece), Mirror (15, common: J and L, S and Z swap), Pebble (20, common: a single block), Noodle (25, uncommon: a six-long rod), Giant (30, uncommon: twice the size), Blueprint (100, rare: draw your own, up to six blocks) |
-| Choice | Pick of Three (20, common: play one of the next three now; this piece takes its place in line), Best Fit (45, uncommon: the piece becomes whichever of the seven fits the stack best, right over its spot), Order Slip (35, rare: choose the piece in play) |
+| Shapers | Reroll (15, common: a different piece), Mirror (15, common: J and L, S and Z swap), Pebble (20, common: a single block), Noodle (30, uncommon: a six-long rod), Giant (30, uncommon: twice the size), Blueprint (100, rare: draw your own, up to six blocks) |
+| Choice | Pick of Three (20, common: play one of the next three now; this piece takes its place in line), Best Fit (45, uncommon: the piece becomes whichever of the seven fits the stack best, right over its spot), Order Slip (55, rare: choose the piece in play) |
 | Tools | Patch (20, common: one block that drops into the highest covered hole in its column), Ghost (50, uncommon: passes through blocks into the first gap below where it fits), Drill (40, uncommon: bores out its column), Bomb (45, uncommon: clears a 13-block diamond where it lands), Laser (65, rare: clears every row it touches, full or not), Black Hole (90, rare: swallows everything within three blocks) |
 | Board | Mirror World (20, common: flips the board left to right), Undo (5, common: takes back the last placement and its lines; one item with Puzzles' Undo, the count shared, and every free one comes as a pack of 5), Trapdoor (40, uncommon: the bottom row falls away, whatever it holds), Tornado (60, rare: shuffles the columns, holes and all), Settle (70, rare: every block falls straight down; full rows clear) |
-| Luck | Golden Piece (35, uncommon: the next five clears pay ×3), Double or Nothing (30, uncommon: the next clear pays double if it is a quad or a T-spin, nothing if it is less), Safety Net (60, rare: keeps the back-to-back streak through one ordinary clear) |
+| Luck | Golden Piece (50, uncommon: the next five clears pay ×2), Double or Nothing (30, uncommon: the next clear pays double if it is a quad set by hand — not a Noodle's, a Giant's or a Blueprint's — a T-spin or a mini, nothing if it is less), Safety Net (105, rare: keeps the back-to-back streak through one ordinary clear) |
 
 Nothing here is about a clock — Free Play has none — so they are about choice and shape: which piece, what it
 becomes, what the stack looks like after, what the next clear is worth. Tools and Shapers change the piece in play
@@ -316,14 +349,14 @@ lines: they pay and keep the combo going, but are never a quad or a T-spin and n
 Tornado only rearranges — every row keeps its count, so it never clears). Every one of them, Luck aside, puts
 power-ups on the board for the achievements.
 
-*Getting them.* Bought with lines in the tray; free from the daily gift; and, modestly, from play: one for every hundred
-lines cleared on a board (counted in the save, outside the board, so an Undo and a replayed clear never pay twice) and one the first time each combo is ever found. Free ones are drawn by rarity
+*Getting them.* Bought with lines in the tray; free from the daily gift; and, modestly, from play: one for every two
+hundred lines cleared on a board (Standard lines; counted in the save, outside the board, so an Undo and a replayed clear never pay twice) and one the first time each combo is ever found. Free ones are drawn by rarity
 (common 8, uncommon 3, rare 1), and a free Undo is always 5 of them (bought, it is one at a time, and always for 5 ⦵:
 the tray's Buy & use, the Board full card, the puzzle bar and card, the keys and a finger all pay the same).
 
 **Daily gift** — the small wrapped box in the Relaxed tab's status bar glows while a gift is waiting: three different
 things, drawn by rarity from the power-ups (an Undo comes as 5) and one puzzle freebie, a free hint (uncommon: one hint
-at no cost, which still halves the reward; the Puzzles tab uses it before lines), so nearly six in ten of what it gives
+at no cost, which still halves the pay; the Puzzles tab uses it before lines), so nearly six in ten of what it gives
 are common, about one in thirteen rare, and one gift in ten holds a free hint. What play earns is power-ups alone. Its
 cards say what each is (5 Undos; Hint, with the hint icon). It comes again 24
 hours after it was last opened — the time since, not the date; its tooltip counts down. The claim time is booked in the
@@ -344,12 +377,15 @@ or more with one Black Hole (Event Horizon). With no clock in Free Play, none is
 in full, then half, then a quarter, then nothing; boosts come with the first two; and a power-up combo pays less than
 the power-up it takes. Stats ▸ Free Play lists them: found ones by name, the rest as a question mark.
 
-*Luck.* Golden Piece puts gold on the board for your next five clears, each ×3 on top of everything else; it waits
-through pieces that clear nothing, so it is never wasted. It adds five clears' pay twice over: built for quads (5 a
-clear) that is 50 for its 35, on ordinary clears about 20 — worth it played well, not otherwise. Double or Nothing waits
-for the next clear, too: a quad or a T-spin pays double, anything less pays nothing (the lines still count on the
+*Luck.* Golden Piece puts gold on the board for your next five clears, each ×2 on top of everything else; it waits
+through pieces that clear nothing, so it is never wasted. It adds five clears' pay once over: 50 for its 50 on quads at
+a full streak, so at best it breaks even, and on ordinary clears about 10 — a luxury, never a profit (none of Luck
+can do better than break even). Double or Nothing waits for the next clear, too: a quad set by hand (not a Noodle, a
+Giant or a Blueprint), a T-spin or a mini pays double, anything less pays nothing (the lines still count on the
 board). Safety Net is a one-time pass for the back-to-back streak: the next clear that would end it does not, and the
-multiplier stays.
+multiplier stays. What it keeps is worth most on the widest board: the saved clear paid at the full streak (a triple:
+6 more on a board 20 wide) and the twenty quads it would take to climb back, 94.5 more there (52.5 on a Standard
+board, where a quad is worth less), 100.5 in all, so at 105 it too at best breaks even, at any size.
 
 Each has its own animation, mostly on a small physics layer fed with what the engine actually removed or moved: the
 drill's bit spins down its column and each block it meets bursts into chips; a laser charges a line, then a beam
@@ -372,13 +408,13 @@ The catalogue is short on purpose, every item distinct:
 
 | Kind | Items (price ⦵) |
 |---|---|
-| Palettes | Classic (free), Mist 300, Sunset 450, Aurora 600, Ink 750, Handheld 900, Gold Leaf 2,000, Prism 3,500 (its hues glide round the wheel, a turn in 45 s), Assembly Line (factory) |
-| Mino skins | Flat (free), Bevel 300, Pixel 450, Bubble 600, Glass 750, Jelly 900, Neon Tube 1,100, Gem 1,400, Lantern 1,800, Steel (factory) |
-| Frames | Hairline (free: the well's own rim), Inlay 250, Glow 500, Brass 900, Rainbow 1,400 (a slow ring of spectrum, a turn in 12 s), Hazard Tape (factory) |
-| Backdrops | Plain and Grid (free), Blueprint 300, Dusk 500, Aurora 700 (three veils of light drifting on long periods), Starfield 900 (the bright stars twinkle), Conveyor (factory; its treads slide) |
-| Line clears | Fade (free), Sparkle 400, Ripple 600, Bloom 800, Welding Sparks (factory) |
-| Ghosts | Outline (free), Soft 100, Dotted 150, Glow 250, Off |
-| Sounds | Drift (free), Chiptune 350, Marimba 500, Analog Synth 650, Glass 800, Wind Chimes 1,000 |
+| Palettes | Classic (free), Mist 400, Sunset 600, Aurora 850, Ink 1,100, Handheld 1,400, Gold Leaf 2,800, Prism 5,000 (its hues glide round the wheel, a turn in 45 s), Assembly Line (factory) |
+| Mino skins | Flat (free), Bevel 350, Pixel 550, Bubble 750, Glass 1,000, Jelly 1,250, Neon Tube 1,600, Gem 2,100, Lantern 2,800, Steel (factory) |
+| Frames | Hairline (free: the well's own rim), Inlay 300, Glow 650, Brass 1,200, Rainbow 2,500 (a slow ring of spectrum, a turn in 12 s), Hazard Tape (factory) |
+| Backdrops | Plain and Grid (free), Blueprint 350, Dusk 700, Aurora 1,200 (three veils of light drifting on long periods), Starfield 1,700 (the bright stars twinkle), Conveyor (factory; its treads slide) |
+| Line clears | Fade (free), Sparkle 450, Ripple 850, Bloom 1,300, Welding Sparks (factory) |
+| Ghosts | Outline (free), Soft 200, Dotted 300, Glow 450, Off |
+| Sounds | Drift (free), Chiptune 450, Marimba 650, Analog Synth 900, Glass 1,200, Wind Chimes 1,600 |
 
 Moving previews (Prism, Rainbow, the moving backdrops, every line clear on a loop) share one animation loop that
 runs only while they are on screen, and stand still under reduced motion, as the boards do. A light-theme well deepens
@@ -443,19 +479,20 @@ with no power-ups on the board. Three are for playing with power-ups on purpose:
 one board (Showman), a board of 60 blocks or more emptied by one power-up (Clean Sweep), and every combo found
 (Tinkerer).
 
-Medium ones (100–300 ⦵): a perfect clear with no power-ups on the board, a T-spin Mini double, a 10-combo, a T-spin triple on gold, four quads in a row, Allegro,
+Medium ones (50–100 ⦵): a perfect clear with no power-ups on the board, a T-spin Mini double, a 10-combo, a T-spin triple on gold, four quads in a row, Allegro,
 the perfect-clear opener (within a fresh board's first ten pieces, no items), Showman; a Hard puzzle first try
 without hints or undo, all three Dailies on their day, or a quad, a tetris and a Hard puzzle in one day; every
-hexomino or 1,000 lines off the factory line. Hard ones (300–800 ⦵): eight back-to-back, three perfect clears,
+hexomino, 1,000 lines off the factory line, or exactly 50 lines collected at once (Exactly Fifty; Empty Crate, 40 or
+more at once with none left loose, is easier). Hard ones (100–200 ⦵): eight back-to-back, three perfect clears,
 100 line-clearing T-spins (all with no power-ups on the board), 250,000 points never using a power-up, Clean Sweep, Tinkerer, forty lines in a
 fresh board's first hundred pieces with nothing left over, every item used; in Classic a perfect clear, a T-spin
 triple, a 10-combo, eight back-to-back, level 10 without hold, 40 lines in 90 s or 40 lines of tetrises alone; a Hard
-puzzle first try in under 20 s, twenty first-try solves in a row, 100 Hard puzzles; 100,000 lines in all, 30 days
-played. Thirty-two are legendary (800–5,000 ⦵): a chain of 20 with no power-ups on the board, Presto, a perfect clear with a T-spin, ten
+puzzle first try in under 20 s, twenty first-try solves in a row, 100 Hard puzzles; 50,000 lines in all, 30 days
+played. Thirty-two are legendary (250–1,000 ⦵): a chain of 20 with no power-ups on the board, Presto, a perfect clear with a T-spin, ten
 quads in a row, five gold clears on a chain of 20, ten perfect clears or 5,000 lines on one board, a million
 without items; Classic level 25, a 15-combo, 40 lines in 50 s, level 20 without hold, a Classic million; every
 wildcard on Hard, a Daily thirty days in a row, a hundred first-try solves in a row; a hundred hours or a hundred days
-with Lull, everything the shop sells, a million lines earned (undone lines aside, since an undone clear replayed would count
+with Lull, everything the shop sells, half a million lines earned (undone lines aside, since an undone clear replayed would count
 twice); all 108 heptominoes or 100,000 minos
 pressed — and *Lull*, every other one. They read the stats below plus a few kept for them: the
 board's hand counts (`freshStats` in `js/engine.js`: whether there are power-ups on the board, and the back-to-back,
@@ -597,7 +634,8 @@ cd Lull && swift run          # the same, straight from the package
 
 open Lull/Game/index.html     # any browser, any OS (saves to localStorage)
 
-node Lull/scripts/test.cjs            # game logic: 750 puzzles replayed through the engine, turns, items, factory, board library, save
+node Lull/scripts/test.cjs            # game logic: 750 puzzles replayed through the engine, turns, items, factory, board library, save, economy
+node Lull/scripts/econ-test.cjs       # the economy against models of play: bots on the engine, puzzles, the factory, a career (test.cjs runs it)
 node Lull/scripts/browser-test.cjs    # the page played in headless Chromium (needs Playwright), then touch-, device-, undo- and retired-test
 node Lull/scripts/touch-test.cjs      # an emulated phone played with real touches: gestures, layout, 44 px targets
 node Lull/scripts/device-test.cjs     # what a phone, a desktop browser, the app and a tablet with a trackpad are offered
@@ -679,7 +717,7 @@ The address is shown on the `pages` job and under Settings ▸ Pages.
 |---|---|
 | `Game/` | the game: `index.html`, `manifest.webmanifest`, `sw.js` (the offline copy), `icons/` (the Home Screen icons), `css/`, and `js/` — `webapp` (the Home Screen app: the worker, its updates, lasting storage), `icons` (the one SVG icon set), `pieces` (SRS tetrominoes, pentominoes, big and custom shapes, polyomino enumeration), `board`, `engine` (the floating-piece rules and every item), `items` (the chain multiplier, combos, Luck, the daily gift, power-ups earned in play), `library` (the Relaxed board library: shelved and retired boards, names, caps), `puzzlegen` (seeds, wildcards, reverse construction, reachability search, forward verification), `factory` (the chain: stamp heads, the store, presses, belts, the lift and the crate, in ticks for play and time away alike; `Factory.TUNE`; save repair), `store` (save, catalog, stats), `achievements`, `fxphysics` (the item effects' blocks, debris and dust: gravity, bounces, spirals, fixed pools), `render` (canvas: skins, frames, effects, item animations, rotated views), `factoryview` (the factory floor, drawn like the board), `hints` (control hints: the struggle signals, their limits and retirement), `touch` (the touch gestures: a pure reader of fingers, and the page's touch helpers), `webapp` (the Home Screen web app: the offline copy's registration and updates), `collapse` (the window rolled up into its title bar, and the parade of pieces along it), `modes`, `retiredview` (a retired board in full view), `ui`, `app` |
 | `Sources/Lull/` | the macOS shell: a borderless `NSPanel` (floating, all Spaces, edge-resizable, draggable by the page's title bar) around a transparent `WKWebView`, a blur for the Glass background, the save file, the ⌥⌘L hot key, and a self-test CI runs |
-| `scripts/` | `make-app.sh`, `icon.swift`, `line-glyph.py` (builds the line glyph's font into `lull.css`), `test.cjs`, `browser-test.cjs`, `audio-render.cjs` (renders and measures the synthesized audio offline), `pitch.cjs` (finds the notes in a render, to check sound effects are in the music's key), `splice-voice.py` (cuts the announcer's lines from a recording), `web-build.cjs` (the site as deployed), `web-icons.cjs` (the Home Screen icons), `web-test.cjs` and `web-browser-test.cjs` (the web app's tests, run by the two above), `touch-test.cjs` (an emulated phone played with gestures, run by browser-test), `device-test.cjs` (what each device is offered in Settings and the bar, and live changes; run by browser-test), `sizes-test.cjs` (board sizes: the New board window, every extreme size, pay by width, layout; run by browser-test), `undo-test.cjs` (every way of buying an Undo, and the cards that offer it at every size; run by browser-test), `retired-test.cjs` (a retired board in full view at every size, by keys and by touch; run by browser-test) |
+| `scripts/` | `make-app.sh`, `icon.swift`, `line-glyph.py` (builds the line glyph's font into `lull.css`), `test.cjs`, `browser-test.cjs`, `audio-render.cjs` (renders and measures the synthesized audio offline), `pitch.cjs` (finds the notes in a render, to check sound effects are in the music's key), `splice-voice.py` (cuts the announcer's lines from a recording), `web-build.cjs` (the site as deployed), `web-icons.cjs` (the Home Screen icons), `web-test.cjs` and `web-browser-test.cjs` (the web app's tests, run by the two above), `touch-test.cjs` (an emulated phone played with gestures, run by browser-test), `device-test.cjs` (what each device is offered in Settings and the bar, and live changes; run by browser-test), `econ-test.cjs` (the economy against models of play: placement bots on the real engine, a puzzle model, the factory measured, a career that spends what it earns; every assumption about players in its one MODEL block; run by test.cjs), `sizes-test.cjs` (board sizes: the New board window, every extreme size, pay by width, layout; run by browser-test), `undo-test.cjs` (every way of buying an Undo, and the cards that offer it at every size; run by browser-test), `retired-test.cjs` (a retired board in full view at every size, by keys and by touch; run by browser-test) |
 
 ## Credits
 

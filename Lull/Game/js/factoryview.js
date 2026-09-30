@@ -620,15 +620,15 @@
     // ---- collecting and time away -----------------------------------------------------------------------------------
 
     /** What Collect takes, as drawn now: the minos of every whole line (cells, in CSS px: whole rows, and the start of
-     *  the next when the width is not a multiple of four) and the loose minos after them. Taken just before the model
+     *  the next when the width is not a multiple of eight) and the loose minos after them. Taken just before the model
      *  collects. */
     snapshot(f, look) {
-      const landed = this.landed(f), lines = Math.floor(landed / 4), bc = this.bc, cols = this.cols;
+      const MPL = L.Factory.MPL, landed = this.landed(f), lines = Math.floor(landed / MPL), bc = this.bc, cols = this.cols;
       const cells = [], loose = [];
       for (let i = 0; i < landed; i++) {
         const r = Math.floor(i / cols);
         const color = look.colors[parseInt(f.crate[i], 16)] || look.theme.accent, x = this.bx + (i % cols) * bc, y = this.bb - (r + 1) * bc;
-        if (i >= lines * 4) loose.push({ x, y, color });
+        if (i >= lines * MPL) loose.push({ x, y, color });
         else cells.push({ x, y, w: bc, h: bc, color });
       }
       return { cells, loose, lines, cols, bc, flat: this.bcD < FLATBC };
@@ -1494,11 +1494,11 @@
       if (this.flags.crateFull) { ctx.fillStyle = S.warn; ctx.fillRect(rimX0, this.bt - 1, rimW, 1); }
       const hv = this.hover;
       if ((this.preview || (hv && hv.kind === 'crate')) && !ca) {
-        const x0 = bx, x1 = bx + this.bw, cols = this.cols, taken = Math.floor(landed / 4) * 4;
+        const MPL = L.Factory.MPL, x0 = bx, x1 = bx + this.bw, cols = this.cols, taken = Math.floor(landed / MPL) * MPL;
         // What Collect takes: its whole rows, and the start of the next row when a line ends partway along one.
         let full = Math.floor(taken / cols), part = taken % cols;
         if (full >= this.rows) { full = this.rows; part = 0; }
-        if (landed >= 4) {
+        if (landed >= MPL) {
           ctx.lineWidth = 1; ctx.strokeStyle = S.washLine; ctx.fillStyle = S.wash;
           if (!part) {
             const wt = full > 0 ? bb - full * bc : bb - 2 / this.dpr;

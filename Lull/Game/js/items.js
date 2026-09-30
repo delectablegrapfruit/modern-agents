@@ -8,23 +8,26 @@
 
   // ---- the chain multiplier -----------------------------------------------------------------------------------------
   //
-  // The streak is the run of back-to-back quads and T-spins (this one included). It alone sets the multiplier: in
-  // Free Play an eighth per link (so it only starts to pay past eight in a row), ×2.5 at most, reached at twenty; in
-  // Classic a half per link, ×10 at most at twenty, on the lines Classic banks (never its score). The chain — the
-  // number to be proud of — counts the streak and the combo together, and is shown beside the multiplier. Lines an
-  // item clears are plain (js/engine.js, score): they never add a link. A Safety Net keeps the streak through one
-  // ordinary clear, once.
+  // The streak is the run of back-to-back quads and T-spins (this one included). It alone sets the multiplier: an extra
+  // ×0.05 for each link after the first, to the hundredth. In Free Play ×1.05 at two in a row, ×1.5 at eleven and ×2 at
+  // most, reached at twenty-one; in Classic the same steps, ×1.5 at most (eleven), on the lines Classic banks (seven
+  // tenths of a line a line, CLASSIC.rate; never its score). The chain — the number to be proud of — counts the streak
+  // and the combo together, and is shown beside the multiplier. Lines an item clears are plain (js/engine.js, score):
+  // they never add a link. A Safety Net keeps the streak through one ordinary clear, once.
 
   const Chain = {
-    RELAXED: { step: 1 / 8, cap: 2.5 },
-    CLASSIC: { step: 0.5, cap: 10 },
-    /** The multiplier a streak of n earns. */
-    mult(n, mode) { const c = mode === 'classic' ? Chain.CLASSIC : Chain.RELAXED; return Math.min(c.cap, Math.max(1, (n || 0) * c.step)); },
+    RELAXED: { step: 0.05, cap: 2 },
+    CLASSIC: { step: 0.05, cap: 1.5, rate: 0.7 },
+    /** The multiplier a streak of n earns: ×1 for none or one, then `step` a link, to the hundredth, never over `cap`. */
+    mult(n, mode) {
+      const c = mode === 'classic' ? Chain.CLASSIC : Chain.RELAXED;
+      return Math.min(c.cap, Math.round((1 + Math.max(0, (n || 0) - 1) * c.step) * 100) / 100);
+    },
     /** The streak after a lock (the engine's back-to-back count already includes it). */
     streak(g) { return g.s.b2b >= 0 ? g.s.b2b + 1 : 0; },
     /** The chain count: the streak plus the combo. */
     count(g) { return Chain.streak(g) + Math.max(0, g.s.combo); },
-    /** "×1.75", "×2", "×1.125". */
+    /** "×1.65", "×2", "×1.05". */
     fmt(m) { return '×' + String(Math.round(m * 1000) / 1000); },
   };
 
@@ -90,29 +93,36 @@
 
   // ---- luck -------------------------------------------------------------------------------------------------------------
   //
-  // Golden Piece: gold for your next five clears, each paying ×3 (on top of the chain and any boost); unused gold waits
-  // on the board, so it is never wasted on a piece that clears nothing.
-  // Double or Nothing: the next clear pays double if it is a quad or a T-spin, and nothing at all if it is anything
-  // less. It waits for a clear, too.
+  // Golden Piece: gold for your next five clears, each paying ×2 (on top of the chain and any boost); unused gold waits
+  // on the board, so it is never wasted on a piece that clears nothing. It adds five clears' pay once over: 50 for its
+  // 50 on quads at a full streak, so at best it breaks even.
+  // Double or Nothing: the next clear pays double if it is a difficult clear (a quad set by hand, a T-spin or a mini),
+  // and nothing at all if it is anything less. A shaped piece's quad (a Noodle, a Giant, a Blueprint) is not difficult.
+  // It waits for a clear, too.
   // Safety Net: see the chain above. None of the three touches the pieces or the board, so none puts power-ups on the
   // board for the achievements.
 
+  // The pieces a power-up made (their item id, `tag`: js/modes.js, become): a quad with one is no feat.
+  const SHAPED = new Set(['noodle', 'giant', 'blueprint']);
+  /** A difficult clear: a quad or better set by a hand-played piece (not a shaped one), a T-spin or a mini. */
+  const difficult = (r) => (((r.lines || 0) - (r.plain || 0)) >= 4 && !SHAPED.has(r.tag)) || !!r.tspin || !!r.mini;
+
   const Luck = {
-    GOLD_CLEARS: 5, GOLD_X: 3, DOUBLE_X: 2,
+    GOLD_CLEARS: 5, GOLD_X: 2, DOUBLE_X: 2, SHAPED,
     /** What gold adds over its clears, if they would have paid `pay` each. */
     goldValue(pay) { return Luck.GOLD_CLEARS * pay * (Luck.GOLD_X - 1); },
-    /** Does a clear win a Double or Nothing? A quad or better, or a T-spin, set by the piece itself. */
-    doubleWins(r) { return ((r.lines || 0) - (r.plain || 0)) >= 4 || !!r.tspin; },
+    /** Does a clear win a Double or Nothing? A difficult clear: the same one that earns the extra line (Pay.clear). */
+    doubleWins(r) { return difficult(r); },
   };
 
   // ---- what a clear pays in Free Play ----------------------------------------------------------------------------------
   //
   // Measured in Standard lines (Library.scale: a line w wide is w/10 of one), and so is everything that pays by the
-  // clear: no size earns faster per piece than Standard. The streak's links count by width too (a narrow board makes
-  // difficult clears more often, each clearing fewer cells), never more than one a clear; the difficult-clear bonus is
-  // at most one Standard line (a wide board's T-spin is still one T); gold and a boost last for Standard clears (a
-  // Golden Piece is five Standard-width clears: two and a half 20 wide, twelve and a half 4 wide), the last one paying
-  // its share; and a won Double or Nothing doubles at most one Standard clear's worth.
+  // clear: for the same play no size earns faster per piece than Standard. The streak's links count by width too (a
+  // narrow board makes difficult clears more often, each clearing fewer cells), never more than one a clear; the
+  // difficult-clear bonus is at most one Standard line (a wide board's T-spin is still one T); gold and a boost last
+  // for Standard clears (a Golden Piece is five Standard-width clears: two and a half 20 wide, twelve and a half 4
+  // wide), the last one paying its share; and a won Double or Nothing doubles at most one Standard clear's worth.
 
   const Pay = {
     /** The chain multiplier after a lock on a board w wide. */
@@ -126,8 +136,7 @@
      */
     clear(s, r, w) {
       const lk = L.Library.scale(w), out = {};
-      const own = (r.lines || 0) - (r.plain || 0), difficult = own >= 4 || !!r.tspin || !!r.mini;
-      let pay = ((r.lines || 0) * lk + (difficult ? Math.min(1, lk) : 0)) * (s.mult || 1);
+      let pay = ((r.lines || 0) * lk + (difficult(r) ? Math.min(1, lk) : 0)) * (s.mult || 1);
       /** One clear's use of something that lasts `left` Standard clears: the share of this clear it covers. */
       const use = (left) => ({ share: Math.min(1, left / lk), left: Math.max(0, Math.round((left - lk) * 1000) / 1000) });
       if (s.gold > 0) {
@@ -203,13 +212,13 @@
 
   // ---- earned in play ---------------------------------------------------------------------------------------------------
   //
-  // Beside the gift, play brings a few: one power-up for every hundred lines cleared on a board, and one the first time
-  // each combo is ever found (drawn from the power-ups alone; an Undo comes as its pack). The board's count is kept in
-  // the save, outside the board (so an Undo and a replayed clear never pay twice), and starts from the lines a board
-  // already has when it is first seen.
+  // Beside the gift, play brings a few: one power-up for every two hundred lines cleared on a board (Standard lines),
+  // and one the first time each combo is ever found (drawn from the power-ups alone; an Undo comes as its pack). The
+  // board's count is kept in the save, outside the board (so an Undo and a replayed clear never pay twice), and starts
+  // from the lines a board already has when it is first seen.
 
   const Earn = {
-    EVERY: 100,
+    EVERY: 200,
     /**
      * Milestones reached by a lock: e = the save's record { board, paid }, id = the board (its start time), lines = its
      * lines now, before = its lines before this lock. Updates e; returns how many power-ups are due (0 or 1, in play).

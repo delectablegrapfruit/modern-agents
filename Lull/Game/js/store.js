@@ -28,12 +28,12 @@
     reroll:    { group: 'shape', name: 'Reroll', icon: '⟳', price: 15, rarity: 'common', desc: 'Swap the piece in play for a different one.' },
     mirror:    { group: 'shape', name: 'Mirror', icon: '⇋', price: 15, rarity: 'common', desc: 'Flip the piece in play: J and L, S and Z swap.' },
     pebble:    { group: 'shape', name: 'Pebble', icon: '●', price: 20, rarity: 'common', desc: 'The piece in play becomes a single block.' },
-    noodle:    { group: 'shape', name: 'Noodle', icon: '∿', price: 25, rarity: 'uncommon', desc: 'The piece becomes a six-long rod.' },
+    noodle:    { group: 'shape', name: 'Noodle', icon: '∿', price: 30, rarity: 'uncommon', desc: 'The piece becomes a six-long rod.' },
     giant:     { group: 'shape', name: 'Giant', icon: '▣', price: 30, rarity: 'uncommon', desc: 'The piece grows to twice its size.' },
     blueprint: { group: 'shape', name: 'Blueprint', icon: '▦', price: 100, rarity: 'rare', desc: 'Draw your own piece, up to six connected blocks.' },
     pick:      { group: 'choice', name: 'Pick of Three', icon: '⁝', price: 20, rarity: 'common', desc: 'Play one of the next three pieces now; this one takes its place in line.' },
     fit:       { group: 'choice', name: 'Best Fit', icon: '✧', price: 45, rarity: 'uncommon', desc: 'The piece becomes the one that fits the stack best, right over its spot.' },
-    order:     { group: 'choice', name: 'Order Slip', icon: '✎', price: 35, rarity: 'rare', desc: 'Choose the piece in play.' },
+    order:     { group: 'choice', name: 'Order Slip', icon: '✎', price: 55, rarity: 'rare', desc: 'Choose the piece in play.' },
     patch:     { group: 'tool', name: 'Patch', icon: '⊡', price: 20, rarity: 'common', desc: 'One block that drops into the highest covered hole in its column.' },
     phase:     { group: 'tool', name: 'Ghost', icon: '⬚', price: 50, rarity: 'uncommon', desc: 'The piece passes through blocks into the first gap below where it fits.' },
     drill:     { group: 'tool', name: 'Drill', icon: '⇣', price: 40, rarity: 'uncommon', desc: 'A bit that bores out its whole column.' },
@@ -45,9 +45,9 @@
     trapdoor:  { group: 'board', name: 'Trapdoor', icon: '⤓', price: 40, rarity: 'uncommon', desc: 'The bottom row falls away, whatever it holds.' },
     tornado:   { group: 'board', name: 'Tornado', icon: '◌', price: 60, rarity: 'rare', desc: 'Shuffles the columns, holes and all.' },
     settle:    { group: 'board', name: 'Settle', icon: '⤋', price: 70, rarity: 'rare', desc: 'Every block falls straight down, closing every hole. Full rows clear.' },
-    golden:    { group: 'luck', name: 'Golden Piece', icon: '✦', price: 35, rarity: 'uncommon', desc: 'Your next five clears pay triple.' },
-    double:    { group: 'luck', name: 'Double or Nothing', icon: '◐', price: 30, rarity: 'uncommon', desc: 'Your next clear pays double if it is a quad or a T-spin, and nothing if it is less.' },
-    net:       { group: 'luck', name: 'Safety Net', icon: '⊔', price: 60, rarity: 'rare', desc: 'Keeps your back-to-back streak through one ordinary clear.' },
+    golden:    { group: 'luck', name: 'Golden Piece', icon: '✦', price: 50, rarity: 'uncommon', desc: 'Your next five clears pay double.' },
+    double:    { group: 'luck', name: 'Double or Nothing', icon: '◐', price: 30, rarity: 'uncommon', desc: 'Next clear: double if a quad set by hand (not a Noodle, Giant or Blueprint), a T-spin or a mini; else nothing.' },
+    net:       { group: 'luck', name: 'Safety Net', icon: '⊔', price: 105, rarity: 'rare', desc: 'Keeps your back-to-back streak through one ordinary clear.' },
   };
   const ITEM_ORDER = ITEM_GROUPS.flatMap((g) => Object.keys(ITEMS).filter((id) => ITEMS[id].group === g.id));
   /** How many one free grant of a power-up gives (the gift, play): its pack, or one. */
@@ -56,9 +56,9 @@
   const itemCount = (id, n) => { const it = ITEMS[id]; return n > 1 ? n + ' ' + (it.plural || it.name + 's') : it.name; };
 
   // Freebies: things the daily gift can hold beside power-ups, kept apart from the item bar (state.freebies[key]).
-  // A free hint is a puzzle hint at no cost; it still halves the reward.
+  // A free hint is a puzzle hint at no cost; it still halves the pay.
   const FREEBIES = {
-    'free-hint': { key: 'hint', name: 'Hint', icon: 'hint', rarity: 'uncommon', desc: 'One puzzle hint at no cost. Still halves the reward.' },
+    'free-hint': { key: 'hint', name: 'Hint', icon: 'hint', rarity: 'uncommon', desc: 'One puzzle hint at no cost. Still halves the pay.' },
   };
 
   // Colour slots: 1 I, 2 O, 3 T, 4 S, 5 Z, 6 J, 7 L, 8 garbage, 9–14 other shapes, 15 custom. Every palette keeps the
@@ -66,72 +66,72 @@
   // theme deepens any colour too pale for its paper well (render.js, forWell).
   const PALETTES = {
     classic:  { name: 'Classic', price: 0, colors: ['#000', '#4fd1e3', '#f7d154', '#b57ee6', '#6fd08c', '#f07178', '#5c9df2', '#f9a14e', '#6b7280', '#f06292', '#aed581', '#4db6ac', '#9575cd', '#ff8a65', '#90a4ae', '#b8c4d6'] },
-    mist:     { name: 'Mist', price: 300, colors: ['#000', '#98d1dc', '#e9dcaa', '#b9a6dc', '#a3d0b0', '#e0a2ad', '#98b0de', '#e8bd98', '#68707e', '#d6b3c9', '#c3d6ae', '#a6d1c9', '#b5aee0', '#e3b8a6', '#aab3bf', '#eef1f5'] },
-    sunset:   { name: 'Sunset', price: 450, colors: ['#000', '#ffb385', '#ffd66e', '#d9679d', '#f5946b', '#e8505b', '#9b6ad6', '#f7c087', '#5c4a6e', '#ff9aa2', '#ffcf99', '#c86b98', '#8f5fa8', '#ff7b54', '#b38fa8', '#fff2e0'] },
-    aurora:   { name: 'Aurora', price: 600, colors: ['#000', '#56e0c6', '#c9ee78', '#9d7cf4', '#44c98f', '#e66fb2', '#5a96f0', '#f2b766', '#3c4660', '#c285f0', '#86e3b8', '#58c9e0', '#7d86f2', '#ef8fa0', '#8e9cc0', '#e9f6ff'] },
-    ink:      { name: 'Ink', price: 750, colors: ['#000', '#f2f2f0', '#c9c9c6', '#8e8e8b', '#adadaa', '#6f6f6c', '#dcdcd9', '#b9b9b6', '#4b4b4b', '#c2c2c2', '#a9a9a9', '#909090', '#777777', '#5f5f5f', '#b0b0b0', '#ffffff'] },
-    handheld: { name: 'Handheld', price: 900, colors: ['#000', '#9bbc0f', '#c4d66a', '#306230', '#8bac0f', '#4d7a2a', '#1e4a1e', '#b0c94a', '#0f380f', '#8bac0f', '#306230', '#9bbc0f', '#306230', '#8bac0f', '#0f380f', '#cadc9f'] },
+    mist:     { name: 'Mist', price: 400, colors: ['#000', '#98d1dc', '#e9dcaa', '#b9a6dc', '#a3d0b0', '#e0a2ad', '#98b0de', '#e8bd98', '#68707e', '#d6b3c9', '#c3d6ae', '#a6d1c9', '#b5aee0', '#e3b8a6', '#aab3bf', '#eef1f5'] },
+    sunset:   { name: 'Sunset', price: 600, colors: ['#000', '#ffb385', '#ffd66e', '#d9679d', '#f5946b', '#e8505b', '#9b6ad6', '#f7c087', '#5c4a6e', '#ff9aa2', '#ffcf99', '#c86b98', '#8f5fa8', '#ff7b54', '#b38fa8', '#fff2e0'] },
+    aurora:   { name: 'Aurora', price: 850, colors: ['#000', '#56e0c6', '#c9ee78', '#9d7cf4', '#44c98f', '#e66fb2', '#5a96f0', '#f2b766', '#3c4660', '#c285f0', '#86e3b8', '#58c9e0', '#7d86f2', '#ef8fa0', '#8e9cc0', '#e9f6ff'] },
+    ink:      { name: 'Ink', price: 1100, colors: ['#000', '#f2f2f0', '#c9c9c6', '#8e8e8b', '#adadaa', '#6f6f6c', '#dcdcd9', '#b9b9b6', '#4b4b4b', '#c2c2c2', '#a9a9a9', '#909090', '#777777', '#5f5f5f', '#b0b0b0', '#ffffff'] },
+    handheld: { name: 'Handheld', price: 1400, colors: ['#000', '#9bbc0f', '#c4d66a', '#306230', '#8bac0f', '#4d7a2a', '#1e4a1e', '#b0c94a', '#0f380f', '#8bac0f', '#306230', '#9bbc0f', '#306230', '#8bac0f', '#0f380f', '#cadc9f'] },
     assembly: { name: 'Assembly Line', price: 0, reward: 'Build a second press in the factory', colors: ['#000', '#f2c14e', '#f78154', '#4d9078', '#b4436c', '#5fad56', '#2e86ab', '#f2a541', '#3d4451', '#e0a458', '#8bb174', '#5b8e7d', '#a1869e', '#d1495b', '#8d99ae', '#edf2f4'] },
-    gold:     { name: 'Gold Leaf', price: 2000, colors: ['#000', '#f9e79f', '#f4d03f', '#c99a2e', '#efd27a', '#a8801c', '#e2b650', '#fcecc0', '#5a4a1f', '#f5cba7', '#e59866', '#dc7633', '#f0b27a', '#ca6f1e', '#b9a37a', '#fffaf0'] },
-    prism:    { name: 'Prism', price: 3500, animated: true, colors: null },
+    gold:     { name: 'Gold Leaf', price: 2800, colors: ['#000', '#f9e79f', '#f4d03f', '#c99a2e', '#efd27a', '#a8801c', '#e2b650', '#fcecc0', '#5a4a1f', '#f5cba7', '#e59866', '#dc7633', '#f0b27a', '#ca6f1e', '#b9a37a', '#fffaf0'] },
+    prism:    { name: 'Prism', price: 5000, animated: true, colors: null },
   };
 
   const SKINS = {
     flat:    { name: 'Flat', price: 0 },
-    bevel:   { name: 'Bevel', price: 300 },
-    pixel:   { name: 'Pixel', price: 450 },
-    bubble:  { name: 'Bubble', price: 600 },
-    glass:   { name: 'Glass', price: 750 },
-    jelly:   { name: 'Jelly', price: 900 },
-    neon:    { name: 'Neon Tube', price: 1100 },
-    gem:     { name: 'Gem', price: 1400 },
-    lantern: { name: 'Lantern', price: 1800 },
+    bevel:   { name: 'Bevel', price: 350 },
+    pixel:   { name: 'Pixel', price: 550 },
+    bubble:  { name: 'Bubble', price: 750 },
+    glass:   { name: 'Glass', price: 1000 },
+    jelly:   { name: 'Jelly', price: 1250 },
+    neon:    { name: 'Neon Tube', price: 1600 },
+    gem:     { name: 'Gem', price: 2100 },
+    lantern: { name: 'Lantern', price: 2800 },
     steel:   { name: 'Steel', price: 0, reward: 'Build all four factory presses' },
   };
 
   const FRAMES = {
     hairline: { name: 'Hairline', price: 0 },
-    double:   { name: 'Inlay', price: 250 },
-    glow:     { name: 'Glow', price: 500 },
-    brass:    { name: 'Brass', price: 900 },
-    rainbow:  { name: 'Rainbow', price: 1400, animated: true },
+    double:   { name: 'Inlay', price: 300 },
+    glow:     { name: 'Glow', price: 650 },
+    brass:    { name: 'Brass', price: 1200 },
+    rainbow:  { name: 'Rainbow', price: 2500, animated: true },
     hazard:   { name: 'Hazard Tape', price: 0, reward: 'Build a third press in the factory' },
   };
 
   const BACKDROPS = {
     none:      { name: 'Plain', price: 0 },
     grid:      { name: 'Grid', price: 0 },
-    blueprint: { name: 'Blueprint', price: 300 },
-    dusk:      { name: 'Dusk', price: 500 },
-    aurora:    { name: 'Aurora', price: 700 },
-    stars:     { name: 'Starfield', price: 900 },
+    blueprint: { name: 'Blueprint', price: 350 },
+    dusk:      { name: 'Dusk', price: 700 },
+    aurora:    { name: 'Aurora', price: 1200 },
+    stars:     { name: 'Starfield', price: 1700 },
     belt:      { name: 'Conveyor', price: 0, reward: 'Collect 500 lines from the factory' },
   };
 
   const EFFECTS = {
     fade:     { name: 'Fade', price: 0 },
-    sparkle:  { name: 'Sparkle', price: 400 },
-    ripple:   { name: 'Ripple', price: 600 },
-    bloom:    { name: 'Bloom', price: 800 },
+    sparkle:  { name: 'Sparkle', price: 450 },
+    ripple:   { name: 'Ripple', price: 850 },
+    bloom:    { name: 'Bloom', price: 1300 },
     sparks:   { name: 'Welding Sparks', price: 0, reward: 'Build the biggest factory crate' },
   };
 
   const GHOSTS = {
     outline: { name: 'Outline', price: 0 },
-    soft:    { name: 'Soft', price: 100 },
-    dotted:  { name: 'Dotted', price: 150 },
-    glow:    { name: 'Glow', price: 250 },
+    soft:    { name: 'Soft', price: 200 },
+    dotted:  { name: 'Dotted', price: 300 },
+    glow:    { name: 'Glow', price: 450 },
     off:     { name: 'Off', price: 0 },
   };
 
   // Sound packs (the synth voices live in audio.js).
   const SOUNDS = {
     soft:    { name: 'Drift', price: 0 },
-    chip:    { name: 'Chiptune', price: 350 },
-    marimba: { name: 'Marimba', price: 500 },
-    synth:   { name: 'Analog Synth', price: 650 },
-    glass:   { name: 'Glass', price: 800 },
-    chimes:  { name: 'Wind Chimes', price: 1000 },
+    chip:    { name: 'Chiptune', price: 450 },
+    marimba: { name: 'Marimba', price: 650 },
+    synth:   { name: 'Analog Synth', price: 900 },
+    glass:   { name: 'Glass', price: 1200 },
+    chimes:  { name: 'Wind Chimes', price: 1600 },
   };
 
   const COSMETICS = { palette: PALETTES, skin: SKINS, frame: FRAMES, backdrop: BACKDROPS, effect: EFFECTS, ghost: GHOSTS, sound: SOUNDS };
@@ -173,7 +173,8 @@
       combos: {}, // Free Play combos found: id → { n: times, lines: paid, first: when }
       gift: { at: null, n: 0, log: [] }, // the daily gift: when it was last opened (ms), how many, the last few
       earn: { board: null, paid: 0 }, // power-ups earned by lines on one board (js/items.js, Earn): which board, how many paid
-      puzzle: { diff: 'E', next: { E: 1, M: 1, H: 1 }, current: null, solved: {}, history: [], saved: [] },
+      // tries: seeds started on and not yet solved → { n: tries that set a piece, hint, undos } (what solving pays).
+      puzzle: { diff: 'E', next: { E: 1, M: 1, H: 1 }, current: null, solved: {}, tries: {}, history: [], saved: [] },
       factory: Factory.create(),
       stats: {
         sessions: 0, days: 0, timeMs: { play: 0, classic: 0, puzzle: 0, factory: 0, total: 0 },
@@ -201,10 +202,26 @@
     return out;
   }
 
+  const TRIES_MAX = 3000; // seeds whose tries are kept (the oldest goes first), as for solved seeds
+
+  /** The puzzle tries kept with each seed (what solving it pays), made safe: whole counts, true or false. */
+  function repairTries(t) {
+    const out = {};
+    if (!t || typeof t !== 'object' || Array.isArray(t)) return out;
+    const int = (v) => (Number.isFinite(v) ? Math.max(0, Math.round(v)) : 0);
+    for (const k of Object.keys(t).slice(-TRIES_MAX)) {
+      const e = t[k];
+      if (!e || typeof e !== 'object' || Array.isArray(e)) continue;
+      out[k] = { n: int(e.n), hint: e.hint === true, undos: int(e.undos) };
+    }
+    return out;
+  }
+
   /** A parsed save made whole: the defaults filled in, and the factory checked (js/factory.js, repair). */
   function loadState(saved) {
     const st = merge(defaults(), saved);
     st.factory = Factory.repair(st.factory);
+    if (st.puzzle && typeof st.puzzle === 'object') st.puzzle.tries = repairTries(st.puzzle.tries);
     st.v = SAVE_VERSION;
     return st;
   }
@@ -448,5 +465,5 @@
   }
 
   L.Store = Store;
-  Object.assign(L, { SOUNDS, loadState, ITEMS, ITEM_ORDER, FREEBIES, packOf, itemCount, ITEM_GROUPS, PALETTES, SKINS, FRAMES, BACKDROPS, EFFECTS, GHOSTS, COSMETICS, COSMETIC_LABELS, ACCENTS, SAVE_VERSION, defaultState: defaults, mergeState: merge });
+  Object.assign(L, { SOUNDS, loadState, repairTries, TRIES_MAX, ITEMS, ITEM_ORDER, FREEBIES, packOf, itemCount, ITEM_GROUPS, PALETTES, SKINS, FRAMES, BACKDROPS, EFFECTS, GHOSTS, COSMETICS, COSMETIC_LABELS, ACCENTS, SAVE_VERSION, defaultState: defaults, mergeState: merge });
 })(typeof globalThis !== 'undefined' ? globalThis : this);

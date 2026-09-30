@@ -660,7 +660,7 @@
         kpi(fmtInt(S.sessions), 'Sessions'),
         kpi(fmtInt(S.days || 0), 'Days played')));
       els.push(h('h4', null, 'Lines earned · 14 days'), historyChart(app, 'lines', 14));
-      els.push(h('h4', null, 'Lines by source'), hbars([['Free Play', S.lines.play], ['Combos', S.lines.combos || 0], ['Puzzles', S.lines.puzzles], ['Factory', S.lines.factory], ['Achievements', S.lines.achievements || 0]].concat(S.lines.luck ? [['Jackpot', S.lines.luck]] : [])));
+      els.push(h('h4', null, 'Lines by source'), hbars([['Free Play', S.lines.play], ['Combos', S.lines.combos || 0], ['Puzzles', S.lines.puzzles], ['Factory', S.lines.factory], ['Achievements', S.lines.achievements || 0]]));
       els.push(h('h4', null, 'Time by mode'), table([
         ['Free Play', fmtDuration(S.timeMs.play)], ['Classic', fmtDuration(S.timeMs.classic || 0)], ['Puzzles', fmtDuration(S.timeMs.puzzle)], ['Factory', fmtDuration(S.timeMs.factory)],
       ]));

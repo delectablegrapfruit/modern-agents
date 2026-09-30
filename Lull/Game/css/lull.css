@@ -532,6 +532,18 @@ kbd {
 .puz-title .done { flex: none; display: grid; place-items: center; width: 17px; height: 17px; border-radius: 50%; color: var(--good); background: color-mix(in srgb, var(--good) 16%, transparent); }
 .puz-title .done svg { width: 11px; height: 11px; }
 .puz-id { height: 16px; color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* What solving pays now, at the end of the info line (its tooltip says why); the piece count goes first when narrow,
+   and where the puzzle comes from gives way (an ellipsis) before the pay is ever cut. */
+.puz-id { display: flex; min-width: 0; }
+.puz-id .pz-where { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.puz-id .pz-count, .puz-id .pz-pays { flex: none; white-space: pre; }
+.puz-id .pz-pays .gem { color: var(--gem); font-weight: 650; font-variant-numeric: tabular-nums; }
+/* Whole parts give way before any character is cut (PuzzleMode.fitId): the piece count, the weekday, the difficulty,
+   a Daily's date; an ellipsis only after all of them. */
+.puz-id .pz-where .short { display: none; }
+.puz-id.no-count .pz-count, .puz-id.no-day .pz-where .long, .puz-id.no-diff .pz-where .diff, .puz-id.no-date .pz-where .date { display: none; }
+.puz-id.no-day .pz-where .short { display: inline; }
+@media (max-width: 440px) { .puz-id .pz-count { display: none; } }
 .puz-seed {
   flex: none; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 9px 0 11px;
   border: 1px solid var(--line); background: var(--well); border-radius: var(--r-pill);
@@ -605,6 +617,8 @@ kbd {
 .puz-result .bs .gem { color: var(--gem); font-size: var(--fs-xs); }
 .puz-result .btn .gem { font-weight: 600; font-size: var(--fs-xs); }
 .puz-result .bs .l { white-space: normal; }
+/* How the pay was made: "Hard 18 · try 2 → 14 · Daily ×2 → 28", only the steps that apply. */
+#puz-overlay .puz-result .pz-pay-steps { margin: 6px 0 0; color: var(--muted); font-size: var(--fs-2xs); line-height: 1.35; text-align: center; font-variant-numeric: tabular-nums; max-width: 300px; margin-left: auto; margin-right: auto; }
 
 /* A wide window keeps the tab a calm column: the bars and the card line up with the board instead of the edges. */
 @media (min-width: 720px) {
@@ -634,6 +648,8 @@ kbd {
   .puz-result .ring { width: 28px; height: 28px; margin-bottom: 4px; }
   .puz-result .ring svg { width: 16px; height: 16px; }
   .puz-result.solved .ring { display: none; }
+  .puz-result .board-sum { margin-top: 4px; }
+  #puz-overlay .puz-result .pz-pay-steps { margin: 2px auto 0; line-height: 1.2; }
 }
 @media (max-height: 520px) {
   .puz-bar { height: 38px; }

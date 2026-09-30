@@ -14,11 +14,15 @@
   const GEM_ATTEMPTS = 160, GEM_BOARDS = 30, GEM_BUDGET = 6000;
   const GEM_TRIES = 3; // gem layouts tried per board
   const GEM_SPARE = { E: 99, M: 4, H: 3 }; // most cells a gem layout may leave a shortcut to spare (see gemLayouts)
+  // What solving pays (the first time a seed is solved): `reward` on the first try that sets a piece, falling by
+  // PAY.DECAY for each later one (rounded), never under `min`. A clean solve (the first try, no Undo, no hint) pays
+  // ×CLEAN; the Daily doubles that; a hint halves the lot (rounded up). See pay() below.
   const DIFFS = {
-    E: { id: 'E', name: 'Easy', reward: 4, color: '#7bd88f' },
-    M: { id: 'M', name: 'Medium', reward: 10, color: '#f6c177' },
-    H: { id: 'H', name: 'Hard', reward: 24, color: '#eb6f92' },
+    E: { id: 'E', name: 'Easy', reward: 3, min: 1, color: '#7bd88f' },
+    M: { id: 'M', name: 'Medium', reward: 7, min: 3, color: '#f6c177' },
+    H: { id: 'H', name: 'Hard', reward: 18, min: 6, color: '#eb6f92' },
   };
+  const PAY = Object.freeze({ DECAY: 0.8, CLEAN: 1.5, DAILY: 2 });
 
   // Wildcards. w = weight per difficulty (0 = never), x = incompatible with.
   const MODS = {
@@ -917,5 +921,53 @@
     return MODS[m].desc;
   }
 
-  L.Puzzles = { DIFFS, MODS, GOALS, generate, firstMods, modDesc, verify, reach, goalStates, goalMet, parseSeed, numberedSeed, dailySeed, dailyDateOf, randomSeed, goalText, GEN_VERSION, SEEDS_PER_DIFF, restingStates, solvableInOrder, winsEarly, primaryTurn };
+  // ---- what solving pays ------------------------------------------------------------------------------------------
+
+  /**
+   * What solving a puzzle of difficulty d pays, step by step. o = { try, undos, hint, daily }: try is the try it is
+   * solved on (1 = the first; only a try that set a piece counts), undos the Undos used on it, hint whether a hint was
+   * shown. Each step is kept, for the solved card: byTries (the difficulty's pay less for the tries, never under its
+   * min), afterClean (×1.5 on a clean first try), afterDaily (×2), pay (halved, rounded up, with a hint).
+   */
+  function pay(d, o) {
+    o = o || {};
+    const D = DIFFS[d], t = Math.max(1, o.try | 0);
+    const byTries = Math.max(D.min, Math.round(D.reward * Math.pow(PAY.DECAY, t - 1)));
+    const clean = t === 1 && !o.undos && !o.hint;
+    const c = clean ? Math.round(byTries * PAY.CLEAN) : byTries;
+    const dd = o.daily ? c * PAY.DAILY : c;
+    const total = o.hint ? Math.ceil(dd / 2) : dd;
+    return { base: D.reward, try: t, byTries, clean, afterClean: c, daily: !!o.daily, afterDaily: dd, hint: !!o.hint, undos: o.undos | 0, pay: total, floor: byTries === D.min && t > 1 };
+  }
+
+  /** A hint's price on try t: half of what the puzzle pays there (rounded up), so a hinted solve nets nothing (a Daily aside). */
+  function hintCost(d, t) { return Math.ceil(pay(d, { try: t, hint: false }).byTries / 2); }
+
+  /**
+   * How a pay was made (pay's steps), only those that apply, for the solved card: "Hard 18 · try 2 → 14 · Daily ×2 →
+   * 28". A first try that is not clean says why when nothing else does ("Undo: no ×1.5"); a hint has its own step.
+   */
+  function paySteps(d, r) {
+    const out = [DIFFS[d].name + ' ' + r.base];
+    if (r.try > 1) out.push('try ' + r.try + ' → ' + r.byTries + (r.floor ? ' (floor)' : ''));
+    if (r.clean) out.push('clean ×' + PAY.CLEAN + ' → ' + r.afterClean);
+    else if (r.try === 1 && r.undos && !r.hint) out.push('Undo: no ×' + PAY.CLEAN);
+    if (r.daily) out.push('Daily ×' + PAY.DAILY + ' → ' + r.afterDaily);
+    if (r.hint) out.push('hint ½ → ' + r.pay);
+    return out.join(' · ');
+  }
+
+  // The Daily's ×2 is paid once per date and difficulty, whichever turn setting it was solved with (the clockwise seed
+  // and the both-ways one of a date are two puzzles, one Daily). ps.dailyPaid: { '2026-09-29': 'EH' }, the newest kept.
+  const DAILY_PAID_MAX = 400;
+  /** Is the Daily bonus still due for difficulty d on date key? */
+  function dailyDue(ps, key, d) { return !!key && !(((ps && ps.dailyPaid) || {})[key] || '').includes(d); }
+  /** Notes the Daily bonus paid for d on key. */
+  function noteDaily(ps, key, d) {
+    const P = ps.dailyPaid || (ps.dailyPaid = {});
+    if (!P[key]) { const keys = Object.keys(P).sort(); while (keys.length >= DAILY_PAID_MAX) delete P[keys.shift()]; }
+    if (!(P[key] || '').includes(d)) P[key] = (P[key] || '') + d;
+  }
+
+  L.Puzzles = { DIFFS, PAY, pay, hintCost, paySteps, dailyDue, noteDaily, MODS, GOALS, generate, firstMods, modDesc, verify, reach, goalStates, goalMet, parseSeed, numberedSeed, dailySeed, dailyDateOf, randomSeed, goalText, GEN_VERSION, SEEDS_PER_DIFF, restingStates, solvableInOrder, winsEarly, primaryTurn };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

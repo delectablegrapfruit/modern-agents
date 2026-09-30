@@ -89,7 +89,8 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     return c.height === c2.height && c.width === c2.width;
   });
   check('a combo (or a long score) never resizes the board', steady);
-  // The chain: back-to-back quads (streak) plus the combo; only the streak multiplies, an eighth a link, ×2.5 at most.
+  // The chain: back-to-back quads (streak) plus the combo; only the streak multiplies, ×0.05 a link after the first,
+  // ×2 at most (Chain.mult: the expected values are the game's own).
   const chain = await ev(() => {
     const m = Lull.app.modes.play, g = m.game, out = [];
     g.resetBoard();
@@ -105,11 +106,13 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     g.s.b2b = 12; out.push(quad());
     const status14 = document.getElementById('play-status').textContent;
     g.s.b2b = 30; out.push(quad());
-    return { out, status2, status14 };
+    const C = Lull.Chain, bank = Lull.Library.bank;
+    const want = [1, 2, 14, 32].map((n) => [bank(5 * C.mult(n)), C.mult(n)]);
+    return { out, status2, status14, want, fmt14: C.fmt(C.mult(14)), cap: C.RELAXED.cap };
   });
-  check('two quads pay 5 and 5 (a streak of 2 is under ×1), chain 3', chain.out[0][0] === 5 && chain.out[1][0] === 5 && chain.out[1][1] === 1 && chain.out[1][2] === 3 && /Chain 3 · ×1/.test(chain.status2), JSON.stringify(chain));
-  check('fourteen in a row pay ×1.75 (a quad: 8.75); the chain shows beside it', chain.out[2][0] === 8.75 && chain.out[2][1] === 1.75 && /Chain 16 · ×1\.75/.test(chain.status14), JSON.stringify(chain));
-  check('the multiplier stops at ×2.5 (a quad: 12.5)', chain.out[3][1] === 2.5 && chain.out[3][0] === 12.5, JSON.stringify(chain));
+  check('two quads pay 5 and 5.25 (×1.05 at a streak of 2), chain 3', chain.out[0][0] === chain.want[0][0] && chain.out[0][0] === 5 && chain.out[1][0] === chain.want[1][0] && chain.out[1][0] === 5.25 && chain.out[1][1] === chain.want[1][1] && chain.out[1][2] === 3 && /Chain 3 · ×1\.05/.test(chain.status2), JSON.stringify(chain));
+  check('fourteen in a row pay ×1.65 (a quad: 8.25); the chain shows beside it', chain.out[2][0] === chain.want[2][0] && chain.out[2][0] === 8.25 && chain.out[2][1] === 1.65 && new RegExp('Chain 16 · ' + chain.fmt14.replace('.', '\\.')).test(chain.status14) && /Chain 16 · ×1\.65/.test(chain.status14), JSON.stringify(chain));
+  check('the multiplier stops at ×2 (a quad: 10)', chain.out[3][1] === chain.cap && chain.out[3][0] === chain.want[3][0] && chain.out[3][0] === 10, JSON.stringify(chain));
   await page.waitForTimeout(150);
   await shot('10a-chain');
   // Retiring a board shows its whole life, and logs it.
@@ -222,14 +225,15 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   });
   await page.click('#itembar .group-btn[data-group="' + noodleGroup + '"]');
   const priced = await ev(() => { const b = document.querySelector('.item-tray [data-item="noodle"]'); return { n: b.querySelector('.n').textContent, empty: b.classList.contains('empty') }; });
-  check('one you have none of shows its price', priced.empty && priced.n === '⦵' + '25', JSON.stringify(priced));
+  const noodlePrice = await ev(() => Lull.ITEMS.noodle.price);
+  check('one you have none of shows its price', priced.empty && priced.n === '⦵' + noodlePrice && noodlePrice === 30, JSON.stringify(priced));
   await shot('11-tray-price');
   const wallet0 = await ev(() => Lull.app.store.state.lines);
   await page.click('.item-tray [data-item="noodle"]');
-  check('  it asks once: Buy & use, with the price', /Buy & use · 25/.test(await page.textContent('.modal footer')));
+  check('  it asks once: Buy & use, with the price', new RegExp('Buy & use · ' + noodlePrice).test(await page.textContent('.modal footer')));
   await page.click('.modal footer .btn.primary');
   await page.waitForTimeout(60);
-  check('  bought for its price and put straight to use', (await ev(() => Lull.app.store.state.lines)) === wallet0 - 25 && (await ev(() => Lull.app.store.state.inventory.noodle)) === 0);
+  check('  bought for its price and put straight to use', (await ev(() => Lull.app.store.state.lines)) === wallet0 - noodlePrice && (await ev(() => Lull.app.store.state.inventory.noodle)) === 0);
   const rod = () => ev(() => { const g = Lull.app.modes.play.game, p = g.piece; return { size: p.type.size, rot: p.rot, top: Math.max(...g.cellsOf().map((c) => c[1])), fits: g.fitsAt(p, p.rot, p.x, p.y) }; });
   const n0 = await rod();
   check('Noodle: bought and in play, a six-long rod in the top row', n0.size === 6 && n0.rot === 0 && n0.top === 19, JSON.stringify(n0));
@@ -385,9 +389,9 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     g.replacePiece({ id: 'I' }); g.rotate(1); while (g.move(-1));
     let r = null; g.on('lock', (x) => { r = r || x; });
     m.action('drop');
-    return { waited, left: g.s.gold, banked: r.banked, status: document.getElementById('play-status').textContent };
+    return { waited, left: g.s.gold, banked: r.banked, want: 5 * Lull.Luck.GOLD_X, status: document.getElementById('play-status').textContent };
   });
-  check('gold waits through a piece that clears nothing, then a quad pays ×3 (15) and leaves four', gold.waited === 5 && gold.left === 4 && gold.banked === 15 && /Gold 4/.test(gold.status), JSON.stringify(gold));
+  check('gold waits through a piece that clears nothing, then a quad pays ×2 (10) and leaves four', gold.waited === 5 && gold.left === 4 && gold.banked === gold.want && gold.want === 10 && /Gold 4/.test(gold.status), JSON.stringify(gold));
   await page.waitForTimeout(100);
   await shot('16c-gold');
   // Double or Nothing: a single loses (pays nothing); a quad wins (pays double) and is All In.
@@ -473,7 +477,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   const cardsF = await ev(() => [...document.querySelectorAll('.modal-gift .gift-card')].map((c) => ({ id: c.dataset.gift, name: c.querySelector('b').textContent, rarity: c.className.replace('gift-card ', ''), small: c.querySelector('small') ? c.querySelector('small').textContent : null, tip: c.dataset.tip, tipTitle: c.dataset.tipTitle, icon: c.querySelector('.gi').innerHTML })));
   const icons = await ev(() => { const as = (k) => { const d = document.createElement('span'); d.innerHTML = Lull.Icons.icon(k); return d.innerHTML; }; return { hint: as('hint'), undo: as('undo') }; });
   const [cH, cU, cB] = cardsF;
-  check('the gift\'s free hint card: the hint icon, named Hint, uncommon, and what it does', cH && cH.id === 'free-hint' && cH.name === 'Hint' && cH.icon === icons.hint && /uncommon/.test(cH.rarity) && cH.small === 'uncommon' && cH.tip === 'One puzzle hint at no cost. Still halves the reward.', JSON.stringify(cH));
+  check('the gift\'s free hint card: the hint icon, named Hint, uncommon, and what it does', cH && cH.id === 'free-hint' && cH.name === 'Hint' && cH.icon === icons.hint && /uncommon/.test(cH.rarity) && cH.small === 'uncommon' && cH.tip === 'One puzzle hint at no cost. Still halves the pay.', JSON.stringify(cH));
   check('the Undo card says it is five, with the Undo icon', cU && cU.name === '5 Undos' && cU.tipTitle === '5 Undos' && cU.icon === icons.undo && cB && cB.name === 'Bomb', JSON.stringify(cardsF));
   check('the gift gave five Undos, a Bomb and a free hint', forced.after.undo === forced.before.undo + 5 && forced.after.bomb === forced.before.bomb + 1 && forced.after.hint === forced.before.hint + 1, JSON.stringify(forced));
   const giftFit = await ev(() => [...document.querySelectorAll('.modal-gift .gift-face')].every((f) => f.scrollHeight <= f.clientHeight + 1 && f.scrollWidth <= f.clientWidth + 1));
@@ -730,21 +734,26 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await ev(() => { const m = Lull.app.modes.classic; m.lines = 9; const g = m.game; for (let x = 1; x < 10; x++) g.board.set(x, 0, 8); g.replacePiece({ id: 'I' }); g.rotate(1); while (g.move(-1)); });
   await page.keyboard.press('Space');
   check('ten lines: level 2', await ev(() => Lull.app.modes.classic.level === 2));
-  // Back-to-back tetrises multiply the lines Classic banks (a half a link, ×10 at most), never its score.
+  // Back-to-back tetrises multiply the lines Classic banks (0.7 a line, ×0.05 a link, ×1.5 at most), never its score.
   const bank = await ev(() => {
     const m = Lull.app.modes.classic, g = m.game;
-    g.s.b2b = 5; // six before: this makes seven, ×3.5
+    g.s.b2b = 5; // six before: this makes seven, ×1.3
     for (let y = 0; y < 4; y++) for (let x = 1; x < 10; x++) g.board.set(x, y, 8);
     g.replacePiece({ id: 'I' }); g.rotate(1); while (g.move(-1));
     const s0 = m.score, lvl = m.level;
     let r = null; g.on('lock', (x) => { r = r || x; });
     g.drop();
-    const out = { banked: r.banked, mult: m.mult, points: m.score - s0, want: r.score * lvl + r.dropDist * 2, status: document.getElementById('classic-status').textContent };
+    const C = Lull.Chain, out = { banked: r.banked, mult: m.mult, points: m.score - s0, want: r.score * lvl + r.dropDist * 2, status: document.getElementById('classic-status').textContent,
+      wantMult: C.mult(7, 'classic'), wantBank: Lull.Library.bank(4 * C.CLASSIC.rate * C.mult(7, 'classic')), tip: (document.querySelector('#classic-status .chain, #classic-status [data-tip]') || {}).dataset };
     // Back as it was, so the checks further on see the game they expect.
     m.score = s0; m.lines -= 4; m.level = lvl; g.s.b2b = -1; m.mult = 1; m.renderStatus();
+    out.line = Lull.LINE; out.tip1 = [...document.querySelectorAll('#classic-status .stat')].map((x) => x.dataset.tip).find(Boolean);
     return out;
   });
-  check('Classic: seven tetrises in a row bank ×3.5 (14 lines), the score untouched', bank.banked === 14 && bank.mult === 3.5 && bank.points === bank.want && /Bank ×3\.5/.test(bank.status), JSON.stringify(bank));
+  check('Classic: seven tetrises in a row bank ×1.3 (3.64 lines: 4 × 0.7 × 1.3), the score untouched', bank.banked === bank.wantBank && bank.banked === 3.64 && bank.mult === bank.wantMult && bank.mult === 1.3 && bank.points === bank.want && /Bank ×1\.3/.test(bank.status), JSON.stringify(bank));
+  // The Bank tile shows the multiplier; its tooltip says what a line banks, in lines, and at ×1.3 what that makes.
+  check('  the Bank tooltip gives a line\'s 0.7 with its unit, and at ×1.3 the 0.91 a line banks now', !!bank.tip && bank.tip.tip.includes('banks 0.7 ' + bank.line + ';') && bank.tip.tip.includes('×1.3: 0.91 ' + bank.line + ' a line') &&
+    bank.tip1 === 'Each line banks 0.7 ' + bank.line + '; back-to-back multiplies it, up to ×1.5', JSON.stringify([bank.tip, bank.tip1]));
   check('and ten lines make it a game played', await ev((g0) => Lull.app.store.state.stats.classic.games === g0 + 1, games0));
   // Pausing mid-bar comes back to that bar, not the one after it.
   await page.waitForTimeout(700);
@@ -1478,7 +1487,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     check('Relaxed, none held: the tray shows 5 and Buy & use asks once, for 5', g0.n === '⦵5' && /Buy & use · 5/.test(ask) && g1.bought === g0.bought + 1 && g1.lines === g0.lines - 5, JSON.stringify({ g0, ask, g1 }));
     await page.click('.tabs button[data-tab="puzzle"]');
 
-    // A free hint (from the gift) goes before lines, and still halves the reward.
+    // A free hint (from the gift) goes before lines, and still halves the pay.
     const h0 = await ev(() => {
       const m = Lull.app.modes.puzzle, st = Lull.app.store;
       while (Lull.UI.modalOpen()) Lull.UI.closeTopModal();
@@ -1507,15 +1516,126 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     const h1 = await ev(() => {
       const m = Lull.app.modes.puzzle, S = Lull.app.store.state, P = S.stats.lines.puzzles;
       const out = { lines: S.lines, held: S.freebies.hint, on: !!(m.ps.current && m.ps.current.hint), used: S.stats.items.used['free-hint'] || 0 };
+      const cur = m.ps.current;
+      out.want = Lull.Puzzles.pay(m.puzzle.diff, { try: cur.attempts, undos: cur.undos || 0, hint: true, daily: !!m.meta.daily }).pay;
+      out.full = Lull.Puzzles.pay(m.puzzle.diff, { try: cur.attempts, undos: cur.undos || 0, hint: false, daily: !!m.meta.daily }).pay;
       m.solved();
-      const R = Lull.Puzzles.DIFFS.E.reward;
-      out.paid = S.stats.lines.puzzles - P; out.want = Math.ceil(Math.round(R * 1.5) / 2);
+      out.paid = S.stats.lines.puzzles - P;
       out.label = [...document.querySelectorAll('#puz-overlay .bs .l')].map((l) => l.textContent).join('|');
+      out.steps = (document.querySelector('#puz-overlay .pz-pay-steps') || {}).textContent;
       return out;
     });
-    check('the free hint is used before lines: Show · free, nothing spent, and the reward is still halved', hAsk === 'Show · free' && h1.lines === 50 && h1.held === 0 && h1.on && h1.used >= 1 && h1.paid === h1.want && /hints ½/.test(h1.label), JSON.stringify({ hAsk, h1 }));
-    const h2 = await ev(() => { const m = Lull.app.modes.puzzle; m.next(); const b = document.getElementById('puz-hint'); return { gem: b.querySelector('.gem') && b.querySelector('.gem').textContent, cost: { E: 10, M: 20, H: 35 }[m.puzzle.diff] }; });
-    check('with none left, Hint shows its price again', h2.gem === '⦵' + h2.cost, JSON.stringify(h2));
+    check('the free hint is used before lines: Show · free, nothing spent, and the pay is still halved', hAsk === 'Show · free' && h1.lines === 50 && h1.held === 0 && h1.on && h1.used >= 1 && h1.paid === h1.want && h1.want < h1.full && new RegExp('hint ½ → ' + h1.want + '$').test(h1.steps) && /Lines/.test(h1.label), JSON.stringify({ hAsk, h1 }));
+    const h2 = await ev(() => { const m = Lull.app.modes.puzzle; m.next(); const b = document.getElementById('puz-hint'), c = m.ps.current; return { gem: b.querySelector('.gem') && b.querySelector('.gem').textContent, cost: Lull.Puzzles.hintCost(m.puzzle.diff, c.attempts + (c.live ? 0 : 1)) }; });
+    check('with none left, Hint shows its price again (half what the puzzle pays at this try)', h2.gem === '⦵' + h2.cost, JSON.stringify(h2));
+
+    // What solving pays, and the tries it counts: a try counts once it sets a piece, and tries, a hint and Undos stay
+    // with the seed across a reload and a trip through History; the card's Pays says what solving pays now.
+    const pick = await ev(() => {
+      const m = Lull.app.modes.puzzle;
+      while (Lull.UI.modalOpen()) Lull.UI.closeTopModal();
+      for (let n = 900; n < 1400; n++) {
+        const s = Lull.Puzzles.numberedSeed('H', n, m.spin);
+        if (m.ps.solved[s] || (m.ps.tries || {})[s]) continue;
+        const p = Lull.Puzzles.generate(s);
+        if (!p.mods.includes('hold') && !p.mods.includes('vanish')) return { seed: s, n };
+      }
+      return null;
+    });
+    await ev((t) => { Lull.app.store.state.lines = 200; Lull.app.refreshWallet(); Lull.app.modes.puzzle.loadNumbered('H', t.n); }, pick);
+    const readPay = () => ev(() => {
+      const m = Lull.app.modes.puzzle, el = document.querySelector('#puz-id .pz-pays'), c = m.ps.current || {}, now = m.payNow();
+      return { seed: m.puzzle.seed, text: el && !el.hidden ? el.textContent : '', tip: el ? el.dataset.tip || '' : '', aria: el ? el.getAttribute('aria-label') : null, attempts: c.attempts, live: !!c.live, hint: !!c.hint, undos: c.undos || 0,
+        tries: JSON.stringify((m.ps.tries || {})[m.puzzle.seed] || null), now: now && now.pay, lines: Lull.app.store.state.lines,
+        pieces: m.game.s.pieces, cells: m.game.board.toArray().join(','), piece: m.game.piece && m.game.piece.type.id, queue: m.game.queue.map((e) => e.id).join(), goal: m.lines,
+        undoTip: document.getElementById('puz-undo').dataset.tip, retryTip: document.getElementById('puz-retry').dataset.tip,
+        toast: [...document.querySelectorAll('.toast:not(.out)')].map((t) => t.textContent).join('|') };
+    });
+    const payAt = (o) => ev((q) => Lull.Puzzles.pay('H', q).pay, o);
+    const setOne = () => ev(() => { const m = Lull.app.modes.puzzle, g = m.game, t = m.puzzle.targets[g.s.pieces]; g.piece.rot = t.r; g.piece.x = t.x; g.piece.y = t.y; m.action('drop'); return g.s.pieces; });
+    const t0 = await readPay();
+    for (let i = 0; i < 3; i++) await page.click('#puz-retry');
+    const t1 = await readPay(), clean = await payAt({ try: 1 });
+    check('Pays: a fresh Hard puzzle pays the clean first try; Retry three times with no piece set costs nothing', t0.now === clean && clean === 27 && t1.now === clean && t1.attempts === 0 && new RegExp('Pays ⦵' + clean + '$').test(t1.text) && t1.aria === 'Pays ' + clean + ' lines' && /First try, no Undo or hint: ×1\.5/.test(t1.tip), JSON.stringify({ t0, t1 }));
+    await setOne();
+    const t2 = await readPay();
+    // Undo and Retry say what they cost in pay before they are pressed: on a clean first try, the Undo ends the ×1.5;
+    // once a piece is set, Retry makes the next one the next try.
+    check('a clean first try: the Undo\'s tooltip gives the drop (27 → 18), Retry\'s the next try\'s pay (14)', /\nEnds the first-try ×1\.5: Pays ⦵27 → ⦵18$/.test(t2.undoTip) && t2.retryTip === 'The next try pays ⦵14 (now ⦵27)', JSON.stringify({ u: t2.undoTip, r: t2.retryTip }));
+    await ev(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
+    await page.click('#puz-retry');
+    const t3 = await readPay();
+    check('  Retry that lowers the pay says so in a note; before a piece is set it costs nothing and says only Retry', /Try 2 · Pays ⦵14/.test(t3.toast) && t3.retryTip === 'Retry' && !/Ends/.test(t3.undoTip || ''), JSON.stringify({ toast: t3.toast, r: t3.retryTip, u: t3.undoTip }));
+    await setOne();
+    const t4 = await readPay(), try2 = await payAt({ try: 2 });
+    check('a piece set counts the try; Retry, a piece set: Pays shows the second try\'s pay', t2.attempts === 1 && t2.live && t3.attempts === 1 && !t3.live && t3.now === try2 && t4.attempts === 2 && t4.live && t4.now === try2 && try2 === 14 && /Try 2: 14/.test(t4.tip) && !/×1\.5/.test(t4.tip) && t4.tries === JSON.stringify({ n: 2, hint: false, undos: 0 }), JSON.stringify({ t2, t3, t4 }));
+    await shot('29-pays');
+    // An Undo (bought at 5) is kept with the seed too.
+    await page.click('#puz-undo');
+    await setOne();
+    const t5 = await readPay();
+    await ev(() => Lull.app.saveNow());
+    await page.reload();
+    await page.waitForTimeout(500);
+    await ev(() => { for (const k of ['play', 'puzzle', 'classic']) Lull.app.modes[k].setGrace = 0; Lull.app.store.state.settings.hints = false; Lull.app.hints.sync(); if (Lull.app.tab !== 'puzzle') Lull.app.setTab('puzzle'); });
+    await page.waitForTimeout(150);
+    const t6 = await readPay();
+    check('a reload keeps the try, its Undos and the pay', t5.undos === 1 && t6.seed === pick.seed && t6.attempts === t5.attempts && t6.undos === 1 && t6.live && t6.now === t5.now && t6.text === t5.text && t6.tries === t5.tries && t6.tries === JSON.stringify({ n: 2, hint: false, undos: 1 }), JSON.stringify({ t5, t6 }));
+    // ... and the board: the attempt goes on as it stood, never a fresh board on the same try (a free Retry).
+    check('  and the attempt\'s board: the same cells, piece in play, queue, pieces set and lines toward the goal', t5.pieces === 1 && t6.pieces === t5.pieces && t6.cells === t5.cells && t6.piece === t5.piece && t6.queue === t5.queue && t6.goal === t5.goal, JSON.stringify({ t5: [t5.pieces, t5.piece, t5.queue], t6: [t6.pieces, t6.piece, t6.queue], same: t6.cells === t5.cells }));
+    // A saved attempt that cannot come back (here: none kept) is over: the fresh board is the next try once a piece is set.
+    const lost = await ev(async () => {
+      const m = Lull.app.modes.puzzle, c = m.ps.current;
+      c.board = null;
+      m.load(c.seed, c, true);
+      return { pieces: m.game.s.pieces, live: m.ps.current.live, attempts: m.ps.current.attempts, now: m.payNow().pay };
+    });
+    check('  an attempt with no board to come back to is over: a fresh board, and the next piece set is the next try', lost.pieces === 0 && !lost.live && lost.attempts === t5.attempts && lost.now === await payAt({ try: t5.attempts + 1, undos: 1 }), JSON.stringify(lost));
+    // Away to another puzzle and back through History: the board starts over, so the next piece set is the next try.
+    await ev((t) => Lull.app.modes.puzzle.loadNumbered('H', t.n + 1), pick);
+    await page.click('#puz-history');
+    await page.waitForTimeout(150);
+    await ev((s) => { const row = [...document.querySelectorAll('.modal-hist .hist-row')].find((r) => r.textContent.includes(s)); row.querySelector('.icon-btn.play').click(); }, pick.seed);
+    await page.waitForTimeout(150);
+    const t7 = await readPay(), try3 = await payAt({ try: 3 });
+    check('away and back through History: the tries, the Undos and a hint stay with the seed; Pays is the next try\'s', t7.seed === pick.seed && t7.tries === t6.tries && t7.attempts === 2 && t7.undos === 1 && !t7.live && t7.now === try3, JSON.stringify({ t6, t7 }));
+    // A hint: its price is half of what it pays now, and the question says both pays.
+    await page.click('#puz-hint');
+    const hq = await ev(() => ({ body: document.querySelector('.modal .modal-body, .modal p') && document.querySelector('.modal').textContent, btn: document.querySelector('.modal footer .btn.primary').textContent }));
+    const hcost = await ev(() => Lull.Puzzles.hintCost('H', 3)), withHint = await payAt({ try: 3, hint: true });
+    check('the hint asks with both pays, and costs half of what the puzzle pays at this try', new RegExp('Pays ⦵' + try3 + ' now, ⦵' + withHint + ' with a hint\\.').test(hq.body) && hq.btn === 'Show · ' + hcost + ' ⦵' && hcost === withHint, JSON.stringify({ hq, hcost, withHint }));
+    const w0 = (await readPay()).lines;
+    await page.click('.modal footer .btn.primary');
+    const t8 = await readPay();
+    check('bought: charged at the moment, the hint kept with the seed, Pays halved', t8.lines === w0 - hcost && t8.hint && t8.tries === JSON.stringify({ n: 2, hint: true, undos: 1 }) && t8.now === withHint && /Hint: half/.test(t8.tip), JSON.stringify(t8));
+    // Solved (on the third try): the card says how the pay was made, and the wallet rises by it.
+    const sol = await ev(async () => {
+      const m = Lull.app.modes.puzzle, S = Lull.app.store.state, w = S.lines;
+      let guard = 0;
+      while (!m.done && m.game.piece && guard++ < 40) { const g = m.game, t = m.puzzle.targets[g.s.pieces]; g.piece.rot = t.r; g.piece.x = t.x; g.piece.y = t.y; m.action('drop'); }
+      await new Promise((r) => setTimeout(r, 60));
+      const hb = document.getElementById('puz-hint');
+      return { done: m.done, gained: Math.round((S.lines - w) * 100) / 100, steps: (document.querySelector('#puz-overlay .pz-pay-steps') || {}).textContent, pay: [...document.querySelectorAll('#puz-overlay .bs.pay')].map((x) => x.textContent).join(), tries: (m.ps.tries || {})[m.puzzle.seed] || null, pays: (document.querySelector('#puz-id .pz-pays') || {}).hidden,
+        hint: { text: hb.textContent, on: hb.classList.contains('on'), pressed: hb.getAttribute('aria-pressed'), disabled: hb.disabled, gem: !!hb.querySelector('.gem') } };
+    });
+    const r3 = await ev(() => Lull.Puzzles.pay('H', { try: 3, undos: 1, hint: true }));
+    check('solved on the third try with a hint: +' + r3.pay + ', and the steps (' + sol.steps + ')', sol.done && sol.gained === r3.pay && sol.steps === 'Hard 18 · try 3 → 12 · hint ½ → 6' && /^\+6 ⦵Lines$/.test(sol.pay) && sol.tries === null && sol.pays === true, JSON.stringify({ sol, r3 }));
+    check('  solved with a hint: the Hint button, off, still says Hints on and shows no price', sol.hint.disabled && sol.hint.on && sol.hint.pressed === 'true' && /Hints on/.test(sol.hint.text) && !sol.hint.gem, JSON.stringify(sol.hint));
+    await shot('29-solved-steps');
+    // Replaying it: a solved seed pays nothing, so its hint is free (no price, no question, the gift's hint kept).
+    const rep = await ev(async () => {
+      const m = Lull.app.modes.puzzle, S = Lull.app.store.state, w = S.lines;
+      m.hideCard(); m.retry();
+      S.freebies.hint = 1; Lull.app.store.itemsChanged();
+      const b = document.getElementById('puz-hint'), before = { text: b.textContent, gem: !!b.querySelector('.gem'), tip: b.dataset.tip };
+      b.click();
+      await new Promise((r) => setTimeout(r, 60));
+      const out = { before, modal: Lull.UI.modalOpen(), on: !!(m.ps.current && m.ps.current.hint), spent: w - S.lines, freeLeft: S.freebies.hint, cost: m.hintCost() };
+      S.freebies.hint = 0; Lull.app.store.itemsChanged();
+      return out;
+    });
+    check('  a replay of a solved seed: Hint has no price, shows at once, costs nothing and keeps the gift\'s free hint', !rep.before.gem && /free on a puzzle solved before/.test(rep.before.tip) && !rep.modal && rep.on && rep.spent === 0 && rep.freeLeft === 1 && rep.cost === 0, JSON.stringify(rep));
+    await ev(() => Lull.app.modes.puzzle.hideCard());
     await ev(() => { while (Lull.UI.modalOpen()) Lull.UI.closeTopModal(); Lull.app.modes.puzzle.loadNumbered('H', 3); });
   }
 
@@ -1585,9 +1705,44 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   check('the solved card: time, tries and pay; the card marks it solved; Daily gets its tick; Next leads', solvedCard.card && solvedCard.tiles === 3 && solvedCard.badge && solvedCard.tick && solvedCard.next, JSON.stringify(solvedCard));
   await shot('28-solved-card');
   check('nothing a puzzle shows moves the board (wildcards, cards, solved)', new Set(Object.values(boxes)).size === 1, JSON.stringify(boxes));
+  // The Daily's ×2 comes once a date for each difficulty: the other turn setting's Daily is another puzzle, not another ×2.
+  const dTwice = await ev(() => {
+    const m = Lull.app.modes.puzzle, S = Lull.app.store.state, keep = Lull.app.settings.ccwPuzzles, key = Lull.dateKey(), d = m.puzzle.diff, first = m.puzzle.seed;
+    Lull.app.settings.ccwPuzzles = !keep;
+    m.loadDaily();
+    const now = m.payNow(), out = { first, seed: m.puzzle.seed, daily: m.meta.daily === key, nowDaily: now.daily, now: now.pay, plain: Lull.Puzzles.pay(d, { try: 1 }).pay, tip: document.querySelector('#puz-id .pz-pays').dataset.tip, rec: (m.ps.dailyPaid || {})[key] || '' };
+    const P = S.stats.lines.puzzles;
+    m.solved();
+    out.paid = Math.round((S.stats.lines.puzzles - P) * 100) / 100;
+    out.steps = (document.querySelector('#puz-overlay .pz-pay-steps') || {}).textContent;
+    Lull.app.settings.ccwPuzzles = keep;
+    out.d = d;
+    return out;
+  });
+  check('the Daily with the other turn setting: another puzzle, paid without a second ×2 (its Pays tooltip says why)', dTwice.daily && dTwice.seed !== dTwice.first && dTwice.rec.includes(dTwice.d) && !dTwice.nowDaily && dTwice.now === dTwice.plain && dTwice.paid === dTwice.plain && !/Daily/.test(dTwice.steps) && /Daily ×2 already paid for this date/.test(dTwice.tip), JSON.stringify(dTwice));
+  // The info line gives way a whole part at a time, never a character of a date or a number: a Daily down to 320 px.
+  {
+    const fitAt = [];
+    for (const [w, hgt] of [[520, 760], [441, 760], [400, 700], [390, 844], [320, 568]]) {
+      await page.setViewportSize({ width: w, height: hgt });
+      await page.waitForTimeout(120);
+      if (!fitAt.length) await ev(() => { const m = Lull.app.modes.puzzle; while (Lull.UI.modalOpen()) Lull.UI.closeTopModal(); m.hideCard(); m.ps.diff = 'M'; m.loadDaily(); });
+      await page.waitForTimeout(120);
+      fitAt.push(await ev((w) => {
+        const box = document.getElementById('puz-id'), where = box.querySelector('.pz-where'), pays = box.querySelector('.pz-pays');
+        const shown = (el) => !!el && el.offsetParent !== null && getComputedStyle(el).display !== 'none';
+        const text = box.innerText.replace(/\s+/g, ' ').trim(); // only what shows (innerText skips the parts set to display: none)
+        return { w, cut: where.scrollWidth > where.clientWidth + 1, text, pays: shown(pays) && /Pays ⦵\d+$/.test(pays.textContent), cls: [...box.classList].filter((c) => c.startsWith('no-')).join(' ') };
+      }, w));
+    }
+    const day = await ev(() => new Date().getDate());
+    check('a Medium Daily\'s info line fits at every width without cutting a word: parts go whole (count, weekday, difficulty, date)', fitAt.every((f) => !f.cut && f.pays && /^Daily/.test(f.text)) && /Medium/.test(fitAt[0].text) && /pieces/.test(fitAt[0].text) && fitAt.filter((f) => f.w >= 390).every((f) => new RegExp('\\b' + day + '\\b').test(f.text)), JSON.stringify(fitAt));
+    await page.setViewportSize({ width: 520, height: 760 });
+    await page.waitForTimeout(120);
+  }
   // Retry on a solved puzzle plays it again (it used to throw: a solved puzzle has no current entry).
   await page.click('#puz-retry');
-  check('Retry after solving starts it again', await ev(() => { const m = Lull.app.modes.puzzle; return m.game.s.pieces === 0 && !m.done && !m.cardOpen && m.ps.current && m.ps.current.attempts === 1; }));
+  check('Retry after solving starts it again (a try that counts once a piece is set)', await ev(() => { const m = Lull.app.modes.puzzle; return m.game.s.pieces === 0 && !m.done && !m.cardOpen && m.ps.current && m.ps.current.attempts === 0 && !m.ps.current.live; }));
   const nextN = await ev(() => Lull.app.modes.puzzle.ps.next[Lull.app.modes.puzzle.ps.diff]);
   await page.click('#puz-next');
   check('Next (button) goes on to the next numbered puzzle', await ev((n) => Lull.app.modes.puzzle.meta.number === n && !Lull.app.modes.puzzle.cardOpen, nextN));
@@ -1633,7 +1788,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   });
   check('the factory floor is drawn, over three plain figures', floor.w > 0 && floor.colors > 8 && floor.stats === 'Lines / hour|Lines in crate|Full in', JSON.stringify(floor));
   const fresh = await ev(() => { const b = document.querySelector('#fac-collect .btn'); return { disabled: b.disabled, text: b.textContent }; });
-  check('nothing to collect in an empty crate: Collect says when (about four minutes)', fresh.disabled && /^Collect in [3-5]m$/.test(fresh.text), JSON.stringify(fresh));
+  check('nothing to collect yet in a new crate (four minos, half a line): Collect says when (the first ship, under five minutes)', fresh.disabled && /^Collect in [3-5]m$/.test(fresh.text), JSON.stringify(fresh));
   // The floor draws no text; with the whole chain at rest (a full crate, all the way back) its still layers are never
   // repainted, and a frame is cheap even with the store and the crate full.
   await facSet((f, F) => { for (const k of ['stamp', 'store', 'press', 'crate']) while (F.upgrade(f, k)); f.lastTick = Date.now() - 40 * 3600e3; F.catchUp(f, Date.now()); });
@@ -1664,7 +1819,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   });
   check('a full crate backs the chain up: the floor\'s waiting states are the model\'s, the figures say so, the tab has its dot, Collect breathes',
     backed.flags && backed.w.crateFull && backed.w.storeFull && backed.w.stamps.every(Boolean) && /Full in\s*Now/.test(backed.warn) && /Lines in crate/.test(backed.warn) && backed.badge && backed.ring
-    && backed.store === '324 of 324 minos\nFull' && backed.head === 'Waiting: store full', JSON.stringify(backed));
+    && backed.store === '216 of 216 minos\nFull' && backed.head === 'Waiting: store full', JSON.stringify(backed));
   await shot('30-factory-backed-up');
   // A full store's warm cues hold steady: the model's flag drops for a few seconds after every feed (the next mino is
   // still rolling to the belt's end), but the rim, the belt's head and the held heads do not blink with it.
@@ -1696,13 +1851,13 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     return { w, flags: v.flags.starving, tip: document.querySelector('.fac-hot[data-hot=press][data-k="1"]').dataset.tip, rate: document.querySelector('#fac-top .fac-stat').dataset.tip, store: document.querySelector('.fac-hot[data-hot=store]').dataset.tip };
   });
   check('short of minos: the store is empty, the press waits for minos, the rate\'s tooltip shows both ends of the chain',
-    starved.w.storeEmpty && starved.w.starving.length && starved.flags.some(Boolean) && /\nWaiting for minos$/.test(starved.tip) && starved.rate === 'Stampers make 36 minos an hour\nPresses use 54 minos an hour' && /^0 of 108 minos\nEmpty$/.test(starved.store), JSON.stringify(starved));
+    starved.w.storeEmpty && starved.w.starving.length && starved.flags.some(Boolean) && /\nWaiting for minos$/.test(starved.tip) && starved.rate === 'Stampers make 36 minos an hour\nPresses use 54 minos an hour' && /^0 of 54 minos\nEmpty$/.test(starved.store), JSON.stringify(starved));
   await shot('31-factory-starved');
   // Collect, three ways: the button (the lines fly to the wallet, which counts them only on arrival), the crate, C.
   const lines0 = await ev(() => { const f = Lull.app.store.state.factory; f.crate = '1234'.repeat(12); f.lift = []; Lull.app.modes.factory.view.flushLift(); return Lull.app.store.state.lines; });
   await page.waitForTimeout(350);
   const label = await ev(() => document.querySelector('#fac-collect .btn').textContent);
-  check('every four minos in the crate are a line: 48 read Collect 12', /^Collect 12 ⦵$/.test(label), label);
+  check('every eight minos in the crate are a line: 48 read Collect 6', /^Collect 6 ⦵$/.test(label) && (await ev(() => Lull.Factory.MPL)) === 8, label);
   const flight = await ev(async () => {
     const app = Lull.app, ach = app.achieve, n = () => document.getElementById('wallet-n').textContent;
     app.achieve = () => {};
@@ -1716,14 +1871,14 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     app.achieve = ach;
     return { before, at0, changedWhileFlying, after: n(), gone: !document.querySelector('.fac-fly') };
   });
-  check('collecting banks the lines; they fly into the wallet, which counts them on arrival', (await ev(() => Lull.app.store.state.lines)) === lines0 + 12 && flight.at0.fly && /^\+12 ⦵$/.test(flight.at0.text) && flight.at0.wallet === flight.before && !flight.changedWhileFlying && flight.gone && flight.after !== flight.before, JSON.stringify(flight));
+  check('collecting banks the lines; they fly into the wallet, which counts them on arrival', (await ev(() => Lull.app.store.state.lines)) === lines0 + 6 && flight.at0.fly && /^\+6 ⦵$/.test(flight.at0.text) && flight.at0.wallet === flight.before && !flight.changedWhileFlying && flight.gone && flight.after !== flight.before, JSON.stringify(flight));
   await ev(() => { Lull.app.store.state.factory.crate = '5'.repeat(9); });
   await page.waitForTimeout(100);
   await page.click('.fac-hot[data-hot=crate]');
-  check('clicking the crate collects, leaving the loose mino', (await ev(() => [Lull.app.store.state.lines, Lull.app.store.state.factory.crate].join())) === (lines0 + 14) + ',5');
-  await ev(() => { Lull.app.store.state.factory.crate = '6'.repeat(7); });
+  check('clicking the crate collects, leaving the loose mino', (await ev(() => [Lull.app.store.state.lines, Lull.app.store.state.factory.crate].join())) === (lines0 + 7) + ',5');
+  await ev(() => { Lull.app.store.state.factory.crate = '6'.repeat(8); });
   await page.keyboard.press('KeyC');
-  check('C collects', (await ev(() => Lull.app.store.state.lines)) === lines0 + 15);
+  check('C collects', (await ev(() => Lull.app.store.state.lines)) === lines0 + 8);
   const still = await ev(() => {
     const app = Lull.app, ach = app.achieve; app.achieve = () => {};
     app.settings.motion = 'reduced'; app.applySettings();
@@ -1743,14 +1898,36 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await page.waitForTimeout(200);
   const rowsList = await ev(() => ({ form: Lull.app.modes.factory.form, ups: Array.from(document.querySelectorAll('.fac-up')).map((u) => u.dataset.up + '|' + u.querySelector('.t').textContent + '|' + u.querySelector('.d').textContent + '|' + u.querySelector('.btn').textContent),
     quiet: Array.from(document.querySelectorAll('.fac-up .btn')).every((b) => b.getAttribute('aria-disabled') === 'true' && !b.classList.contains('primary') && !b.disabled) }));
-  check('the list, in the chain\'s order, in plain words; a Build that cannot be afforded yet is quiet', rowsList.form === 'rows' && rowsList.quiet && rowsList.ups.join('\n') === [
-    'stamp|Second stamper|36 → 72 minos / hour|Build · 100 ⦵', 'store|Bigger store|108 → 216 minos|Build · 120 ⦵',
-    'press|Pentomino press|+3 lines / hour|Build · 150 ⦵', 'crate|Bigger crate|12 → 24 lines|Build · 60 ⦵'].join('\n'), JSON.stringify(rowsList));
+  // What each row says, from the model (Factory.nextUpgrade, in lines at TUNE.PAY), and in words.
+  const rowsWant = await ev(() => {
+    const F = Lull.Factory, f = F.create(), q = F.quarters, P = F.TUNE.PAY, u = (k) => F.nextUpgrade(f, k);
+    const ph = F.perHour(f), press = u('press'), stamp = u('stamp'), store = u('store'), crate = u('crate');
+    return ['stamp|Second stamper|' + stamp.from + ' → ' + stamp.to + ' minos / hour|Build · ' + stamp.cost + ' ⦵',
+      'store|Bigger store|' + store.from + ' → ' + store.to + ' minos|Build · ' + store.cost + ' ⦵',
+      'press|Pentomino press|+' + q((Math.min(F.supply(f), press.to) - ph) * P) + ' lines / hour|Build · ' + press.cost + ' ⦵',
+      'crate|Bigger crate|' + crate.from + ' → ' + crate.to + ' lines|Build · ' + crate.cost + ' ⦵'];
+  });
+  check('the list, in the chain\'s order, in plain words; a Build that cannot be afforded yet is quiet', rowsList.form === 'rows' && rowsList.quiet && rowsList.ups.join('\n') === rowsWant.join('\n') && rowsWant.join('\n') === [
+    'stamp|Second stamper|36 → 72 minos / hour|Build · 350 ⦵', 'store|Bigger store|54 → 108 minos|Build · 150 ⦵',
+    'press|Pentomino press|+1.5 lines / hour|Build · 300 ⦵', 'crate|Bigger crate|6 → 12 lines|Build · 30 ⦵'].join('\n'), JSON.stringify({ rowsList, rowsWant }));
   await ev(() => { Lull.app.store.state.lines = 2000; Lull.app.refreshWallet(); });
   await page.waitForTimeout(350);
   for (const kind of ['press', 'stamp', 'store', 'crate']) await page.click('.fac-up[data-up=' + kind + '] .btn:not([aria-disabled])');
   const built = await ev(() => { const f = Lull.app.store.state.factory; return { lv: [f.stampers, f.storeLevel, f.presses, f.crateLevel], spent: f.stats.spent, stamp: document.querySelector('.fac-up[data-up=stamp] .d').textContent, press: document.querySelector('.fac-up[data-up=press] .d').textContent }; });
-  check('building each kind from its row: a stamper, a store, a press, a crate', built.lv.join() === '2,1,2,1' && built.spent === 150 + 100 + 120 + 60 && built.stamp === '72 → 108 minos / hour' && built.press === '+4.5 lines / hour', JSON.stringify(built));
+  check('building each kind from its row: a stamper, a store, a press, a crate', built.lv.join() === '2,1,2,1' && built.spent === 300 + 350 + 150 + 30 && built.stamp === '72 → 108 minos / hour' && built.press === '+2.25 lines / hour', JSON.stringify(built));
+  // A bigger store says what it is for: once the presses use more than the stampers make, how long it feeds them.
+  const storeRow = await ev(() => {
+    const f = Lull.app.store.state.factory, F = Lull.Factory, keep = JSON.parse(JSON.stringify(f));
+    F.upgrade(f, 'press'); Lull.app.modes.factory.build();
+    const out = { t: document.querySelector('.fac-up[data-up=store] .d').textContent, tip: document.querySelector('.fac-up[data-up=store] .d').dataset.tip, S: F.supply(f), D: F.demand(f), from: F.nextUpgrade(f, 'store').from, to: F.nextUpgrade(f, 'store').to };
+    for (const k of Object.keys(f)) delete f[k];
+    Object.assign(f, keep); Lull.app.modes.factory.build();
+    return out;
+  });
+  const feedH = Math.max(0.5, Math.round(storeRow.to / (storeRow.D - storeRow.S) * 2) / 2);
+  check('the store row, presses short of minos: how long the bigger store feeds them (its tooltip says it whole)', storeRow.D > storeRow.S && storeRow.t === 'Feeds the presses ' + feedH + ' h' && storeRow.tip === 'A full store keeps the presses going ' + feedH + ' h while the stampers fall behind\n' + storeRow.from + ' → ' + storeRow.to + ' minos', JSON.stringify(storeRow));
+  const keepTip = await ev(() => { Lull.app.modes.factory.build(); const d = document.querySelector('.fac-up[data-up=store] .d'); return d && d.dataset.tip; });
+  check('  and while the stampers keep up, its tooltip says so', /^Stampers keep up · [\d,]+ → [\d,]+ minos$/.test(keepTip || ''), keepTip);
   // The next head builds from the floor, and the keyboard focus stays there.
   const headBuild = await ev(() => {
     const M = Lull.app.modes.factory, f = Lull.app.store.state.factory;
@@ -1911,7 +2088,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
       const small = await fingers(), sc = await tp.evaluate(() => Lull.app.modes.factory.view.scene);
       check(pw + '×' + ph + ' touch (' + sc + '): no hotspot over another', !small.over.length, JSON.stringify(small));
     }
-    // The bar's figures at phone widths with a full biggest crate ("119.75 / 120"): none is cut to an ellipsis.
+    // The bar's figures at phone widths with a full biggest crate ("59.75 / 60"): none is cut to an ellipsis.
     for (const [pw, ph] of [[320, 568], [360, 640], [390, 844]]) {
       await tp.setViewportSize({ width: pw, height: ph });
       await tp.waitForTimeout(150);
@@ -1925,7 +2102,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
         for (const k of Object.keys(f)) delete f[k]; Object.assign(f, F.create()); Lull.app.modes.factory.build();
         return out;
       });
-      check(pw + '×' + ph + ' touch: a full biggest crate\'s figures fit the bar, none cut (' + cut.map((c) => c.text).join(' | ') + ')', cut.length === 3 && cut.some((c) => /119\.75 \/ 120/.test(c.text)) && cut.every((c) => !c.b && !c.i), JSON.stringify(cut));
+      check(pw + '×' + ph + ' touch: a full biggest crate\'s figures fit the bar, none cut (' + cut.map((c) => c.text).join(' | ') + ')', cut.length === 3 && cut.some((c) => /59\.75 \/ 60/.test(c.text)) && cut.every((c) => !c.b && !c.i), JSON.stringify(cut));
     }
     await layoutAt(tp, 844, 390, ['cards'], true);
     if (OUT) await tp.screenshot({ path: require('path').join(OUT, '33-factory-844x390-touch.png') });
@@ -2100,7 +2277,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     const shape = F.shapes(7).findIndex((c) => c.h === 3);
     for (let l = 0; l < 5; l++) {
       for (const k of Object.keys(f)) delete f[k]; Object.assign(f, F.create());
-      f.crateLevel = l; f.lift = [{ n: 7, s: shape, c: 3, u: 1, y: F.LIFT.len - 2, py: F.LIFT.len - 2 }]; f.lastTick = Date.now(); f.acc = 0;
+      f.crateLevel = l; f.crate = ''; f.lift = [{ n: 7, s: shape, c: 3, u: 1, y: F.LIFT.len - 2, py: F.LIFT.len - 2 }]; f.lastTick = Date.now(); f.acc = 0;
       M.build();
       let top = Infinity, xs = [];
       const ys = [], chute = { n: 0, out: 0, rim: 0, where: [] };
@@ -2216,7 +2393,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     return { share: +share.toFixed(3), state, plate: +luma(bare).toFixed(1), rack: +rack.toFixed(1), band: +band.toFixed(1), runs, waits };
   });
   check('short of minos the empty store is a pale shelf, a fifth of the plate at most; in dark it and the conveyor\'s band are lighter than the plate; the conveyor runs empty and waits only under a full collector',
-    shelf.state.cap === 324 && shelf.state.store <= 4 && shelf.share <= 0.22 && shelf.rack >= shelf.plate + 12 && shelf.band >= shelf.plate + 6 && shelf.runs && shelf.waits, JSON.stringify(shelf));
+    shelf.state.cap === 216 && shelf.state.store <= 4 && shelf.share <= 0.22 && shelf.rack >= shelf.plate + 12 && shelf.band >= shelf.plate + 6 && shelf.runs && shelf.waits, JSON.stringify(shelf));
   // The belts are drawn between ticks: a piece's drawn place (read from what the view draws, not worked out here)
   // never goes back, moves smoothly frame to frame, and is often between where the model had it a tick ago and now.
   await page.setViewportSize({ width: 900, height: 900 });
@@ -2284,7 +2461,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await facSet((f, F) => { for (const k of Object.keys(f)) delete f[k]; Object.assign(f, F.create()); Lull.app.store.state.lines = 99; });
   await page.waitForTimeout(250);
   const card = await ev(() => { const c = document.querySelector('.fac-up[data-up=stamp]'); c.click(); return { tag: c.tagName, label: c.getAttribute('aria-label'), tip: c.dataset.tip, text: c.textContent, dis: c.getAttribute('aria-disabled'), stampers: Lull.app.store.state.factory.stampers }; });
-  check('a card: one button, its whole meaning in its label and tooltip, quiet when short of lines', card.tag === 'BUTTON' && card.label === 'Build Second stamper, 36 to 72 minos an hour, 100 lines' && card.tip === card.label && card.text === 'Stamper100 ⦵' && card.dis === 'true' && card.stampers === 1, JSON.stringify(card));
+  check('a card: one button, its whole meaning in its label and tooltip, quiet when short of lines', card.tag === 'BUTTON' && card.label === 'Build Second stamper, 36 to 72 minos an hour, 350 lines' && card.tip === card.label && card.text === 'Stamper350 ⦵' && card.dis === 'true' && card.stampers === 1, JSON.stringify(card));
   if (OUT) for (const theme of ['dark', 'light']) {
     await ev((t) => { Lull.app.settings.theme = t; Lull.app.applySettings(); }, theme);
     for (const [w, hgt] of [[520, 760], [400, 700], [300, 440]]) {
@@ -2368,7 +2545,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     const app = Lull.app, M = app.modes.factory, f = app.store.state.factory, n = () => document.getElementById('wallet-n').textContent;
     M.flushFly();
     if (app.store.state.achievements) delete app.store.state.achievements.fac_sweep;
-    f.crateLevel = 3; f.lift = []; f.crate = '4'.repeat(240); f.lastTick = Date.now(); M.view.flushLift();
+    f.crateLevel = 3; f.lift = []; f.crate = '4'.repeat(Lull.Factory.crateMinos(3)); f.lastTick = Date.now(); M.view.flushLift();
     await new Promise((r) => setTimeout(r, 300));
     const before = n(), lines0 = app.store.state.lines;
     M.collect();
@@ -2378,7 +2555,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     await new Promise((r) => setTimeout(r, 30));
     return { changed, gained: app.store.state.lines - lines0, after: n(), before };
   });
-  check('a collect that earns an achievement still counts into the wallet only when its lines land', !achFly.changed && achFly.after !== achFly.before && achFly.gained >= 60, JSON.stringify(achFly));
+  check('a collect that earns an achievement still counts into the wallet only when its lines land', !achFly.changed && achFly.after !== achFly.before && achFly.gained >= 40 + 40, JSON.stringify(achFly));
   await page.setViewportSize({ width: 520, height: 760 });
   await ev((keep) => { const k = JSON.parse(keep), f = Lull.app.store.state.factory; for (const x of Object.keys(f)) delete f[x]; Object.assign(f, k.f, { lastTick: Date.now() }); Lull.app.store.state.lines = k.lines; Lull.app.store.state.owned = k.owned; Lull.app.store.state.achievements = k.ach; Lull.app.refreshWallet(); Lull.app.modes.factory.build(); }, facKeep);
   // ---- shop and settings ---------------------------------------------------------------------------------------------
@@ -2939,16 +3116,16 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
 
   // ---- save and reload ----------------------------------------------------------------------------------------------
   console.log('persistence');
-  await ev(() => { Lull.app.modes.puzzle.loadNumbered('E', 1); });
-  const pzBefore = await ev(() => JSON.stringify(Lull.app.store.state.puzzle.current && { seed: Lull.app.store.state.puzzle.current.seed, attempts: Lull.app.store.state.puzzle.current.attempts }));
+  await ev(() => { const m = Lull.app.modes.puzzle; m.loadNumbered('E', 1); m.action('drop'); });
+  const pzBefore = await ev(() => JSON.stringify(Lull.app.store.state.puzzle.current && { seed: Lull.app.store.state.puzzle.current.seed, attempts: Lull.app.store.state.puzzle.current.attempts, live: !!Lull.app.store.state.puzzle.current.live }));
   const snap = await ev(() => { Lull.app.setTab('play'); Lull.app.saveNow(); const s = Lull.app.store.state; return { lines: s.lines, cells: Lull.app.modes.play.game.board.count(), skin: s.equipped.skin, solved: Object.keys(s.puzzle.solved).length }; });
   await page.reload();
   await page.waitForTimeout(400);
   const back = await ev(() => { const s = Lull.app.store.state; return { lines: s.lines, cells: Lull.app.modes.play.game.board.count(), skin: s.equipped.skin, solved: Object.keys(s.puzzle.solved).length, modal: !!document.querySelector('.modal') }; });
   check('progress survives a reload', back.lines === snap.lines && back.cells === snap.cells && back.skin === snap.skin && back.solved === snap.solved, JSON.stringify([snap, back]));
   check('no welcome on the second run', !back.modal);
-  const pzAfter = await ev(() => { Lull.app.setTab('puzzle'); const c = Lull.app.store.state.puzzle.current; return JSON.stringify(c && { seed: c.seed, attempts: c.attempts }); });
-  check('a puzzle resumed after a reload is the same attempt (first try stays first try)', pzBefore === pzAfter && /"attempts":1/.test(pzAfter), pzBefore + ' → ' + pzAfter);
+  const pzAfter = await ev(() => { Lull.app.setTab('puzzle'); const c = Lull.app.store.state.puzzle.current; return JSON.stringify(c && { seed: c.seed, attempts: c.attempts, live: !!c.live }); });
+  check('a puzzle resumed after a reload is the same attempt (a first try that set a piece stays the first try)', pzBefore === pzAfter && /"attempts":[1-9]\d*,"live":true/.test(pzAfter), pzBefore + ' → ' + pzAfter);
   // The factory's dot sits out of the tabs' flow: nothing shifts when the bin fills or empties.
   const badgeSteady = await ev(() => {
     const xs = () => Array.from(document.querySelectorAll('.tabs button')).map((b) => Math.round(b.getBoundingClientRect().left)).join();

@@ -1105,7 +1105,7 @@ const sumN = (list) => list.reduce((a, it) => a + it.n, 0);
  *  in the molds + on the belt + on the lift + shipped; shipped = in the crate + collected. */
 function conserved(f) {
   const st = f.stats, got = f.molds.reduce((a, m) => a + m.got, 0);
-  const shipped = f.crate.length + 4 * st.lines, fed = got + sumN(f.belt) + sumN(f.lift) + shipped;
+  const shipped = f.crate.length + Factory.MPL * st.lines, fed = got + sumN(f.belt) + sumN(f.lift) + shipped;
   return st.made === f.top.length + f.store + fed && st.fed === fed && st.minos === shipped;
 }
 /** The chain's limits: '' when every one holds, or what broke. */
@@ -1145,17 +1145,21 @@ const still = (f) => JSON.parse(JSON.stringify(bare(f), (k, v) => (k === 'px' ||
 test('the factory\'s numbers: every tuning constant pinned, in one frozen block', () => {
   assert.deepStrictEqual(JSON.parse(JSON.stringify(T)), {
     TICK: 0.25, MOLDS: [4, 5, 6, 7], BELT: { len: 28, speed: 0.5, gap: 1 }, TOP: { len: 26, speed: 0.5, gap: 1 }, STAMP_X: [2, 8, 15, 23],
-    STORE_COLS: 27, STORE_ROWS: [4, 8, 12], LIFT: { len: 10, speed: 0.125, gap: 1.5 }, CRATE_COLS: [4, 6, 8, 10, 12], CRATE_ROWS: [12, 16, 24, 32, 40],
-    CYCLE: 600, STAMP_T: 100, STAMP_COST: [0, 100, 300, 800], STORE_COST: [0, 120, 400], PRESS_COST: [0, 150, 450, 1200], CRATE_COST: [60, 200, 500, 1000],
-    PAY: 0.25, START_STORE: 8, START_STAMP_T: 200, START_PRESS: { got: 3, t: 1800 }, MAX_AWAY: 30 * 86400, RAW: 8,
+    STORE_COLS: 27, STORE_ROWS: [2, 4, 8], LIFT: { len: 10, speed: 0.125, gap: 1.5 }, CRATE_COLS: [4, 6, 8, 10, 12], CRATE_ROWS: [12, 16, 24, 32, 40],
+    CYCLE: 600, STAMP_T: 100, STAMP_COST: [0, 350, 450, 900], STORE_COST: [0, 150, 280], PRESS_COST: [0, 300, 400, 800], CRATE_COST: [30, 100, 250, 500],
+    PAY: 0.125, START_STORE: 8, START_CRATE: 4, START_STAMP_T: 200, START_PRESS: { got: 3, t: 1800 }, MAX_AWAY: 30 * 86400, RAW: 8,
   });
+  // The scene's geometry is fixed (js/factoryview.js draws exactly these); a rebalance may only lower the store.
+  assert(T.STORE_ROWS.every((r, l) => r <= 12 && (l === 0 || r > T.STORE_ROWS[l - 1])), 'store sizes rise, never past 12 rows');
   assert(Object.isFrozen(T) && Object.isFrozen(T.BELT) && Object.isFrozen(T.MOLDS) && Object.isFrozen(T.START_PRESS));
   assert.strictEqual(Factory.CRATE_ROWS, T.CRATE_ROWS, 'exported by name too');
   assert.deepStrictEqual([Factory.TICK_MS, Factory.CYCLE_T, Factory.STAMP_TT], [250, 2400, 400]);
   assert.deepStrictEqual(T.CRATE_ROWS.map((_, l) => Factory.crateMinos(l)), [48, 96, 192, 320, 480]);
-  assert.deepStrictEqual(T.CRATE_ROWS.map((_, l) => Factory.crateLines(l)), [12, 24, 48, 80, 120]);
-  assert(T.CRATE_ROWS.every((_, l) => Factory.crateMinos(l) % 4 === 0), 'every crate holds whole lines');
-  assert.deepStrictEqual(T.STORE_ROWS.map((_, l) => Factory.storeCapAt(l)), [108, 216, 324]);
+  // Whole lines: a line is a whole number of minos (MPL, eight), and every crate holds whole lines.
+  assert(Number.isInteger(1 / T.PAY) && Factory.MPL === 1 / T.PAY && Factory.MPL === 8, 'minos a line: ' + 1 / T.PAY);
+  assert(T.CRATE_ROWS.every((_, l) => Factory.crateMinos(l) % Factory.MPL === 0), 'every crate holds whole lines');
+  assert.deepStrictEqual(T.CRATE_ROWS.map((_, l) => Factory.crateLines(l)), [6, 12, 24, 40, 60]);
+  assert.deepStrictEqual(T.STORE_ROWS.map((_, l) => Factory.storeCapAt(l)), [54, 108, 216]);
   // The stamp heads sit over the bays: each mino is set under its head, and the heads' centres are the bays'.
   assert.deepStrictEqual(T.STAMP_X.map((x) => 0.75 + x + 0.5), [0, 1, 2, 3].map((k) => 0.5 + Factory.BAY_X[k] + 0.25 + (T.MOLDS[k] + 1) / 2));
   // Every upgrade, level by level, and nothing past the top.
@@ -1167,31 +1171,52 @@ test('the factory\'s numbers: every tuning constant pinned, in one frozen block'
     assert.strictEqual(Factory.nextUpgrade(f, kind), null); assert(!Factory.upgrade(f, kind));
   }
   assert.deepStrictEqual(got, {
-    stamp: [[100, 36, 72], [300, 72, 108], [800, 108, 144]], store: [[120, 108, 216], [400, 216, 324]],
-    press: [[150, 24, 54], [450, 54, 90], [1200, 90, 132]], crate: [[60, 12, 24], [200, 24, 48], [500, 48, 80], [1000, 80, 120]],
+    stamp: [[350, 36, 72], [450, 72, 108], [900, 108, 144]], store: [[150, 54, 108], [280, 108, 216]],
+    press: [[300, 24, 54], [400, 54, 90], [800, 90, 132]], crate: [[30, 6, 12], [100, 12, 24], [250, 24, 40], [500, 40, 60]],
   });
   assert.deepStrictEqual([f.stampers, f.storeLevel, f.presses, f.crateLevel, f.stamps.length, f.molds.length], [4, 2, 4, 4, 4, 4]);
-  assert.strictEqual(f.stats.spent, 1200 + 520 + 1800 + 1760);
+  assert.strictEqual(f.stats.spent, 1700 + 430 + 1500 + 880);
+  assert.strictEqual(f.stats.spent, 4510);
   assert.deepStrictEqual(f.molds.map((m) => m.pin), [-1, -1, -1, -1]);
   const s = new L.Store();
   s.state.lines = 99;
   assert(!s.spend(Factory.nextUpgrade(s.state.factory, 'stamp').cost), 'short of lines');
 });
-test('a new factory: one stamp head, a store of 8 of 108, one press three quarters through its first piece', () => {
+test('a new factory: one stamp head, a store of 8 of 54, one press three quarters through its first piece, a crate of four', () => {
   const f = Factory.create();
   assert.strictEqual(f.v, 7);
-  assert.deepStrictEqual([f.stampers, f.stamps[0].t, f.stamps[0].held, f.store, Factory.storeCap(f)], [1, 200, false, 8, 108]);
+  assert.deepStrictEqual([f.stampers, f.stamps[0].t, f.stamps[0].held, f.store, Factory.storeCap(f)], [1, 200, false, 8, Factory.storeCapAt(0)]);
+  assert.strictEqual(Factory.storeCap(f), 54);
   assert.deepStrictEqual([f.presses, f.molds[0].got, f.molds[0].t, f.molds[0].held], [1, 3, 1800, false]);
-  assert.deepStrictEqual([Factory.capacity(f), f.crate, f.top, f.belt, f.lift, f.q, f.acc], [48, '', [], [], [], [], 0]);
+  assert.deepStrictEqual([Factory.capacity(f), f.top, f.belt, f.lift, f.q, f.acc], [48, [], [], [], [], 0]);
+  assert.strictEqual(f.crate, f.molds[0].c.toString(16).repeat(T.START_CRATE), 'START_CRATE minos, in the first piece\'s colour');
+  assert.deepStrictEqual([f.stats.minos, f.stats.fed, f.stats.made], [T.START_CRATE, T.START_PRESS.got + T.START_CRATE, T.START_STORE + T.START_PRESS.got + T.START_CRATE]);
   assert.deepStrictEqual([Factory.supply(f), Factory.demand(f), Factory.perHour(f)], [36, 24, 24]);
+  assert.strictEqual(Factory.status(f).lines, 0, 'not a whole line yet');
   assert(conserved(f) && limits(f) === '');
-  let t = 0, ship = null, drop = null;
-  while (t < 400 && ship == null) { for (const e of Factory.step(f, 0.25)) { if (e.kind === 'ship' && ship == null) ship = t + 0.25; if (e.kind === 'drop' && drop == null) drop = t + 0.25; } t += 0.25; }
+  let t = 0, ship = null, drop = null, lenAtShip = -1;
+  while (t < 400 && ship == null) { for (const e of Factory.step(f, 0.25)) { if (e.kind === 'ship' && ship == null) { ship = t + 0.25; lenAtShip = f.crate.length; } if (e.kind === 'drop' && drop == null) drop = t + 0.25; } t += 0.25; }
   assert.strictEqual(drop, 150, 'the first piece drops at 150 s');
   assert(ship > 150 + 10 / T.LIFT.speed && ship <= 330, 'and ships within 330 s (the conveyor is an 80 s ride): ' + ship);
+  assert(lenAtShip >= Factory.MPL, 'the first whole line is ready at the first ship: ' + lenAtShip + ' minos');
+  assert.strictEqual(Factory.collect(f, 'd').collected, 1);
   const g = Factory.create();
   Factory.step(g, 700);
   assert(g.stats.minos >= 4, 'the self-check still holds');
+});
+test('the rate floor: the line is never balanced by slowing it (pay, capacities and prices do that)', () => {
+  assert(T.CYCLE <= 600 && T.STAMP_T <= 100, 'a press piece every ' + T.CYCLE + ' s, a mino every ' + T.STAMP_T + ' s');
+  assert(Factory.perHour(Factory.create()) >= 24, 'the weakest line: ' + Factory.perHour(Factory.create()) + ' minos an hour');
+  assert(Factory.perHour(grow(Factory.create(), 4, 4, 2, 4)) >= 132, 'the full line');
+  // A newly built press, fed, drops its first piece within a cycle.
+  for (let k = 1; k < T.MOLDS.length; k++) {
+    const f = grow(seeded(90 + k), 4, k, 2, 4);
+    f.store = Factory.storeCap(f);
+    Factory.upgrade(f, 'press');
+    let t = 0, drop = null;
+    while (t <= T.CYCLE && drop == null) { for (const e of Factory.step(f, 0.25)) if (e.kind === 'drop' && e.k === k && drop == null) drop = t + 0.25; t += 0.25; }
+    assert(drop != null && drop <= T.CYCLE, 'press ' + (k + 1) + ' first drop at ' + drop);
+  }
 });
 test('the conveyor: a piece rides it for 80 s, so at full production it mostly carries something', () => {
   const f = Factory.create();
@@ -1207,14 +1232,14 @@ test('the conveyor: a piece rides it for 80 s, so at full production it mostly c
   for (let s = 0; s < 6 * 3600; s++) { Factory.run(g, 1000); if (g.lift.length) busy++; n++; if (s % 3600 === 3599) Factory.collect(g, 'd'); }
   assert(busy / n >= 0.4, 'aboard ' + (busy / n).toFixed(3) + ' of the time');
 });
-test('rates: 6, 9, 13.5, 18, 22.5, 27, 33 lines an hour in the natural order of building, as measured', () => {
+test('rates: 3, 4.5, 6.75, 9, 11.25, 13.5, 16.5 lines an hour in the natural order of building, as measured', () => {
   const plan = [[1, 1], [1, 2], [2, 2], [2, 3], [3, 3], [3, 4], [4, 4]];
-  assert.deepStrictEqual(plan.map(([S, P]) => Factory.quarters(Factory.perHour(grow(Factory.create(), S, P, 0, 0)) / 4)), ['6', '9', '13.5', '18', '22.5', '27', '33']);
+  assert.deepStrictEqual(plan.map(([S, P]) => Factory.quarters(Factory.perHour(grow(Factory.create(), S, P, 0, 0)) * T.PAY)), ['3', '4.5', '6.75', '9', '11.25', '13.5', '16.5']);
   for (const [S, P] of plan) {
     const f = grow(seeded(40 + S * 4 + P), S, P, 0, 4);
     let at24 = 0;
     for (let h = 1; h <= 48; h++) { Factory.run(f, HOUR); Factory.collect(f, 'd'); if (h === 24) at24 = f.stats.minos; }
-    const measured = (f.stats.minos - at24) / 24 / 4, want = Factory.perHour(f) / 4;
+    const measured = (f.stats.minos - at24) / 24 * T.PAY, want = Factory.perHour(f) * T.PAY;
     assert(Math.abs(measured - want) <= 0.02 * want, S + 'S ' + P + 'P: ' + measured + ' lines an hour, not ' + want);
   }
   assert.strictEqual(Factory.quarters(54 / 4), '13.5');
@@ -1312,7 +1337,7 @@ test('the store fills: four stamp heads and one press — the heads hold, and sh
     if (i % (4 * 3600) === 0) Factory.collect(f, 'd');
   }
   const w = Factory.waits(f);
-  assert.strictEqual(f.store, 108);
+  assert.strictEqual(f.store, Factory.storeCap(f));
   assert(w.storeFull && w.stamps.some(Boolean) && !w.crateFull, JSON.stringify(w));
   assert(shipsLate >= 20, 'pieces still ship: ' + shipsLate);
   assert(conserved(f) && limits(f) === '');
@@ -1328,7 +1353,7 @@ test('determinism: any slicing of the same time, and catch-up, make exactly the 
   const res = Factory.catchUp(c, now);
   runs.push(c);
   for (let i = 1; i < runs.length; i++) assert.deepStrictEqual(bare(runs[i]), bare(runs[0]), 'run ' + i);
-  assert(runs[0].stats.minos > 150 && res.minos === c.stats.minos && res.made > 0 && c.stats.away === res.minos);
+  assert(runs[0].stats.minos > 150 && res.minos === c.stats.minos - base.stats.minos && res.made > 0 && c.stats.away === res.minos);
   // Online steps from the page (whole milliseconds between frames) are the same run.
   const o = JSON.parse(JSON.stringify(base));
   for (let t = 0; t < 3 * HOUR;) { const ms = Math.min(3 * HOUR - t, 17); Factory.step(o, ms / 1000); t += ms; }
@@ -1339,7 +1364,7 @@ test('time: a clock set back makes nothing; a long gap is capped; the slowest ca
   f.lastTick = now + HOUR;
   assert.strictEqual(Factory.catchUp(f, now), null);
   assert.strictEqual(f.lastTick, now);
-  assert.deepStrictEqual([f.stats.minos, f.stats.made], [0, 11]);
+  assert.deepStrictEqual([f.stats.minos, f.stats.made], [T.START_CRATE, T.START_STORE + T.START_PRESS.got + T.START_CRATE]);
   const g = grow(Factory.create(), 4, 4, 2, 4);
   g.lastTick = now - 60 * 24 * HOUR;
   let t0 = Date.now();
@@ -1365,7 +1390,7 @@ test('time to full, in closed form, is close to the line run out', () => {
     () => grow(seeded(11), 1, 2, 0, 2),
     () => { const f = grow(seeded(12), 2, 2, 1, 3); Factory.run(f, 2 * HOUR); return f; },
     () => grow(seeded(13), 4, 4, 2, 4),
-    () => { const f = grow(seeded(14), 1, 4, 2, 4); f.stats.made += 300 - f.store; f.store = 300; return f; },
+    () => { const f = grow(seeded(14), 1, 4, 2, 4); f.stats.made += Factory.storeCap(f) - f.store; f.store = Factory.storeCap(f); return f; },
     () => { const f = grow(seeded(15), 3, 3, 0, 1); Factory.run(f, 1.5 * HOUR); return f; },
   ];
   for (const make of states) {
@@ -1373,7 +1398,9 @@ test('time to full, in closed form, is close to the line run out', () => {
     let t = 0;
     while (!Factory.isFull(f) && t < 40 * 3600 * 4) { Factory.tick(f, null); t++; }
     const got = t / 4;
-    assert(Math.abs(got - want) <= Math.max(0.1 * got, 600), 'closed form ' + Math.round(want) + ' s, run ' + got + ' s');
+    // Within a tenth, or within one piece (a press cycle, its ride up the conveyor and a minute): the crate is full
+    // only once the next piece waits at the station, which the closed form does not wait for.
+    assert(Math.abs(got - want) <= Math.max(0.1 * got, T.CYCLE + T.LIFT.len / T.LIFT.speed + 60), 'closed form ' + Math.round(want) + ' s, run ' + got + ' s');
   }
 });
 test('events: a feed for every mino set, drops under the molds, ships of whole pieces, pins', () => {
@@ -1433,16 +1460,21 @@ test('events: a feed for every mino set, drops under the molds, ships of whole p
 test('collect: whole lines only, loose minos stay, days counted once each', () => {
   const f = Factory.create();
   assert.strictEqual(Factory.collect(f), null);
-  f.crate = '1234567123456';
+  // Eight minos a line (MPL): 17 minos are two lines and one loose.
+  f.crate = '12345671234567123';
   const r = Factory.collect(f, '2026-09-26');
-  assert.deepStrictEqual([r.collected, r.loose, f.crate, r.taken], [3, 1, '6', '123456712345']);
-  assert.strictEqual(Factory.collect(f, '2026-09-26'), null, 'three loose minos are not a line');
-  f.crate += '1111';
+  assert.deepStrictEqual([r.collected, r.loose, f.crate, r.taken], [2, 1, '3', '1234567123456712']);
+  assert.strictEqual(Factory.collect(f, '2026-09-26'), null, 'seven loose minos or fewer are not a line');
+  f.crate += '111111';
+  assert.strictEqual(Factory.collect(f, '2026-09-26'), null, 'seven are not either');
+  f.crate += '1';
   Factory.collect(f, '2026-09-26');
   assert.strictEqual(f.stats.days, 1);
-  f.crate = '12341234';
+  f.crate = '1234123412341234';
   Factory.collect(f, '2026-09-27');
-  assert.deepStrictEqual([f.stats.days, f.stats.lines, f.stats.collects, f.stats.best], [2, 6, 3, 3]);
+  assert.deepStrictEqual([f.stats.days, f.stats.lines, f.stats.collects, f.stats.best], [2, 5, 3, 2]);
+  // Collect leaves 0–7 loose, whatever was in the crate.
+  for (let n = 0; n <= 40; n++) { f.crateLevel = 4; f.lift = []; f.crate = '1'.repeat(n); const c = Factory.collect(f, 'd'); assert.strictEqual(f.crate.length, n % Factory.MPL); assert.strictEqual(c ? c.collected : 0, Math.floor(n / Factory.MPL)); }
   for (let l = 0; l < 5; l++) {
     f.crateLevel = l; f.lift = [];
     f.crate = '1'.repeat(Factory.capacity(f));
@@ -1451,10 +1483,10 @@ test('collect: whole lines only, loose minos stay, days counted once each', () =
     const c = Factory.collect(f, 'd');
     assert.deepStrictEqual([c.collected, c.loose, f.crate], [Factory.crateLines(l), 0, '']);
   }
-  // Six columns: 30 minos are five rows, the last not full; Collect takes seven lines and leaves two.
+  // Six columns: 30 minos are five rows; Collect takes three lines (24 minos, four rows) and leaves six.
   f.crateLevel = 1; f.crate = '123456'.repeat(5);
   const c = Factory.collect(f, 'd');
-  assert.deepStrictEqual([c.collected, c.loose, f.crate, c.taken.length], [7, 2, '56', 28]);
+  assert.deepStrictEqual([c.collected, c.loose, f.crate, c.taken.length], [3, 6, '123456', 24]);
 });
 test('what three days of hourly collecting make is pinned (the geometry of the chain is part of the economy)', () => {
   const got = [[1, 1], [2, 2], [4, 4]].map(([S, P]) => {
@@ -1463,7 +1495,7 @@ test('what three days of hourly collecting make is pinned (the geometry of the c
     for (let h = 1; h <= 72; h++) { Factory.run(f, HOUR); const r = Factory.collect(f, 'd'); if (r) lines += r.collected; }
     return [lines, f.stats.pieces, f.stats.minos, f.stats.made];
   });
-  assert.deepStrictEqual(got, [[432, 432, 1728, 1851], [970, 863, 3883, 4009], [1663, 1275, 6653, 6834]]);
+  assert.deepStrictEqual(got, [[216, 432, 1732, 1801], [485, 863, 3887, 3959], [805, 1239, 6446, 6574]]);
 });
 test('shapes: 5, 12, 35, 108, all lying flat; one heptomino has a hole', () => {
   assert.deepStrictEqual([4, 5, 6, 7].map((n) => Factory.shapes(n).length), [5, 12, 35, 108]);
@@ -1486,7 +1518,7 @@ test('a broken factory is repaired; any other version is a new one', () => {
   });
   assert.deepStrictEqual([junk.stampers, junk.storeLevel, junk.presses, junk.crateLevel, junk.acc], [4, 0, 4, 4, 249]);
   assert.deepStrictEqual(junk.stamps.map((s) => [s.t, s.held]), [[400, true], [5, false], [0, false], [0, false]]);
-  assert.strictEqual(junk.store, 108);
+  assert.strictEqual(junk.store, Factory.storeCapAt(0));
   assert.deepStrictEqual(junk.top.map((it) => it.x), [25, 23, 3.125, 1.125], 'on the belt, a cell apart, on its eighths');
   assert(junk.molds.every((m, k) => m.s >= 0 && m.s < Factory.shapes(T.MOLDS[k]).length));
   assert.deepStrictEqual([junk.molds[2].got, junk.molds[2].t, junk.molds[2].held, junk.molds[2].pin], [6, 5, false, 2]);
@@ -1518,7 +1550,7 @@ test('a broken factory is repaired; any other version is a new one', () => {
   assert.deepStrictEqual(still(Factory.repair(good)), before);
   // No migrations: an old save's factory starts again.
   const v6 = Factory.repair({ v: 6, presses: 4, binLevel: 4, bin: '1'.repeat(400), molds: [], belt: [], stats: { minos: 5000 } });
-  assert.deepStrictEqual([v6.v, v6.presses, v6.crateLevel, v6.stats.minos, 'bin' in v6], [7, 1, 0, 0, false]);
+  assert.deepStrictEqual([v6.v, v6.presses, v6.crateLevel, v6.stats.minos, 'bin' in v6], [7, 1, 0, T.START_CRATE, false]);
   assert.strictEqual(L.loadState({ factory: null }).factory.presses, 1, 'a save without one gets a new factory');
 });
 
@@ -1565,10 +1597,17 @@ test('how long ago, short', () => {
 test('factory achievements: collects measured exactly', () => {
   const A = L.Achievements, st = L.defaultState();
   assert.deepStrictEqual(A.check(st, { mode: 'factory' }), [], 'nothing for a fresh line');
-  assert.deepStrictEqual(A.check(st, { mode: 'factory', collected: 99, loose: 1 }), []);
-  assert.deepStrictEqual(A.check(st, { mode: 'factory', collected: 60, loose: 2 }), [], 'a sweep leaves nothing behind');
-  assert.deepStrictEqual(A.check(st, { mode: 'factory', collected: 60, loose: 0 }).map((a) => a.id), ['fac_sweep']);
-  assert.deepStrictEqual(A.check(st, { mode: 'factory', collected: 100, loose: 3 }).map((a) => a.id), ['fac_hundred']);
+  assert.deepStrictEqual(A.check(st, { mode: 'factory', collected: 49, loose: 1 }), []);
+  assert.deepStrictEqual(A.check(st, { mode: 'factory', collected: 39, loose: 0 }), [], 'an Empty Crate is 40 lines or more');
+  assert.deepStrictEqual(A.check(st, { mode: 'factory', collected: 40, loose: 2 }), [], 'a sweep leaves nothing behind');
+  assert.deepStrictEqual(A.check(st, { mode: 'factory', collected: 40, loose: 0 }).map((a) => a.id), ['fac_sweep']);
+  assert.deepStrictEqual(A.check(st, { mode: 'factory', collected: 50, loose: 3 }).map((a) => a.id), ['fac_hundred']);
+  // Both can be met: the biggest crate holds 60 lines, and 40 or 50 fit in it (the second biggest holds 40).
+  assert(Factory.crateLines(T.CRATE_ROWS.length - 1) >= 50 && Factory.crateLines(T.CRATE_ROWS.length - 2) >= 40);
+  const fifty = A.LIST.find((a) => a.id === 'fac_hundred');
+  assert.deepStrictEqual([fifty.name, fifty.desc, fifty.pay], ['Exactly Fifty', 'Collect exactly 50 lines at once.', 75]);
+  const sweep = A.LIST.find((a) => a.id === 'fac_sweep');
+  assert.deepStrictEqual([sweep.desc, sweep.pay], ['Collect 40+ lines at once, no loose minos left.', 40]);
   st.factory.stats.seen[5] = '1'.repeat(12); st.factory.crateLevel = 4;
   assert.deepStrictEqual(A.check(st, { mode: 'factory' }).map((a) => a.id).sort(), ['fac_silo', 'fac_twelve']);
   const deep = A.LIST.find((a) => a.id === 'fac_silo');
@@ -1578,13 +1617,13 @@ test('factory achievements: collects measured exactly', () => {
   st.factory.stampers = 4;
   assert.deepStrictEqual(A.check(st, { mode: 'factory' }).map((a) => a.id), ['fac_stamp']);
   const four = A.LIST.find((a) => a.id === 'fac_stamp');
-  assert.deepStrictEqual([four.name, four.desc, four.pay, four.progress(st)], ['Four Stampers', 'Build all 4 stampers.', 150, [4, 4]]);
+  assert.deepStrictEqual([four.name, four.desc, four.pay, four.progress(st)], ['Four Stampers', 'Build all 4 stampers.', 60, [4, 4]]);
   assert.strictEqual(A.LIST.find((a) => a.id === 'fac_sweep').name, 'Empty Crate');
   assert.deepStrictEqual(['fac_10k', 'fac_mountain'].map((id) => A.LIST.find((a) => a.id === id).desc), ['Ship 10,000 minos.', 'Ship 100,000 minos.']);
   const fac = A.LIST.filter((a) => a.group === 'factory');
   assert.strictEqual(fac.length, 14);
   assert(!fac.some((a) => /bins?/i.test(a.name + ' ' + a.desc)), 'no bin left anywhere');
-  assert.deepStrictEqual([fac.filter((a) => a.tier !== 'legend').reduce((n, a) => n + a.pay, 0), fac.filter((a) => a.tier === 'legend').reduce((n, a) => n + a.pay, 0)], [1460, 5200]);
+  assert.deepStrictEqual([fac.filter((a) => a.tier !== 'legend').reduce((n, a) => n + a.pay, 0), fac.filter((a) => a.tier === 'legend').reduce((n, a) => n + a.pay, 0)], [610, 1125]);
 });
 
 console.log('effects physics');
@@ -1699,12 +1738,47 @@ console.log('effects physics');
     assert.deepStrictEqual(r.drilled, [[x, 0, 2]]);
   });
 }
+test('achievements pay a modest share: bands, the old order kept, a total well under what the Shop sells', () => {
+  const A = L.Achievements;
+  // What each paid before the rebalance: a cheaper one never came to pay more than a dearer one.
+  const OLD = {
+    quad: 15, tsd: 25, combo5: 40, b2b3: 50, lines150: 50, toolbox: 50, score50k: 60, tst: 80, pc: 120, mini2: 150,
+    combo10: 200, golden_ts: 200, pace33: 250, quads4: 250, lines500: 250, b2b8: 300, tst_b2b: 300, old_growth: 300,
+    pc_open: 300, it_showman: 300, pc3: 400, pc_b2b: 400, all_items: 400, it_sweep: 400, score250k: 500, sb_combos:
+    500, tspin100: 600, clean40: 700, chain20: 800, pace67: 1000, pc_tspin: 1000, quads10: 1200, pc10: 1500, tst10:
+    1500, b2b20: 1500, golden20: 1500, million: 2000, purist: 2500, lines5000: 3000, cl_tetris4: 40, cl_l10: 50,
+    cl_100k: 60, cl_l15: 150, cl_300k: 200, cl_t25: 1500, cl_l20: 1500, cl_1m: 3000, cl_games100: 120, cl_tetris10:
+    200, cl_nohold: 250, cl_pc: 300, cl_tst: 300, cl_sprint: 300, cl_tspin10: 350, cl_quads4: 300, cl_b2b8: 600,
+    cl_combo10: 400, cl_allquads: 700, cl_sprint60: 2000, cl_nohold20: 2000, cl_combo15: 1500, cl_l25: 2500,
+    pz_hard: 40, pz_hold: 30, pz_daily: 60, pz_streak: 80, pz_wild: 100, pz_hard25: 150, pz_500: 1000, pz_d100:
+    1500, pz_h50: 2000, pz_clean: 120, pz_daily3: 150, pz_spin: 250, pz_fast: 300, pz_wild3: 300, pz_first20: 400,
+    pz_hfirst25: 500, pz_h100: 600, pz_wildH: 1500, pz_daily30: 2000, pz_first100: 3000, lu_triathlon: 150,
+    lu_hours10: 150, lu_days30: 300, lu_half: 400, lu_100k: 500, lu_curator: 2000, lu_hours100: 2000, lu_days100:
+    2000, lu_1m: 5000, lu_all: 5000, fac_twelve: 60, fac_sweep: 80, fac_1k: 100, fac_keyhole: 120, fac_line: 150,
+    fac_stamp: 150, fac_silo: 150, fac_35: 150, fac_10k: 150, fac_days30: 150, fac_hundred: 200, fac_days100: 1200,
+    fac_108: 1500, fac_mountain: 2500
+  };
+  assert.deepStrictEqual(Object.keys(OLD).sort(), A.LIST.map((a) => a.id).sort(), 'the same achievements');
+  for (const a of A.LIST) for (const b of A.LIST) if (OLD[a.id] < OLD[b.id]) assert(a.pay <= b.pay, a.id + ' ' + a.pay + ' > ' + b.id + ' ' + b.pay);
+  assert(A.LIST.every((a) => a.pay >= 15), 'every one pays something real');
+  const normal = A.LIST.filter((a) => a.tier !== 'legend').map((a) => a.pay), legend = A.LIST.filter((a) => a.tier === 'legend').map((a) => a.pay);
+  assert(Math.max(...normal) <= 200 && Math.max(...normal) < 250 && Math.min(...legend) >= 250, 'normal 15–200, legendary 250 and up');
+  assert.deepStrictEqual(A.LIST.filter((a) => a.pay >= 1000).map((a) => [a.id, a.pay]), [['lu_all', 1000]], 'only Lull reaches 1,000');
+  const total = A.LIST.reduce((n, a) => n + a.pay, 0);
+  const forSale = Object.values(L.COSMETICS).flatMap((k) => Object.values(k)).filter((c) => c.price > 0 && !c.reward).reduce((n, c) => n + c.price, 0);
+  assert(total <= 20000 && total <= 0.5 * forSale, total + ' against ' + forSale + ' for sale');
+  assert.strictEqual(total, 19165);
+  const sums = {};
+  for (const a of A.LIST) { const k = a.group; sums[k] = sums[k] || [0, 0]; sums[k][a.tier === 'legend' ? 1 : 0] += a.pay; }
+  assert.deepStrictEqual(sums, { play: [2430, 3925], classic: [1450, 2800], puzzle: [1080, 2300], lull: [495, 2950], factory: [610, 1125] });
+});
 test('achievements: a fresh save and a short ordinary game earn nothing', () => {
   const st = L.defaultState(), A = L.Achievements;
   assert(A.LIST.length >= 85, 'many of them');
   assert(A.LIST.filter((a) => a.tier === 'legend').length >= 28, 'plenty of legends');
   assert(A.GROUPS.some((g) => g.id === 'lull') && A.LIST.every((a) => A.GROUPS.some((g) => g.id === a.group)));
-  for (const a of A.LIST) assert(a.tier === 'legend' ? a.pay >= 800 : a.pay < 1000, a.id + ' pays for its tier');
+  const normal = A.LIST.filter((a) => a.tier !== 'legend').map((a) => a.pay), legend = A.LIST.filter((a) => a.tier === 'legend').map((a) => a.pay);
+  assert(Math.max(...normal) < Math.min(...legend), 'a legendary one pays more than any other');
   // Nothing on a fresh save, whatever the event.
   for (const mode of ['tick', 'play', 'classic', 'puzzle']) assert.deepStrictEqual(A.check(st, { mode, r: { lines: 0, combo: 0 }, g: new Game({ w: 10, h: 20, seed: 2 }), score: 0, level: 1, lines: 0, tetrises: 0, ms: 0, diff: 'E', firstTry: false, mods: [] }), [], mode);
   // An ordinary player: each piece goes where it leaves the flattest stack (tried out, then taken back).
@@ -1847,13 +1921,19 @@ test('achievements: every new one is earned by its own feat, once', () => {
     ['lu_triathlon', { mode: 'tick' }, (st) => { st.history[today] = { quad: 1, tetris: 1, hard: 1 }; }],
     ['lu_hours10', { mode: 'tick' }, (st) => { st.stats.timeMs.total = 10 * 3600e3; }],
     ['lu_days30', { mode: 'tick' }, (st) => { st.stats.days = 30; }],
-    ['lu_100k', { mode: 'tick' }, (st) => { st.stats.lines.earned = 1e5 + 100; st.stats.lines.rewound = 200; }, true],
-    ['lu_100k', { mode: 'tick' }, (st) => { st.stats.lines.earned = 1e5; }],
+    ['lu_100k', { mode: 'tick' }, (st) => { st.stats.lines.earned = 5e4 + 100; st.stats.lines.rewound = 200; }, true],
+    ['lu_100k', { mode: 'tick' }, (st) => { st.stats.lines.earned = 5e4; }],
     ['lu_curator', { mode: 'tick' }, (st) => { for (const k of Object.keys(L.COSMETICS)) st.owned[k] = Object.keys(L.COSMETICS[k]); }],
     ['lu_hours100', { mode: 'tick' }, (st) => { st.stats.timeMs.total = 100 * 3600e3; }],
     ['lu_days100', { mode: 'tick' }, (st) => { st.stats.days = 100; }],
-    ['lu_1m', { mode: 'tick' }, (st) => { st.stats.lines.earned = 1e6; }],
+    ['lu_1m', { mode: 'tick' }, (st) => { st.stats.lines.earned = 5e5 - 1; }, true],
+    ['lu_1m', { mode: 'tick' }, (st) => { st.stats.lines.earned = 5e5; }],
   ];
+  // The two Lifetime line counts: 50,000 and 500,000, the same number in the words, the test and the progress.
+  for (const [id, n, words] of [['lu_100k', 5e4, '50,000'], ['lu_1m', 5e5, '500,000']]) {
+    const a = A.LIST.find((x) => x.id === id), st = fresh();
+    assert.deepStrictEqual([a.desc, a.progress(st)[1]], ['Earn ' + words + ' lines.', n]);
+  }
   const seen = new Set();
   for (const [id, ev, setup, not] of cases) {
     const st = fresh();
@@ -1997,16 +2077,26 @@ console.log('power-ups');
   const dropAt = (g, x, y, special, id) => { if (id) g.replacePiece({ id }); if (special) assert(g.setSpecial(special), special); g.piece.x = x; if (y != null) g.piece.y = y; return g.drop(); };
   const inv = (st) => Object.values(st.inventory).reduce((a, b) => a + b, 0);
 
-  test('the multiplier: an eighth a link in Free Play (×2.5 at twenty), a half in Classic (×10 at twenty); the chain counts apart', () => {
-    assert.deepStrictEqual([0, 1, 8, 9, 12, 16, 19, 20, 30].map((n) => Chain.mult(n)), [1, 1, 1, 1.125, 1.5, 2, 2.375, 2.5, 2.5]);
-    assert.deepStrictEqual([0, 1, 2, 3, 10, 19, 20, 40].map((n) => Chain.mult(n, 'classic')), [1, 1, 1, 1.5, 5, 9.5, 10, 10]);
-    for (let n = 0; n <= 20; n++) assert.strictEqual(Chain.mult(n), Math.max(1, n / 8), 'the old value (n) divided by eight');
+  test('the multiplier: ×0.05 a link after the first, ×1.5 at eleven, ×2 at twenty-one in Free Play (Classic stops at ×1.5); the chain counts apart', () => {
+    const R = Chain.RELAXED, C = Chain.CLASSIC, r2 = (x) => Math.round(x * 100) / 100;
+    for (const mode of [undefined, 'classic']) {
+      for (let n = 1; n < 100; n++) assert(Chain.mult(n, mode) >= Chain.mult(n - 1, mode), (mode || 'relaxed') + ' never falls: ' + n);
+    }
+    assert.deepStrictEqual([Chain.mult(0), Chain.mult(1)], [1, 1]);
+    assert.strictEqual(Chain.mult(2), r2(1 + R.step));
+    assert.strictEqual(Chain.mult(11), r2(1 + 10 * R.step));
+    assert.strictEqual(Chain.mult(11), 1.5);
+    assert.deepStrictEqual([Chain.mult(21), Chain.mult(99)], [R.cap, R.cap]);
+    assert.strictEqual(R.cap, 2);
+    assert(Chain.mult(20) < R.cap, 'the cap is reached at twenty-one, not before');
+    assert.deepStrictEqual([Chain.mult(11, 'classic'), Chain.mult(99, 'classic')], [C.cap, C.cap]);
+    assert(C.cap <= R.cap, 'Classic never multiplies more than Free Play');
     const g = new Game({ w: 10, h: 20, seed: 1 });
     Object.assign(g.s, { b2b: 13, combo: 4 });
     assert.strictEqual(Chain.streak(g), 14);
     assert.strictEqual(Chain.count(g), 18, 'chain = streak + combo');
-    assert.strictEqual(Chain.mult(Chain.streak(g)), 1.75, 'the multiplier ignores the combo');
-    assert.strictEqual(Chain.fmt(1.75), '×1.75');
+    assert.strictEqual(Chain.mult(Chain.streak(g)), r2(1 + 13 * R.step), 'the multiplier ignores the combo');
+    assert.strictEqual(Chain.fmt(Chain.mult(Chain.streak(g))), '×1.65');
     const q = new Game({ w: 10, h: 20, seed: 2 });
     for (let k = 0; k < 3; k++) {
       for (let y = 0; y < 4; y++) for (let x = 1; x < 10; x++) q.board.set(x, y, 8);
@@ -2091,16 +2181,76 @@ console.log('power-ups');
     assert(Combos.LIST.filter((c) => c.kind === 'item').length >= 8);
   });
 
-  test('Golden is worth its price played well, and not otherwise', () => {
-    assert.strictEqual(Luck.goldValue(5), 50);
-    assert(Luck.goldValue(5) >= L.ITEMS.golden.price * 1.3, 'quads: well over its price');
-    assert(Luck.goldValue(2) < L.ITEMS.golden.price, 'ordinary clears: under it');
+  test('Luck never profits: Golden at best breaks even, Double or Nothing and Safety Net never do', () => {
+    const cap = Chain.RELAXED.cap, bank = L.Library.bank, price = (id) => L.ITEMS[id].price;
+    // Golden: five quads on a full streak (the most five clears can pay, a quad being 4 + 1) give back its price at most.
+    const best = bank(5 * cap);
+    assert(Luck.goldValue(best) <= price('golden'), 'gold on capped quads: ' + Luck.goldValue(best) + ' for ' + price('golden'));
+    assert.strictEqual(Luck.goldValue(best), 50);
+    assert(Luck.goldValue(2) < price('golden'), 'ordinary clears: well under it');
+    // At every width, what gold adds to five Standard clears' worth of capped quads (Pay.clear, the real thing).
+    for (let w = 4; w <= 20; w++) {
+      const g = new Game({ w, h: 20, seed: 1 }), lk = L.Library.scale(w);
+      let extra = 0, guard = 0;
+      const s = { mult: cap, gold: Luck.GOLD_CLEARS };
+      while (s.gold > 0 && guard++ < 100) { const plain = L.Pay.clear({ mult: cap }, { lines: 4 }, w).pay; extra += L.Pay.clear(s, { lines: 4 }, w).pay - plain; }
+      assert(extra <= price('golden') + 1e-9, w + ' wide: gold adds ' + extra);
+      void g; void lk;
+    }
+    // Double or Nothing: won on a capped, golden quad it adds one Standard clear's worth, less than its price, even
+    // with an Undo to take back a loss.
+    assert(best * Luck.GOLD_X * (Luck.DOUBLE_X - 1) < price('double'), 'double: ' + best * Luck.GOLD_X * (Luck.DOUBLE_X - 1));
+    // Safety Net: the most it can keep, at every width (Pay.clear, the real thing): the clear it saves paid at the full
+    // streak rather than ×1 (a triple, the most an ordinary clear set by a piece can be), then every quad it takes to
+    // climb back to the cap paid at the cap rather than on the climb. Its price is at least the widest board's worth.
+    const netWorth = (w) => {
+      const lk = L.Library.scale(w);
+      let v = L.Pay.clear({ mult: cap }, { lines: 3 }, w).pay - L.Pay.clear({ mult: 1 }, { lines: 3 }, w).pay;
+      for (let n = 1; Chain.mult(n * Math.min(1, lk)) < cap; n++) v += L.Pay.clear({ mult: cap }, { lines: 4 }, w).pay - L.Pay.clear({ mult: Chain.mult(n * Math.min(1, lk)) }, { lines: 4 }, w).pay;
+      return v;
+    };
+    let netMax = 0;
+    for (let w = 4; w <= 20; w++) { const v = netWorth(w); netMax = Math.max(netMax, v); assert(v <= price('net') + 1e-9, 'net ' + w + ' wide keeps ' + v.toFixed(2) + ' for ' + price('net')); }
+    assert(Math.abs(netWorth(10) - 55.5) < 1e-9 && Math.abs(netWorth(20) - 100.5) < 1e-9, 'net: 10 wide ' + netWorth(10) + ', 20 wide ' + netWorth(20));
+    assert(price('net') - netMax < 10, 'the Net is priced near its best case, not far over it: ' + netMax + ' for ' + price('net'));
+    // The engine does what the sum assumes: on a 20-wide board a saved clear keeps the streak, and pays at the cap.
+    {
+      const g = new Game({ w: 20, h: 20, seed: 1 });
+      g.s.b2b = 30; g.s.net = 1;
+      const r = { lines: 3 };
+      g.score(r);
+      assert(r.netSaved === 31 && g.s.b2b === 30 && L.Pay.mult(g) === cap, JSON.stringify({ r, b2b: g.s.b2b }));
+    }
+    assert.strictEqual(Luck.DOUBLE_X, 2);
   });
 
-  test('Double or Nothing: a quad or a T-spin wins double; anything less pays nothing', () => {
-    assert(Luck.doubleWins({ lines: 4 }) && Luck.doubleWins({ lines: 2, tspin: true }) && Luck.doubleWins({ lines: 1, tspin: true }));
-    assert(!Luck.doubleWins({ lines: 3 }) && !Luck.doubleWins({ lines: 4, plain: 4 }) && !Luck.doubleWins({ lines: 2, mini: true }));
-    assert.strictEqual(Luck.DOUBLE_X, 2);
+  test('Double or Nothing and the extra line: a quad set by hand, a T-spin or a mini; a shaped piece\'s quad is neither', () => {
+    assert(Luck.doubleWins({ lines: 4 }) && Luck.doubleWins({ lines: 2, tspin: true }) && Luck.doubleWins({ lines: 1, tspin: true }) && Luck.doubleWins({ lines: 2, mini: true }));
+    assert(!Luck.doubleWins({ lines: 3 }) && !Luck.doubleWins({ lines: 4, plain: 4 }));
+    // The pieces a Noodle, a Giant and a Blueprint make (r.tag): real quads on the board, with no bonus.
+    const noodle = (() => { const g = quadWell(); g.replacePiece({ id: Pieces.customType([[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [5, 0]]).id, tag: 'noodle' }); return standUp(g); })();
+    const giant = (() => { const g = board(['XXXXXX....', 'XXXXXX....', 'XXXXXX....', 'XXXXXX....'], 'O'); g.replacePiece({ id: Pieces.bigOf('O').id, tag: 'giant' }); while (g.move(1)); return g.drop(); })();
+    const blue = (() => { const g = quadWell(); g.replacePiece({ id: Pieces.customType([[0, 0], [0, 1], [0, 2], [0, 3]]).id, tag: 'blueprint' }); while (g.move(1)); return g.drop(); })();
+    const hand = standUp(quadWell());
+    for (const [name, r, wins] of [['noodle', noodle, false], ['giant', giant, false], ['blueprint', blue, false], ['hand quad', hand, true],
+      ['T-spin', { lines: 1, tspin: true }, true], ['mini', { lines: 1, mini: true }, true]]) {
+      if (r.type) assert(r.lines >= 4, name + ' clears four: ' + r.lines);
+      assert.strictEqual(Luck.doubleWins(r), wins, name + ' and Double or Nothing');
+      // Pay.clear agrees: the extra Standard line comes with exactly the clears that win.
+      const plain = L.Pay.clear({ mult: 1 }, r, 10).pay, won = L.Pay.clear({ mult: 1, double: true }, r, 10);
+      assert.strictEqual(plain, (r.lines || 0) + (wins ? 1 : 0), name + ' pays ' + plain);
+      assert.strictEqual(won.double, wins ? 'won' : 'lost', name);
+    }
+    assert.strictEqual(noodle.tag, 'noodle');
+    // What the buyer reads says the same: a quad set by hand, never a shaped piece's, a T-spin or a mini.
+    const desc = L.ITEMS.double.desc;
+    assert(/quad set by hand/.test(desc) && /T-spin/.test(desc) && /\bmini\b/.test(desc), desc);
+    for (const id of Luck.SHAPED) assert(desc.includes(L.ITEMS[id].name), 'the description names ' + L.ITEMS[id].name + ': ' + desc);
+    // And so does the README's Luck row.
+    const readme = require('fs').readFileSync(require('path').join(__dirname, '..', 'README.md'), 'utf8');
+    const row = (readme.match(/Double or Nothing \(\d+,[^)]*\)/) || [''])[0];
+    assert(/quad set by hand/.test(row) && /T-spin or a mini/.test(row), 'README: ' + row);
+    for (const id of Luck.SHAPED) assert(row.includes(L.ITEMS[id].name), 'README names ' + L.ITEMS[id].name + ': ' + row);
   });
 
   test('every power-up has a type, a price, a rarity and an icon that is not an emoji; the engine knows every Tool', () => {
@@ -2109,7 +2259,8 @@ console.log('power-ups');
       const it = L.ITEMS[id];
       assert(L.ITEM_GROUPS.some((g) => g.id === it.group) && it.price > 0 && Gifts.RARITY[it.rarity] && it.icon && it.desc && it.name, id);
       assert(![...it.icon].some((ch) => emoji.test(ch)), id + ' icon');
-      assert(it.desc.length <= 90, id + ': a short tooltip');
+      // Double or Nothing names the pieces whose quads lose it, so it may run a little longer.
+      assert(it.desc.length <= (id === 'double' ? 110 : 90), id + ': a short tooltip');
     }
     assert(L.ITEM_ORDER.length >= 16 && L.ITEM_ORDER.length <= 24, L.ITEM_ORDER.length + ' power-ups');
     assert.strictEqual(new Set(L.ITEM_ORDER.map((id) => L.ITEMS[id].icon)).size, L.ITEM_ORDER.length, 'every icon its own');
@@ -2123,6 +2274,12 @@ console.log('power-ups');
     const rare = L.ITEM_ORDER.filter((id) => L.ITEMS[id].rarity === 'rare'), common = L.ITEM_ORDER.filter((id) => L.ITEMS[id].rarity === 'common');
     assert(rare.length >= 4 && common.length >= 5);
     assert(Math.max(...common.map((id) => L.ITEMS[id].price)) <= Math.min(...rare.map((id) => L.ITEMS[id].price)), 'common ones cost no more than rare ones');
+    // Price bands by rarity, Undo aside (it is 5 everywhere): every common below every uncommon, below every rare.
+    const band = (r) => L.ITEM_ORDER.filter((id) => id !== 'rewind' && L.ITEMS[id].rarity === r).map((id) => L.ITEMS[id].price);
+    assert(Math.max(...band('common')) < Math.min(...band('uncommon')), 'common ' + Math.max(...band('common')) + ' < uncommon ' + Math.min(...band('uncommon')));
+    assert(Math.max(...band('uncommon')) < Math.min(...band('rare')), 'uncommon ' + Math.max(...band('uncommon')) + ' < rare ' + Math.min(...band('rare')));
+    assert.deepStrictEqual([L.ITEMS.rewind.price, L.ITEMS.rewind.pack, L.packOf('rewind')], [5, 5, 5], 'Undo: 5, and free ones come as five');
+    assert.strictEqual(L.ITEM_ORDER.reduce((n, id) => n + L.ITEMS[id].price, 0), 1020);
   });
 
   test('the daily gift: three different entries (power-ups and a free hint), common ones far more often', () => {
@@ -2131,6 +2288,9 @@ console.log('power-ups');
     assert.deepStrictEqual(Gifts.pool(), L.ITEM_ORDER.concat(['free-hint']));
     assert.strictEqual(Gifts.weight('free-hint'), Gifts.RARITY.uncommon);
     assert.strictEqual(L.FREEBIES['free-hint'].key, 'hint');
+    // Puzzle pay is "pay" wherever a player reads it (the Pays line, the hint question, the solved card, the gift).
+    assert(/halves the pay\./.test(L.FREEBIES['free-hint'].desc), L.FREEBIES['free-hint'].desc);
+    for (const it of Object.values(L.FREEBIES).concat(Object.values(L.ITEMS))) assert(!/reward/i.test(it.desc), it.name + ': ' + it.desc);
     {
       const rg = new RNG(11), M = 30000, gpool = Gifts.pool(), gtot = gpool.reduce((a, id) => a + Gifts.weight(id), 0);
       let hints = 0, firstHint = 0, earnedHint = 0;
@@ -2274,15 +2434,16 @@ console.log('power-ups');
     assert(/undoButton\(this\.app\.store, \{ class: 'btn', id: 'topout-undo', onclick: \(\) => this\.topoutUndo\(\) \}/.test(src), 'so is the Board full card\'s');
   });
 
-  test('power-ups earned in play: one per hundred lines on a board, never twice for a rewound clear, never backwards', () => {
-    const e = { board: null, paid: 0 };
-    assert.strictEqual(Earn.lines(e, 'A', 60, 58), 0);
-    assert.strictEqual(Earn.lines(e, 'A', 101, 97), 1, 'the hundredth line');
-    assert.strictEqual(Earn.lines(e, 'A', 97, 99), 0, 'rewound');
-    assert.strictEqual(Earn.lines(e, 'A', 101, 99), 0, 'and cleared again: already paid');
-    assert.strictEqual(Earn.lines(e, 'A', 200, 199), 1);
-    assert.strictEqual(Earn.lines(e, 'B', 1450, 1449), 0, 'an old board is not paid backwards');
-    assert.strictEqual(Earn.lines(e, 'B', 1500, 1498), 1);
+  test('power-ups earned in play: one per two hundred lines on a board, never twice for a rewound clear, never backwards', () => {
+    const N = Earn.EVERY, e = { board: null, paid: 0 };
+    assert.strictEqual(N, 200);
+    assert.strictEqual(Earn.lines(e, 'A', N * 0.6, N * 0.58), 0);
+    assert.strictEqual(Earn.lines(e, 'A', N + 1, N - 3), 1, 'the two hundredth line');
+    assert.strictEqual(Earn.lines(e, 'A', N - 3, N - 1), 0, 'rewound');
+    assert.strictEqual(Earn.lines(e, 'A', N + 1, N - 1), 0, 'and cleared again: already paid');
+    assert.strictEqual(Earn.lines(e, 'A', 2 * N, 2 * N - 1), 1);
+    assert.strictEqual(Earn.lines(e, 'B', 14.5 * N, 14.5 * N - 1), 0, 'an old board is not paid backwards');
+    assert.strictEqual(Earn.lines(e, 'B', 15 * N, 15 * N - 2), 1);
     assert.strictEqual(Earn.lines(e, 'C', 4, 0), 0, 'a new board starts from nothing');
   });
 
@@ -2297,6 +2458,180 @@ console.log('power-ups');
     assert(s.state.inventory.bomb === 2 && s.state.stats.items.got.bomb === 2 && s.state.lines === 35, 'a gift costs nothing');
     assert(s.useItem('reroll') && !s.useItem('reroll'));
   });
+}
+
+console.log('economy');
+{
+  const { Chain, Combos, Gifts } = L;
+  const DS = ['E', 'M', 'H'];
+  test('puzzle pay: less each try that sets a piece, never under its difficulty\'s floor; Easy under Medium under Hard', () => {
+    const D = Puzzles.DIFFS, P = Puzzles.PAY;
+    for (const d of DS) {
+      const first = Puzzles.pay(d, { try: 1 }).pay;
+      let prev = Infinity;
+      for (let t = 1; t <= 12; t++) {
+        const r = Puzzles.pay(d, { try: t });
+        assert.strictEqual(r.byTries, Math.max(D[d].min, Math.round(D[d].reward * Math.pow(P.DECAY, t - 1))), d + ' try ' + t);
+        assert(r.pay <= prev && r.pay >= D[d].min && first >= r.pay, d + ' try ' + t + ': ' + r.pay);
+        for (const o of [{ undos: 1 }, { daily: true }, { undos: 2, daily: true }]) {
+          const a = Puzzles.pay(d, Object.assign({ try: t }, o)), b = Puzzles.pay(d, Object.assign({ try: t + 1 }, o));
+          assert(b.pay <= a.pay && a.pay >= D[d].min, d + ' ' + JSON.stringify(o) + ' try ' + t);
+        }
+        prev = r.pay;
+      }
+      assert.strictEqual(Puzzles.pay(d, { try: 0 }).try, 1, 'a solve is at least the first try');
+    }
+    assert(D.E.min < D.M.min && D.M.min < D.H.min, 'floors');
+    assert(D.E.reward < D.M.reward && D.M.reward < D.H.reward, 'first-try pay');
+    // The ladders (clean, then tries 1–7), and the floor is reached.
+    const ladder = (d) => [Puzzles.pay(d, { try: 1 }).pay].concat([1, 2, 3, 4, 5, 6, 7].map((t) => Puzzles.pay(d, { try: t, undos: 1 }).pay));
+    assert.deepStrictEqual(DS.map(ladder), [[5, 3, 2, 2, 2, 1, 1, 1], [11, 7, 6, 4, 4, 3, 3, 3], [27, 18, 14, 12, 9, 7, 6, 6]]);
+    assert(DS.every((d) => Puzzles.pay(d, { try: 12 }).floor && !Puzzles.pay(d, { try: 1 }).floor));
+    // Big Minos pays by the same rule: what solving pays depends on the difficulty and the tries alone.
+    for (const d of DS) {
+      const p = bigPuzzles(d, 1)[0];
+      assert(p.mods.includes('big'));
+      assert.deepStrictEqual(Puzzles.pay(p.diff, { try: 3 }), Puzzles.pay(d, { try: 3 }));
+    }
+  });
+  test('puzzle pay: a clean first try pays ×1.5; the Daily doubles after it; a hint halves last, rounded up', () => {
+    const D = Puzzles.DIFFS, P = Puzzles.PAY;
+    for (const d of DS) {
+      const R = D[d].reward;
+      assert.strictEqual(Puzzles.pay(d, { try: 1 }).pay, Math.round(R * P.CLEAN));
+      for (const o of [{ try: 1, undos: 1 }, { try: 1, hint: true }, { try: 2 }]) assert(!Puzzles.pay(d, o).clean, d + ' ' + JSON.stringify(o) + ' is not clean');
+      assert.strictEqual(Puzzles.pay(d, { try: 1, undos: 1 }).pay, R);
+      assert.strictEqual(Puzzles.pay(d, { try: 1, daily: true }).pay, Math.round(R * P.CLEAN) * P.DAILY);
+      assert.strictEqual(Puzzles.pay(d, { try: 1, hint: true, daily: true }).pay, Math.ceil((R * P.DAILY) / 2));
+      assert.strictEqual(Puzzles.pay(d, { try: 3, hint: true }).pay, Math.ceil(Puzzles.pay(d, { try: 3 }).byTries / 2));
+    }
+    assert.deepStrictEqual(DS.map((d) => Puzzles.pay(d, { try: 1 }).pay), [5, 11, 27]);
+    assert.deepStrictEqual(DS.map((d) => Puzzles.pay(d, { try: 1, daily: true }).pay), [10, 22, 54], 'three clean Dailies: 86 a day');
+    const r = Puzzles.pay('H', { try: 2, hint: true, daily: true });
+    assert.deepStrictEqual([r.base, r.byTries, r.afterClean, r.afterDaily, r.pay], [18, 14, 14, 28, 14], 'every step kept for the card');
+    // The solved card's line: only the steps that apply, and a first try that is not clean says why.
+    const steps = (d, o) => Puzzles.paySteps(d, Puzzles.pay(d, o));
+    assert.strictEqual(steps('H', { try: 2, hint: true, daily: true }), 'Hard 18 · try 2 → 14 · Daily ×2 → 28 · hint ½ → 14');
+    assert.strictEqual(steps('H', { try: 1 }), 'Hard 18 · clean ×1.5 → 27');
+    assert.strictEqual(steps('M', { try: 1, undos: 1 }), 'Medium 7 · Undo: no ×1.5');
+    assert.strictEqual(steps('M', { try: 1, undos: 2, daily: true }), 'Medium 7 · Undo: no ×1.5 · Daily ×2 → 14');
+    assert.strictEqual(steps('E', { try: 1, undos: 1, hint: true }), 'Easy 3 · hint ½ → 2', 'a hint says it itself');
+    for (const d of DS) for (let t = 1; t <= 4; t++) for (const undos of [0, 1]) for (const hint of [false, true]) {
+      assert(/ · /.test(steps(d, { try: t, undos, hint })), d + ' try ' + t + ': the line says more than the tile');
+    }
+  });
+  test('the Daily\'s ×2: once a date for each difficulty, whichever turn setting it was solved with', () => {
+    const ps = {}, key = '2026-09-29';
+    // The clockwise and the both-ways Daily of a date are different puzzles (two seeds), but one Daily.
+    assert.notStrictEqual(Puzzles.dailySeed('E', key, false), Puzzles.dailySeed('E', key, true));
+    assert(Puzzles.dailyDue(ps, key, 'E') && !Puzzles.dailyDue(ps, null, 'E'));
+    Puzzles.noteDaily(ps, key, 'E');
+    assert(!Puzzles.dailyDue(ps, key, 'E') && Puzzles.dailyDue(ps, key, 'M') && Puzzles.dailyDue(ps, '2026-09-30', 'E'));
+    Puzzles.noteDaily(ps, key, 'H'); Puzzles.noteDaily(ps, key, 'E');
+    assert.strictEqual(ps.dailyPaid[key], 'EH');
+    // Bounded: the oldest dates go first.
+    for (let i = 0; i < 500; i++) Puzzles.noteDaily(ps, '2020-01-01+' + String(i).padStart(3, '0'), 'M');
+    assert(Object.keys(ps.dailyPaid).length <= 400 && ps.dailyPaid['2020-01-01+499'] === 'M');
+    // PuzzleMode asks dailyDue for every Daily pay (the Pays line, the hint question, the solve) and notes the solve's.
+    const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'Game', 'js', 'modes.js'), 'utf8');
+    assert(!/daily: !!this\.meta\.daily/.test(src), 'no Daily pay from meta.daily alone');
+    assert(/if \(paid\.daily\) Puzzles\.noteDaily\(this\.ps, this\.meta\.daily, p\.diff\)/.test(src));
+  });
+  test('puzzle hints: bought, one never pays for itself (a Daily aside); bought early and used late, it loses', () => {
+    for (const d of DS) {
+      assert.deepStrictEqual([Puzzles.hintCost(d, 1), Puzzles.hintCost(d, 30)], { E: [2, 1], M: [4, 2], H: [9, 3] }[d]);
+      for (let t = 1; t <= 12; t++) {
+        const cost = Puzzles.hintCost(d, t);
+        for (const undos of [0, 1]) {
+          assert.strictEqual(Puzzles.pay(d, { try: t, undos, hint: true }).pay - cost, 0, d + ' try ' + t + ': a hinted solve nets nothing');
+          assert(Puzzles.pay(d, { try: t, undos, hint: true, daily: true }).pay - cost >= 0, d + ' Daily');
+          for (let t2 = t + 1; t2 <= 14; t2++) assert(Puzzles.pay(d, { try: t2, undos, hint: true }).pay - cost <= 0, d + ' hint at ' + t + ', solved at ' + t2);
+        }
+        assert(cost <= Puzzles.hintCost(d, t - 1 || 1), 'a hint never costs more later');
+      }
+    }
+  });
+  test('the daily gift: about one in four holds an Undo pack, one in ten a free hint', () => {
+    let undo = 0, hint = 0;
+    const N = 40000;
+    for (let i = 0; i < N; i++) {
+      const g = Gifts.forClaim('econ' + (i % 2000), Math.floor(i / 2000));
+      if (g.includes('rewind')) undo++;
+      if (g.includes('free-hint')) hint++;
+    }
+    assert(undo / N >= 0.23 && undo / N <= 0.27, 'Undo in ' + (undo / N).toFixed(4));
+    assert(hint / N >= 0.08 && hint / N <= 0.12, 'free hint in ' + (hint / N).toFixed(4));
+  });
+  test('combos: each first pay is less than any power-up but Undo (5, everywhere); the taper never starts over', () => {
+    const cheapest = Math.min(...L.ITEM_ORDER.filter((id) => id !== 'rewind').map((id) => L.ITEMS[id].price));
+    for (const c of Combos.LIST) assert(Combos.reward(c, 0).lines < cheapest, c.id + ' pays ' + Combos.reward(c, 0).lines);
+    assert(!/B\.list\.length\) B\.taper = \{\}/.test(require('fs').readFileSync(require('path').join(__dirname, '..', 'Game', 'js', 'library.js'), 'utf8')), 'nothing resets the taper');
+  });
+  test('the factory\'s prices: each kind rises; the cheapest production upgrade always adds lines; crates cost more a line as they grow', () => {
+    const { STAMP_COST: S, STORE_COST: St, PRESS_COST: P, CRATE_COST: C } = T;
+    for (const [name, a] of [['stamp', S.slice(1)], ['store', St.slice(1)], ['press', P.slice(1)], ['crate', C]]) for (let i = 1; i < a.length; i++) assert(a[i] > a[i - 1], name + ' ' + a);
+    assert(P[1] < S[1] && S[1] < P[2] && P[2] < S[2] && S[2] < P[3] && P[3] < S[3], 'press, stamper, press … in price order');
+    assert(St[1] + St[2] < S[3], 'both store sizes cost less than the last stamper');
+    const perLine = C.map((c, l) => c / (Factory.crateLines(l + 1) - Factory.crateLines(l)));
+    for (let l = 1; l < perLine.length; l++) assert(perLine[l] > perLine[l - 1], 'crate lines dearer: ' + perLine.map((x) => x.toFixed(2)));
+  });
+  // What a factory makes in a day, measured on the real line: collected at these hours, one warm day, then two measured.
+  const PROFILES = { x1: [8], x2: [8, 20], x3: [8, 14, 20], x6: [8, 11, 14, 17, 20, 23] };
+  const DAY = 24 * HOUR;
+  function perDay(build, prof) {
+    const f = seeded(4242);
+    build.forEach(([kind, n]) => { for (let i = 0; i < n; i++) assert(Factory.upgrade(f, kind), kind); });
+    const hours = PROFILES[prof], warm = 1, days = 2;
+    let t = 0, got = 0;
+    for (let d = 0; d < warm + days; d++) for (const h of hours) {
+      const at = d * DAY + h * HOUR;
+      Factory.run(f, at - t); t = at;
+      const r = Factory.collect(f, 'd' + d);
+      if (d >= warm && r) got += r.collected;
+    }
+    return got / days;
+  }
+  test('the factory\'s paybacks, measured: every rung adds lines at the collecting it is for, and each kind pays back slower as it climbs', () => {
+    // The ladder a player climbs, each rung at the collecting that makes it worth having (x1 a day … x6).
+    const LADDER = [['crate', 'x1'], ['crate', 'x1'], ['crate', 'x1'], ['crate', 'x1'], ['press', 'x2'], ['stamp', 'x3'], ['press', 'x3'],
+      ['stamp', 'x6'], ['press', 'x6'], ['store', 'x6'], ['store', 'x6'], ['stamp', 'x6']];
+    const have = { stamp: 0, store: 0, press: 0, crate: 0 }, pay = { stamp: [], store: [], press: [], crate: [] };
+    const cost = (kind) => ({ stamp: T.STAMP_COST[have.stamp + 1], store: T.STORE_COST[have.store + 1], press: T.PRESS_COST[have.press + 1], crate: T.CRATE_COST[have.crate] })[kind];
+    const build = () => Object.entries(have).map(([k, n]) => [k, n]);
+    const rows = [];
+    for (const [kind, prof] of LADDER) {
+      const before = perDay(build(), prof), price = cost(kind);
+      have[kind]++;
+      const after = perDay(build(), prof), gain = after - before;
+      rows.push(kind + ' ' + price + ' +' + gain.toFixed(2) + '/day @' + prof);
+      assert(gain > 0, 'a rung that adds nothing: ' + rows[rows.length - 1]);
+      pay[kind].push(price / gain);
+    }
+    for (const [kind, p] of Object.entries(pay)) for (let i = 1; i < p.length; i++) assert(p[i] > p[i - 1], kind + ' paybacks ' + p.map((x) => x.toFixed(1)) + '\n' + rows.join('\n'));
+    // The ceiling: the whole ladder, collected six times a day.
+    const full = perDay([['stamp', 3], ['store', 2], ['press', 3], ['crate', 4]], 'x6');
+    assert(full <= 320, 'the full factory at six collects a day: ' + full);
+    console.log('       paybacks (days): ' + Object.entries(pay).map(([k, p]) => k + ' ' + p.map((x) => x.toFixed(1)).join('/')).join(', ') + '; full factory x6 ' + full + ' a day');
+  });
+  test('cosmetics: each kind rises in catalogue order, from 450 or less to 5,000 at most; 39,500 in all', () => {
+    let total = 0;
+    for (const [kind, cat] of Object.entries(L.COSMETICS)) {
+      const prices = Object.values(cat).filter((c) => c.price > 0 && !c.reward).map((c) => c.price);
+      for (let i = 1; i < prices.length; i++) assert(prices[i] > prices[i - 1], kind + ': ' + prices);
+      assert(prices[0] <= 450 && prices[prices.length - 1] <= 5000, kind + ': ' + prices);
+      total += prices.reduce((a, b) => a + b, 0);
+    }
+    assert.strictEqual(total, 39500);
+    for (const cat of Object.values(L.COSMETICS)) for (const c of Object.values(cat)) if (c.reward) assert.strictEqual(c.price, 0, c.name + ' is a factory reward');
+  });
+  test('no dead code: nothing reads a Jackpot or lines.luck any more', () => {
+    const dir = require('path').join(__dirname, '..', 'Game', 'js');
+    for (const f of require('fs').readdirSync(dir).filter((x) => x.endsWith('.js'))) {
+      const src = require('fs').readFileSync(require('path').join(dir, f), 'utf8');
+      assert(!/lines\.luck|Jackpot/.test(src), f);
+    }
+  });
+  void Chain;
 }
 
 console.log('save');
@@ -2667,7 +3002,7 @@ console.log('board library');
     assert.strictEqual(B2.list.length, 1);
     assert.strictEqual(B2.cur, B2.list[0].id);
   });
-  test('combos pay less each time they come round in the library, not per board: only a new board with none left starts over', () => {
+  test('combos pay less each time they come round in the library, not per board: it never starts over', () => {
     const st = L.loadState({});
     const B = Library.ensure(st, 1000, rnd);
     assert.deepStrictEqual([0, 1, 2].map(() => Library.taper(B, 'painted', 0)), [0, 1, 2]);
@@ -2681,10 +3016,13 @@ console.log('board library');
     assert.strictEqual(Library.taper(B, 'painted', 0), 5, 'retired and replaced while another board is saved: still none');
     for (const r of B.list.slice()) Library.retire(st, r.id, played(13, 3).toJSON(), 5000);
     Library.newCurrent(st, 5000, rnd);
-    assert.strictEqual(Library.taper(B, 'painted', 0), 0, 'every board gone: the new one starts over');
+    assert.strictEqual(Library.taper(B, 'painted', 0), 6, 'every board gone: the new one does not start over either');
+    for (const r of B.list.slice()) Library.remove(st, r.id);
+    Library.newCurrent(st, 6000, rnd);
+    assert.strictEqual(Library.taper(B, 'painted', 0), 7, 'every board deleted: still none');
     assert.strictEqual(Library.taper(B, 'keyhole', 2), 2, 'a board\'s own count is never undercut');
   });
-  test('a power-up per hundred lines stays per board: switching away and back never pays a milestone twice', () => {
+  test('a power-up per two hundred lines stays per board: switching away and back never pays a milestone twice', () => {
     const st = L.loadState({});
     const a = played(40, 1);
     a.s.lines = 199;
@@ -2735,8 +3073,9 @@ console.log('board sizes');
     // What PlayMode.onLock pays (js/items.js, Pay.clear): lines x scale, plus at most one Standard line for a difficult
     // clear, x the multiplier, rounded down to the hundredth.
     const pay = (lines, difficult, mult, w) => L.Pay.clear({ mult }, { lines, tspin: difficult && lines < 4 }, w).pay;
+    const cap = L.Chain.RELAXED.cap;
     for (let w = 4; w <= 20; w++) {
-      for (const [lines, diff, mult] of [[1, false, 1], [2, false, 1], [4, true, 1], [4, true, 1.75], [2, true, 2.5], [4, true, 2.5 * 3]]) {
+      for (const [lines, diff, mult] of [[1, false, 1], [2, false, 1], [4, true, 1], [4, true, 1.75], [2, true, cap], [4, true, cap * L.Luck.GOLD_X]]) {
         const std = pay(lines, diff, mult, 10), here = pay(lines, diff, mult, w);
         if (w <= 10 || !diff) assert(Math.abs(here - Library.bank(std * w / 10)) <= 0.01, w + ' wide: ' + here + ' vs ' + std);
         assert(here / w <= std / 10 + 1e-9, w + ' wide pays faster per cell: ' + here + ' vs ' + std);
@@ -2748,10 +3087,23 @@ console.log('board sizes');
     assert.strictEqual(pay(4, true, 1, 20), 9, 'a quad 20 wide: its bonus is one Standard line');
     assert.strictEqual(pay(1, true, 1, 20), 3, 'a T-spin single 20 wide: two lines and one');
   });
+  test('sizes: the most a clear can pay, at every width; Classic never pays more per line than Free Play', () => {
+    const { Chain, Pay } = L, cap = Chain.RELAXED.cap;
+    for (let w = 4; w <= 20; w++) {
+      const k = Library.scale(w);
+      assert.strictEqual(Pay.clear({ mult: cap }, { lines: 4 }, w).pay, Library.bank(cap * (4 * k + Math.min(1, k))), w + ' wide');
+      if (w <= 10) assert.strictEqual(Pay.clear({ mult: cap }, { lines: 4 }, w).pay, w, w + ' wide: a capped quad pays w');
+    }
+    assert.deepStrictEqual([12, 20].map((w) => Pay.clear({ mult: cap }, { lines: 4 }, w).pay), [11.6, 18]);
+    // Classic: a capped tetris banks four lines at its rate and its cap.
+    const C = Chain.CLASSIC;
+    assert.strictEqual(Library.bank(4 * C.rate * C.cap), 4.2);
+    for (let n = 0; n < 100; n++) assert(C.rate * Chain.mult(n, 'classic') <= Chain.mult(n) + 1e-9, 'Classic pays no more a line at a streak of ' + n);
+  });
   test('sizes: the difficult-clear bonus is at most one Standard line, so a T a bag never earns more on a wide board', () => {
     // The best a bag can do: its one T clears a line with a T-spin, the other 28 - w cells go as quads; at the cap.
     const bag = (w) => {
-      const tss = L.Pay.clear({ mult: 2.5 }, { lines: 1, tspin: true }, w).pay, quad = L.Pay.clear({ mult: 2.5 }, { lines: 4 }, w).pay;
+      const cap = L.Chain.RELAXED.cap, tss = L.Pay.clear({ mult: cap }, { lines: 1, tspin: true }, w).pay, quad = L.Pay.clear({ mult: cap }, { lines: 4 }, w).pay;
       return tss + quad * (28 - w) / (4 * w);
     };
     const std = bag(10);
@@ -2776,6 +3128,14 @@ console.log('board sizes');
         assert(here <= std + 0.01, w + ' wide after ' + cells + ' cells: ' + here + ' vs ' + std);
       }
     }
+    // Per piece, at every width: a quad w wide takes w pieces (4w cells), so after the same number of pieces no board
+    // has paid more than Standard.
+    for (let w = 4; w <= 20; w++) {
+      for (let pieces = 10; pieces <= 10 * 60; pieces += 10) {
+        const here = run(w, 4 * Math.floor(pieces / w) * w), std = run(10, 4 * Math.floor(pieces / 10) * 10);
+        assert(here <= std + 0.01, w + ' wide after ' + pieces + ' pieces: ' + here + ' vs ' + std);
+      }
+    }
     // The count itself (the chain, achievements) stays raw: twelve quads in a row are a streak of twelve at any width.
     const g = { w: 7, s: { b2b: 11 } };
     assert.strictEqual(L.Chain.streak(g), 12);
@@ -2792,7 +3152,8 @@ console.log('board sizes');
       return { extra: Math.round(extra * 100) / 100, clears: n };
     };
     const std = golden(10);
-    assert.deepStrictEqual(std, { extra: 50, clears: 5 });
+    assert.deepStrictEqual(std, { extra: Luck.goldValue(5), clears: 5 });
+    assert.strictEqual(std.extra, 25);
     // (Wider than Standard a quad's bonus is still one Standard line, so gold there adds a little less.)
     for (let w = 4; w <= 20; w++) assert(golden(w).extra <= std.extra + 1e-9 && golden(w).extra >= (w <= 10 ? std.extra - 0.1 : std.extra * 0.9), w + ' wide: ' + JSON.stringify(golden(w)));
     assert.strictEqual(golden(20).clears, 3, '20 wide: two clears and a half');
@@ -2810,8 +3171,9 @@ console.log('board sizes');
     };
     for (let w = 4; w <= 20; w++) assert(boost(w) <= boost(10) + 1e-9 && boost(w) >= (w <= 10 ? boost(10) - 0.1 : boost(10) * 0.9), w + ' wide boost ' + boost(w) + ' vs ' + boost(10));
     // A won Double or Nothing adds at most one Standard clear's worth; lost, the clear pays nothing.
-    const dbl = (w) => { const s = { mult: 2.5, gold: 5, double: true }, r = Pay.clear(s, { lines: 4 }, w); return [r.pay, r.double, s.double]; };
-    const plain = (w) => Pay.clear({ mult: 2.5, gold: 5 }, { lines: 4 }, w).pay;
+    const cap = L.Chain.RELAXED.cap;
+    const dbl = (w) => { const s = { mult: cap, gold: 5, double: true }, r = Pay.clear(s, { lines: 4 }, w); return [r.pay, r.double, s.double]; };
+    const plain = (w) => Pay.clear({ mult: cap, gold: 5 }, { lines: 4 }, w).pay;
     for (let w = 4; w <= 20; w++) {
       const [won, what, left] = dbl(w);
       assert.strictEqual(what, 'won'); assert.strictEqual(left, false);
@@ -2982,11 +3344,12 @@ console.log('board sizes');
     assert.deepStrictEqual(B2.size, { w: 20, h: 20 });
     assert(!Library.playable(bad) && Library.playable(new Game({ w: 4, h: 8 }).toJSON()));
   });
-  test('sizes: power-ups every hundred lines and the line achievements count Standard lines; feats count on boards 10 wide or more', () => {
-    // A board 5 wide: 200 of its lines are 100 Standard ones (as PlayMode passes them to Earn).
-    const e = { board: null, paid: 0 }, k = Library.scale(5);
-    assert.strictEqual(L.Earn.lines(e, 1, 199 * k, 198 * k), 0);
-    assert.strictEqual(L.Earn.lines(e, 1, 200 * k, 199 * k), 1);
+  test('sizes: power-ups every two hundred lines and the line achievements count Standard lines; feats count on boards 10 wide or more', () => {
+    // A board 5 wide: 400 of its lines are 200 Standard ones (as PlayMode passes them to Earn).
+    const e = { board: null, paid: 0 }, k = Library.scale(5), n = L.Earn.EVERY / k;
+    assert.strictEqual(n, 400);
+    assert.strictEqual(L.Earn.lines(e, 1, (n - 1) * k, (n - 2) * k), 0);
+    assert.strictEqual(L.Earn.lines(e, 1, n * k, (n - 1) * k), 1);
     const A = L.Achievements;
     const on = (w, h, s, r) => { const g = new Game({ w, h, seed: 1 }); Object.assign(g.s, s || {}); return { mode: 'play', r: Object.assign({ lines: 1, combo: 0 }, r), g }; };
     const ids = (st, ev) => A.check(st, ev).map((a) => a.id);
@@ -3681,6 +4044,9 @@ console.log('touch gestures');
     assert(e.hs.retired.mouseTurn, 'tap turns retire the hint');
   });
 }
+
+// The economy against the models of play: bots on the real engine, the puzzle model, the career (scripts/econ-test.cjs).
+require('./econ-test.cjs')(test, L);
 
 // The Home Screen web app: the offline copy, the manifest and icons, the deployed build (scripts/web-test.cjs).
 require('./web-test.cjs')(test).then(() => {
