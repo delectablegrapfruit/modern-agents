@@ -527,7 +527,8 @@ laid out in a box (`layout(box)`; the whole canvas for one board). A part's view
 the first painter whose `claims(v)` is true draws a stored cell, then a `claims: 'rest'` painter the own cells, the
 piece, its ghost and the trays, then the plain cell; overlays after the stack, the piece and the rim; `busy` keeps
 frames coming; move (a mouse slide's steps too), turn and lock triggers; no red rim; which turn the trays draw and how
-long the first Next slot and the Hold box are for a long piece (`traySlot`); how opaque each cell of the piece in play
+long the first Next slot and the Hold box are for a long piece (`traySlot`), and how many pieces Next shows at most
+(`nextCount`: fewer when a later one would be specks); how opaque each cell of the piece in play
 is (`pieceAlpha`: Mirror's copy); and marks on the New board preview and the library's thumbnails
 (`Render.previewBoard`, which draws both). An item that acts at more than one spot (the engine's `targets`) is previewed
 and animated at each. With `?freeze=1` every frame is drawn at one

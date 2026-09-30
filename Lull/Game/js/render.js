@@ -29,6 +29,8 @@
   //                              (slot 'next': the first Next slot, dir its queue's 'v' or 'h'; slot 'hold': the Hold box,
   //                              grown down beside a tall board, 'v' only): the largest answer over today's (Next 2.5 'v',
   //                              3.4 'h'; Hold its own), so a long piece draws larger (Shapes' 12 blocks)
+  //   nextCount(view) -> n       at most n pieces in Next (at least 1; the fewest asked for): a later slot's piece
+  //                              that would be drawn too small to read is left out
   //   pieceAlpha(view, p, cell, copy) -> alpha   how opaque a cell of the piece in play is drawn (copy: a cell the
   //                              recipe added to the piece's own, placed: Mirror's copy at 0.8); the answers multiply
   //   preview(ctx, geom, recipe, theme)   over the New board preview and the library thumbnails (previewBoard)
@@ -1503,7 +1505,9 @@
       // Next: the queue in one tray, the piece coming first and largest, the rest after a hairline.
       // Classic's top out takes the pieces it piles up off the queue as they come.
       const queue = this.queueSkip ? g.queue.slice(this.queueSkip) : g.queue;
-      const n = Math.min(g.fixed ? queue.length : g.previewCount, queue.length);
+      // A view part can show fewer (nextCount: a long piece's blocks would be specks in a later slot); never none.
+      let n = Math.min(g.fixed ? queue.length : g.previewCount, queue.length);
+      for (const p of this.parts) if (typeof p.nextCount === 'function') { const k = p.nextCount(this); if (Number.isInteger(k) && k >= 1 && k < n) n = k; }
       label('NEXT', next.x, next.y, next.w, g.fixed ? queue.length + ' LEFT' : null);
       if (nextDir === 'v') {
         const first = Math.round(s * this.slotCells(queue[0], 'next', 'v', 2.5)), slot = Math.round(s * 1.95);
