@@ -574,6 +574,10 @@ By touch alone Settings ▸ Keys is Settings ▸ Gestures, and lists the gesture
 
 ## Touch
 
+A quick swipe left or right anywhere off the board changes game tab (left: the next of Play, Puzzles, Factory,
+Classic; right: the one before). A swipe on a board steers the piece instead, and slow drags, dialogs and anything
+that scrolls sideways are left alone (`bindTabSwipe` in `js/app.js`).
+
 On a phone or a tablet the board is played with one finger, anywhere on it (`js/touch.js` reads the gestures;
 `BoardMode.bindTouch` in `js/modes.js` carries them out through the same `action()` as the keys):
 
@@ -690,6 +694,11 @@ npx serve site                                 # (or any static server) then ope
 node Lull/scripts/web-browser-test.cjs         # the web app alone: offline, updates, Home Screen (browser-test.cjs runs it too)
 node Lull/scripts/web-icons.cjs                # redraws Game/icons/ from the app icon's design (needs Playwright)
 ```
+
+The tests hold up on a busy machine: they wait for what they check rather than for a set time, time work by CPU time,
+and give inputs their own time stamps. Two test-only hooks, inert in play, help: `app.frameStep` (a fixed step per
+display frame, to time an animation in its own time) and a mode's `clock` (the time the set grace and a resting finger go
+by, held while a test sends its inputs).
 
 A packaged build is committed by CI to [`dist/Lull.app.zip`](../dist/). It is ad-hoc signed: right-click ▸ Open the
 first time. The save lives in `~/Library/Application Support/Lull/save.json` (Settings ▸ Export copies it).

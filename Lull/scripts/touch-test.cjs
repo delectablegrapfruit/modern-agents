@@ -266,10 +266,22 @@ module.exports = async function touchTests({ browser, check, PAGE, OUT }) {
   await drag(G.cx, G.y + 60, -G.step * 2.2, 0);
   b = await piece('classic');
   check('Classic: a drag moves the piece', b.x - a.x === -2 && b.pieces === a.pieces, JSON.stringify([a, b]));
-  await ev(() => { Lull.app.modes.classic.acc = -30; });
+  // A slow drag on a held clock: each touch stamped 17 ms after the last, and the board's clock (BoardMode.clock: the
+  // one a finger resting down the board goes by) held at the latest, so a busy machine's pauses between them are never
+  // a rest (a finger that does rest is the next check's). Gravity is held off for it: the first row lowered restarts
+  // its count, and a busy machine can take a second or more to deliver the drag.
+  await ev(() => { const m = Lull.app.modes.classic; m.acc = -30; m.gravity = () => Infinity; });
   a = await piece('classic');
-  await drag(G.cx, G.y + 40, 0, G.step * 3.3);
+  {
+    const pts = line(G.cx, G.y + 40, 0, G.step * 3.3, Math.max(2, Math.ceil((G.step * 3.3) / 6)));
+    const [origin, t0] = await ev(() => { window.__clockT = performance.now(); Lull.app.modes.classic.clock = () => window.__clockT; return [performance.timeOrigin, window.__clockT]; });
+    const at = async (type, p, ms) => { await ev((v) => { window.__clockT = v; }, t0 + ms); await touch(type, p ? [p] : [], (origin + t0 + ms) / 1000); };
+    await at('touchStart', pts[0], 0);
+    for (let i = 1; i < pts.length; i++) await at('touchMove', pts[i], i * 17);
+    await at('touchEnd', null, (pts.length - 1) * 17 + 4);
+  }
   b = await piece('classic');
+  await ev(() => { const m = Lull.app.modes.classic; delete m.clock; delete m.gravity; });
   check('Classic: a slow drag down soft-drops a row a step (and never locks)', a.y - b.y === 3 && b.pieces === a.pieces && b.score - a.score === 3, JSON.stringify([a, b]));
   // Resting the finger down the board keeps lowering (every Lower repeat), without moving it further.
   await ev(() => { Lull.app.modes.classic.acc = -30; });
@@ -452,6 +464,24 @@ module.exports = async function touchTests({ browser, check, PAGE, OUT }) {
   check('reduced motion: gestures play the same', b.pieces === a.pieces + 1);
   await shot('75-phone-reduced');
   await ev(() => { Lull.app.settings.motion = 'full'; Lull.app.applySettings(); });
+
+  // A quick sideways swipe off the board changes game tab; on a board, slow, or with a dialog up it does not.
+  const swipe = (sel, dx, ms) => ev(([sel, dx, ms]) => new Promise((r) => {
+    while (Lull.UI.modalOpen()) Lull.UI.closeTopModal();
+    const el = document.querySelector(sel), b = el.getBoundingClientRect(), x = b.left + b.width / 2, y = b.top + Math.min(b.height / 2, 40);
+    const T = (X) => new Touch({ identifier: 9, target: el, clientX: X, clientY: y });
+    el.dispatchEvent(new TouchEvent('touchstart', { touches: [T(x)], changedTouches: [T(x)], bubbles: true }));
+    setTimeout(() => { el.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [T(x + dx)], bubbles: true })); r(Lull.app.tab); }, ms);
+  }), [sel, dx, ms]);
+  await ev(() => Lull.app.setTab('factory'));
+  const sw = { next: await swipe('#view-factory', -120, 120) };
+  sw.back = await swipe('#view-classic .status, #view-classic', 120, 120);
+  await ev(() => Lull.app.setTab('factory'));
+  sw.slow = await swipe('#view-factory', -120, 600);
+  await ev(() => Lull.app.setTab('play'));
+  sw.board = await swipe('#cv-play', -120, 120);
+  check('a quick sideways swipe changes game tab (left: next, right: back); not on a board, not slow',
+    sw.next === 'classic' && sw.back === 'factory' && sw.slow === 'factory' && sw.board === 'play', JSON.stringify(sw));
 
   check('no page errors on the phone', errors.length === 0, errors.slice(0, 5).join('\n'));
   await P.ctx.close();

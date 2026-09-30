@@ -139,8 +139,19 @@ module.exports = async function undoTests({ browser, check, PAGE, OUT }) {
     await D.page.waitForTimeout(240);
     a = await D.ev(money);
     const to0 = await topouts(D);
+    // The card's Undo on screen first, however long a busy machine takes to show it.
+    await D.page.locator('#topout-undo').waitFor({ state: 'visible', timeout: 20000 });
     if (how === 'dblclick') await D.page.dblclick('#topout-undo');
-    else { const r = await D.page.locator('#topout-undo').boundingBox(); await D.page.mouse.click(r.x + r.width / 2, r.y + r.height / 2); await D.page.waitForTimeout(90); await D.page.mouse.click(r.x + r.width / 2, r.y + r.height / 2); }
+    else {
+      // Two clicks 90 ms apart on the set grace's clock (BoardMode.clock, held for the two), however slowly a busy
+      // machine delivers them.
+      const r = await D.page.locator('#topout-undo').boundingBox();
+      await D.ev(() => { window.__graceT = performance.now(); Lull.app.modes.play.clock = () => window.__graceT; });
+      await D.page.mouse.click(r.x + r.width / 2, r.y + r.height / 2);
+      await D.ev(() => { window.__graceT += 90; });
+      await D.page.mouse.click(r.x + r.width / 2, r.y + r.height / 2);
+      await D.ev(() => { delete Lull.app.modes.play.clock; });
+    }
     await D.page.waitForTimeout(120);
     b = await D.ev(money);
     after = await readTopUndo(D);

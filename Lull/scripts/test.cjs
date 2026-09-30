@@ -895,15 +895,20 @@ test('the same seed builds the same puzzle', () => {
   }
 });
 const counts = { E: 250, M: 250, H: 250 };
+// Generation is timed by the CPU time of this thread, not the wall clock: on a loaded machine (parallel jobs, CI
+// neighbours) the wall clock also counts the time spent waiting for a core, which says nothing about the generator.
+// On an idle machine the two agree: generating is plain synchronous work, the wait a player sees. (A Node without
+// threadCpuUsage gets the whole process's CPU time: a little more, as it counts the GC's helper threads too.)
+const cpuMs = () => { const u = process.threadCpuUsage ? process.threadCpuUsage() : process.cpuUsage(); return (u.user + u.system) / 1000; };
 // Numbered seeds as they were generated (and replayed) here, for the Big Minos tests below.
 const generated = { E: new Map(), M: new Map(), H: new Map() };
 for (const d of ['E', 'M', 'H']) {
   test(Puzzles.DIFFS[d].name + ': ' + counts[d] + ' puzzles generate fast and play out through the engine', () => {
-    const mods = {}; let ms = 0, worst = 0, pieces = 0;
+    const mods = {}; let ms = 0, worst = 0, pieces = 0, wall = 0;
     for (let n = 1; n <= counts[d]; n++) {
-      const t0 = Date.now();
+      const t0 = cpuMs(), w0 = Date.now();
       const p = Puzzles.generate(Puzzles.numberedSeed(d, n));
-      const dt = Date.now() - t0; ms += dt; worst = Math.max(worst, dt);
+      const dt = cpuMs() - t0; ms += dt; worst = Math.max(worst, dt); wall += Date.now() - w0;
       assert(p && !p.fallback, 'built ' + n);
       generated[d].set(n, p);
       p.mods.forEach((m) => { mods[m] = (mods[m] || 0) + 1; });
@@ -914,10 +919,10 @@ for (const d of ['E', 'M', 'H']) {
       assert.strictEqual(Board.fromArray(p.w, p.h, p.cells).fullRows().length, 0);
     }
     const avg = ms / counts[d];
-    assert(avg < 40, 'average ' + avg.toFixed(1) + ' ms');
+    assert(avg < 40, 'average ' + avg.toFixed(1) + ' ms CPU');
     const expected = Object.keys(Puzzles.MODS).filter((m) => Puzzles.MODS[m].w[d] > 0);
     for (const m of expected) assert(mods[m] > 0, 'wildcard ' + m + ' appears in ' + d);
-    console.log('       avg ' + avg.toFixed(1) + ' ms, worst ' + worst + ' ms, ' + (pieces / counts[d]).toFixed(1) + ' pieces each');
+    console.log('       avg ' + avg.toFixed(1) + ' ms CPU (' + (wall / counts[d]).toFixed(1) + ' ms by the clock), worst ' + worst.toFixed(0) + ' ms, ' + (pieces / counts[d]).toFixed(1) + ' pieces each');
   });
 }
 // Big Minos: each seed draws a mix of big pieces and tetrominoes (BIG_MIX in js/puzzlegen.js). The first `want`
