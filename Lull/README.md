@@ -722,7 +722,8 @@ Mirror + Jelly, Shapes + Jelly, Classic + Jelly and Protect + Jelly play.
 (bodies by id, contacts bottom up), and every body at rest on a 1/4096 lattice (its turn on 1/2²⁰). The bodies
 themselves are kept, as integers, in the save (`x.jelly`) and in each Undo step, so a resumed board and Undo have the
 exact state and the same lock settles the same way again. The only randomness, a hard drop's hair of sideways nudge,
-is seeded from the board's seed (kept with the bodies) and its piece count. Cost: a lock is a few ms (bounded in the
+is seeded from the board's seed (kept with the bodies) and its piece count. Cost: about 5 ms a lock set down and 10–25 ms
+a lock hard dropped on a desktop (bounded in the
 tests on a board 20 × 40: under 60 000 mino-steps a lock, under 60 ms on average); at rest nothing runs.
 
 *The look.* Every settled piece is one rounded blob following its shape wherever the physics put it, a hair inset from
