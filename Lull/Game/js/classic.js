@@ -3,7 +3,8 @@
 // rates. Its settings are the recipe's `classic` key, in the spirit of the NES and Game Boy Advance games:
 //
 //   classic = { type: 'a' | 'b', level: 1–15 (start), height: 0–5 (B's starting garbage), music: 'korobeiniki' | 'off',
-//               drop: hard drop, hold, ghost (booleans), next: 0–5 (Next previews), rand: 'bag' | 'nes', lock: 'modern' | 'nes' }
+//               drop: hard drop, hold, ghost (booleans), next: 0–5 (Next previews), rand: 'bag' | 'nes', lock: 'modern' | 'nes',
+//               levelLock: the level stays at the start level (boolean, default off) }
 //
 // Pure rules and the engine's extension (no DOM); the controller, the New board window's panel and the library's tags
 // are js/classicview.js.
@@ -16,7 +17,7 @@
   const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
   const clone = (v) => JSON.parse(JSON.stringify(v));
 
-  const DEFAULTS = Object.freeze({ type: 'a', level: 1, height: 0, music: 'korobeiniki', drop: true, hold: true, ghost: true, next: 3, rand: 'bag', lock: 'modern' });
+  const DEFAULTS = Object.freeze({ type: 'a', level: 1, height: 0, music: 'korobeiniki', drop: true, hold: true, ghost: true, next: 3, rand: 'bag', lock: 'modern', levelLock: false });
   const LEVELS = [1, 15];
   const HEIGHTS = 5;
   const NEXT = 5;
@@ -42,14 +43,14 @@
 
   /**
    * The level after `lines` cleared (since the board became Classic): A type goes up every ten lines from the start
-   * level (never below it); B type stays at its start level.
+   * level (never below it); B type, or a board with its level locked, stays at its start level.
    */
-  function levelOf(k, lines) { return k.type === 'b' ? k.level : Math.max(k.level, 1 + Math.floor(lines / 10)); }
+  function levelOf(k, lines) { return k.type === 'b' || k.levelLock ? k.level : Math.max(k.level, 1 + Math.floor(lines / 10)); }
   /**
    * The level the achievements and the records count: the level reached by lines alone (as from level 1), never more
-   * than the level played, so a high start level does not reach Level Twenty by itself.
+   * than the level played, so a high start level does not reach Level Twenty by itself; none with the level locked.
    */
-  function featLevel(k, lines) { return Math.min(levelOf(k, lines), 1 + Math.floor(lines / 10)); }
+  function featLevel(k, lines) { return k.levelLock ? 0 : Math.min(levelOf(k, lines), 1 + Math.floor(lines / 10)); }
 
   function normalizeK(raw) {
     const o = isObj(raw) ? raw : {}, d = DEFAULTS;
@@ -65,6 +66,7 @@
       next: int(o.next, 0, NEXT, d.next),
       rand: o.rand === 'nes' ? 'nes' : 'bag',
       lock: o.lock === 'nes' ? 'nes' : 'modern',
+      levelLock: o.levelLock === true,
     };
   }
 
@@ -164,7 +166,7 @@
     label: (r, short) => {
       if (!on(r)) return '';
       const k = r.classic;
-      return 'Classic ' + TYPE_NAMES[k.type] + (short ? '' : ' · Level ' + k.level + (k.type === 'b' && k.height ? ' · Height ' + k.height : ''));
+      return 'Classic ' + TYPE_NAMES[k.type] + (short ? '' : ' · Level ' + k.level + (k.levelLock ? ' (locked)' : '') + (k.type === 'b' && k.height ? ' · Height ' + k.height : ''));
     },
     rules(r, R) {
       if (!on(r)) return;

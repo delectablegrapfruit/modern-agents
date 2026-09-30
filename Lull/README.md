@@ -807,6 +807,7 @@ Game Boy Advance games:
 | Lock delay | Modern, NES | Modern: half a second, renewed by a move or a turn up to 15 times; NES: it sets on the next row's time |
 | Music | Korobeiniki, Off | the one Classic track there is (the bar's Music button and Settings ▸ Sound ▸ Classic music still turn it off everywhere) |
 | Hard drop, Hold, Ghost | on or off | hard drop off: Space, a click and a flick down do nothing; hold off: no Hold; ghost off: none drawn |
+| Level lock | on or off (default off) | on: the level stays at the start level all game, so gravity never speeds up; the score as ever; the status bar and the board's label say `Level 5 (locked)`; no level feat or level record (it reaches no level by lines) |
 
 Left out: the NES's own speed table and 0–19 levels (the levels stay the guideline curve Classic has always had, so
 its records and achievements keep meaning what they did), DAS and ARE timing (movement is the keyboard's repeat and

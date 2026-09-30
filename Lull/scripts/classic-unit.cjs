@@ -85,6 +85,27 @@ module.exports = function classicUnit({ L, test }) {
     assert(Classic.gravity(1) > Classic.gravity(10) && Classic.gravity(20) === Classic.gravity(30), 'the guideline curve, level 20 at most');
   });
 
+  test('classic: level lock: the level stays at the start level all game (gravity with it), the score as ever, no level feat', () => {
+    const k = Recipe.normalize(CL({ level: 5, levelLock: true })).classic;
+    assert.strictEqual(k.levelLock, true);
+    assert.strictEqual(Recipe.normalize(CL({ levelLock: 'yes' })).classic.levelLock, false, 'on only as true');
+    assert.deepStrictEqual([0, 10, 60, 190].map((n) => Classic.levelOf(k, n)), [5, 5, 5, 5]);
+    assert.deepStrictEqual([0, 100, 190].map((n) => Classic.featLevel(k, n)), [0, 0, 0], 'a locked game reaches no level feat');
+    assert.strictEqual(Recipe.label(CL({ level: 5, levelLock: true })), 'Classic A · Level 5 (locked)');
+    const g = mk({ level: 5, levelLock: true });
+    Classic.of(g).lines = 60;
+    well(g, 4, 9); g.board.set(0, 4, 5);
+    const r = dropAt(g, 'I', 9 - 2, 1);
+    assert.strictEqual(r.classic.before, 5); assert.strictEqual(r.classic.level, 5);
+    assert.strictEqual(g.s.score, 800 * 5 + r.dropDist * 2, 'scored at the level it is played at');
+    assert.strictEqual(Classic.of(g).bestLevel, 0);
+    const lv = L.Achievements.LIST.filter((x) => /^cl_l\d+$/.test(x.id));
+    assert(lv.length >= 3);
+    for (const a of lv) assert(!a.test({}, { level: Classic.featLevel(k, 250), g }), a.id);
+    const z = { w: 10, h: 20 };
+    assert.deepStrictEqual(Recipe.editPrice(CL(), CL({ levelLock: true }), z, z), { sections: ['mode'], cost: Recipe.EDIT_PRICE }, 'a Classic setting like the rest');
+  });
+
   test('classic: B type: garbage by height (scaled to the board, never a full row, the board\'s own seed), and the board ends at 25 lines', () => {
     for (const [hh, height, rows] of [[20, 0, 0], [20, 3, 8], [20, 5, 12], [40, 1, 6], [8, 5, 5]]) {
       const g = mk({ type: 'b', height }, 10, hh, 3);

@@ -315,7 +315,7 @@
         const G = g(), c = C(), k = K(), stat = o.stat, m = G.s.mult || 1, S = cs();
         return [
           stat('Score', fmtInt(G.s.score)),
-          stat('Level', String(level())),
+          stat('Level', String(level()) + (k.levelLock ? ' (locked)' : ''), null, k.levelLock ? 'Level lock: it stays at level ' + k.level + ' all game' : null),
           k.type === 'b' ? stat('Left', String(Math.max(0, Classic.B_LINES - c.lines))) : stat('Lines', fmtInt(c.lines)),
           stat('Bank', Chain.fmt(m), m > 1 ? 'chain opt' : 'slot-off', this.bankTip(m)),
           stat('Best', fmtInt(Math.max(S.best, G.rules.feats ? G.s.score : 0)), 'opt'),
@@ -371,7 +371,7 @@
         seg('Randomizer', [opt('classic.rand', 'bag', 'nb-level', '7-bag'), opt('classic.rand', 'nes', 'nb-level', 'NES random')]),
         seg('Lock delay', [opt('classic.lock', 'modern', 'nb-level', 'Modern'), opt('classic.lock', 'nes', 'nb-level', 'NES')]),
         seg('Music', Classic.MUSIC.map((m) => opt('classic.music', m, 'nb-level', Classic.MUSIC_NAMES[m]))),
-        h('div', { class: 'cl-sws' }, sw('classic.drop', 'Hard drop'), sw('classic.hold', 'Hold'), sw('classic.ghost', 'Ghost')));
+        h('div', { class: 'cl-sws' }, sw('classic.drop', 'Hard drop'), sw('classic.hold', 'Hold'), sw('classic.ghost', 'Ghost'), sw('classic.levelLock', 'Level lock')));
     },
     said(path, v) {
       const names = { 'classic.level': 'Start level ', 'classic.height': 'Garbage height ', 'classic.next': 'Next ' };
@@ -379,6 +379,7 @@
       if (path === 'classic.drop') return 'Hard drop ' + (v ? 'on' : 'off');
       if (path === 'classic.hold') return 'Hold ' + (v ? 'on' : 'off');
       if (path === 'classic.ghost') return 'Ghost ' + (v ? 'on' : 'off');
+      if (path === 'classic.levelLock') return 'Level lock ' + (v ? 'on' : 'off');
       if (path === 'classic.rand') return v === 'nes' ? 'NES random' : '7-bag';
       if (path === 'classic.lock') return v === 'nes' ? 'NES lock' : 'Modern lock';
       if (path === 'classic.music') return 'Music ' + (Classic.MUSIC_NAMES[v] || v);
