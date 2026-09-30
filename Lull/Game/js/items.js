@@ -141,6 +141,20 @@
     goldValue(pay) { return Luck.GOLD_CLEARS * pay * (Luck.GOLD_X - 1); },
     /** Does a clear win a Double or Nothing? A difficult clear: the same one that earns the extra line (Pay.clear). */
     doubleWins(r) { return difficult(r); },
+    /**
+     * The most a Safety Net can keep on a Normal board w wide (Pay.clear, the real thing): the clear it saves paid at the
+     * full streak rather than ×1 (a triple, the most an ordinary clear set by a piece can be), then every quad it takes
+     * to climb back to the cap paid at the cap rather than on the climb. 55.5 on Standard; wider boards climb slower to
+     * a lower cap, and narrow ones pay less a line, so both keep less.
+     */
+    netBest(w) {
+      const at = (n) => Pay.mult({ w, s: { b2b: n - 1 } }), top = at(1000), pay = (mult, lines) => Pay.clear({ mult }, { lines }, w).pay;
+      let v = pay(top, 3) - pay(1, 3);
+      for (let n = 1; at(n) < top; n++) v += pay(top, 4) - pay(at(n), 4);
+      return v;
+    },
+    /** A Safety Net's price on a board w wide: the next multiple of 5 above the most it can keep (60 on Standard), 10 at least. */
+    netPrice(w) { return Math.max(10, (Math.floor(Luck.netBest(w) / 5 + 1e-9) + 1) * 5); },
   };
 
   // ---- what a clear pays in Free Play ----------------------------------------------------------------------------------

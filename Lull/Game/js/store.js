@@ -47,7 +47,7 @@
     settle:    { group: 'board', name: 'Settle', icon: '⤋', price: 70, rarity: 'rare', desc: 'Every block falls straight down, closing every hole. Full rows clear.' },
     golden:    { group: 'luck', name: 'Golden Piece', icon: '✦', price: 50, rarity: 'uncommon', desc: 'Your next five clears pay double.' },
     double:    { group: 'luck', name: 'Double or Nothing', icon: '◐', price: 30, rarity: 'uncommon', desc: 'Next clear: double if a quad set by hand (not a Noodle, Giant or Blueprint), a T-spin or a mini; else nothing.' },
-    net:       { group: 'luck', name: 'Safety Net', icon: '⊔', price: 105, rarity: 'rare', desc: 'Keeps your back-to-back streak through one ordinary clear.' },
+    net:       { group: 'luck', name: 'Safety Net', icon: '⊔', price: 60, rarity: 'rare', desc: 'Keeps your back-to-back streak through one ordinary clear.' },
   };
   const ITEM_ORDER = ITEM_GROUPS.flatMap((g) => Object.keys(ITEMS).filter((id) => ITEMS[id].group === g.id));
   /** How many one free grant of a power-up gives (the gift, play): its pack, or one. */
@@ -394,10 +394,22 @@
     itemsChanged() { this.touch(); this.emit('items'); }
 
     /** Buys a power-up with lines (the Relaxed tab's item bar, and Puzzles' Undo): one at a time, never a pack. */
-    buyItem(id, qty) {
+    /**
+     * What one power-up costs on a board (a game, or its width): ITEMS[id].price, but a Safety Net costs what it can keep
+     * on that width (Luck.netPrice; ITEMS.net.price is Standard's).
+     */
+    priceOf(id, board) {
+      const it = ITEMS[id];
+      if (!it) return Infinity;
+      const w = typeof board === 'number' ? board : board && board.w;
+      return id === 'net' && w && L.Luck ? L.Luck.netPrice(w) : it.price;
+    }
+
+    /** Buys qty (1 by default) of a power-up, at its price on `board` (a game or its width; none: the listed price). */
+    buyItem(id, qty, board) {
       qty = qty || 1;
       const it = ITEMS[id];
-      if (!it || !this.spend(it.price * qty)) return false;
+      if (!it || !this.spend(this.priceOf(id, board) * qty)) return false;
       this.state.inventory[id] = (this.state.inventory[id] || 0) + qty;
       this.state.stats.items.bought[id] = (this.state.stats.items.bought[id] || 0) + qty;
       this.itemsChanged();

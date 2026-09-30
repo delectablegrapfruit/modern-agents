@@ -1653,17 +1653,17 @@
       el.replaceChildren(
         h('div', { class: 'tray-head' }, h('b', null, ico('group-' + g.id), g.name), h('button', { class: 'icon-btn', title: 'Close', 'aria-label': 'Close', html: UI.ICONS.close, onclick: () => this.openTray(null) })),
         h('div', { class: 'tray-items' }, ids.map((id) => {
-          const it = ITEMS[id], n = inv[id] || 0;
+          const it = ITEMS[id], n = inv[id] || 0, price = this.app.store.priceOf(id, this.game);
           const on = this.armed && this.armed.id === id && this.armed.piece === this.game.piece;
           // One this board refuses (its recipe's rules: R.refuse, or a part's allow) stays in its place, off, with why.
           const why = this.game.allow(id);
           return h('button', {
-            class: 'item-btn' + (n || on ? '' : ' empty') + (!n && !on && wallet < it.price ? ' poor' : '') + (on ? ' on' : '') + (why ? ' refused' : ''), 'data-item': id,
+            class: 'item-btn' + (n || on ? '' : ' empty') + (!n && !on && wallet < price ? ' poor' : '') + (on ? ' on' : '') + (why ? ' refused' : ''), 'data-item': id,
             'data-rarity': it.rarity === 'common' ? null : it.rarity, 'aria-disabled': why ? 'true' : null,
             'data-tip-title': it.name, 'data-tip-icon': 'item-' + id, 'data-tip': why || it.desc,
             'data-tip-foot': on ? 'Again to take it back' : null,
             onclick: () => this.useItem(id),
-          }, h('span', { class: 'ii', html: L.Icons.icon('item-' + id) }), h('span', { class: 'il' }, it.name), h('span', { class: 'n' }, n || on ? String(n) : LINE + it.price));
+          }, h('span', { class: 'ii', html: L.Icons.icon('item-' + id) }), h('span', { class: 'il' }, it.name), h('span', { class: 'n' }, n || on ? String(n) : LINE + price));
         })));
     }
 
@@ -1684,13 +1684,15 @@
       if (why) { toast(why, 'bad'); this.app.sound.play('error'); return; }
       if (!this.game.piece && id !== 'rewind') { toast('No piece in play', 'bad'); return; }
       if (!st.state.inventory[id]) {
-        if (st.state.lines < it.price) { toast(it.name + ' · ' + fmtInt(it.price) + ' ' + LINE, 'bad'); this.app.sound.play('error'); return; }
+        // Its price on this board (Store.priceOf: a Safety Net costs what it can keep at this width).
+        const price = st.priceOf(id, this.game);
+        if (st.state.lines < price) { toast(it.name + ' · ' + fmtInt(price) + ' ' + LINE, 'bad'); this.app.sound.play('error'); return; }
         // An Undo also takes back what the last placement banked: the wallet must cover both.
         const short = () => id === 'rewind' && st.state.lines < it.price + this.rewindRefund();
         if (short()) { toast('Not enough lines', 'bad'); this.app.sound.play('error'); return; }
-        UI.confirm(it.name, h('p', null, it.desc), 'Buy & use · ' + fmtInt(it.price) + ' ' + LINE, () => {
+        UI.confirm(it.name, h('p', null, it.desc), 'Buy & use · ' + fmtInt(price) + ' ' + LINE, () => {
           if (short()) { toast('Not enough lines', 'bad'); this.app.sound.play('error'); return; }
-          if (st.buyItem(id)) { this.app.refreshWallet(); this.apply(id); }
+          if (st.buyItem(id, 1, this.game)) { this.app.refreshWallet(); this.apply(id); }
         }, 'primary', 'item-' + id);
         return;
       }

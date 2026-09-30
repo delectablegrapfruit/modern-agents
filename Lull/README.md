@@ -342,7 +342,7 @@ clicking it asks once (its name and a Buy & use button with the price) — dimme
 | Choice | Pick of Three (20, common: play one of the next three now; this piece takes its place in line), Best Fit (45, uncommon: the piece becomes whichever of the seven fits the stack best, right over its spot), Order Slip (55, rare: choose the piece in play) |
 | Tools | Patch (20, common: one block that drops into the highest covered hole in its column), Ghost (50, uncommon: passes through blocks into the first gap below where it fits), Drill (40, uncommon: bores out its column), Bomb (45, uncommon: clears a 13-block diamond where it lands), Laser (65, rare: clears every row it touches, full or not), Black Hole (90, rare: swallows everything within three blocks) |
 | Board | Mirror World (20, common: flips the board left to right), Undo (5, common: takes back the last placement and its lines; one item with Puzzles' Undo, the count shared, and every free one comes as a pack of 5), Trapdoor (40, uncommon: the bottom row falls away, whatever it holds), Tornado (60, rare: shuffles the columns, holes and all), Settle (70, rare: every block falls straight down; full rows clear) |
-| Luck | Golden Piece (50, uncommon: the next five clears pay ×2), Double or Nothing (30, uncommon: the next clear pays double if it is a quad set by hand — not a Noodle's, a Giant's or a Blueprint's — a T-spin or a mini, nothing if it is less), Safety Net (105, rare: keeps the back-to-back streak through one ordinary clear) |
+| Luck | Golden Piece (50, uncommon: the next five clears pay ×2), Double or Nothing (30, uncommon: the next clear pays double if it is a quad set by hand — not a Noodle's, a Giant's or a Blueprint's — a T-spin or a mini, nothing if it is less), Safety Net (60 on Standard, less on wider boards, rare: keeps the back-to-back streak through one ordinary clear) |
 
 Nothing here is about a clock — Free Play has none — so they are about choice and shape: which piece, what it
 becomes, what the stack looks like after, what the next clear is worth. Tools and Shapers change the piece in play
@@ -388,7 +388,10 @@ Giant or a Blueprint), a T-spin or a mini pays double, anything less pays nothin
 board). Safety Net is a one-time pass for the back-to-back streak: the next clear that would end it does not, and the
 multiplier stays. What it keeps is worth most on a Standard board: the saved clear paid at the full streak (a triple:
 3 more) and the twenty quads it would take to climb back, 52.5 more, 55.5 in all (wider, the streak climbs slower to
-a lower cap, so it keeps less: about 32 at 12 wide, 10 at 20), so at 105 it never breaks even, at any size.
+a lower cap, so it keeps less: about 32 at 12 wide, 10 at 20; narrower, a little under 55.5). Its price on a board is
+worked out from that: the next multiple of 5 above the most it can keep at that width, 10 at least (`Luck.netPrice`).
+So it is 60 on Standard and on narrower boards, 45 at 11 wide, 35 at 12, 25 at 14 and 15 from 16 wide up: close to
+what it can keep, but never enough to break even. The item bar shows the price for the board you are on.
 
 Each has its own animation, mostly on a small physics layer fed with what the engine actually removed or moved: the
 drill's bit spins down its column and each block it meets bursts into chips; a laser charges a line, then a beam

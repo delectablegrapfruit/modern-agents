@@ -2213,22 +2213,37 @@ console.log('power-ups');
     // Double or Nothing: won on a capped, golden quad it adds one Standard clear's worth, less than its price, even
     // with an Undo to take back a loss.
     assert(best * Luck.GOLD_X * (Luck.DOUBLE_X - 1) < price('double'), 'double: ' + best * Luck.GOLD_X * (Luck.DOUBLE_X - 1));
-    // Safety Net: the most it can keep, at every width (Pay.clear, the real thing): the clear it saves paid at the full
-    // streak rather than ×1 (a triple, the most an ordinary clear set by a piece can be), then every quad it takes to
-    // climb back to the cap paid at the cap rather than on the climb (each at that width's streak and cap, Pay.mult).
-    // Its price is at least the best board's worth; since wide boards climb slower to a lower cap, that is Standard's.
+    // Safety Net: the most it can keep, at every width (Luck.netBest, on Pay.clear, the real thing): the clear it saves
+    // paid at the full streak rather than ×1 (a triple, the most an ordinary clear set by a piece can be), then every
+    // quad it takes to climb back to the cap paid at the cap rather than on the climb (each at that width's streak and
+    // cap, Pay.mult). Checked here against the sum written out; its price at each width (Luck.netPrice) is over that,
+    // by 10 at most, so it never pays for itself but is close.
     const netWorth = (w) => {
       const top = capAt(w);
       let v = L.Pay.clear({ mult: top }, { lines: 3 }, w).pay - L.Pay.clear({ mult: 1 }, { lines: 3 }, w).pay;
       for (let n = 1; multAt(w, n) < top; n++) v += L.Pay.clear({ mult: top }, { lines: 4 }, w).pay - L.Pay.clear({ mult: multAt(w, n) }, { lines: 4 }, w).pay;
       return v;
     };
-    let netMax = 0;
-    for (let w = 4; w <= 20; w++) { const v = netWorth(w); netMax = Math.max(netMax, v); assert(v <= price('net') + 1e-9, 'net ' + w + ' wide keeps ' + v.toFixed(2) + ' for ' + price('net')); }
-    assert(Math.abs(netWorth(10) - 55.5) < 1e-9 && netMax === netWorth(10), 'net: 10 wide ' + netWorth(10) + ', the most ' + netMax);
-    for (let w = 11; w <= 20; w++) assert(netWorth(w) < netWorth(10), 'net keeps less wider than Standard: ' + w + ' wide ' + netWorth(w));
-    // (Its price was set near the old best case, 100.5 at 20 wide; it now stands well over the most it can keep, 55.5.)
-    assert(price('net') >= netMax, 'the Net never pays for itself: ' + netMax + ' for ' + price('net'));
+    for (let w = 4; w <= 20; w++) {
+      const best = Luck.netBest(w), p = Luck.netPrice(w);
+      assert(Math.abs(best - netWorth(w)) < 1e-9, w + ' wide: netBest ' + best + ' vs ' + netWorth(w));
+      assert(p >= best && p - best <= 10 && p >= 10 && p % 5 === 0, 'net ' + w + ' wide keeps ' + best.toFixed(2) + ' for ' + p);
+    }
+    assert(Math.abs(Luck.netBest(10) - 55.5) < 1e-9, 'net: 10 wide ' + Luck.netBest(10));
+    assert.strictEqual(Luck.netPrice(10), 60);
+    assert.strictEqual(price('net'), Luck.netPrice(10), 'the listed price is Standard\'s');
+    for (let w = 11; w <= 20; w++) assert(Luck.netPrice(w) < Luck.netPrice(10), 'net costs less wider than Standard: ' + w + ' wide ' + Luck.netPrice(w));
+    // Bought on a board, it costs that board's price; other power-ups cost their listed price anywhere.
+    {
+      const st = new L.Store();
+      st.state.lines = 1000;
+      const g20 = new Game({ w: 20, h: 20, seed: 1 });
+      assert.strictEqual(st.priceOf('net', g20), Luck.netPrice(20));
+      assert(st.buyItem('net', 1, g20) && st.state.lines === 1000 - Luck.netPrice(20) && st.state.inventory.net === 1, 'net bought 20 wide: ' + st.state.lines);
+      assert(st.buyItem('net') && st.state.lines === 1000 - Luck.netPrice(20) - price('net'), 'net bought with no board: ' + st.state.lines);
+      const before = st.state.lines;
+      assert(st.buyItem('golden', 1, g20) && st.state.lines === before - price('golden'), 'golden is the same price 20 wide');
+    }
     // The engine does what the sum assumes: on a 20-wide board a saved clear keeps the streak, and pays at its cap.
     {
       const g = new Game({ w: 20, h: 20, seed: 1 });
@@ -2295,7 +2310,7 @@ console.log('power-ups');
     assert(Math.max(...band('common')) < Math.min(...band('uncommon')), 'common ' + Math.max(...band('common')) + ' < uncommon ' + Math.min(...band('uncommon')));
     assert(Math.max(...band('uncommon')) < Math.min(...band('rare')), 'uncommon ' + Math.max(...band('uncommon')) + ' < rare ' + Math.min(...band('rare')));
     assert.deepStrictEqual([L.ITEMS.rewind.price, L.ITEMS.rewind.pack, L.packOf('rewind')], [5, 5, 5], 'Undo: 5, and free ones come as five');
-    assert.strictEqual(L.ITEM_ORDER.reduce((n, id) => n + L.ITEMS[id].price, 0), 1020);
+    assert.strictEqual(L.ITEM_ORDER.reduce((n, id) => n + L.ITEMS[id].price, 0), 975); // the Safety Net at its Standard price, 60
   });
 
   test('the daily gift: three different entries (power-ups and a free hint), common ones far more often', () => {
