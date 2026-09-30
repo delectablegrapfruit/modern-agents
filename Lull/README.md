@@ -672,55 +672,68 @@ so the copy lands under the pointer; a touch that starts on the copy's side turn
 so the copy follows the finger. Taps are unchanged.
 
 ### Jelly
-A modifier (Modifiers ▸ Jelly; the rules in `js/jelly.js`, the look in `js/jellyview.js`): every piece sets as one soft
-lump that keeps living after it lands. It falls when nothing holds it up, sags and flops over the edges it hangs over,
-and squeezes down through cracks a block at a time, bending into whatever shape that leaves, until it settles. At a
-lock the piece's blocks are joined to each other (the links live in the cells, `CELL.JOIN_R` and `CELL.JOIN_U`, so
-Undo, the save and a resumed board keep them). The parts of a shape joined only at a corner are lumps of their own. A
-block the player never placed is a lump of one that never oozes; the sprout never moves, and holds up what rests on it.
+A modifier (Modifiers ▸ Jelly; the rules in `js/jelly.js`, the look in `js/jellyview.js`). *Placing is unchanged*: the
+piece moves, turns and locks on the grid (ghost, hold, collisions against the stack). *Then physics take over*: at its
+lock the piece becomes one body in continuous space, and the settled pieces live there, not on the grid. They fall,
+lean, slide, tip and topple, squash when they land and wobble back, but never tear, lose a mino or ooze: a body's minos
+keep their shape (a Shapes cluster joined at a corner is one body; Mirror's copy is a body of its own).
 
-*Settling* runs on the grid, at the lock (and after a clear, an item, Trapdoor), step by step until nothing moves:
-1. *Fall*: every lump that nothing holds up (the floor, the sprout, or a lump that is held) falls, whole, until it rests.
-2. *Ooze*, only when nothing fell: each lump of two or more placed blocks, in order of its lowest, leftmost block,
-   moves at most one block one step. Its targets: an empty cell right under one of its blocks (it sags, flops over an
-   edge, drips into a crack), or beside a block of its bottom row over a notch one wide and one deep (it slips in). Its
-   sources: its blocks with nothing on top, higher than the target. The lump must stay one body (4-connected). The
-   lowest target with a source wins, then the highest source, then the nearest; ties are broken by a hash seeded
-   from the board's seed and its piece count, so the same board settles the same way on Undo and replay. The block
-   squeezes through the lump to the target and the lump is joined afresh; lumps never merge.
-3. The rows that fills clear (a *cascade*), and the next step goes on.
+*The grid the next piece meets* (collision, ghost, spawn, top out) is a raster of the bodies at rest: a mino fills the
+cell its centre is in (the cell it covers most of; clamped into the board; in a cell two share, the older body's). It is
+rewritten after every lock, so what you see is where the next piece lands; the board tops out when a new piece cannot
+appear. Cells the player never placed (a stone, Classic's garbage, Protect's sprout and moles) stay on the grid as fixed
+blocks; after a clear they come down a row per band under them (the sprout never moves).
 
-Every step lowers a block or takes blocks away, so settling always ends (a guard stops it at blocks × height steps
-anyway). A lump over a crack one wide pours into it and can come out the bottom as a bar; a bar hanging over a ledge
-drapes down it, comes off and lands beside it; a T set nub down flops over onto its flat side. A lump lying flat, or
-standing on a flat floor, stays as it is, and a lump with another resting on its overhang is held. Deeper cracks
-beside a lump are only oozed into from above: letting a stack pour into its wells by itself made placing pieces barely
-matter and paid more a key than a Normal board. Best Fit settles each spot it weighs (the ones that clear rows or can
-ooze, 200 at most a piece).
+*The simulation* is rigid bodies of unit-square minos solved by sequential impulses (the method of Box2D Lite: box
+contacts clipped to two points, warm-started accumulated impulses, Coulomb friction 0.6, split-impulse push-out of
+overlaps past 0.01), gravity 40 cells/s², 120 fixed steps a second, 8 passes. Bodies touching one another sleep
+together once all have moved slower than 0.12 cells/s for 0.25 s; a sleeping body costs nothing and is fixed to what
+touches it until something strikes it faster than 1.2 cells/s. Something left asleep with nothing under it (a clear or
+an item took its support) falls straight down from rest under gravity to where it lands, lowest first; one that lands
+off its balance (its centre of mass outside what it rests on) tips over in the simulation. A body at rest within 0.35 of
+a column and 0.2 (sine) of a quarter turn eases into line when there is room, so bands can fill and the grid tells the
+truth. A lock runs all of this to rest at once, headless (at most 6 s of simulation a phase, then everything sleeps
+where it is) and records it; the view plays the record back while the next piece is already in play.
 
-Rows a piece clears itself count as always (a quad, a T-spin, the back-to-back streak). Rows settling clears are plain:
-they count as lines and belong to the same lock (one step of the combo), neither add to the streak nor end it, and pay
-half a row each (the plan had them paid whole; half is what keeps Jelly fair). At half a Jelly board never pays more
-per piece than Standard, nor more per action than a Normal board of its own width (a narrow Normal board already pays
-more a key than Standard: that is its size, not Jelly). Tested with bots that seek cascades, save keys or play
-greedily, widths 4 to 20, each pooled over seeds, with no allowance (`scripts/jelly-test.cjs`). Each wave that clears
-scores 100 points times its number. The feats and skill combos do not count on Jelly; Knock-On (three cascades from
-one piece) does. A Bomb, a Black Hole, a Drill or a Laser brings down what it leaves hanging; Settle and Trapdoor are
-refused when something would come down (or ooze) into the piece; Mirror World turns the links with the board; Tornado
-is refused (it would tear every lump apart).
+*Hard and soft drops.* A hard drop sets the piece down at 3.6 × √(rows fallen) cells/s (at most 16) and, for 0.25 s, as
+heavy as 1 + rows/4 (at most 3) times itself: it strikes what it lands on, wakes it and knocks it (jostles, shifts, can
+topple it). A soft drop or a gravity landing sets the piece down at rest: nothing it lands on wakes.
 
-Every block is drawn as jelly, whatever the skin: the stack, the piece, its ghost and the trays, each lump one rounded
-body with no seams. It gives a little when it lands, moves, turns or lowers (springs of about 6 Hz, still again within
-half a second, at most 60 blocks at a time). Settling is replayed step by step over the board that is already final:
-lumps fall (ease in) and land with a squash; an oozing block is a round blob stretched along its way, squeezing from
-where it was to where it goes with a strand of jelly bridging it to its lump and trailing back, while its lump squashes
-and leans the way it goes (0.05–0.16 s a step, about 1.8 s of oozing at most); rows clear with the look's own effect
-and "CASCADE ×n". The next piece and its ghost already use the final board (the ghost is hidden under the blocks the
-replay still draws); a lower, a drop, the piece reaching a block still drawn, or its ghost a lump still in the air,
-ends it at once. Each frame draws one step. The lock is heard for the piece's own rows; each wave's rows are heard as
-the replay reaches them (those an early end skips, then). Reduced motion: no give and no warping, ooze steps are
-instant and each fall a short crossfade. A Jelly board's summary has a Cascades tile, and Stats ▸ Free Play a Jelly
-section once there has been one.
+*Clears (whole minos).* A band, one grid row tall, clears when the minos centred in it (and fixed cells) cover at least
+max(0.9 × w, w − 0.8) of its width, each mino a unit span about its centre: 92% of a board 10 wide, 96% of one 20
+wide, 90% below 8 wide; a band short of a whole mino never clears, the slack is for bodies resting a little apart.
+Exactly the minos centred in the band go (never part of a mino, whatever the body's tilt); what is left of each body it
+crossed splits into its connected parts (edge or corner), each a body of its own, the only way a piece splits. What the
+band held comes down, and further bands may clear (chains). Every Jelly clear is plain and pays only the minos it took,
+at 0.75 of a cell of a row (`Jelly.WORTH`): no quads, T-spins or back-to-back on Jelly (a clear that is only bands leaves
+the streak as it was; the combo counts the lock). Each wave after the first is a *cascade* and scores 100 points times
+its number; a board counts its cascades (the Cascades tile; Stats ▸ Free Play). The feats and skill combos do not count
+on Jelly; Knock-On (three cascades from one piece) does. Fairness, measured with bots that hard drop, set down gently or
+spare keys, widths 4 to 20, pooled over seeds (`scripts/jelly-test.cjs`): a Jelly board never pays more per piece than
+Standard, nor more per action than a Normal board of its width (at 0.75 the closest is 4 wide, hard dropped: 93% of
+Normal per action). Best Fit and the bots weigh placements on the grid (a copy clears full rows as a plain board does).
+
+*Items.* A Bomb, a Black Hole and a Drill take the minos whose cells they take (whole minos), a Laser the minos centred in
+its rows; what they held comes down. Mirror World turns every body left to right with the board. Settle, Trapdoor and
+Tornado are refused ("Not on a Jelly board"): each moves the grid's cells about, and on Jelly the pieces are bodies.
+Mirror + Jelly, Shapes + Jelly, Classic + Jelly and Protect + Jelly play.
+
+*Determinism.* No trigonometry (a body's turn is its cosine and sine; + − × ÷ and √ only), a fixed step, fixed orders
+(bodies by id, contacts bottom up), and every body at rest on a 1/4096 lattice (its turn on 1/2²⁰). The bodies
+themselves are kept, as integers, in the save (`x.jelly`) and in each Undo step, so a resumed board and Undo have the
+exact state and the same lock settles the same way again. The only randomness, a hard drop's hair of sideways nudge,
+is seeded from the board's seed (kept with the bodies) and its piece count. Cost: a lock is a few ms (bounded in the
+tests on a board 20 × 40: under 60 000 mino-steps a lock, under 60 ms on average); at rest nothing runs.
+
+*The look.* Every settled piece is one rounded blob following its shape wherever the physics put it, a hair inset from
+its neighbours, in the palette's colours whatever the skin: a darker rim, light along the top, a gloss. The piece in
+play, its ghost and the trays are lumps on the grid (a move, a turn or a lower gives the piece a little wobble). The
+record is played back frame by frame (eased between frames): a body lands with a squash that grows with the fall and is
+knocked with a shear (render-only springs about 6 Hz on the rigid bodies, still again within half a second, 80 bodies
+at most); bands burst with the look's own effect and "CASCADE" from the second wave, and are heard as the playback
+reaches them. A lower, a drop, a lock, or the next piece reaching a body still on its way ends the playback at once
+(its clears still seen and heard). Reduced motion: no squash or wobble, the playback three times as fast, the same
+outcome.
 
 ### Protect
 A mode: shield a sprout from falling stones and burrowing moles (`js/guard.js`). The sprout sits on the floor in the

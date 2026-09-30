@@ -73,6 +73,8 @@
   //   afterPlace(g, b, abs, v, res)                      after a piece's cells are set
   //   rows(g, b, rows) -> rows                           which full rows clear
   //   beforeClear(g, b, res) / afterClear(g, b, res)     around a lock's (or Settle's) clear
+  //   clearRows(g, b, rows, res) -> removed              takes a clear's rows away itself (null: the board's own
+  //                                                      clearRows, everything above comes down)
   //   keep(g, b, v) -> true                              a cell no item removes
   //   roomAfter(g, b)                                    inside the "would the piece still fit" test of Settle and Trapdoor
   //   step(g, res)                                       after a piece lock (or a drill) is scored, before the next
@@ -732,7 +734,9 @@
     clearInto(board, rows, result) {
       this.hook('beforeClear', board, result);
       result.rows = rows;
-      result.removed = board.clearRows(rows);
+      // A part can take the rows away itself (clearRows: Jelly's bodies, where nothing comes down by itself).
+      const own = this.hooks.clearRows ? this.ask('clearRows', board, rows, result) : null;
+      result.removed = own || board.clearRows(rows);
       result.lines = rows.length;
       const foreign = result.removed.filter((row) => row.some((v) => v & CELL.FOREIGN)).length;
       if (foreign) { result.lines -= foreign; result.plain = (result.plain || 0) + foreign; }
