@@ -505,8 +505,9 @@ Create), so the window's code never changes for them; a panel's control keeps fo
 `data-focus`, and focus never falls out of the window (where Enter is Create). A board of another recipe than the
 default says so: after its size and when on its library row (the short label last, so an ellipsis only takes it, the
 full one as its tip; Lines and Score on a line of their own; on a phone, the label too), as a Board tile on its summary,
-and as a muted second line in Past boards. A part can add tags to its rows (`tags`: Wilted, "vs Steady 3–2") and its
-own numbers to a board's summary (`tiles`, from the summary's `ext`).
+and as a muted second line in Past boards. A part can add tags to its rows (`tags`: Wilted, "vs Steady 3–2"), its
+own numbers to a board's summary (`tiles`, from the summary's `ext`), and a name for its own end, which a retired
+board's full view says in place of "Retired by hand" (`endName`: Wilted).
 Retire, Delete and a full board's Retire start the next board with the same recipe; an untouched board asked for again
 with another recipe is made again, in its own record.
 
