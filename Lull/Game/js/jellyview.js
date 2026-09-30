@@ -1,23 +1,23 @@
-// Lull — Jelly's look and window (js/jelly.js has its rules). On a Jelly board every block is drawn as soft jelly
-// (the stack, the piece in play, its ghost and the trays): a lump is one rounded body, its joined sides meeting with no
-// seam. It wobbles a little when it lands, moves, turns or lowers (render-only springs, at rest again within half a
-// second), and settling is replayed step by step over the board that is already final: lumps fall and squash, an
-// oozing block is a stretched blob squeezing along a strand of jelly while its lump warps. Reduced motion: no springs,
-// no warping, ooze steps instant and each fall a short crossfade. Also the New board window's switch, the Cascades
-// tile and the Stats rows.
+// Lull — Jelly's look and window (js/jelly.js has its rules). On a Jelly board every block is drawn as soft jelly: the
+// settled pieces are bodies (js/jelly.js), each drawn as one rounded blob following its shape wherever the physics put
+// it (tilted, toppled), the piece in play, its ghost and the trays as lumps on the grid. A lock is played back from its
+// record: the piece set down and what it struck jostling, bands clearing (whole minos going, with the look's own
+// effect) and what they held coming down, each body squashing as it lands and wobbling back (a render-only skin on the
+// rigid bodies: springs of about 6 Hz, still again within half a second). Reduced motion: no squash, no wobble, the
+// playback three times as fast; the outcome is the same. Also the New board window's switch, the Cascades tile and the
+// Stats rows.
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
   const { CELL, Recipe, Render } = L;
   if (!Recipe || !Render) return;
   const { shade, rgba } = Render;
-  const JR = CELL.JOIN_R, JU = CELL.JOIN_U;
 
   // Screen sides of a cell, as bits: right, up, left, down.
   const S_R = 1, S_U = 2, S_L = 4, S_D = 8;
   const sideBit = (d) => (d[0] > 0 ? S_R : d[0] < 0 ? S_L : d[1] < 0 ? S_U : S_D);
 
-  // ---- the lump sprites -------------------------------------------------------------------------------------------
+  // ---- the lump sprites (the piece, its ghost, the trays) ----------------------------------------------------------------
 
   /** A path round a box whose corners each have their own radius. */
   function shape(ctx, x0, y0, x1, y1, tl, tr, br, bl) {
@@ -61,8 +61,6 @@
     const x0 = Lf ? -out : g, x1 = R ? P + out : P - g, y0 = U ? -out : g, y1 = D ? P + out : P - g;
     const tl = !U && !Lf ? r : 0, tr = !U && !R ? r : 0, br = !D && !R ? r : 0, bl = !D && !Lf ? r : 0;
     if (kind === 'body') {
-      // A darker rim on the open sides only, then the body inside it: one flat colour, so a lump reads as one piece
-      // (its cells never band); light only along its open top, a glow along its open bottom, a gloss at a top-left corner.
       const e = Math.max(1, Math.round(P * 0.04));
       shape(ctx, x0, y0, x1, y1, tl, tr, br, bl);
       ctx.fillStyle = rgba(shade(color, light ? -0.3 : -0.42), 0.95);
@@ -102,58 +100,131 @@
     sprites.set(key, c);
     return c;
   }
+  /** The joined sides of one cell of a shape (every 4-adjacent pair of its cells is joined); dir maps to screen. */
+  function maskOfShape(cells, x, y, dir) {
+    let m = 0;
+    for (const [cx, cy] of cells) {
+      const dx = cx - x, dy = cy - y;
+      if (Math.abs(dx) + Math.abs(dy) !== 1) continue;
+      m |= sideBit(dir(dx, dy));
+    }
+    return m;
+  }
+  function blit(ctx, img, x, y, s, P, exact) {
+    // See-through (a later Next slot, Mirror's copy, a ghost): exactly the cell, so neighbours never overlap and
+    // double up; opaque: a pixel past it on every side, so they meet with no seam.
+    if (exact || ctx.globalAlpha < 1) { ctx.drawImage(img, 1, 1, img.width - 2, img.height - 2, x, y, s, s); return; }
+    const m = s / P;
+    ctx.drawImage(img, x - m, y - m, s + 2 * m, s + 2 * m);
+  }
+  const lightOf = (ctx) => !!ctx.__light;
+  const dprOf = (ctx) => ctx.__dpr || 1;
+
+  // ---- a body's outline --------------------------------------------------------------------------------------------------
+
+  const outlines = new Map();
+  /**
+   * The outline of a body's shape at rest (its cells: x0 y0 x1 y1 …), in cells about its centre of mass, inset by g
+   * (a hair of gap between bodies): [[x, y, x, y, …] a loop, counter-clockwise; holes clockwise]. Minos joined only at
+   * a corner are loops of their own.
+   */
+  function outlineOf(cells, g) {
+    const key = cells.join(',') + '|' + g;
+    let o = outlines.get(key);
+    if (o) return o;
+    if (outlines.size > 2000) outlines.clear();
+    const m = cells.length / 2, has = new Set();
+    let cx = 0, cy = 0;
+    for (let k = 0; k < m; k++) { has.add(cells[2 * k] * 4096 + cells[2 * k + 1]); cx += cells[2 * k] + 0.5; cy += cells[2 * k + 1] + 0.5; }
+    cx /= m; cy /= m;
+    const at = (x, y) => has.has(x * 4096 + y);
+    // Directed boundary edges, counter-clockwise round each cell (inside on the left): from → to.
+    const edges = new Map();
+    const add = (x0, y0, x1, y1) => { const k = x0 + ',' + y0; if (!edges.has(k)) edges.set(k, []); edges.get(k).push([x1, y1]); };
+    for (let k = 0; k < m; k++) {
+      const x = cells[2 * k], y = cells[2 * k + 1];
+      if (!at(x, y - 1)) add(x, y, x + 1, y);
+      if (!at(x + 1, y)) add(x + 1, y, x + 1, y + 1);
+      if (!at(x, y + 1)) add(x + 1, y + 1, x, y + 1);
+      if (!at(x - 1, y)) add(x, y + 1, x, y);
+    }
+    const loops = [];
+    for (;;) {
+      let start = null;
+      for (const [k, l] of edges) if (l.length) { start = k; break; }
+      if (!start) break;
+      const pts = [];
+      let [x, y] = start.split(',').map(Number), dx = 0, dy = 0;
+      for (let guard = 0; guard < 4 * m + 8; guard++) {
+        const l = edges.get(x + ',' + y);
+        if (!l || !l.length) break;
+        // At a corner two loops share, turn left (keep to one mino's side).
+        let i = 0;
+        if (l.length > 1) i = l.findIndex(([nx, ny]) => (dx * (ny - y) - dy * (nx - x)) > 0);
+        if (i < 0) i = 0;
+        const [nx, ny] = l.splice(i, 1)[0];
+        const ndx = nx - x, ndy = ny - y;
+        if (ndx !== dx || ndy !== dy) pts.push(x, y);
+        dx = ndx; dy = ndy; x = nx; y = ny;
+      }
+      // Inset: each corner moves by g along both edges' inward normals (the left of each).
+      const n = pts.length / 2, out = [];
+      for (let i = 0; i < n; i++) {
+        const px = pts[2 * ((i + n - 1) % n)], py = pts[2 * ((i + n - 1) % n) + 1], x0 = pts[2 * i], y0 = pts[2 * i + 1], qx = pts[2 * ((i + 1) % n)], qy = pts[2 * ((i + 1) % n) + 1];
+        const ax = Math.sign(x0 - px), ay = Math.sign(y0 - py), bx = Math.sign(qx - x0), by = Math.sign(qy - y0);
+        out.push(x0 - cx + g * (-ay - by), y0 - cy + g * (ax + bx));
+      }
+      if (out.length >= 6) loops.push(out);
+    }
+    o = { loops, cx, cy };
+    outlines.set(key, o);
+    return o;
+  }
 
   // ---- a view's state ---------------------------------------------------------------------------------------------
 
-  // Springs: about 6 Hz, damping 0.35; a spring under 0.003 is at rest and goes; at most 60 cells wobble at once.
-  const OMEGA = 2 * Math.PI * 6, ZETA = 0.35, K = OMEGA * OMEGA, C = 2 * ZETA * OMEGA, REST = 0.003, MAX_CELLS = 60;
+  // The skin's springs: about 6 Hz, damping 0.35; still under 0.003. The piece in play's too.
+  const OMEGA = 2 * Math.PI * 6, ZETA = 0.35, K = OMEGA * OMEGA, C = 2 * ZETA * OMEGA, REST = 0.003;
 
-  /** The Jelly state kept on a board view: its springs, the piece's spring and a cascade being replayed. */
+  /** The Jelly state kept on a board view: the piece's spring, the lock being played back, each body's skin. */
   function stateOf(view) {
     let J = view.jelly;
-    if (!J || J.game !== view.game) J = view.jelly = { game: view.game, springs: [], piece: null, replay: null, last: 0, byCell: new Map() };
+    if (!J || J.game !== view.game) J = view.jelly = { game: view.game, piece: null, replay: null, last: 0, skins: new Map() };
     return J;
   }
   const quiet = (view) => !!view.reducedMotion;
+  const worldOf = (view) => (L.Jelly && view.game ? L.Jelly.of(view.game) : null);
 
-  /** Steps the springs to now; drops those at rest. */
+  function springStep(sp, h) {
+    sp.va += (-K * sp.a - C * sp.va) * h; sp.a += sp.va * h;
+    sp.vb += (-K * sp.b - C * sp.vb) * h; sp.b += sp.vb * h;
+  }
+  const atRest = (sp) => Math.abs(sp.a) < REST && Math.abs(sp.b) < REST && Math.abs(sp.va) < 0.05 && Math.abs(sp.vb) < 0.05;
+  /** Steps the springs (the piece's, the bodies' skins) to now; drops those at rest. */
   function stepSprings(J, now) {
     const dt = J.last ? Math.min(0.05, Math.max(0, (now - J.last) / 1000)) : 0;
     J.last = now;
     if (!dt) return;
     const n = Math.max(1, Math.ceil(dt / (1 / 240))), h = dt / n;
-    const all = J.piece ? J.springs.concat([J.piece]) : J.springs;
-    for (const sp of all) {
-      for (let i = 0; i < n; i++) {
-        sp.va += (-K * sp.a - C * sp.va) * h; sp.a += sp.va * h;
-        sp.vb += (-K * sp.b - C * sp.vb) * h; sp.b += sp.vb * h;
-      }
+    for (let i = 0; i < n; i++) {
+      if (J.piece) springStep(J.piece, h);
+      for (const sp of J.skins.values()) springStep(sp, h);
     }
-    const rest = (sp) => Math.abs(sp.a) < REST && Math.abs(sp.b) < REST && Math.abs(sp.va) < 0.05 && Math.abs(sp.vb) < 0.05;
-    const before = J.springs.length;
-    J.springs = J.springs.filter((sp) => !rest(sp));
-    if (J.springs.length !== before) indexSprings(J);
-    if (J.piece && rest(J.piece)) J.piece = null;
-  }
-  function indexSprings(J) {
-    J.byCell = new Map();
-    for (const sp of J.springs) for (const i of sp.cells) J.byCell.set(i, sp);
-  }
-  /** A spring on a lump of the stack (cell indices on the board), kicked to a. */
-  function kick(J, cells, a) {
-    const used = J.springs.reduce((n, sp) => n + sp.cells.length, 0);
-    if (!cells.length || used + cells.length > MAX_CELLS) return null;
-    const sp = { cells, a, va: 0, b: 0, vb: 0 };
-    J.springs.push(sp);
-    for (const i of cells) J.byCell.set(i, sp);
-    return sp;
+    for (const [id, sp] of J.skins) if (atRest(sp)) J.skins.delete(id);
+    if (J.piece && atRest(J.piece)) J.piece = null;
   }
   function pieceKick(view, da, db) {
     if (quiet(view)) return;
     const J = stateOf(view);
-    if (!J.piece) J.piece = { a: 0, va: 0, b: 0, vb: 0, cells: [] };
+    if (!J.piece) J.piece = { a: 0, va: 0, b: 0, vb: 0 };
     J.piece.a = Math.max(-0.2, Math.min(0.2, J.piece.a + da));
     J.piece.b = Math.max(-0.2, Math.min(0.2, J.piece.b + db));
+  }
+  /** A body's skin kicked: a squashes it (landing), b shears it (a knock sideways). At most 80 at once. */
+  function skinKick(J, id, da, db) {
+    let sp = J.skins.get(id);
+    if (!sp) { if (J.skins.size >= 80) return; sp = { a: 0, va: 0, b: 0, vb: 0 }; J.skins.set(id, sp); }
+    sp.va += da; sp.vb += db;
   }
 
   /**
@@ -186,64 +257,226 @@
     return { x0, y0, x1, y1 };
   }
 
-  // ---- drawing a cell ---------------------------------------------------------------------------------------------
+  // ---- drawing a body -------------------------------------------------------------------------------------------------
 
-  /** The screen side bits of the board's right, left, up and down, for the way the view is turned (kept per turn). */
-  const SIDES = new Map();
-  function sidesOf(view) {
-    const rot = (view.view && view.view.rot) || 0;
-    let s = SIDES.get(rot);
-    if (!s) SIDES.set(rot, (s = [sideBit(view.screenDir(1, 0)), sideBit(view.screenDir(-1, 0)), sideBit(view.screenDir(0, 1)), sideBit(view.screenDir(0, -1))]));
-    return s;
-  }
-  /** The joined screen sides of the cell at (x, y) of a board's cells (links to an empty cell do not count). */
-  function maskIn(view, arr, w, h, x, y) {
-    const i = y * w + x, v = arr[i], sd = sidesOf(view);
-    let m = 0;
-    if (v & JR && x + 1 < w && arr[i + 1]) m |= sd[0];
-    if (x > 0 && arr[i - 1] & JR) m |= sd[1];
-    if (v & JU && y + 1 < h && arr[i + w]) m |= sd[2];
-    if (y > 0 && arr[i - w] & JU) m |= sd[3];
-    return m;
-  }
-  /** The joined sides of one cell of a shape (every 4-adjacent pair of its cells is joined); dir maps to screen. */
-  function maskOfShape(cells, x, y, dir) {
-    let m = 0;
-    for (const [cx, cy] of cells) {
-      const dx = cx - x, dy = cy - y;
-      if (Math.abs(dx) + Math.abs(dy) !== 1) continue;
-      m |= sideBit(dir(dx, dy));
+  /** A point on the board (cells, y up) on screen. */
+  function pt(view, x, y) { const s = view.lay.s, p = view.toScreen(x - 0.5, y - 0.5); return [p[0] + s / 2, p[1] + s / 2]; }
+
+  /**
+   * One body as a blob: its outline (rounded, a hair inset) where its pose puts it, squashed and sheared by its skin
+   * (about its lowest point, along gravity), a darker rim inside the edge, light along the top, a gloss.
+   */
+  function drawBody(ctx, view, def, pose, skin, alpha) {
+    const s = view.lay.s, light = lightOf(ctx);
+    const [x, y, c, sn] = pose;
+    // Colour groups (a body is nearly always one colour: one piece).
+    const groups = new Map();
+    for (let k = 0; k < def.m; k++) {
+      const v = def.v[k];
+      if (v & CELL.HIDDEN) continue;
+      const key = v & CELL.COLOR;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(def.cells[2 * k], def.cells[2 * k + 1]);
     }
-    return m;
+    if (!groups.size) return;
+    // The squash's anchor: the body's lowest point (board y), its middle.
+    let yLow = Infinity, xMid = 0;
+    const R = 0.72 * Math.sqrt(def.m);
+    for (let k = 0; k < def.m; k++) {
+      const wy = y + sn * def.lx[k] + c * def.ly[k] - 0.5;
+      if (wy < yLow) yLow = wy;
+      xMid += x + c * def.lx[k] - sn * def.ly[k];
+    }
+    xMid /= def.m;
+    const sa = skin ? skin.a : 0, sb = skin ? skin.b : 0;
+    void R;
+    const toScr = (bx, by) => {
+      // Body frame (cells about its centre of mass) → board → the skin's squash → screen.
+      let wx = x + c * bx - sn * by, wy = y + sn * bx + c * by;
+      if (sa || sb) { const hgt = wy - yLow; wx = xMid + (wx - xMid) * (1 + 0.5 * sa) + sb * hgt; wy = yLow + hgt * (1 - sa); }
+      return pt(view, wx, wy);
+    };
+    const r = s * 0.3, g = 0.045;
+    if (alpha < 1) { ctx.save(); ctx.globalAlpha *= alpha; }
+    for (const [colorKey, cells] of groups) {
+      const color = view.colorOf(colorKey);
+      const o = outlineOf(Int32Array.from(cells), g);
+      // Its centre of mass on the body's (the group may be part of it).
+      const dx = o.cx - def.ccx, dy = o.cy - def.ccy;
+      ctx.beginPath();
+      let top = Infinity, bot = -Infinity, left = Infinity;
+      for (const loop of o.loops) {
+        const n = loop.length / 2, P = [];
+        for (let i = 0; i < n; i++) { const q = toScr(loop[2 * i] + dx, loop[2 * i + 1] + dy); P.push(q); top = Math.min(top, q[1]); bot = Math.max(bot, q[1]); left = Math.min(left, q[0]); }
+        // Rounded corners: from the middle of the last edge, arcTo each corner.
+        const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+        const m0 = mid(P[n - 1], P[0]);
+        ctx.moveTo(m0[0], m0[1]);
+        for (let i = 0; i < n; i++) { const a = P[i], b = P[(i + 1) % n], len = Math.min(Math.hypot(b[0] - a[0], b[1] - a[1]), Math.hypot(a[0] - P[(i + n - 1) % n][0], a[1] - P[(i + n - 1) % n][1])); ctx.arcTo(a[0], a[1], b[0], b[1], Math.min(r, len / 2)); }
+        ctx.closePath();
+      }
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.save();
+      ctx.clip();
+      // Light along the top, a glow along the bottom (screen up and down: the blob as it is drawn).
+      const t = ctx.createLinearGradient(0, top, 0, top + s * 0.45);
+      t.addColorStop(0, 'rgba(255,255,255,' + (light ? 0.34 : 0.26) + ')'); t.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = t; ctx.fillRect(left - s, top, s * (def.m + 4) * 2, s * 0.45);
+      const gl = ctx.createLinearGradient(0, bot - s * 0.35, 0, bot);
+      gl.addColorStop(0, rgba(shade(color, 0.5), 0)); gl.addColorStop(1, rgba(shade(color, 0.5), light ? 0.2 : 0.28));
+      ctx.fillStyle = gl; ctx.fillRect(left - s, bot - s * 0.35, s * (def.m + 4) * 2, s * 0.35);
+      // The rim: a darker line inside the edge.
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = Math.max(2, s * 0.09);
+      ctx.strokeStyle = rgba(shade(color, light ? -0.3 : -0.42), 0.95);
+      ctx.stroke();
+      ctx.restore();
+      // A gloss at the top of its top-left mino.
+      let gk = -1, gv = -Infinity;
+      for (let k = 0; k < cells.length / 2; k++) { const v = cells[2 * k + 1] * 64 - cells[2 * k]; if (v > gv) { gv = v; gk = k; } }
+      if (gk >= 0) {
+        const bx = cells[2 * gk] + 0.5 - def.ccx, by = cells[2 * gk + 1] + 0.5 - def.ccy;
+        const a = toScr(bx - 0.28, by + 0.32), b = toScr(bx + 0.06, by + 0.2);
+        ctx.fillStyle = 'rgba(255,255,255,' + (light ? 0.6 : 0.5) + ')';
+        ctx.beginPath();
+        ctx.ellipse((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, Math.max(1, Math.abs(b[0] - a[0]) / 2 + s * 0.02), Math.max(1, s * 0.06), 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    if (alpha < 1) ctx.restore();
   }
-  function blit(ctx, img, x, y, s, P, exact) {
-    // See-through (a later Next slot, Mirror's copy, a ghost): exactly the cell, so neighbours never overlap and
-    // double up; opaque: a pixel past it on every side, so they meet with no seam.
-    if (exact || ctx.globalAlpha < 1) { ctx.drawImage(img, 1, 1, img.width - 2, img.height - 2, x, y, s, s); return; }
-    const m = s / P;
-    ctx.drawImage(img, x - m, y - m, s + 2 * m, s + 2 * m);
+  /** A body of the world as the view draws it (def: its shape and values; pose). */
+  function defOfBody(b) {
+    const d = { id: b.id, m: b.m, cells: b.cells, v: b.v, lx: b.lx, ly: b.ly, ccx: 0, ccy: 0 };
+    return centred(d);
   }
-  const lightOf = (ctx) => !!ctx.__light;
-  const dprOf = (ctx) => ctx.__dpr || 1;
+  function centred(d) {
+    let cx = 0, cy = 0;
+    for (let k = 0; k < d.m; k++) { cx += d.cells[2 * k] + 0.5; cy += d.cells[2 * k + 1] + 0.5; }
+    d.ccx = cx / d.m; d.ccy = cy / d.m;
+    return d;
+  }
 
-  /** A block of the stack (or of a cascade's replay: arr is the board drawn), in the Jelly look. */
-  function drawStackCell(ctx, view, arr, v, x, y, sx, sy, s, sp) {
-    const g = view.game, P = Math.round(s * dprOf(ctx));
-    const img = lumpSprite(view.colorOf(v), maskIn(view, arr, g.w, g.h, x, y), P, lightOf(ctx), 'body');
-    if (sp) withSpring(ctx, view, sp, sp.box || { x0: sx, y0: sy, x1: sx + s, y1: sy + s }, () => blit(ctx, img, sx, sy, s, P));
-    else blit(ctx, img, sx, sy, s, P);
+  // ---- the lock played back ----------------------------------------------------------------------------------------------
+
+  /**
+   * A lock's record (js/jelly.js, Recorder) played over the view: shown are the bodies as the record has them at the
+   * time, each frame's poses eased between the frames either side. Clears fire the look's effect and the sound as they
+   * are reached; landings kick the skins. Input is never held up: a lower, a drop or a lock, or the next piece reaching
+   * a body still on its way, ends it at once.
+   */
+  function startReplay(view, r) {
+    const rec = r && r.jelly;
+    if (!rec || !rec.frames || !rec.frames.length) return null;
+    const g = view.game, reduced = quiet(view);
+    const shown = new Map();
+    for (const d of rec.start) shown.set(d.id, { def: centred(Object.assign({}, d)), pose: d.pose.slice(), vy: 0, vx: 0 });
+    // A hard drop lands with a squash that grows with the fall.
+    if (!reduced && r.dropDist > 0) for (const d of rec.frames[0].add) skinKick(stateOf(view), d.id, Math.min(6, 1.3 * Math.sqrt(r.dropDist)), 0);
+    return { rec, shown, i: 0, at: 0, t0: performance.now(), speed: reduced ? 3 : 1, reduced, pieces: g.s.pieces, final: g.board.cells.slice(), fired: 0, n: 0, onWave: null };
+  }
+  /** Applies frame i: its adds, removals, clear (fired) and poses; landing kicks the skins. */
+  function applyFrame(view, J, rp, f) {
+    for (const id of f.del) rp.shown.delete(id);
+    for (const d of f.add) rp.shown.set(d.id, { def: centred(Object.assign({}, d)), pose: d.pose.slice(), vy: 0, vx: 0 });
+    if (f.clear) fireClear(view, rp, f.clear);
+    const dt = Math.max(1e-4, f.t);
+    for (const [id, x, y, c, s] of f.set) {
+      const e = rp.shown.get(id);
+      if (!e) continue;
+      const vy = (y - e.pose[1]) / dt, vx = (x - e.pose[0]) / dt;
+      // A landing: falling fast, now stopped. A knock: a sudden change sideways.
+      if (!rp.reduced) {
+        if (e.vy < -2 && vy > e.vy * 0.4) skinKick(J, id, Math.min(3.2, -e.vy * 0.28), 0);
+        if (Math.abs(vx - e.vx) > 1.5) skinKick(J, id, 0, Math.max(-2, Math.min(2, (vx - e.vx) * 0.2)));
+      }
+      e.vy = vy; e.vx = vx;
+      e.pose[0] = x; e.pose[1] = y; e.pose[2] = c; e.pose[3] = s;
+    }
+  }
+  /** A band clearing: its minos burst with the look's effect, "CASCADE ×n" from the second, a little shake, its sound. */
+  function fireClear(view, rp, cl) {
+    const s = view.lay.s, b = view.lay.board;
+    rp.n++;
+    const cells = cl.cells.map((c) => { const [sx, sy] = pt(view, c.x, c.y); return { x: sx - s / 2, y: sy - s / 2, color: view.colorOf(c.v) }; });
+    view.fx.burst(view.look.effect, cells, s, rp.reduced);
+    if (cl.n > 1) view.fx.text(cl.n > 2 ? 'CASCADE ×' + (cl.n - 1) : 'CASCADE', b.x + b.w / 2, b.y + b.h * 0.3, '#ffffff', Math.max(13, Math.min(20, s * 0.8)));
+    if (!rp.reduced) view.fx.shake = Math.max(view.fx.shake, Math.min(2, 0.5 * cl.rows.length));
+    if (rp.onWave) { try { rp.onWave({ rows: cl.rows }, rp.n); } catch (e) { /* a sound that fails is only a sound */ } }
+  }
+  function sameCells(a, b) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+  }
+  /** Moves the playback on to now; ends it when it is over or the board changed under it. */
+  function tickReplay(view, J, now) {
+    const rp = J.replay, g = view.game;
+    if (!rp) return;
+    if (g.s.pieces !== rp.pieces || !sameCells(g.board.cells, rp.final)) { endReplay(view, J, false); return; }
+    const t = ((now - rp.t0) / 1000) * rp.speed, fr = rp.rec.frames;
+    while (rp.i < fr.length && rp.at + fr[rp.i].t <= t) { rp.at += fr[rp.i].t; applyFrame(view, J, rp, fr[rp.i]); rp.i++; }
+    if (rp.i >= fr.length) { endReplay(view, J, true); return; }
+    if (meets(view, rp)) endReplay(view, J, true);
+  }
+  /** Ends the playback: every clear not yet reached is still seen and heard; the board is drawn as it rests. */
+  function endReplay(view, J, flushIt) {
+    const rp = J.replay;
+    J.replay = null;
+    view.dirty = true;
+    if (!rp || !flushIt) return;
+    const fr = rp.rec.frames;
+    while (rp.i < fr.length) { const f = fr[rp.i++]; if (f.clear) fireClear(view, rp, f.clear); }
+  }
+  /** Does the piece in play overlap a body still drawn where the board (its grid) has nothing? */
+  function meets(view, rp) {
+    const g = view.game, p = g.piece;
+    if (!p) return false;
+    const w = g.w, fin = g.board.cells, mine = new Set();
+    for (const [x, y] of g.absCells(p)) if (x >= 0 && x < w && y >= 0 && y < g.h && !fin[y * w + x]) mine.add(y * w + x);
+    if (!mine.size) return false;
+    for (const e of rp.shown.values()) {
+      const [x, y, c, s] = e.pose, d = e.def;
+      for (let k = 0; k < d.m; k++) {
+        const cx = Math.floor(x + c * d.lx[k] - s * d.ly[k]), cy = Math.floor(y + s * d.lx[k] + c * d.ly[k]);
+        if (mine.has(cy * w + cx)) return true;
+      }
+    }
+    return false;
+  }
+  /** The poses to draw now: each shown body eased toward the next frame's pose. */
+  function drawReplay(ctx, view, J, now) {
+    const rp = J.replay, fr = rp.rec.frames, f = fr[rp.i];
+    const t = ((now - rp.t0) / 1000) * rp.speed, k = f && f.t > 0 ? Math.max(0, Math.min(1, (t - rp.at) / f.t)) : 0;
+    const next = new Map();
+    if (f) for (const e of f.set) next.set(e[0], e);
+    for (const [id, e] of rp.shown) {
+      let pose = e.pose;
+      const n = next.get(id);
+      if (n && k > 0) {
+        let c = pose[2] + (n[3] - pose[2]) * k, s = pose[3] + (n[4] - pose[3]) * k;
+        const l = Math.sqrt(c * c + s * s) || 1;
+        c /= l; s /= l;
+        pose = [pose[0] + (n[1] - pose[0]) * k, pose[1] + (n[2] - pose[1]) * k, c, s];
+      }
+      drawBody(ctx, view, e.def, pose, J.skins.get(id), 1);
+    }
   }
 
-  /** The painter for every own cell (claims: 'rest'): the stack, the piece, its ghost and the trays. */
+  // ---- the painter ----------------------------------------------------------------------------------------------------
+
+  /**
+   * The painter for every own cell (claims: 'rest'): the stack's cells are left to the bodies (overStack); the piece,
+   * its ghost and the trays are lumps on the grid.
+   */
   function cell(ctx, v, sx, sy, s, kind, view, at) {
     if (!view.lay) return false;
-    const J = stateOf(view), g = view.game;
+    const J = stateOf(view);
     if (kind === 'stack') {
-      // While a cascade is replayed the board is drawn by the replay (overStack).
-      if (J.replay) { J.hid = true; return true; }
-      const sp = J.byCell.size ? J.byCell.get(at.y * g.w + at.x) : null;
-      drawStackCell(ctx, view, g.board.cells, v, at.x, at.y, sx, sy, s, sp);
-      return true;
+      // A cell that stays on the grid (a stone, garbage) is drawn as ever; the rest are bodies.
+      if (L.Jelly && v & L.Jelly.STATIC) return false;
+      return !!worldOf(view);
     }
     const P = Math.round(s * dprOf(ctx)), color = view.colorOf(v);
     if (kind === 'piece') {
@@ -255,8 +488,6 @@
       return true;
     }
     if (kind === 'ghost') {
-      // Under a block a cascade's replay still draws (the stack a clear has yet to bring down), the ghost is hidden.
-      if (J.replay && ghostCovered(view, at.x, at.y)) return true;
       const style = at.style === 'soft' || at.style === 'dotted' || at.style === 'glow' ? at.style : 'outline';
       blit(ctx, lumpSprite(color, maskOfShape(at.cells || [[at.x, at.y]], at.x, at.y, (dx, dy) => view.screenDir(dx, dy)), P, lightOf(ctx), style), sx, sy, s, P, true);
       return true;
@@ -272,287 +503,11 @@
     return false;
   }
 
-  // ---- landing: the lumps that just came to rest wobble -------------------------------------------------------------
-
-  /** Kicks the lumps holding these board cells (a, at most 60 cells), and those they rest on (under). */
-  function kickLumps(view, idxs, a, under) {
-    const J = stateOf(view), g = view.game, b = g.board, w = g.w;
-    if (!idxs.length || !L.Jelly) return;
-    const { id, list } = L.Jelly.lumps(b);
-    const mine = new Set();
-    for (const i of idxs) if (id[i] >= 0) mine.add(id[i]);
-    const below = new Set();
-    for (const k of mine) {
-      const cells = list[k];
-      if (!kickSpring(view, J, cells, a)) continue;
-      if (under) for (const i of cells) { const j = i - w; if (j >= 0 && id[j] >= 0 && !mine.has(id[j])) below.add(id[j]); }
-    }
-    for (const k of below) kickSpring(view, J, list[k], under);
-  }
-  function kickSpring(view, J, cells, a) {
-    const w = view.game.w;
-    const sp = kick(J, cells, a);
-    if (sp) sp.box = boxOf(view, cells.map((i) => [i % w, (i - (i % w)) / w]));
-    return sp;
-  }
-
-  // ---- the cascade replayed -----------------------------------------------------------------------------------------
-
-  /**
-   * A lock's cascade, replayed over the final board: each wave's lumps fall (ease in, as things fall), land with a
-   * squash, and the rows they fill clear with the look's own effect, "CASCADE ×n" over the board. 0.35–0.5 s a wave;
-   * under reduced motion a 0.15 s crossfade. Input is never held up: a lower, a drop or a lock, or the next piece
-   * reaching a lump still in the air, ends it at once.
-   */
-  function startReplay(view, r) {
-    const g = view.game, w = g.w, h = g.h, reduced = quiet(view);
-    const waves = [];
-    const oozes = r.cascade.filter((wv) => wv.moves && wv.moves.length).length;
-    // An ooze step: 0.05–0.16 s, the more steps the quicker (about 1.8 s of oozing at most); instant under reduced motion.
-    const step = reduced ? 0 : Math.max(0.05, Math.min(0.16, 1.8 / Math.max(1, oozes)));
-    for (const wv of r.cascade) {
-      if (!wv.before || !wv.falls) return null;
-      const moved = new Map();
-      let maxDy = 0, mid = wv.after;
-      if (!mid) {
-        mid = wv.before.slice();
-        for (const [x, y] of wv.falls) mid[y * w + x] = 0;
-        for (const [x, y, dy] of wv.falls) mid[(y - dy) * w + x] = wv.before[y * w + x];
-      }
-      for (const [x, y, dy] of wv.falls) { moved.set(y * w + x, dy); maxDy = Math.max(maxDy, dy); }
-      const moves = wv.moves || [];
-      // Each oozing block: where it goes from and to, the lump it joins (on the board after), a block of it to hang on.
-      let ooze = null;
-      if (moves.length && L.Jelly) {
-        const { id, list } = L.Jelly.lumps({ w, h, cells: mid });
-        ooze = moves.map(([from, to]) => {
-          const k = id[to], cells = k >= 0 ? list[k] : [to];
-          const x = to % w, nb = [to - w, to + w, x > 0 ? to - 1 : -1, x + 1 < w ? to + 1 : -1].find((j) => j >= 0 && j !== from && id[j] === k && j !== to);
-          return { from, to, v: mid[to], cells: new Set(cells), hang: nb == null ? -1 : nb };
-        });
-      }
-      const fall = wv.falls.length ? (reduced ? 0.15 : Math.min(0.4, 0.12 + 0.07 * Math.sqrt(maxDy))) : moves.length ? step : 0;
-      const clear = wv.rows.length ? (reduced ? 0.15 : 0.2) : wv.falls.length ? 0.06 : 0;
-      waves.push({ before: wv.before, mid, moved, rows: wv.rows, removed: wv.removed, falls: wv.falls, ooze, fall, clear, dur: fall + clear });
-    }
-    if (!waves.length) return null;
-    return { waves, i: 0, t0: performance.now(), fired: -1, n: 0, reduced, final: g.board.cells.slice(), pieces: g.s.pieces, onWave: null, w, h };
-  }
-  /** The wave being shown and the time into it (seconds), or null once the replay is over. */
-  function replayAt(rp, now) {
-    let t = (now - rp.t0) / 1000;
-    for (let i = 0; i < rp.waves.length; i++) {
-      const wv = rp.waves[i];
-      if (t < wv.dur) return { i, wv, t };
-      t -= wv.dur;
-    }
-    return null;
-  }
-  function sameCells(a, b) {
-    if (a.length !== b.length) return false;
-    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
-    return true;
-  }
-  /** Ends the replay: the board is drawn as it is; the lumps of its last fall wobble as they come to rest. */
-  function endReplay(view, J, settle) {
-    const rp = J.replay;
-    J.replay = null;
-    view.dirty = true;
-    if (!rp || !settle || rp.reduced) return;
-    const last = rp.waves[rp.waves.length - 1];
-    if (last.rows.length) return;
-    const w = rp.w, idxs = [];
-    for (const [x, y, dy] of last.falls) if (dy > 0) idxs.push((y - dy) * w + x);
-    for (const o of last.ooze || []) idxs.push(o.to);
-    const dy = Math.max(1, ...last.falls.map((f) => f[2]));
-    kickLumps(view, idxs, Math.min(0.15, 0.03 * dy), 0);
-  }
-  /** Each frame: where the replay is; its clear's effect, words and sound as a wave reaches it; its end. */
-  function tickReplay(view, J, now) {
-    const rp = J.replay, g = view.game;
-    if (!rp) return;
-    // The board changed under it (Undo, an item, a new board): it is over.
-    if (g.s.pieces !== rp.pieces || !sameCells(g.board.cells, rp.final)) { endReplay(view, J, false); return; }
-    const at = replayAt(rp, now);
-    if (!at) {
-      // Over: the clears a slow frame skipped are still seen and heard, then the board as it is.
-      while (rp.fired < rp.waves.length - 1) fireWave(view, rp, rp.waves[++rp.fired]);
-      endReplay(view, J, true);
-      return;
-    }
-    // The next piece meets a block still drawn where it was, or its ghost a lump in mid-air: the replay jumps to its end.
-    if (meets(view, at, rp.reduced)) { flush(view, rp, false); endReplay(view, J, false); return; }
-    // Each wave's clear, in order, as the replay reaches it (every one, even when a slow frame skipped past it).
-    const upto = at.t >= at.wv.fall ? at.i : at.i - 1;
-    while (rp.fired < upto) fireWave(view, rp, rp.waves[++rp.fired]);
-  }
-  /**
-   * Does the piece in play, or its ghost, meet a block the replay still draws (at `at`)? The piece: any block drawn
-   * where the final board has none. Its ghost (where it lands on the final board, as the view draws it): a lump of
-   * this wave in mid-air, where it is drawn now or on the rest of its way down. (The ghost below the replay's other
-   * blocks, the stack a clear has yet to bring down, is only hidden under them: see ghostCovered.)
-   */
-  function meets(view, at, reduced) {
-    const g = view.game, p = g.piece, wv = at.wv;
-    if (!p) return false;
-    const w = g.w, fin = g.board.cells, arr = at.t < wv.fall ? wv.before : wv.mid;
-    for (const [x, y] of g.absCells(p)) if (x >= 0 && x < w && y >= 0 && y < g.h && arr[y * w + x] && !fin[y * w + x]) return true;
-    if (at.t >= wv.fall || !wv.falls.length) return false;
-    const gy = view.look && view.look.ghost === 'off' ? null : g.ghostY(p);
-    if (gy == null || gy === p.y) return false;
-    const k = at.t / wv.fall, e = reduced ? 0 : k * k;
-    const ghost = g.absCells(p, p.rot, p.x, gy);
-    for (const [x, y, dy] of wv.falls) {
-      const top = Math.ceil(y - dy * e - 1e-9);
-      for (const [gx, gy2] of ghost) if (gx === x && gy2 >= y - dy && gy2 <= top) return true;
-    }
-    return false;
-  }
-  /** While a cascade is replayed: does a block it draws cover board cell (x, y)? The ghost is not drawn under one. */
-  function ghostCovered(view, x, y) {
-    const rp = stateOf(view).replay;
-    if (!rp || x < 0 || x >= rp.w || y < 0 || y >= rp.h) return false;
-    const at = replayAt(rp, performance.now());
-    if (!at) return false;
-    const i = y * rp.w + x, wv = at.wv;
-    if (at.t < wv.fall) return !!(wv.before[i] || (rp.reduced && wv.mid[i]));
-    return !!wv.mid[i];
-  }
-  /**
-   * The replay jumps to its end: the clears it had not reached yet are still seen and heard (heard only: the board has
-   * moved on, another lock).
-   */
-  function flush(view, rp, heardOnly) {
-    while (rp.fired < rp.waves.length - 1) {
-      const wv = rp.waves[++rp.fired];
-      if (!heardOnly) { fireWave(view, rp, wv); continue; }
-      if (wv.rows.length) rp.n++;
-      if (rp.onWave) { try { rp.onWave(wv, rp.n); } catch (e) { /* a sound that fails is only a sound */ } }
-    }
-  }
-  /** A wave's rows clearing: the look's effect, "CASCADE ×n" over the board, a little shake, its sound. */
-  function fireWave(view, rp, wv) {
-    if (wv.rows.length) {
-      rp.n++;
-      const s = view.lay.s, b = view.lay.board;
-      view.fx.burst(view.look.effect, view.rowCells(wv.rows, wv.removed), s, rp.reduced);
-      view.fx.text(rp.n > 1 ? 'CASCADE \u00d7' + rp.n : 'CASCADE', b.x + b.w / 2, b.y + b.h * 0.3, '#ffffff', Math.max(13, Math.min(20, s * 0.8)));
-      if (!rp.reduced) view.fx.shake = Math.max(view.fx.shake, Math.min(2, 0.5 * wv.rows.length));
-    }
-    if (rp.onWave) { try { rp.onWave(wv, rp.n); } catch (e) { /* a sound that fails is only a sound */ } }
-  }
-  /** Draws the replay's board: the wave's lumps falling, or landed with its rows clearing. */
-  function drawReplay(ctx, view, now) {
-    const J = stateOf(view), rp = J.replay;
-    if (!rp || !view.lay) return;
-    const at = replayAt(rp, now);
-    if (!at) return;
-    const g = view.game, w = g.w, h = g.h, s = view.lay.s, wv = at.wv;
-    const each = (arr, fn) => { for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const v = arr[y * w + x]; if (v && !(v & CELL.FOREIGN) && !(v & CELL.HIDDEN)) fn(v, x, y); } };
-    const plain = (arr, alpha) => {
-      if (alpha <= 0) return;
-      if (alpha < 1) { ctx.save(); ctx.globalAlpha *= alpha; }
-      each(arr, (v, x, y) => { const [sx, sy] = view.toScreen(x, y); drawStackCell(ctx, view, arr, v, x, y, sx, sy, s, null); });
-      if (alpha < 1) ctx.restore();
-    };
-    if (at.t < wv.fall && wv.ooze) { drawOoze(ctx, view, wv, at.t / wv.fall, each); return; }
-    if (at.t < wv.fall) {
-      const k = at.t / wv.fall;
-      if (rp.reduced) { plain(wv.before, 1 - k); plain(wv.mid, k); return; }
-      const e = k * k;
-      each(wv.before, (v, x, y) => {
-        const dy = wv.moved.get(y * w + x) || 0;
-        const [sx, sy] = view.toScreen(x, y - dy * e);
-        drawStackCell(ctx, view, wv.before, v, x, y, sx, sy, s, null);
-      });
-      return;
-    }
-    // Landed: the rows it filled are going (the effect draws them); the lumps that fell settle with a squash.
-    const rows = new Set(wv.rows), t = at.t - wv.fall;
-    const squash = rp.reduced ? 0 : Math.exp(-ZETA * OMEGA * t) * Math.cos(OMEGA * Math.sqrt(1 - ZETA * ZETA) * t);
-    each(wv.mid, (v, x, y) => {
-      if (rows.has(y)) return;
-      const [sx, sy] = view.toScreen(x, y);
-      drawStackCell(ctx, view, wv.mid, v, x, y, sx, sy, s, null);
-    });
-    if (squash && wv.ooze) {
-      // The lumps that oozed wobble as the block lands.
-      for (const o of wv.ooze) {
-        const cells = Array.from(o.cells).filter((i) => !rows.has((i - (i % w)) / w) && wv.mid[i]).map((i) => [i % w, (i - (i % w)) / w]);
-        if (!cells.length) continue;
-        const sp = { a: 0.07 * squash, b: 0 };
-        withSpring(ctx, view, sp, boxOf(view, cells), () => { for (const [x, y] of cells) { const [sx, sy] = view.toScreen(x, y); drawStackCell(ctx, view, wv.mid, wv.mid[y * w + x], x, y, sx, sy, s, null); } });
-      }
-    }
-    if (squash && wv.falls.length) {
-      // The fallen lumps again, squashed over themselves (drawn once more with the spring's shape).
-      const dy = Math.max(...wv.falls.map((f) => f[2]));
-      const sp = { a: Math.min(0.15, 0.03 * dy) * squash, b: 0 };
-      const cells = wv.falls.map(([x, y, d]) => [x, y - d]).filter(([, y]) => !rows.has(y));
-      if (cells.length) {
-        const box = boxOf(view, cells);
-        withSpring(ctx, view, sp, box, () => { for (const [x, y] of cells) { const [sx, sy] = view.toScreen(x, y); drawStackCell(ctx, view, wv.mid, wv.mid[y * w + x], x, y, sx, sy, s, null); } });
-      }
-    }
-  }
-
-  /**
-   * An ooze step, k of the way (0–1): the lumps as they are after it, each oozing lump warped (squashed, sheared the
-   * way its block goes), and the block itself a stretched blob squeezing from where it was to where it goes, with a
-   * strand of jelly bridging it to its lump and trailing back to where it left.
-   */
-  function drawOoze(ctx, view, wv, k, each) {
-    const g = view.game, w = g.w, s = view.lay.s, e = k * k * (3 - 2 * k), bump = Math.sin(Math.PI * k);
-    const skip = new Set(), inLump = new Map();
-    for (const o of wv.ooze) { skip.add(o.to); for (const i of o.cells) inLump.set(i, o); }
-    // The board after the step, less the blocks still on their way (their lumps round off where they will join).
-    const arr = wv.mid.slice();
-    for (const i of skip) arr[i] = 0;
-    const xy = (i) => [i % w, (i - (i % w)) / w];
-    const centre = (x, y) => { const [sx, sy] = view.toScreen(x, y); return [sx + s / 2, sy + s / 2]; };
-    // The strands under the blocks: from the blob back to where it left (thinning as it goes) and to its lump.
-    ctx.save();
-    ctx.lineCap = 'round';
-    for (const o of wv.ooze) {
-      const [fx, fy] = xy(o.from), [tx, ty] = xy(o.to), bx = fx + (tx - fx) * e, by = fy + (ty - fy) * e;
-      const color = view.colorOf(o.v), c0 = centre(fx, fy), c1 = centre(bx, by);
-      const strands = [[c0, c1, s * (0.5 - 0.3 * k)]];
-      if (o.hang >= 0) { const [hx, hy] = xy(o.hang); strands.push([centre(hx, hy), c1, s * (0.36 + 0.2 * k)]); }
-      for (const [p0, p1, lw] of strands) {
-        ctx.beginPath(); ctx.moveTo(p0[0], p0[1]); ctx.lineTo(p1[0], p1[1]);
-        ctx.lineWidth = lw + Math.max(1, s * 0.08); ctx.strokeStyle = rgba(shade(color, lightOf(ctx) ? -0.3 : -0.42), 0.95); ctx.stroke();
-        ctx.lineWidth = lw; ctx.strokeStyle = color; ctx.stroke();
-      }
-    }
-    ctx.restore();
-    // Every block but the oozing ones' lumps, as it is after the step.
-    each(wv.mid, (v, x, y) => {
-      const i = y * w + x;
-      if (skip.has(i) || inLump.has(i)) return;
-      const [sx, sy] = view.toScreen(x, y);
-      drawStackCell(ctx, view, arr, v, x, y, sx, sy, s, null);
-    });
-    // Each oozing lump, warped: squashed a little and sheared towards the way its block goes.
-    for (const o of wv.ooze) {
-      const cells = Array.from(o.cells).filter((i) => i !== o.to && wv.mid[i]).map(xy);
-      if (!cells.length) continue;
-      const dx = (o.to % w) - (o.from % w), d = view.screenDir(dx > 0 ? 1 : dx < 0 ? -1 : 0, 0);
-      const sp = { a: 0.08 * bump, b: 0.07 * bump * (d[0] || d[1] || 0) };
-      withSpring(ctx, view, sp, boxOf(view, cells), () => { for (const [x, y] of cells) { const [sx, sy] = view.toScreen(x, y); drawStackCell(ctx, view, arr, arr[y * w + x], x, y, sx, sy, s, null); } });
-    }
-    // The blobs: round, stretched along the way they go.
-    for (const o of wv.ooze) {
-      const [fx, fy] = xy(o.from), [tx, ty] = xy(o.to);
-      const [sx, sy] = view.toScreen(fx + (tx - fx) * e, fy + (ty - fy) * e);
-      const P = Math.round(s * dprOf(ctx)), img = lumpSprite(view.colorOf(o.v), 0, P, lightOf(ctx), 'body');
-      const [ax, ay] = view.toScreen(tx, ty), [bx0, by0] = view.toScreen(fx, fy);
-      const ang = Math.atan2(ay - by0, ax - bx0), st = 1 + 0.35 * bump;
-      ctx.save();
-      ctx.translate(sx + s / 2, sy + s / 2);
-      ctx.rotate(ang); ctx.scale(st, 1 / Math.sqrt(st)); ctx.rotate(-ang);
-      blit(ctx, img, -s / 2, -s / 2, s, P);
-      ctx.restore();
-    }
+  /** The bodies as they rest (no playback): each drawn where the world has it. */
+  function drawRest(ctx, view, J) {
+    const W = worldOf(view);
+    if (!W) return;
+    for (const b of W.bodies) drawBody(ctx, view, defOfBody(b), [b.x, b.y, b.c, b.s], J.skins.get(b.id), 1);
   }
 
   // ---- the view part ----------------------------------------------------------------------------------------------
@@ -561,56 +516,40 @@
     key: 'jelly', order: 30,
     claims: 'rest',
     cell,
-    // Each frame drawn: the springs and the replay move on (busy is not asked while other effects keep frames coming).
+    // Each frame drawn: the springs and the playback move on; the bodies are drawn over the (empty) stack.
     overStack(ctx, view) {
       const J = stateOf(view), now = performance.now();
       stepSprings(J, now);
       tickReplay(view, J, now);
-      if (J.replay) drawReplay(ctx, view, now);
-      else if (J.hid) {
-        // The replay ended this very frame, after the stack was left to it: the board as it is.
-        const g = view.game, s = view.lay.s;
-        for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) {
-          const v = g.board.cells[y * g.w + x];
-          if (!v || v & CELL.FOREIGN || v & CELL.HIDDEN) continue;
-          const [sx, sy] = view.toScreen(x, y);
-          drawStackCell(ctx, view, g.board.cells, v, x, y, sx, sy, s, null);
-        }
-      }
-      J.hid = false;
+      ctx.save();
+      // Clipped to the well: a body never draws over the frame.
+      const wl = view.lay.well || view.lay.board;
+      if (wl) { ctx.beginPath(); ctx.rect(wl.x, wl.y - view.lay.s * 4, wl.w, wl.h + view.lay.s * 4); ctx.clip(); }
+      if (J.replay) drawReplay(ctx, view, J, now);
+      else drawRest(ctx, view, J);
+      ctx.restore();
     },
     busy(view) {
       const J = stateOf(view), now = performance.now();
       stepSprings(J, now);
       tickReplay(view, J, now);
-      return !!(J.springs.length || J.piece || J.replay);
+      return !!(J.piece || J.replay || J.skins.size);
     },
     onLock(view, r, reduced) {
-      const J = stateOf(view), g = view.game;
-      if (J.replay) { flush(view, J.replay, true); endReplay(view, J, false); }
+      const J = stateOf(view);
+      if (J.replay) endReplay(view, J, true);
       J.piece = null;
-      J.springs = []; J.byCell = new Map();
       J.last = performance.now();
-      if (r.cascade && r.cascade.length) {
-        J.replay = startReplay(view, r);
-        if (J.replay) { view.dirty = true; return; }
-      }
-      if (reduced || !r.cells || !r.cells.length) return;
-      // The lump the piece set, where it is now (its rows that cleared gone, what was above them down), and those it rests on.
-      const rows = (r.rows || []).slice().sort((a, b) => a - b), gone = new Set(rows), idxs = [];
-      for (const [x, y] of r.cells) {
-        if (gone.has(y) || x < 0 || x >= g.w || y < 0 || y >= g.h) continue;
-        const ny = y - rows.filter((ry) => ry < y).length;
-        idxs.push(ny * g.w + x);
-      }
-      kickLumps(view, idxs, 0.12, 0.05);
+      J.replay = startReplay(view, r);
+      view.dirty = true;
+      void reduced;
     },
     // A move leaves the top behind for a moment (a shear against the move), a turn and a lower squash it a little.
     onMove(view, act) { pieceKick(view, 0, 0.08 * (act === 'moveL' ? -1 : 1)); },
     onRotate(view) { pieceKick(view, 0.06, 0); },
     onLower(view) {
       const J = stateOf(view);
-      if (J.replay) { flush(view, J.replay, false); endReplay(view, J, false); }
+      if (J.replay) endReplay(view, J, true);
       pieceKick(view, 0.03, 0);
     },
   };
@@ -621,7 +560,7 @@
   const fmtInt = L.fmtInt || ((n) => String(Math.floor(n)));
   Recipe.uiPart({
     key: 'jelly', order: 30, mod: 'jelly', name: 'Jelly',
-    // The board's cascades (waves that cleared rows), on its summary: the Board full card, Retire, the library.
+    // The board's cascades (bands a clear's fall filled), on its summary: the Board full card, Retire, the library.
     tiles: (x) => (x && typeof x === 'object' ? [[fmtInt(x.cascades || 0), 'Cascades']] : []),
   });
 
@@ -638,5 +577,5 @@
     });
   }
 
-  L.JellyView = { lumpSprite, stateOf, startReplay, replayAt, meets, ghostCovered, maskIn, view: viewPart };
+  L.JellyView = { lumpSprite, stateOf, startReplay, outlineOf, drawBody, view: viewPart };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
