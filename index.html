@@ -87,13 +87,13 @@ ul,ol{list-style:none}
   .ho-b2a{display:none!important}
 }
 @media (min-width:1000px){
-  .rail{display:flex;flex-direction:column;gap:18px;width:300px;flex:none;max-height:100%;overflow:auto;padding:8px 4px}
+  .rail{display:flex;flex-direction:column;gap:14px;width:340px;flex:none;max-height:100%;overflow:auto;padding:8px 4px}
 }
 .rail .wm{font:700 26px/1 var(--cond);letter-spacing:-.01em;color:var(--ink)}
 .rail .thesis{font:500 15px/1.4 var(--sans);color:var(--ink);text-wrap:balance}
 .rail h2{font:600 14px/20px var(--cond);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);margin:0 0 4px}
-.jumps{display:grid;grid-template-columns:1fr;gap:1px}
-.jump{display:flex;align-items:center;gap:10px;min-height:32px;border-radius:2px;padding:4px 10px;font:500 14px/18px var(--sans);color:var(--ink)}
+.jumps{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(10,auto);grid-auto-flow:column;gap:1px 4px}
+.jump{display:flex;align-items:center;gap:8px;min-height:32px;border-radius:2px;padding:4px 8px;font:500 13.5px/18px var(--sans);text-align:left;color:var(--ink)}
 .jump .n{font:600 13px/18px var(--cond);color:var(--ink-2);width:18px;font-variant-numeric:tabular-nums}
 .jump:hover{background:color-mix(in srgb,var(--paper) 55%,transparent)}
 .jump.on{background:var(--paper);box-shadow:inset 3px 0 0 var(--ink)}
@@ -109,7 +109,7 @@ ul,ol{list-style:none}
 #screen{position:relative;flex:1;min-height:0;display:flex;flex-direction:column;transition:transform .3s var(--ease)}
 #screen.aside{transform:translateY(18%)}
 #band{flex:none;height:44px;background:var(--drawer);position:relative;z-index:6;transition:transform .2s var(--ease);touch-action:pan-y}
-#screen.aside #band{transform:translateY(-44px)}
+#screen.aside #band{transform:translateY(var(--bandoff,-44px))}
 #view{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;background:var(--counter);padding:0 16px;position:relative}
 #view.nav-push{animation:push .24s var(--ease)}
 #view.nav-back{animation:fadein .16s var(--ease)}
@@ -151,7 +151,7 @@ ul,ol{list-style:none}
 #slotbar.composing .psw,#slotbar.composing .youkey,#slotbar.composing .ratetab{display:none}
 #slotbar:not(.composing) .send{display:none}
 .ratetab{position:absolute;left:104px;top:-13px;height:20px;min-width:88px;padding:0 8px;background:var(--paper);border:1px solid var(--perf);border-bottom:0;border-radius:2px 2px 0 0;font:700 12px/19px var(--type);letter-spacing:.04em;color:var(--ink);z-index:2}
-.ratetab::after{content:"";position:absolute;left:-10px;right:-10px;top:-12px;bottom:-12px}
+.ratetab::after{content:"";position:absolute;left:-10px;right:-10px;top:-24px;bottom:0}
 .placelist{position:absolute;left:12px;bottom:calc(100% + 8px);width:220px;padding:4px 0;z-index:9;animation:rise .16s var(--ease)}
 .placelist button{display:flex;align-items:center;gap:8px;width:100%;height:48px;padding:0 16px;font:600 16px/20px var(--cond);letter-spacing:.06em;text-transform:uppercase;color:var(--ink);border-left:3px solid transparent}
 .placelist button[aria-current="page"]{border-left-color:var(--ink)}
@@ -230,6 +230,7 @@ textarea.field{resize:none}
 .route{position:relative;z-index:1;margin-left:10px;width:min(320px,calc(100% - 38px));background:var(--canary);color:var(--on-canary);padding:6px 12px 10px;border-radius:2px;margin-bottom:-4px}
 .route .ty{color:var(--on-canary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .route p{font:400 14px/20px var(--sans);margin-top:2px}
+.route p.ty{font:700 12px/16px var(--type);letter-spacing:.04em;text-transform:uppercase;margin-top:0}
 .tag{position:relative;z-index:2;margin-left:10px;width:min(320px,calc(100% - 38px));margin-bottom:-6px;background:var(--paper);border:1px solid var(--edge);border-radius:2px;padding:5px 12px;display:grid;grid-template-columns:28px minmax(0,1fr);column-gap:8px}
 .tag .tph{grid-row:1/3;align-self:start;margin-top:6px;width:28px;height:28px}
 .tag .r1{display:flex;align-items:center;gap:8px;min-width:0;height:20px}
@@ -277,7 +278,7 @@ textarea.field{resize:none}
 .coach{margin:0 12px 10px;min-height:32px;display:flex;align-items:center;padding:6px 10px;background:var(--paper-2);border-left:2px solid var(--ink);font:400 13px/18px var(--sans);color:var(--ink)}
 .slip.big .sbody{grid-template-columns:128px minmax(0,1fr)}
 .slip.big .cvbox{width:128px;height:192px}
-.slip.big .lab{min-height:192px}
+.slip.big .lab{min-height:192px;padding-bottom:30px}
 .slip.big .ttl{font-size:30px;line-height:32px;-webkit-line-clamp:4}
 .also{margin-top:4px;font:400 13px/18px var(--sans);color:var(--ink-2)}
 .starspot{position:absolute;right:12px;bottom:10px;height:24px}
@@ -334,14 +335,22 @@ textarea.field{resize:none}
 .lrow .mid{display:flex;align-items:center;gap:10px;min-width:0}
 .lrow .tx{min-width:0}
 .lrow .t{font:600 18px/22px var(--cond);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.lrow .s{font:400 13px/16px var(--sans);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lrow .s{font:400 13px/16px var(--sans);color:var(--muted);white-space:nowrap;overflow:hidden;display:flex;min-width:0}
+.lrow .s .nm{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.lrow .s .du{flex:0 0 auto}
+.lrow .cvs{flex:none;width:40px;height:40px;display:grid;place-items:center}
 .lrow .s2{font:400 12.5px/16px var(--sans);color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lrow .rt{display:flex;align-items:center;gap:8px}
 .lrow.one .t{font:400 14px/20px var(--sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lrow .corner{position:absolute;right:-12px;top:0;width:10px;height:10px;background:var(--canary);clip-path:polygon(0 0,100% 0,100% 100%)}
 .akey{flex:none;min-width:64px;height:44px;padding:0 8px;border:1.5px solid var(--stamp);border-radius:2px;font:600 13px/16px var(--sans);color:var(--stamp);text-align:center;white-space:nowrap}
+.lrow .akey{width:64px;min-width:0;padding:0 1px;overflow:hidden}
+.lrow .akey.t{font-size:12px;letter-spacing:-.01em}
+.lrow .akey.w{font-size:11px;line-height:13px;white-space:normal;overflow-wrap:anywhere}
 .compact{position:relative;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;min-height:72px;padding:8px 12px;margin-bottom:10px;cursor:pointer}
 .compact .t{font:600 18px/22px var(--cond);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.compact .mline{white-space:normal;overflow:visible}
+.compact .akey{max-width:96px;white-space:normal;line-height:15px}
 .compact .dog{top:0;right:0}
 .compact.saved{clip-path:polygon(0 0,calc(100% - 22px) 0,100% 22px,100% 100%,0 100%)}
 .compact .rtk{display:flex;align-items:center;gap:6px;padding-right:18px}
@@ -374,9 +383,10 @@ textarea.field{resize:none}
 .ev .dd span{display:block;color:var(--ink-2);font-size:13.5px}
 .ev .paid{display:block;margin-top:6px;padding:4px 6px;background:var(--paper-2);font:700 12px/16px var(--type);letter-spacing:.04em;color:var(--ink)}
 .endslip{padding:18px 14px 16px;margin-top:4px}
+.endslip.none{margin-top:16px}
 .endslip p:not(.ty){font:400 15px/22px var(--sans);color:var(--ink);margin-top:14px}
 .endslip .ty{margin-top:18px}
-.endslip .cu{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 12px;align-items:baseline;width:100%;min-height:44px;padding:6px 0;text-align:left}
+.endslip .cu{display:grid;grid-template-columns:132px minmax(0,1fr);gap:4px 12px;align-items:baseline;width:100%;min-height:44px;padding:6px 0;text-align:left}
 .endslip .cu .ty{margin:0;color:var(--ink);white-space:nowrap}
 .endslip .cu span:last-child{font:400 14px/20px var(--sans)}
 .letter{padding:14px;margin-bottom:14px}
@@ -401,10 +411,10 @@ textarea.field{resize:none}
 .panel.canary .field{background:var(--paper);margin:8px 0}
 .panel p{font:400 15px/22px var(--sans)}
 .panel .row{display:flex;gap:8px;margin-top:10px}
-.panel .row .key{flex:1;padding:0 4px;font-size:14px}
+.panel .row .key{flex:1 1 auto;padding:0 4px;font-size:14px;white-space:nowrap}
 .panel .row .key.on{background:var(--ink);border-color:var(--ink);color:var(--paper)}
-.trow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:10px;min-height:32px}
-.trow .who{display:flex;align-items:center;gap:8px;min-width:0;font:600 14.5px/20px var(--sans);min-height:32px}
+.trow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:10px;min-height:44px}
+.trow .who{display:flex;align-items:center;gap:8px;min-width:0;font:600 14.5px/20px var(--sans);min-height:44px}
 .trow .who span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .trow .v{display:flex;align-items:center;gap:6px;font:400 14px/20px var(--sans)}
 .trow .d{font:700 12px/16px var(--type);color:var(--ink-2)}
@@ -417,7 +427,7 @@ textarea.field{resize:none}
 .nh{display:flex;align-items:center;gap:6px;min-width:0;font:600 14.5px/20px var(--sans)}
 .nh .nmb{display:inline-flex;align-items:center;gap:6px;min-width:0;min-height:28px}
 .nh .nmb span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.nh .to{font-weight:400;color:var(--ink-2);white-space:nowrap}
+.nh .to{font-weight:400;color:var(--ink-2);white-space:nowrap;margin-left:-6px}
 .nh .tm{margin-left:auto;font:400 13px/20px var(--sans);color:var(--muted);flex:none}
 .nb{margin-top:4px;font:400 15px/22px var(--sans);color:var(--ink);overflow-wrap:anywhere}
 .nt.own{border-left:2px solid var(--stamp);padding-left:10px}
@@ -467,6 +477,7 @@ textarea.field{resize:none}
 .spine .sn{font:700 12px/14px var(--type)}
 .spine.empty{height:120px;border:1.5px dashed var(--ink-2);justify-content:flex-end;font:400 12px/16px var(--sans);color:var(--ink-2);cursor:default}
 .shelfslip{margin-top:14px}
+.hnote{margin-top:6px;font:400 15px/21px var(--sans);color:var(--ink)}
 .avrow{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:4px}
 .avrow button{display:inline-flex;align-items:center;gap:8px;min-height:44px;font:600 14.5px/20px var(--sans)}
 .hrow{display:flex;align-items:center;gap:10px;width:100%;min-height:52px;padding:6px 14px;text-align:left;font:600 15px/20px var(--sans)}
@@ -495,6 +506,7 @@ textarea.field{resize:none}
 .chd p{margin-top:8px;font:400 15px/22px var(--sans)}
 .chd .host{flex-wrap:wrap;gap:4px 8px;margin-top:6px}
 .chd .host button{white-space:nowrap;min-height:28px}
+.chd .host .mem{margin-left:-4px}
 .chd .key{margin-top:12px}
 .pw{display:grid;grid-template-columns:28px auto minmax(0,1fr);align-items:center;gap:10px;min-height:48px;width:100%;text-align:left;cursor:pointer}
 .pw+.pw{background-image:repeating-linear-gradient(90deg,var(--perf) 0 2px,transparent 2px 5px);background-size:100% 1px;background-repeat:no-repeat}
@@ -504,6 +516,7 @@ textarea.field{resize:none}
 .cweek b{font:600 17px/20px var(--cond)}
 .backstrip{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-height:48px;padding:10px 14px 8px;margin-top:14px;text-align:left;font:400 15px/20px var(--sans)}
 .backstrip b{font-weight:600;color:var(--stamp);white-space:nowrap}
+.backstrip.torn{margin-top:14px;padding-top:13px}
 
 /* ---------- live ---------- */
 .np .trk{margin-top:6px}
@@ -516,7 +529,13 @@ textarea.field{resize:none}
 .sync .sclk.play{color:var(--stamp)}
 .sync .sclk.tick{animation:fadein .12s linear}
 .sync p{font:400 14px/20px var(--sans);color:var(--ink);margin-top:4px}
-.room{display:flex;align-items:center;gap:0;margin-top:4px;flex-wrap:wrap}
+.room{display:flex;align-items:center;gap:0;margin-top:4px;min-height:44px;width:100%;text-align:left}
+.room .fcs{display:flex;align-items:center;flex:none}
+.room .gi{margin-left:auto;font:600 14px/20px var(--sans);color:var(--ink)}
+.roomlist{padding:2px 14px;margin:6px 0 14px}
+.roomlist button{display:flex;align-items:center;gap:10px;min-height:44px;width:100%;font:600 14.5px/20px var(--sans);color:var(--ink);text-align:left}
+.roomlist button+button{border-top:1px solid var(--edge)}
+.roomlist p{border-top:1px solid var(--edge);font:400 13px/20px var(--sans);color:var(--ink-2);padding:10px 0}
 .room .ph{margin-right:-4px;box-shadow:0 0 0 2px var(--counter);border-radius:50%}
 .room .ph.sq{border-radius:2px}
 .room .more{margin-left:12px;font:600 14px/24px var(--sans);color:var(--ink-2)}
@@ -537,8 +556,8 @@ textarea.field{resize:none}
 .arow{position:relative;display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:start;min-height:56px;padding:10px 0;width:100%;text-align:left;cursor:pointer}
 .arow+.arow{background-image:repeating-linear-gradient(90deg,var(--perf) 0 2px,transparent 2px 5px);background-size:100% 1px;background-repeat:no-repeat}
 .arow.new::before{content:"";position:absolute;left:-14px;top:8px;bottom:8px;width:3px;background:var(--stamp)}
-.arow .ps{display:flex;min-width:24px;padding-top:2px}
-.arow .ps .ph+.ph{margin-left:-8px}
+.arow .ps{display:flex;width:48px;padding-top:2px}
+.arow .ps .ph+.ph{margin-left:-12px}
 .arow .ps .ph{box-shadow:0 0 0 1.5px var(--paper);border-radius:50%}
 .arow .ps .ph.sq{border-radius:2px}
 .arow p{font:400 15px/21px var(--sans)}
@@ -550,8 +569,8 @@ textarea.field{resize:none}
 .prow{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 10px;padding:12px 0;align-items:start}
 .prow+.prow{background-image:repeating-linear-gradient(90deg,var(--perf) 0 2px,transparent 2px 5px);background-size:100% 1px;background-repeat:no-repeat}
 .prow .r1{display:flex;align-items:center;gap:8px;min-width:0}
-.prow .r1 .nmb{font:600 14.5px/20px var(--sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;min-height:28px;display:inline-flex;align-items:center}
-.prow .r1 .med{margin-left:auto;font:400 13px/20px var(--sans);color:var(--muted);white-space:nowrap}
+.prow .r1 .nmb{font:600 14.5px/20px var(--sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:none;max-width:100%;min-height:28px;display:inline-flex;align-items:center}
+.prow .r1 .med{margin-left:auto;font:400 13px/18px var(--sans);color:var(--muted);min-width:0;text-align:right;padding-top:1px}
 .srows{padding:0 14px;margin-bottom:10px}
 .srow{display:flex;align-items:center;gap:10px;min-height:52px;width:100%;text-align:left;font:400 15px/20px var(--sans)}
 .srow+.srow{background-image:repeating-linear-gradient(90deg,var(--perf) 0 2px,transparent 2px 5px);background-size:100% 1px;background-repeat:no-repeat}
@@ -635,7 +654,8 @@ textarea.field{resize:none}
 .money input[type=radio]{appearance:none;-webkit-appearance:none;width:20px;height:20px;margin:0;border-radius:50%;border:1.5px solid var(--ink-2);display:grid;place-items:center;flex:none}
 .money input[type=radio]:checked{border-color:var(--ink)}
 .money input[type=radio]:checked::after{content:"";width:10px;height:10px;border-radius:50%;background:var(--ink)}
-.money .small{width:72px;min-height:40px;padding:6px 8px}
+.money .small{width:56px;min-height:40px;padding:6px 8px}
+.money .pct{display:inline-flex;align-items:center;gap:4px;font:600 15px/20px var(--sans)}
 .money .other{flex:1;min-width:120px;min-height:40px;padding:6px 8px}
 .why{margin-top:6px;font:400 13px/18px var(--sans);color:var(--muted)}
 .medseg{display:flex;flex-wrap:wrap;gap:6px}
@@ -647,8 +667,8 @@ textarea.field{resize:none}
 .selrow select{min-height:44px;padding:0 8px;background:var(--paper-2);border:1px solid var(--perf);border-radius:2px;color:var(--ink);max-width:60%}
 .firstrun{padding:22px 16px 20px;margin-top:18px}
 .firstrun h1{font:700 26px/28px var(--cond)}
-.firstrun ul{margin-top:14px;display:flex;flex-direction:column;gap:10px}
-.firstrun li{font:400 15px/22px var(--sans)}
+.firstrun .frp{margin-top:14px;display:flex;flex-direction:column;gap:10px}
+.firstrun .frp li{font:400 15px/22px var(--sans)}
 .firstrun .key{margin-top:18px}
 
 /* ---------- handoff ---------- */
@@ -680,6 +700,11 @@ textarea.field{resize:none}
 .b2a svg,.ho-b2a svg{width:8px;height:12px}
 .ghost-file{position:absolute;z-index:70;pointer-events:none}
 
+/* ---------- hit areas: small inline targets reach 44px without moving layout ---------- */
+.tag .tph,.tried .t1 button,.ask .a2 button,.clk,.sig button,.intro>button,.intro .nm button,.prow>button,.prow .nmb,.host button,.nh .nmb,.dl{position:relative}
+.tag .tph::after,.tried .t1 button:not(.nm)::after,.ask .a2 button:not(.nmb)::after,.clk::after,.sig button::after,.intro>button::after,.prow>button::after,.host button::after,.nh .nmb::after,.dl::after{content:"";position:absolute;left:50%;top:50%;width:max(100%,44px);height:max(100%,44px);transform:translate(-50%,-50%)}
+.tried .t1 .nm,.ask .a2 .nmb,.intro .nm button,.prow .nmb{padding-block:12px;margin-block:-12px}
+
 #toast{position:absolute;left:16px;right:16px;bottom:72px;z-index:60;min-height:44px;display:flex;align-items:center;padding:10px 14px;background:var(--paper);border:1px solid var(--edge);border-radius:2px;box-shadow:var(--shadow),0 6px 20px -8px rgba(0,0,0,.3);font:400 14px/20px var(--sans);color:var(--ink);opacity:0;transform:translateY(8px);transition:opacity .2s,transform .2s;pointer-events:none}
 #toast.show{opacity:1;transform:none}
 
@@ -687,6 +712,7 @@ textarea.field{resize:none}
   #view.nav-push,#view.nav-back,#view.nav-place,.sheet,.sheet.lower,#sheet-root>.scrim,.placelist,.step2,.prev,.youkey .cnt,.dog .flap,.slipwrap.passed::after,.stampmark.press,#ticket.drop,.sync .sclk.tick{animation:rmfade .12s linear!important}
   .sheet.lower{animation:rmfadeout .12s linear forwards!important}
   .ldot{animation:none!important}
+  #toast{transition:opacity .12s linear!important;transform:none!important}
   #screen,#band,#slotbar,.dtab>span,.spine,.slip.tearing .stubzone,.ho-tk,#ticket.slide{transition:opacity .12s linear!important}
   .slip.tearing .stubzone{transform:none}
   .ho-rule i{transition:none!important;width:100%}
@@ -845,7 +871,7 @@ const ANSWERS={
  ask_rae:[{by:"lena",w:"smallhours",min:150,text:"176 pages on the night shift at a convenience store. Funny, then not, then funny again. Exactly three hours.",st:31,chosen:true},
   {by:"sable",w:"tworooms",min:140,text:"Two sisters on either side of a wall. Quiet, not bleak, and it ends somewhere warm.",st:12},
   {by:"ines",w:"fieldnotes",min:120,text:"Essays, but they read like a novel. The kitchen one is the best twelve pages I read last year.",st:6},
-  {by:"dana",w:"glassorchard",min:100,text:"",st:4}],
+  {by:"dana",w:"glassorchard",min:100,text:"Longer than your ride, but part one stands on its own and ends somewhere kind.",st:4}],
  ask_me:[{by:"dev",w:"paperkingdoms",min:1900,text:"Two players, one couch, one paper kingdom. Seven hours. You’ll argue about the bridge.",st:14,chosen:true},
   {by:"sam",w:"tidewater",min:1850,text:"Single player, but we passed the controller every chapter and it worked.",st:3}],
 };
@@ -918,6 +944,10 @@ const EVENTS=[
 // your tried record (newest first); U.me.tried stays 34 until you stamp
 const MYTRIED=[["paperkingdoms","loved","28 SEP"],["lowceil","loved","24 SEP"],["smallhours","good","21 SEP"],["tidewater","loved","19 SEP"],
  ["minor","meh","15 SEP"],["glass","good","12 SEP"],["carto","loved","8 SEP"],["notfinishing","good","4 SEP"],["harbour","meh","2 SEP"]];
+
+// older months of your tried record
+const MYTRIED_OLD=[["AUGUST",[["salt","loved","30 AUG"],["kitchen","good","26 AUG"],["fieldnotes","loved","22 AUG"],["eighty","meh","17 AUG"],["keepers","good","12 AUG"],["bluehours","loved","7 AUG"],["tworooms","good","3 AUG"]]],
+ ["JULY",[["longfield","loved","29 JUL"],["paloma","good","20 JUL"],["weightrooms","meh","11 JUL"]]]];
 
 // subscriptions you pay for (split 80/20)
 const SUBS=["mara","lena"];
@@ -1139,7 +1169,7 @@ function fullDisc(w,byId,app,p){
  const src=(p&&p.discText)||w.disc;
  const parts=src.split(/(?<=\.)\s+/).filter(s=>s&&!/affiliat|earns|no payment/i.test(s));
  let s=[parts[0],info.sentence,...parts.slice(1)].filter(Boolean).join(" ");
- if(!(p&&p.by==="me")){const oth=w.on.find(a=>a!==app&&w.aff[a]);if(oth&&!info.rate)s+=` ${fn(u)} earns ${w.aff[oth]} through ${APPS[oth]}.`;}
+ if(!(p&&p.by==="me")){const oth=w.on.find(a=>a!==app&&w.aff[a]);if(oth&&!info.rate)s=s.replace(info.sentence,info.sentence.replace(/\.$/,` (${w.aff[oth]} if you buy on ${APPS[oth]}).`));}
  return {miss:info.miss?`Not on ${APPS[info.def]}. Opens in ${APPS[app]}.`:"",s};
 }
 function parseText(t){
@@ -1262,14 +1292,14 @@ function slip(it,o={}){
  const st=S.stamped[p.id];
  let h=`<div class="slipwrap ${copy&&!o.preview?"passed":""}" data-pid="${p.id}">`;
  if(passers.length&&!o.preview)h+=routeStrip(passers);
- h+=tagBox(u,{note,time});
+ if(!o.nohead)h+=tagBox(u,{note,time});
  const also=w.on.filter(a=>a!==app).map(a=>APPS[a]);
  const alsoTxt=also.length?`Also on ${also.length>1?also.slice(0,-1).join(", ")+" and "+also[also.length-1]:also[0]}`:"";
  const str=big?stretch(w):"";
  const inter=!o.preview&&!big;
  const aria=`${fnp(u)} pick: ${w.title}, ${ONE[w.m].toLowerCase()} by ${w.by}. ${u.cur?`${u.landed}% landed.`:"Member."}${st?` You: ${VERD_LABEL[st.v]}.`:""}${saved?" Saved.":""} Opens the pick.`;
  h+=`<article class="slip ${big?"big":""} ${saved&&!o.preview?"saved":""} ${o.preview?"nb":""}" data-pid="${p.id}" ${inter?`data-go="pick" data-id="${p.id}" tabindex="0" aria-label="${esc(aria)}"`:""}>
-<div class="top"><div class="sbody"><div class="cvbox">${big?cv(w,128,192):cv(w,96,116)}</div><div class="lab"><p class="mline">${o.prefix?esc(o.prefix)+" · ":""}${esc(mediumLine(w))}</p><h3 class="ttl">${esc(w.title)}</h3><p class="mk">${esc(w.by)}</p>${big&&alsoTxt?`<p class="also">${esc(alsoTxt)}</p>`:""}${str?`<p class="ty" style="margin-top:6px">${esc(str.toUpperCase())}</p>`:""}${o.chosen?`<span class="chosen" style="margin-top:8px"><span class="stampmark r3">Chosen</span></span>`:""}${o.noTried?"":triedBy(w)}</div>${big?`<span class="starspot">${S.star.has(p.id)?`<span class="stampmark ${S.justStarred===p.id?"press":""}" role="img" aria-label="You starred this">${IC.star}Starred</span>`:""}</span>`:""}</div>${o.chosen?`<p class="chline">${esc(o.chosen)}</p>`:""}</div>
+<div class="top"><div class="sbody"><div class="cvbox">${big?cv(w,128,192):cv(w,96,116)}</div><div class="lab"><p class="mline">${o.prefix?esc(o.prefix)+" · ":""}${esc(mediumLine(w))}</p><h3 class="ttl">${esc(w.title)}</h3><p class="mk">${esc(w.by)}</p>${o.nohead&&note&&parseText(note).text.trim()?`<p class="hnote">“${esc(parseText(note).text.trim())}”</p>`:""}${big&&alsoTxt?`<p class="also">${esc(alsoTxt)}</p>`:""}${str?`<p class="ty" style="margin-top:6px">${esc(str.toUpperCase())}</p>`:""}${o.chosen?`<span class="chosen" style="margin-top:8px"><span class="stampmark r3">Chosen</span></span>`:""}${o.noTried?"":triedBy(w)}</div>${big?`<span class="starspot">${S.star.has(p.id)?`<span class="stampmark ${S.justStarred===p.id?"press":""}" role="img" aria-label="You starred this">${IC.star}Starred</span>`:""}</span>`:""}</div>${o.chosen?`<p class="chline">${esc(o.chosen)}</p>`:""}</div>
 ${o.preview?dogEar(p.id,w,false,true):dogEar(p.id,w,saved)}${stubZone(p,w,u,app,{big,preview:o.preview})}${o.coach?`<p class="coach">${esc(COACH[o.coach](app,u))}</p>`:""}</article></div>`;
  if(o.choose)h+=`<button class="key wide choose" data-act="choose" data-id="${o.choose.ask}" data-i="${o.choose.i}" style="margin:-4px 0 18px">Choose this one</button>`;
  return h;
@@ -1297,15 +1327,15 @@ function listRow(i,n){
  const p=POSTS[i.pid],w=W[p.w],u=U[p.by],app=appFor(w),st=S.stamped[p.id],op=S.opened.has(p.id)&&!st,sv=S.save.has(p.id);
  const pass=(i.passers||[]).filter(x=>x.by!=="me");
  const info=discInfo(w,u.id,app,p);
- return `<div class="lrow" data-go="pick" data-id="${p.id}" tabindex="0" aria-label="${esc(`${w.title}, ${fnp(u)} pick. ${durLabel(w)}.${sv?" Saved.":""}`)}"><span class="n">${num}</span><div class="mid">${cvH(w,40)}<div class="tx"><p class="t">${esc(w.title)}</p><p class="s">${esc(u.name)}${u.cur?` · ${u.landed}%`:""} · ${esc(durLabel(w))}</p>${pass.length?`<p class="s2">passed on by ${pass.map(x=>esc(U[x.by].name)).join(" and ")}</p>`:""}</div></div><div class="rt">${st?glyph(st.v):op?glyph("later"):""}<button class="akey" data-act="tear" data-w="${w.id}" data-by="${u.id}" data-pid="${p.id}" data-app="${app}" aria-label="${esc(verb(app,w.m).replace(/^(\S+)/,"$1 "+w.title)+". "+info.sentence)}">${esc(APPS[app])}</button></div>${sv?`<i class="corner" role="img" aria-label="Saved"></i>`:""}</div>`;
+ return `<div class="lrow" data-go="pick" data-id="${p.id}" tabindex="0" aria-label="${esc(`${w.title}, ${fnp(u)} pick. ${durLabel(w)}.${sv?" Saved.":""}`)}"><span class="n">${num}</span><div class="mid"><span class="cvs">${cvH(w,40)}</span><div class="tx"><p class="t">${esc(w.title)}</p><p class="s"><span class="nm">${esc(u.name)}</span><span class="du">${u.cur?`&nbsp;· ${u.landed}%`:""}&nbsp;· ${esc(durLabel(w))}</span></p>${pass.length?`<p class="s2">passed on by ${pass.map(x=>esc(U[x.by].name)).join(" and ")}</p>`:""}</div></div><div class="rt">${st?glyph(st.v):op?glyph("later"):""}<button class="akey" data-act="tear" data-w="${w.id}" data-by="${u.id}" data-pid="${p.id}" data-app="${app}" aria-label="${esc(verb(app,w.m).replace(/^(\S+)/,"$1 "+w.title)+". "+info.sentence)}">${esc(APPS[app])}</button></div>${sv?`<i class="corner" role="img" aria-label="Saved"></i>`:""}</div>`;
 }
 function compact(pid,o={}){
  const p=POSTS[pid],w=W[p.w],u=U[p.by],app=appFor(w),sv=S.save.has(pid),info=discInfo(w,u.id,app,p);
- return `<article class="paper compact ${o.dog&&sv?"saved":""}" data-go="pick" data-id="${pid}" tabindex="0" aria-label="${esc(`${w.title}, ${fnp(u)} pick. Opens the pick.`)}"><span>${cvH(w,56)}</span><div style="min-width:0"><p class="t">${esc(w.title)}</p><p class="mline" style="padding-right:0">${esc(mediumLine(w))}</p>${o.sub?`<p class="meta">${esc(o.sub)}</p>`:""}</div><div class="rtk" ${o.dog?'style="padding-right:34px"':""}><button class="akey" data-act="tear" data-w="${w.id}" data-by="${u.id}" data-pid="${pid}" data-app="${app}" aria-label="${esc(verb(app,w.m).replace(/^(\S+)/,"$1 "+w.title)+". "+info.sentence)}">${esc(APPS[app])}</button></div>${o.dog?dogEar(pid,w,sv):""}</article>`;
+ return `<article class="paper compact ${o.dog&&sv?"saved":""}" data-go="pick" data-id="${pid}" tabindex="0" aria-label="${esc(`${w.title}, ${fnp(u)} pick. Opens the pick.`)}"><span>${cvH(w,56)}</span><div style="min-width:0"><p class="t">${esc(w.title)}</p><p class="mline" style="padding-right:0">${esc(mediumLine(w).replace(/([^·]) (?=[^·])/g,"$1\u00a0").replace(/ ·/g,"\u00a0·"))}</p>${o.sub?`<p class="meta">${esc(o.sub)}</p>`:""}</div><div class="rtk" ${o.dog?'style="padding-right:34px"':""}><button class="akey" data-act="tear" data-w="${w.id}" data-by="${u.id}" data-pid="${pid}" data-app="${app}" aria-label="${esc(verb(app,w.m).replace(/^(\S+)/,"$1 "+w.title)+". "+info.sentence)}">${esc(APPS[app])}</button></div>${o.dog?dogEar(pid,w,sv):""}</article>`;
 }
 function boothTicket(room){
  const h=U[LIVE.host];
- if(room)return `<div class="booth onroom" role="group" aria-label="On air: ${esc(LIVE.title)}, hosted by ${esc(h.name)}. ${LIVE.listening} in the room."><span class="b1"><i class="ldot" aria-hidden="true"></i><span class="onair">ON AIR · ${esc(LIVE.title.toUpperCase())}</span></span><span class="b2">${photo(h,18)}<span>hosted by ${esc(h.name)} · ${LIVE.listening} in</span></span></div>`;
+ if(room)return `<div class="booth onroom" role="group" aria-label="On air: ${esc(LIVE.title)}, hosted by ${esc(h.name)}. ${LIVE.listening} in the room."><span class="b1"><i class="ldot" aria-hidden="true"></i><span class="onair">ON AIR · ${esc(LIVE.title.toUpperCase())}</span></span><span class="b2">${photo(h,18)}<span>hosted by ${esc(h.name)} · ${LIVE.listening} in the room</span></span></div>`;
  return `<button class="booth" data-place="live" aria-label="${esc(h.name)} is live: ${esc(LIVE.title)}. ${LIVE.listening} in the room. Go in."><span class="b1"><i class="ldot" aria-hidden="true"></i><span class="onair">ON AIR</span><b>${esc(h.name)}</b></span><span class="b2"><span>${esc(LIVE.title)} · ${LIVE.listening} in the room</span><span class="gi">Go in ›</span></span></button>`;
 }
 function eventRow(e,inert){
@@ -1330,7 +1360,7 @@ function talkCard(notes,o={}){
   const {text,to,club}=parseText(r.text),u=U[r.by];
   const nested=!!to&&arr.slice(0,i).some(x=>x.by===to.id);
   const own=o.owner&&r.by===o.owner;
-  const note=`<div class="nt ${own?"own":""} ${S.replyTo===r.by&&r.by!=="me"?"tgt":""}" data-act="replyto" data-id="${r.by}" tabindex="0" aria-label="${esc(u.name)}${to?`, to ${esc(fn(to))}`:""}: ${esc(text)} Tap to reply."><p class="nh"><button class="nmb" data-go="profile" data-id="${u.id}">${photo(u,18)}<span>${esc(u.name)}</span></button>${to?`<span class="to">, to ${esc(fn(to))}</span>`:""}${r.min!=null&&!o.live?`<span class="tm">${ago(r.min)}</span>`:""}</p><p class="nb">${rich(text)}</p>${club?`<button class="clk clkl" data-go="club" data-id="${club.id}">In ${esc(club.name)}</button>`:""}</div>`;
+  const note=`<div class="nt ${own?"own":""} ${S.replyTo===r.by&&r.by!=="me"?"tgt":""}" ${o.readonly?"":`data-act="replyto" data-id="${r.by}" tabindex="0"`} aria-label="${esc(u.name)}${to?`, to ${esc(fn(to))}`:""}: ${esc(text)}${o.readonly?"":" Tap to reply."}"><p class="nh"><button class="nmb" data-go="profile" data-id="${u.id}">${photo(u,18)}<span>${esc(u.name)}</span></button>${to?`<span class="to">, to ${esc(fn(to))}</span>`:""}${r.min!=null&&!o.live?`<span class="tm">${ago(r.min)}</span>`:""}</p><p class="nb">${rich(text)}</p>${club?`<button class="clk clkl" data-go="club" data-id="${club.id}">In ${esc(club.name)}</button>`:""}</div>`;
   if(i&&!nested)h+=`<div class="dash tsep"></div>`;
   h+=nested?`<div class="nest" style="margin-top:10px">${note}</div>`:note;
  });
@@ -1365,7 +1395,7 @@ function shelf(u,o={}){
   else s+=`<li class="spine empty" aria-label="${i+1}. Empty">${i+1}</li>`;
  }
  s+=`</ul>`;
- if(L.length&&!o.noslip)s+=`<div class="shelfslip" id="shelfslip-${u.id}">${slip({pid:pickFor(L[sel],u.id),passers:[]},{prefix:String(sel+1)})}</div>`;
+ if(L.length&&!o.noslip)s+=`<div class="shelfslip" id="shelfslip-${u.id}">${slip({pid:pickFor(L[sel],u.id),passers:[]},{prefix:String(sel+1),nohead:true})}</div>`;
  return s;
 }
 function myTried(){
@@ -1417,7 +1447,6 @@ function picks(){
   });
   h+=list?`<div class="lsheet paper">${body}</div>`:body;
  }
- if(!items.length)h+=`<p class="lede">Nothing new since ${S.lastLook}.</p>`;
  h+=endSlip(items);
  const L=introLetters().slice(0,3);
  if(L.length)h+=`<p class="sh">INTRODUCTIONS</p>`+L.map(v=>letter(v)).join("");
@@ -1427,10 +1456,10 @@ function endSlip(items){
  const people=new Set();items.forEach(i=>{const p=POSTS[i.pid];if(S.follows.has(p.by))people.add(p.by);(i.passers||[]).forEach(x=>people.add(x.by));});
  const t=[S.opened.size?`opened ${S.opened.size}`:"",S.save.size?`saved ${S.save.size}`:""].filter(Boolean);
  const ev=EVENTS.slice(0,3).map(e=>`<button class="cu" ${eventTarget(e)}><span class="ty">${e.when} ${e.at}</span><span>${esc(e.title)}</span></button>`).join("");
- return `<section class="paper endslip" aria-label="Caught up at 29 Sep ${BUILT}"><span class="stampmark r3" style="font-size:15px;line-height:18px">Caught up · 29 Sep ${BUILT}</span><p>${items.length?`That's everything the ${people.size} people you follow handed over since Sunday, in the order they handed it over.`:`Nothing new since ${S.lastLook}.`}</p>${t.length?`<p style="margin-top:6px">You ${t.join(" and ")}.</p>`:""}<p class="ty">COMING UP</p>${ev}</section>`;
+ return `<section class="paper endslip ${items.length?"":"none"}" aria-label="Caught up at 29 Sep ${BUILT}"><span class="stampmark r3" style="font-size:15px;line-height:18px">Caught up · 29 Sep ${BUILT}</span><p>${items.length?`That's everything the ${people.size} people you follow handed over since Sunday, in the order they handed it over.`:`Nothing new since ${S.lastLook}.`}</p>${t.length?`<p style="margin-top:6px">You ${t.join(" and ")}.</p>`:""}<p class="ty">COMING UP</p>${ev}</section>`;
 }
 function firstRun(){
- return `<section class="paper firstrun" aria-label="Welcome"><h1>Mara Okonkwo invited you to Vouch.</h1><ul><li>You follow people, not a feed. It ends when you've seen everything.</li><li>Picks open in the app made for them. Vouch steps aside.</li><li>When you come back, say if it landed. That's how curators earn trust.</li></ul><p class="sh">MARA'S TEN</p>${shelf(U.mara,{noslip:true})}<button class="key pri wide" data-act="frstart">Follow Mara and start</button><button class="tl" data-act="frpeople">Choose who to follow first ›</button></section><div style="height:24px"></div>`;
+ return `<section class="paper firstrun" aria-label="Welcome"><h1>Mara Okonkwo invited you to Vouch.</h1><ul class="frp"><li>You follow people, not a feed. It ends when you've seen everything.</li><li>Picks open in the app made for them. Vouch steps aside.</li><li>When you come back, say if it landed. That's how curators earn trust.</li></ul><p class="sh">MARA'S TEN</p>${shelf(U.mara,{noslip:true})}<button class="key pri wide" data-act="frstart">Follow Mara and start</button><button class="tl" data-act="frpeople">Choose who to follow first ›</button></section><div style="height:24px"></div>`;
 }
 function asks(){
  const all=Object.values(POSTS).filter(p=>p.t==="ask").sort((a,b)=>a.min-b.min);
@@ -1461,9 +1490,9 @@ function live(){
  if(S.live){
   h+=boothTicket(true);
   h+=`<div class="slipwrap" style="margin-top:14px"><article class="slip nb np" data-pid="live"><div class="top"><div class="sbody"><div class="cvbox">${cv(w,96,116)}</div><div class="lab"><p class="mline" style="padding-right:0">${esc(mediumLine(w))}</p><h3 class="ttl">${esc(w.title)}</h3><p class="mk">${esc(w.by)}</p><p class="ty trk" id="ltrack">${trackLine()}</p><div class="prog"><span class="ty" id="lpos">${mmss(LIVE.pos)}</span><span class="bar"><i id="lbar" style="width:${Math.min(100,LIVE.pos/LIVE.len*100)}%"></i></span></div></div></div><div class="sync"><p class="sclk ${LIVE.hold?"play":""}" id="lclk" role="timer" aria-label="Sync clock">${clockTxt()}</p><p id="lcap">${esc(capTxt())}</p></div></div><div class="stubzone"><div class="perf"></div>${stubRow(w,LIVE.host,app,POSTS.pk_low,{live:true,verb:`Play track ${liveNext()} in ${APPS[app]}`,aria:`Play track ${liveNext()} of ${w.title} in ${APPS[app]} when the clock says play. Tobias earns nothing from this link.`})}</div></article></div>`;
-  h+=`<p class="sh">${LIVE.listening} IN THE ROOM</p><div class="room">${LIVE.room.map(k=>`<button data-go="profile" data-id="${k}" aria-label="${esc(U[k].name)}">${photo(U[k],24)}</button>`).join("")}<span class="more">+${LIVE.listening-LIVE.room.length}</span></div>`;
+  h+=`<p class="sh">${LIVE.listening} IN THE ROOM</p><button class="room" data-act="roomlist" aria-expanded="${!!S.roomOpen}" aria-label="${LIVE.listening} in the room. ${S.roomOpen?"Hide the list":"See who is here"}."><span class="fcs" aria-hidden="true">${LIVE.room.map(k=>photo(U[k],24)).join("")}</span><span class="more" aria-hidden="true">+${LIVE.listening-LIVE.room.length}</span><span class="gi" aria-hidden="true">${S.roomOpen?"Hide":"See who"} ›</span></button>${S.roomOpen?`<div class="paper roomlist">${LIVE.room.map(k=>`<button data-go="profile" data-id="${k}">${photo(U[k],28)}<span>${esc(U[k].name)}</span></button>`).join("")}<p>and ${LIVE.listening-LIVE.room.length} more listening</p></div>`:""}`;
  }else h+=`<p class="nolive">Nobody you follow is live.</p>`;
- h+=`<p class="sh">COMING UP · ${EVENTS.length}</p><div class="paper evlist">${EVENTS.map(e=>eventRow(e)).join("")}</div>`;
+ h+=`<p class="sh">COMING UP · ${EVENTS.length}</p><div class="paper evlist">${EVENTS.map(e=>eventRow(e,e.kind!=="club"&&!e.talk)).join("")}</div>`;
  h+=S.live?talkCard(LIVE.chat,{owner:LIVE.host,live:true}):`<p class="endl">That's everything scheduled.</p>`;
  return h+`<div style="height:16px"></div>`;
 }
@@ -1502,7 +1531,7 @@ function curatorProfile(id){
  h+=`<p class="sh" id="shelfhead">${esc(fnp(u).toUpperCase())} TEN · ${L.length} OF 10 · IN ${pr.toUpperCase()} ORDER</p>${shelf(u)}`;
  const vs=[...fv,...vouchersOf(id).filter(v=>!S.follows.has(v.from)).reverse()];
  const all=S.expand["v"+id];
- h+=`<p class="sh">VOUCHED FOR BY ${u.vouchedBy} · ${fv.length} YOU FOLLOW</p>${(all?vs:vs.slice(0,2)).map(v=>letter(v,{head:false,full:false})).join("")}${!all&&vs.length>2?`<button class="tl" data-act="readall" data-id="${id}">Read all ${u.vouchedBy} ›</button>`:""}`;
+ h+=`<p class="sh">VOUCHED FOR BY ${u.vouchedBy} · ${fv.length} YOU FOLLOW</p>${(all?vs:vs.slice(0,2)).map(v=>letter(v,{head:false,full:false})).join("")}${!all&&vs.length>2?`<button class="tl" data-act="readall" data-id="${id}">Read all ${u.vouchedBy} ›</button>`:""}${all&&vs.length<u.vouchedBy?`<p class="note-c">Showing ${vs.length} of ${u.vouchedBy} in this prototype.</p>`:""}`;
  const vf=VOUCH.filter(v=>v.from===id);
  if(vf.length)h+=`<p class="sh">${esc(fn(u).toUpperCase())} VOUCHES FOR · ${vf.length}</p><div class="avrow">${vf.map(v=>`<button data-go="profile" data-id="${v.to}">${photo(U[v.to],28)}${esc(U[v.to].name)}</button>`).join("")}</div>`;
  const hosts=CLUBS.filter(c=>c.host===id);
@@ -1527,7 +1556,12 @@ function triedSection(u,own){
  if(priv&&!own)return h+`<p class="note-c">${esc(u.name)} keeps their tried record private.</p>`;
  h+=recordBar(u.trec);
  if(own)h+=`<p class="note-c" style="margin-top:8px">${priv?"Only you can see this.":"People who follow you can see this."}</p><button class="tl" data-act="privacy">${priv?"Make it public ›":"Make it private ›"}</button>`;
- if(list.length)h+=`<p class="sh">SEPTEMBER · ${list.length}</p>${triedGrid(list)}`;
+ if(!own){if(list.length)h+=`<p class="sh">SEPTEMBER · ${list.length}</p>${triedGrid(list)}`;return h;}
+ const stw=new Set(list.map(t=>t[0]));
+ const months=[["SEPTEMBER",list],...MYTRIED_OLD.map(([m,l])=>[m,l.filter(t=>!stw.has(t[0]))])].filter(m=>m[1].length);
+ const shown=S.months.me||1;let n=0;
+ months.slice(0,shown).forEach(([m,l])=>{n+=l.length;h+=`<p class="sh">${m} · ${l.length}</p>${triedGrid(l)}`;});
+ h+=shown<months.length?`<button class="key" data-act="earlier" data-id="me" style="margin-top:10px">Earlier</button>`:`<p class="endl">Showing ${n} of your ${u.tried} in this prototype.</p>`;
  return h;
 }
 function memberProfile(id){
@@ -1550,9 +1584,9 @@ function askDetail(id){
 function clubScreen(id){
  const c=CLUBS.find(x=>x.id===id),h=U[c.host],j=S.joined.has(id);
  const past=[...c.past,...(S.pastMore[id]?c.pastMore||[]:[])];
- return `<header class="chd"><h1>${esc(c.name)}</h1><p class="host">${photo(h,20)}<button data-go="profile" data-id="${h.id}">hosted by ${esc(h.name)}</button><span>· ${fmt(c.members)} members</span></p><p>${esc(c.about)}</p><button class="key ${j?"":"pri"}" data-act="join" data-id="${id}" aria-pressed="${j}">${j?"Joined":"Join"}</button></header>
-<p class="sh">${c.unit==="ROUND"?"THIS FORTNIGHT · ROUND":"THIS WEEK · WEEK"} ${c.no}</p><p class="note-c">${esc(c.due)} · talk opens ${esc(c.talkAt)}</p>${slip(findItem(c.post)||{pid:c.post,passers:[]})}
-${talkCard(CLUBTALK[id]||[],{owner:c.host})}${j?"":`<p class="note-c">Join to add to the talk.</p>`}
+ return `<header class="chd"><h1>${esc(c.name)}</h1><p class="host">${photo(h,20)}<button data-go="profile" data-id="${h.id}">hosted by ${esc(h.name)}</button><span class="mem">· ${fmt(c.members)} members</span></p><p>${esc(c.about)}</p><button class="key ${j?"":"pri"}" data-act="join" data-id="${id}" aria-pressed="${j}">${j?"Joined":"Join"}</button></header>
+<p class="sh">${c.unit==="ROUND"?"THIS FORTNIGHT · ROUND":"THIS WEEK · WEEK"} ${c.no}</p><p class="note-c">${esc(c.due)} · talk opens ${esc(c.talkAt)}</p>${slip({pid:c.post,passers:[]})}
+${talkCard(CLUBTALK[id]||[],{owner:c.host,readonly:!j})}${j?"":`<p class="note-c">Join to add to the talk.</p>`}
 <p class="sh">PAST ${c.unit==="ROUND"?"ROUNDS":"WEEKS"}</p><div class="paper plist">${past.map(([n,wid])=>`<button class="pw" data-go="pick" data-id="${pickFor(wid,c.host)}"><span class="ty">${n}</span>${cvH(W[wid],32)}<span>${esc(W[wid].title)} · ${esc(shortBy(W[wid]))}</span></button>`).join("")}</div>${c.pastMore&&!S.pastMore[id]?`<button class="key" data-act="pastmore" data-id="${id}">Earlier weeks</button>`:""}<div style="height:10px"></div>`;
 }
 function eventDetail(id){
@@ -1594,21 +1628,22 @@ function saved(){
 }
 function people(){
  const cur=Object.values(U).filter(u=>u.cur).sort((a,b)=>a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
- const L=introLetters();
+ const e=curEntry();let L;
+ if(e&&e.n==="people"){if(!e.intro)e.intro=introLetters();L=e.intro;}else L=introLetters();
  return `<input class="field search" id="pq" type="search" value="${esc(S.pq)}" placeholder="Find a person by name" aria-label="Find a person by name" autocomplete="off">
-${L.length?`<p class="sh">INTRODUCED BY PEOPLE YOU FOLLOW</p>${L.map(v=>letter(v)).join("")}`:""}
-<p class="sh">EVERYONE WHO CURATES · A TO Z</p><div class="paper plist" id="plist">${cur.map(u=>`<div class="prow" data-q="${esc((u.name+" "+u.h).toLowerCase())}"><button data-go="profile" data-id="${u.id}" aria-label="${esc(u.name)}, profile">${photo(u,28)}</button><div style="min-width:0"><p class="r1"><button class="nmb" data-go="profile" data-id="${u.id}">${esc(u.name)}</button><span class="med">${CURL[u.cur]}${S.follows.has(u.id)?" · following":""}</span></p>${repStrip(u)}</div></div>`).join("")}</div><p class="endl" id="pnone" hidden>Nobody by that name curates on Vouch yet.</p><p class="endl">That's everyone who curates on Vouch: ${cur.length}.</p>`;
+${L.length?`<div id="pintro"><p class="sh">INTRODUCED BY PEOPLE YOU FOLLOW</p>${L.map(v=>letter(v)).join("")}</div>`:""}
+<p class="sh">EVERYONE WHO CURATES · A TO Z</p><div class="paper plist" id="plist">${cur.map(u=>`<div class="prow" data-q="${esc((u.name+" "+u.h).toLowerCase())}"><button data-go="profile" data-id="${u.id}" aria-label="${esc(u.name)}, profile">${photo(u,28)}</button><div style="min-width:0"><p class="r1"><button class="nmb" data-go="profile" data-id="${u.id}">${esc(u.name)}</button><span class="med">${CURL[u.cur].replace(" and ",", ")}${S.follows.has(u.id)?" · following":""}</span></p>${repStrip(u)}</div></div>`).join("")}</div><p class="endl" id="pnone" hidden>Nobody by that name curates on Vouch yet.</p><p class="endl">That's everyone who curates on Vouch: ${cur.length}.</p>`;
 }
 function settings(){
  const priv=PRIVATE.has("me");
  const onoff=(act,on)=>`<span class="onoff" role="group"><button class="${on?"":"on"}" data-act="${act}" data-id="off" aria-pressed="${!on}">Off</button><button class="${on?"on":""}" data-act="${act}" data-id="on" aria-pressed="${on}">On</button></span>`;
  const th=document.documentElement.dataset.theme||"auto";
- return `<p class="sh first">OPEN-IN APPS</p><div class="paper srows">${Object.keys(CHOICES).map(m=>`<button class="srow" data-act="defsheet" data-id="${m}"><span class="l">${MEDIA[m]}</span><span class="v">${APPS[S.def[m]]}${IC.fwd}</span></button>`).join("")}</div><p class="note-c">If a pick isn't in your app, its stub names one that has it before you tap. Vouch never shows another app's screens.</p>
+ return `<p class="sh first">OPEN-IN APPS</p><div class="paper srows">${["film","music","book","article","game","podcast","art"].map(m=>`<button class="srow" data-act="defsheet" data-id="${m}"><span class="l">${MEDIA[m]}</span><span class="v">${APPS[S.def[m]]}${IC.fwd}</span></button>`).join("")}</div><p class="note-c">If a pick isn't in your app, its stub names one that has it before you tap. Vouch never shows another app's screens.</p>
 <p class="sh">AFTER YOU OPEN SOMETHING</p><div class="paper srows"><div class="srow"><span class="l">Ask "Did it land?" when I come back</span>${onoff("askland",S.askLand)}</div><div class="srow wrap"><label class="l" for="privsel">Who sees my tried record</label><select id="privsel"><option value="followers" ${priv?"":"selected"}>People who follow me</option><option value="me" ${priv?"selected":""}>Only me</option></select></div></div>
 <p class="sh">SUBSCRIPTIONS</p>${S.subs.size?`<div class="paper srows">${[...S.subs].map(id=>{const u=U[id],pr=u.price;return `<div class="srow"><span class="l">${esc(u.name)}<span class="sub">$${(pr*.8).toFixed(2)} to ${esc(fn(u))} · $${(pr*.2).toFixed(2)} to Vouch</span></span><span class="v">$${pr.toFixed(2)} a month</span></div>`;}).join("")}</div>`:`<p class="note-c">No subscriptions.</p>`}
 <p class="sh">YOUR ASSISTANT</p><div class="paper srows"><div class="srow"><span class="l">Let my assistant read my follows and saved picks</span>${onoff("ai",S.ai)}</div><div class="srow"><span class="l">Let my assistant post</span><span class="v">Not available</span></div></div>
 <div class="kv"><p class="sh">ORDER</p><p>Newest first. There is no other option.</p></div>
-<div class="kv"><p class="sh">THEME</p><div class="seg" role="group" aria-label="Theme">${[["auto","Match system"],["light","Light"],["dark","Dark"]].map(([k,l])=>`<button class="${th===k?"on":""}" data-theme-set="${k}" aria-pressed="${th===k}" style="min-height:44px">${l}</button>`).join("")}</div></div><div style="height:24px"></div>`;
+<p class="sh">THEME</p><div><div class="seg" role="group" aria-label="Theme">${[["auto","Match system"],["light","Light"],["dark","Dark"]].map(([k,l])=>`<button class="${th===k?"on":""}" data-theme-set="${k}" aria-pressed="${th===k}" style="min-height:44px;flex:1 1 auto;white-space:nowrap">${l}</button>`).join("")}</div></div><div style="height:24px"></div>`;
 }
 const SCREENS={pick:pickDetail,tried:triedDetail,profile:profileScreen,ask:askDetail,club:clubScreen,event:eventDetail,you,saved,people,settings};
 const YOU_SCREENS=new Set(["you","saved","people","settings"]);
@@ -1667,7 +1702,7 @@ function fit(root){
  root.querySelectorAll(".slip").forEach(s=>{const z=s.querySelector(":scope>.stubzone");if(!z)return;const r=s.getBoundingClientRect(),q=z.getBoundingClientRect();if(r.height)s.style.setProperty("--stub",Math.round(r.bottom-q.top)+"px");});
 }
 function render(){
- const v=$("#view"),e=curEntry(),nav=S.nav;S.nav="same";
+ const v=$("#view"),e=curEntry(),nav=S.nav;S.nav="same";if(nav!=="same")S.railJump=null;
  const st=v.scrollTop;
  v.innerHTML=e?SCREENS[e.n](e.id):PLACES[S.place]();
  const noChrome=S.firstRun&&!e;
@@ -1679,12 +1714,14 @@ function render(){
  else if(nav==="place")v.scrollTop=S.placeScroll[S.place]||0;
  else v.scrollTop=st;
  if(nav!=="same"){v.classList.remove("nav-push","nav-back","nav-place");void v.offsetWidth;v.classList.add("nav-"+nav);}
- fit(v);
+ fit(v);fitKeys(v);
  if(e&&e.opts&&e.opts.at==="shelf"&&!e.atDone){e.atDone=true;const sh=$("#shelfhead");if(sh)v.scrollTop=sh.offsetTop-12;}
  if(e&&e.n==="people"&&S.pq)filterPeople();
  S.justStarred=null;
  renderRail();
 }
+function fitKeys(root){(root||document).querySelectorAll(".lrow .akey").forEach(k=>{k.classList.remove("t","w");if(k.scrollWidth>k.clientWidth+.5){k.classList.add("t");if(k.scrollWidth>k.clientWidth+.5){k.classList.remove("t");k.classList.add("w");}}});}
+try{document.fonts&&document.fonts.ready.then(()=>fitKeys());}catch(e){}
 function saveScroll(){const v=$("#view"),e=curEntry();if(e)e.scroll=v.scrollTop;else S.placeScroll[S.place]=v.scrollTop;}
 function leaveCounter(){if(S.backShown){S.backStrip=null;S.backShown=false;}if(!curEntry()&&S.place==="picks")S.clubWeek=false;}
 function go(n,id,opts={}){
@@ -1699,9 +1736,17 @@ function setPlace(p){
  S.place=p;S.stack=[];S.nav="place";render();
 }
 let tt;
-function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(tt);tt=setTimeout(()=>t.classList.remove("show"),2400);}
+function placeToast(){
+ const t=$("#toast"),root=t.offsetParent,sh=S.sheet&&!$("#sheet-root").hidden&&$("#sheet");
+ if(!sh||!root){t.style.bottom="";return;}
+ let b=sh.offsetHeight+10;const tk=$("#ticket");if(tk&&!tk.hidden)b=Math.max(b,(parseFloat(tk.style.bottom)||0)+tk.offsetHeight+8);
+ t.style.bottom=Math.max(10,Math.min(b,root.clientHeight-t.offsetHeight-10))+"px";
+}
+function toast(m){const t=$("#toast");t.textContent=m;placeToast();
+ t.classList.add("show");clearTimeout(tt);tt=setTimeout(()=>t.classList.remove("show"),2400);}
 function filterPeople(){
- const q=(S.pq||"").trim().toLowerCase();let n=0;
+ const q=(S.pq||"").trim().toLowerCase().replace(/^@+/,"");let n=0;
+ const pi=$("#pintro");if(pi)pi.hidden=!!q;
  $$("#plist .prow").forEach(r=>{const ok=!q||r.dataset.q.includes(q);r.hidden=!ok;if(ok)n++;});
  const pl=$("#plist");if(pl)pl.hidden=!n;const no=$("#pnone");if(no)no.hidden=!!n;
 }
@@ -1752,7 +1797,7 @@ function handleHTML(pid){
 function shareHTML(){
  const sh=S.share,mode=sh.mode,ans=mode==="answer";
  const title=ans?`Answer ${U[POSTS[sh.ask].by].name}`:"Share";
- let h=`<div class="shead"><button class="key sm" data-act="close" style="border-color:transparent;padding-left:0">Cancel</button><h2 class="ty" id="sheet-title" style="font-size:13px">${esc(title.toUpperCase())}</h2><span style="width:64px"></span></div>`;
+ let h=`<span class="grab"></span><div class="shead"><button class="key sm" data-act="close" style="border-color:transparent;padding-left:0">Cancel</button><h2 class="ty" id="sheet-title" style="font-size:13px">${esc(title.toUpperCase())}</h2><span style="width:64px"></span></div>`;
  if(!ans)h+=`<div class="sw2" role="group" aria-label="Pick or ask"><button class="${mode==="pick"?"on":""}" data-act="shmode" data-id="pick" aria-pressed="${mode==="pick"}">Pick · paste a link</button><button class="${mode==="ask"?"on":""}" data-act="shmode" data-id="ask" aria-pressed="${mode==="ask"}">Ask · needs words</button></div>`;
  const clubSel=`<div class="selrow"><label class="ty" for="sh-club">CLUB (OPTIONAL)</label><select id="sh-club"><option value="">None</option>${[...S.joined].map(id=>{const c=CLUBS.find(x=>x.id===id);return `<option value="${id}" ${sh.club===id?"selected":""}>${esc(c.name)}</option>`;}).join("")}</select></div>`;
  if(mode==="ask"){
@@ -1764,7 +1809,7 @@ function shareHTML(){
  const radio=(v,l,extra="")=>`<label><input type="radio" name="money" value="${v}" ${sh.disc===v?"checked":""}>${l}${extra}</label>`;
  return h+`<div class="flab"><label class="ty" for="sh-link">LINK</label></div><input class="field linkf" id="sh-link" value="${esc(sh.link)}" placeholder="Paste a link" autocomplete="off" spellcheck="false" inputmode="url"><p class="found" id="sh-found" aria-live="polite"></p><div id="sh-prev"></div>
 <div class="flab"><label class="ty" for="sh-note">${ans?"YOUR LINE (OPTIONAL)":"NOTE (OPTIONAL)"}</label><span class="ty" id="sh-nc">0/280</span></div><textarea class="field" id="sh-note" rows="2" maxlength="280" placeholder="Say why, or don't.">${esc(sh.note)}</textarea><div id="sh-nolink"></div>
-<fieldset class="money" style="border:0;padding:0;margin:16px 0 0"><legend class="ty" style="padding:0;margin-bottom:4px">MONEY AND CONNECTIONS (REQUIRED)</legend>${radio("none","No money, no connection")}${radio("earn","I earn from this link",` <input class="field small" id="sh-rate" inputmode="numeric" maxlength="3" placeholder="%" value="${esc(sh.rate)}" aria-label="Percent you earn">`)}${radio("free","I got it free (review copy, gift)")}${radio("other","Another connection",` <input class="field other" id="sh-other" placeholder="Say what it is" value="${esc(sh.other||"")}" aria-label="Describe the connection">`)}</fieldset>
+<fieldset class="money" style="border:0;padding:0;margin:16px 0 0"><legend class="ty" style="padding:0;margin-bottom:4px">MONEY AND CONNECTIONS (REQUIRED)</legend>${radio("none","No money, no connection")}${radio("earn","I earn from this link",` <span class="pct"><input class="field small" id="sh-rate" inputmode="numeric" maxlength="2" value="${esc(sh.rate)}" aria-label="Percent you earn"><span aria-hidden="true">%</span></span>`)}${radio("free","I got it free (review copy, gift)")}${radio("other","Another connection",` <input class="field other" id="sh-other" placeholder="Say what it is" value="${esc(sh.other||"")}" aria-label="Describe the connection">`)}</fieldset>
 ${ans?"":clubSel}<button class="key pri wide" id="sh-go" data-act="shsubmit" aria-disabled="true" style="margin-top:16px" aria-describedby="sh-why">${ans?"Answer":"Share"}</button><p class="why" id="sh-why"></p>`;
 }
 function resolveLink(t){
@@ -1780,10 +1825,12 @@ function updateShare(){
  const dis=(el,b)=>el.setAttribute("aria-disabled",String(b));
  if(sh.mode==="ask"){const q=$("#sh-q").value;sh.q=q;$("#sh-qc").textContent=`${q.length}/280`;const ok=q.trim().length>=12;dis(go,!ok);$("#sh-qmin").textContent=ok?"":"At least 12 characters.";sh.club=$("#sh-club").value||null;return;}
  sh.link=$("#sh-link").value;sh.note=$("#sh-note").value;
+ const m0=document.querySelector('#sheet input[name=money]:checked'),r0=(($("#sh-rate")||{}).value||"").trim();
+ const pvRate=m0&&m0.value==="earn"&&/^\d{1,2}$/.test(r0)?r0+"%":null,rateChg=pvRate!==sh.pvRate;sh.pvRate=pvRate;
  const w=resolveLink(sh.link),prev=sh.w;sh.w=w?w.id:null;
  $("#sh-found").textContent=!sh.link.trim()?"":w?`Found it: ${w.title}. ${ONE[w.m]}, on ${appsList(w)}.`:"We couldn't read that link. Paste the page address.";
- if(sh.w!==prev||!$("#sh-prev").innerHTML!==!w){
-  if(w){const pid="pv_me";POSTS[pid]={id:pid,t:"pick",by:"me",w:w.id,text:"",st:0,min:0,synthetic:true,preview:true};$("#sh-prev").innerHTML=`<div class="prev">${slip({pid,passers:[]},{preview:true,time:"now",noTried:true})}</div>`;fit($("#sh-prev"));}
+ if(sh.w!==prev||!$("#sh-prev").innerHTML!==!w||(w&&rateChg)){
+  if(w){const pid="pv_me";POSTS[pid]={id:pid,t:"pick",by:"me",w:w.id,text:"",st:0,min:0,synthetic:true,preview:true,rate:pvRate};$("#sh-prev").innerHTML=`<div class="prev">${slip({pid,passers:[]},{preview:true,time:"now",noTried:true})}</div>`;fit($("#sh-prev"));}
   else $("#sh-prev").innerHTML="";
  }
  $("#sh-nc").textContent=`${sh.note.length}/280`;
@@ -1833,29 +1880,41 @@ function renderSheet(){
  if(k==="land")placeTicket();
  fit(sh);
 }
-function placeTicket(){const t=$("#ticket");if(!t.hidden)t.style.bottom=($("#sheet").offsetHeight+12)+"px";}
+function placeTicket(){const t=$("#ticket");if(!t.hidden)t.style.bottom=($("#sheet").offsetHeight+12)+"px";placeToast();}
 function openSheet(kind,d={}){
- if(!S.sheet)S.sheetOpener=document.activeElement;
+ if(!S.sheet){const o=document.activeElement;S.sheetOpener=o;const ds=(o&&o.dataset)||{},pc=o&&o.closest&&o.closest("[data-pid]");S.sheetKey={act:ds.act,id:ds.id,pid:kind==="land"&&S.land?S.land.pid:(pc&&pc.dataset.pid)};}
  S.placeList=false;S.sheet=kind;S.sheetData=d;
  const root=$("#sheet-root"),sh=$("#sheet");
  root.hidden=false;root.classList.remove("lowering");
- const t=$("#ticket");t.hidden=true;t.className="";t.innerHTML="";t.style.cssText="";
+ const t=$("#ticket");if(t.getAnimations)t.getAnimations().forEach(a=>a.cancel());t.hidden=true;t.className="";t.innerHTML="";t.style.cssText="";
  renderSheet();sh.scrollTop=0;
  sh.style.animation="none";void sh.offsetWidth;sh.style.animation="";
  sh.tabIndex=-1;
  const f=kind==="land"?sh.querySelector(".lrow2"):kind==="share"?sh.querySelector("#sh-link,#sh-q"):sh;
  if(f)f.focus({preventScroll:true});
- renderRail();
+ renderRail();placeToast();
 }
 function closeSheetNow(){
+ {const t=$("#ticket");if(t.getAnimations)t.getAnimations().forEach(a=>a.cancel());}
  const root=$("#sheet-root");root.hidden=true;root.classList.remove("lowering");$("#sheet").classList.remove("lower");$("#ticket").hidden=true;
  S.sheet=null;S.land=null;renderRail();
+ $("#toast").style.bottom="";
 }
 function lowerSheet(cb){
  const root=$("#sheet-root"),sh=$("#sheet");
  if(root.hidden){cb&&cb();return;}
  sh.classList.add("lower");root.classList.add("lowering");
- setTimeout(()=>{closeSheetNow();const o=S.sheetOpener;if(o&&document.contains(o))o.focus({preventScroll:true});cb&&cb();},reduce?120:200);
+ setTimeout(()=>{closeSheetNow();const o=S.sheetOpener;if(o&&document.contains(o))o.focus({preventScroll:true});cb&&cb();refocus();},reduce?120:200);
+}
+function refocus(){
+ const a=document.activeElement;if(S.sheet||S.ho||(a&&a!==document.body&&document.contains(a)&&!a.closest("#sheet-root,#handoff")&&a.getClientRects().length))return;
+ const o=S.sheetOpener,k=S.sheetKey||{},sel=[];
+ if(o&&o!==document.body&&document.contains(o)&&!o.closest("#sheet-root,#handoff")&&o.getClientRects().length){o.focus({preventScroll:true});return;}
+ if(k.act&&k.id)sel.push(`[data-act="${k.act}"][data-id="${k.id}"]`);
+ if(k.act==="torate")sel.push("#slotbar .ratetab");
+ if(k.pid)sel.push(`[data-pid="${k.pid}"] [data-act="land"]`,`.slipwrap[data-pid="${k.pid}"] .slip`,`.lrow[data-id="${k.pid}"]`,`.slip[data-pid="${k.pid}"]`);
+ sel.push("#slotbar .ratetab","#slotbar .youkey");
+ for(const q of sel){const e=$("#app "+q)||$(q);if(e&&e.getClientRects().length){if(!e.matches("button,a,input,textarea,[tabindex]"))e.tabIndex=-1;e.focus({preventScroll:true});return;}}
 }
 function closeSheet(){
  if(S.sheet==="land"){if(S.land&&S.land.step===2)landDone();else landNotYet();return;}
@@ -1864,6 +1923,7 @@ function closeSheet(){
 function landNotYet(){
  const L=S.land;if(!L)return;
  if(!S.toRate.some(x=>x.pid===L.pid))S.toRate.push({pid:L.pid,since:"29 SEP"});
+ if(S.backStrip===L.pid){S.backStrip=null;S.backShown=false;}
  const t=$("#ticket");if(!t.hidden){t.classList.remove("drop");t.classList.add("slide");}
  S.land=null;
  lowerSheet(()=>render());
@@ -1887,7 +1947,7 @@ function landDone(){
  const t=$("#ticket"),sh=$("#sheet"),root=$("#sheet-root");
  sh.classList.add("lower");
  setTimeout(()=>{
-  const finish=()=>{closeSheetNow();render();toast(u.cur?`Counted toward ${fnp(u)} landed rate.`:"Counted on your tried record.");if(queue&&S.toRate.length)setTimeout(()=>openLand(S.toRate[0].pid,{queue:true}),300);};
+  const finish=()=>{closeSheetNow();render();refocus();toast(u.cur?`Counted toward ${fnp(u)} landed rate.`:"Counted on your tried record.");if(queue&&S.toRate.length)setTimeout(()=>openLand(S.toRate[0].pid,{queue:true}),300);};
   const k=$("#slotbar .youkey");
   if(reduce||t.hidden||!k){t.style.transition="opacity .12s";t.style.opacity="0";setTimeout(finish,120);return;}
   root.classList.add("lowering");
@@ -1936,7 +1996,7 @@ function tear(d,src){
 <div class="ho-info" role="dialog" aria-label="${esc(head)}" style="top:calc(38% + 132px);color:${on}"><b>${esc(head)}</b><div class="ho-rule"><i></i></div><p>${esc(live?"Tobias earns nothing from this link.":info.sentence)}</p><button class="cx" data-act="hocancel" style="color:${on}">Cancel</button></div>
 <div class="ho-out" aria-hidden="true"><button class="ho-b2a" data-act="return" data-away="${long}">${IC.bc}Vouch</button><h2>${APPS[app]}</h2><p>${esc(w.title)} is open in ${APPS[app]}. Vouch doesn't show other apps' screens.</p><p class="pl">Prototype only</p><button class="key" data-act="return" data-away="3">Come back after 3 minutes</button><button class="key" data-act="return" data-away="${long}">Come back after the ${live?"track":NOUN[w.m]}</button></div>`;
  const tk=el.querySelector(".ho-tk");
- const lift=()=>{if(!S.ho)return;S.ho.phase="opening";$("#screen").classList.add("aside");el.querySelector(".ho-scrim").classList.add("in");const H=appEl.clientHeight,Wd=appEl.clientWidth;tk.style.cssText=`left:24px;top:${Math.round(.38*H)}px;width:${Math.min(280,Wd-48)}px;height:116px`;tk.classList.add("big");};
+ const lift=()=>{if(!S.ho)return;S.ho.phase="opening";{const sc=$("#screen"),bb=$("#band").getBoundingClientRect(),ab=appEl.getBoundingClientRect();sc.style.setProperty("--bandoff",`${-Math.ceil(bb.bottom-ab.top+.18*sc.offsetHeight+2)}px`);}$("#screen").classList.add("aside");el.querySelector(".ho-scrim").classList.add("in");const H=appEl.clientHeight,Wd=appEl.clientWidth;tk.style.cssText=`left:24px;top:${Math.round(.38*H)}px;width:${Math.min(280,Wd-48)}px;height:116px`;tk.classList.add("big");};
  const open=()=>{if(!S.ho)return;el.querySelector(".ho-field").classList.add("in");const i=el.querySelector(".ho-info");i.classList.add("in");i.querySelector(".ho-rule").classList.add("go");i.querySelector(".cx").focus({preventScroll:true});};
  if(reduce){lift();open();}
  else{later(lift,160);later(open,420);}
@@ -1984,13 +2044,13 @@ function updateLiveDOM(){
  c.textContent=clockTxt();c.classList.toggle("play",LIVE.hold>0);c.classList.remove("tick");void c.offsetWidth;c.classList.add("tick");
  $("#lpos").textContent=mmss(LIVE.pos);$("#lbar").style.width=Math.min(100,LIVE.pos/LIVE.len*100)+"%";
  $("#ltrack").textContent=trackLine();$("#lcap").textContent=capTxt();
- const v=$("#lverb");if(v)v.textContent=`Play track ${liveNext()} in ${APPS[liveApp()]}`;
+ const v=$("#lverb");if(v){const a=APPS[liveApp()];v.textContent=`Play track ${liveNext()} in ${a}`;v.setAttribute("aria-label",`Play track ${liveNext()} of ${W[LIVE.w].title} in ${a} when the clock says play. ${fn(U[LIVE.host])} earns nothing from this link.`);}
 }
 setInterval(()=>{
  if(!S.live)return;
  LIVE.pos++;
- if(LIVE.hold>0){LIVE.hold--;if(!LIVE.hold)LIVE.remain=LIVE.loop;}
- else{LIVE.remain--;if(LIVE.remain<=0){LIVE.remain=0;LIVE.hold=2;LIVE.track=liveNext();LIVE.pos=0;try{navigator.vibrate&&navigator.vibrate(30);}catch(e){}}}
+ if(LIVE.hold>0){LIVE.hold--;if(!LIVE.hold){LIVE.remain=LIVE.loop;LIVE.track=liveNext();LIVE.pos=0;}}
+ else{LIVE.remain--;if(LIVE.remain<=0){LIVE.remain=0;LIVE.hold=2;try{navigator.vibrate&&navigator.vibrate(30);}catch(e){}}}
  updateLiveDOM();
 },1000);
 
@@ -2011,7 +2071,7 @@ function act(a,d,el){
   case "wordmark":S.placeScroll.picks=0;if(S.place==="picks"&&!S.stack.length){$("#view").scrollTo({top:0,behavior:reduce?"auto":"smooth"});}else setPlace("picks");break;
   case "you":{const e=curEntry();if(e&&e.n==="you")break;go("you");break;}
   case "share":openShare(d.mode||"pick",{ask:d.mode==="answer"?id:null});break;
-  case "join":{const c=CLUBS.find(x=>x.id===id);if(S.joined.has(id)){S.joined.delete(id);toast(`Left ${c.name}.`);}else{S.joined.add(id);toast(`Joined ${c.name}. You can add to the talk.`);}render();break;}
+  case "join":{const c=CLUBS.find(x=>x.id===id);if(S.joined.has(id)){S.joined.delete(id);S.replyTo=null;toast(`Left ${c.name}.`);}else{S.joined.add(id);toast(`Joined ${c.name}. You can add to the talk.`);}render();break;}
   case "record":S.coach.rep=false;openSheet("record",{id});break;
   case "toprofile":closeSheetNow();go("profile",id);break;
   case "follow":toggleFollow(id);refresh();break;
@@ -2022,11 +2082,11 @@ function act(a,d,el){
   case "chgo":{const sd=S.sheetData,w=W[sd.w],sel=sd.sel||sd.app||appFor(w);if(($("#chalways")||{}).checked&&S.def[w.m]!==sel){S.def[w.m]=sel;toast(`${cap(PL[w.m])} now open${w.m==="music"||w.m==="art"?"s":""} in ${APPS[sel]}.`);}
    closeSheetNow();let src=S.chooserSrc&&document.contains(S.chooserSrc)?S.chooserSrc:null;if(src&&src.classList.contains("slip"))src=src.querySelector(".stubzone")||src;tear({w:sd.w,by:sd.by,pid:sd.pid,app:sel,live:sd.live},src);break;}
   case "defsheet":openSheet("chooser",{medium:id});break;
-  case "setdef":S.def[id]=d.app;renderSheet();render();toast(`${cap(PL[id])} now open${id==="music"||id==="art"?"s":""} in ${APPS[d.app]}.`);break;
+  case "setdef":{S.def[id]=d.app;render();const msg=`${cap(PL[id])} now open${id==="music"||id==="art"?"s":""} in ${APPS[d.app]}.`;lowerSheet(()=>toast(msg));break;}
   case "dog":case "hsave":{S.coach.fold=false;if(S.save.has(id)){S.save.delete(id);delete S.saveDay[id];toast("Removed from saved.");}else{S.save.add(id);S.saveDay[id]="someday";toast("Saved for someday. It's in You, under Saved.");}if(a==="hsave")closeSheetNow();refresh();break;}
   case "savekey":if(S.save.has(id)){S.save.delete(id);delete S.saveDay[id];S.panel=null;toast("Removed from saved.");}else{S.save.add(id);S.saveDay[id]="someday";S.panel={pid:id,kind:"save"};}render();break;
   case "saveday":{S.saveDay[id]=d.day;S.save.add(id);const lab={tonight:"tonight",sat:"Saturday",nextweek:"next week",someday:"someday"}[d.day];S.panel=null;toast(d.day==="someday"?"Saved for someday. It stays in You, under Saved.":d.day==="tonight"?"Saved for tonight. It comes back on Picks today.":`Saved for ${lab}. It comes back on Picks that day.`);render();break;}
-  case "passkey":S.panel=S.panel&&S.panel.pid===id?null:{pid:id,kind:S.passed.has(id)?"take":"pass"};render();if(S.panel&&S.panel.kind==="pass"){const f=$("#passline");if(f)f.focus();}break;
+  case "passkey":S.panel=S.panel&&S.panel.pid===id&&(S.panel.kind==="pass"||S.panel.kind==="take")?null:{pid:id,kind:S.passed.has(id)?"take":"pass"};render();if(S.panel&&S.panel.kind==="pass"){const f=$("#passline");if(f)f.focus();}break;
   case "passgo":{const line=($("#passline")||{}).value||"";S.passed.add(id);S.passLine[id]=line.trim();S.panel=null;render();toast("Passed on to your 18 followers.");break;}
   case "hpass":closeSheetNow();if(S.passed.has(id)){go("pick",id);S.panel={pid:id,kind:"take"};render();}else{S.passed.add(id);render();toast("Passed on to your 18 followers.");}break;
   case "passundo":S.passed.delete(id);delete S.passLine[id];S.panel=null;render();toast("Taken back.");break;
@@ -2034,7 +2094,7 @@ function act(a,d,el){
   case "star":case "hstar":if(S.star.has(id))S.star.delete(id);else{S.star.add(id);S.justStarred=id;}if(a==="hstar"){closeSheetNow();toast(S.star.has(id)?"Starred.":"Star removed.");}render();break;
   case "copylink":closeSheetNow();toast("Link copied.");break;
   case "hopen":{closeSheetNow();const p=POSTS[id],src=document.querySelector(`.slipwrap[data-pid="${id}"] .stubzone`);tear({w:p.w,by:p.by,pid:id},src);break;}
-  case "replyto":if(id==="me")break;S.replyTo=S.replyTo===id?null:id;renderSlot();$$(".nt.tgt").forEach(x=>x.classList.remove("tgt"));if(S.replyTo){$$(`.nt[data-id="${id}"]`).forEach(x=>x.classList.add("tgt"));const ta=$("#compose");if(ta)ta.focus();}break;
+  case "replyto":if(id==="me"||!slotCtx().compose)break;S.replyTo=S.replyTo===id?null:id;renderSlot();$$(".nt.tgt").forEach(x=>x.classList.remove("tgt"));if(S.replyTo){$$(`.nt[data-id="${id}"]`).forEach(x=>x.classList.add("tgt"));const ta=$("#compose");if(ta)ta.focus();}break;
   case "rxclear":S.replyTo=null;$$(".nt.tgt").forEach(x=>x.classList.remove("tgt"));renderSlot();break;
   case "send":sendNote();break;
   case "view":S.view=id;try{localStorage.setItem("vouch.view",id);}catch(e){}render();break;
@@ -2047,12 +2107,13 @@ function act(a,d,el){
   case "return":returnFromApp(d.away);break;
   case "spine":{S.shelf[id]=+d.i;const u=U[id];
    $$(`#shelf-${id} .spine[data-i]`).forEach(b=>{const on=+b.dataset.i===+d.i;b.classList.toggle("up",on);b.setAttribute("aria-pressed",on);const w=W[LISTS[id][+b.dataset.i]];b.setAttribute("aria-label",`${+b.dataset.i+1}. ${w.title}, ${NOUN[w.m]}.${on?" Showing.":""}`);});
-   const ss=$(`#shelfslip-${id}`);if(ss){ss.innerHTML=slip({pid:pickFor(LISTS[id][+d.i],id),passers:[]},{prefix:String(+d.i+1)});fit(ss);}break;}
+   const ss=$(`#shelfslip-${id}`);if(ss){ss.innerHTML=slip({pid:pickFor(LISTS[id][+d.i],id),passers:[]},{prefix:String(+d.i+1),nohead:true});fit(ss);}break;}
   case "earlier":S.months[id]=(S.months[id]||1)+1;render();break;
   case "readall":S.expand["v"+id]=true;render();break;
   case "pastmore":S.pastMore[id]=true;render();break;
   case "choose":{S.chosen[id]=+d.i;const a=ANSWERS[id][+d.i];render();toast(`You chose ${W[a.w].title}. ${fn(U[a.by])} will hear.`);break;}
   case "onlymine":S.onlyMine=!S.onlyMine;render();break;
+  case "roomlist":S.roomOpen=!S.roomOpen;render();break;
   case "askland":S.askLand=id==="on";render();toast(S.askLand?"Vouch asks \"Did it land?\" when you come back.":"Opened picks wait in To rate.");break;
   case "ai":S.ai=id==="on";render();toast(S.ai?"Your assistant can read your follows and saved picks.":"Your assistant can't read Vouch.");break;
   case "privacy":if(PRIVATE.has("me"))PRIVATE.delete("me");else PRIVATE.add("me");render();toast(PRIVATE.has("me")?"Your tried record is private. Your answers still count.":"People who follow you can see your tried record.");break;
@@ -2081,7 +2142,8 @@ function sendNote(){
 /* ---------- prototype rail ---------- */
 const JUMPS=[["picks","Picks"],["list","Picks · List"],["end","End of Picks"],["pick","Pick detail"],["record","Record"],["tear","Open in (tear)"],["land","Did it land?"],["curator","Curator profile"],["me","Your profile"],["asks","Asks"],["ask","Ask detail"],["clubs","Clubs"],["club","Club"],["live","Live"],["you","You (activity)"],["people","People"],["sharepick","Share · Pick"],["shareask","Share · Ask"],["settings","Settings"]];
 function railAt(){
- if(S.ho)return "tear";if(S.sheet==="land")return "land";if(S.sheet==="record")return "record";
+ if(S.ho)return "tear";if(S.sheet==="land")return "land";
+ if(S.railJump==="end"&&!S.sheet&&!curEntry()&&S.place==="picks"&&S.view==="full")return "end";if(S.sheet==="record")return "record";
  if(S.sheet==="share")return S.share.mode==="ask"?"shareask":"sharepick";
  const e=curEntry();
  if(!e)return S.place==="picks"?(S.firstRun?"":S.view==="list"?"list":"picks"):S.place;
@@ -2126,7 +2188,7 @@ function jump(k){
   case "sharepick":place("picks");post=()=>openShare("pick",{link:W.kitchen.link});break;
   case "shareask":place("asks");post=()=>openShare("ask",{q:"Something to listen to on a night drive? Instrumental, nothing sleepy."});break;
  }
- S.nav="place";render();
+ S.nav="place";render();S.railJump=k;
  if(post)post();
  renderRail();
 }
@@ -2148,7 +2210,7 @@ let suppressUntil=0,lp=null,sw=null,drag=null;
 document.addEventListener("click",e=>{
  if(Date.now()<suppressUntil){e.preventDefault();e.stopPropagation();return;}
  const t=e.target.closest("[data-act],[data-go],[data-place],[data-jump],[data-theme-set],[data-state]");
- if(S.placeList&&!e.target.closest(".placelist,.psw")){S.placeList=false;renderSlot();if(!t)return;}
+ if(S.placeList&&!e.target.closest(".placelist,.psw")){S.placeList=false;renderSlot();if(!t||!e.target.closest("#rail"))return;}
  if(!t)return;
  if(t.getAttribute("aria-disabled")==="true"||t.disabled)return;
  const d=t.dataset;
@@ -2173,6 +2235,7 @@ document.addEventListener("change",e=>{
 document.addEventListener("focusin",e=>{if(e.target.id==="compose")$("#slotbar").classList.add("composing");});
 document.addEventListener("focusout",e=>{const t=e.target;if(t.id==="compose")setTimeout(()=>{if(document.activeElement!==t&&!t.value.trim())$("#slotbar").classList.remove("composing");},0);});
 document.addEventListener("pointerdown",e=>{
+ if(S.placeList&&!e.target.closest(".placelist,.psw,#rail"))return;
  if(e.target.closest("#slotbar .send"))e.preventDefault();
  const s=e.target.closest(".slipwrap .slip[data-go]");
  if(s&&e.button===0&&!e.target.closest(".stub,.dog,.chev")){const pid=s.dataset.pid;lp={x:e.clientX,y:e.clientY,fired:false,t:setTimeout(()=>{lp.fired=true;try{navigator.vibrate&&navigator.vibrate(8);}catch(x){}openSheet("handle",{pid});},500)};}
