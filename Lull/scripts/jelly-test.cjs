@@ -132,19 +132,113 @@ module.exports = function jellyTests(test) {
     // Stack: a lump resting on a falling lump falls with it.
     t = at(['.bb.', '.a..', '.a..', '....', 'XX.X']);
     waves = Jelly.cascade(t, t.board);
-    assert.strictEqual(waves.length, 1);
     assert.deepStrictEqual(waves[0].falls.map((f) => f[2]), [1, 1, 1, 1], 'both fell one row');
-    // Supported: nothing moves.
-    t = at(['aa..', '.a..', '.a.X', 'XXXX']);
+    // Then b flops over the edge it hangs over (one block, one step), comes off a, drops down the crack and fills the row.
+    assert.deepStrictEqual(waves[1].moves, [[13, 10]], 'b: from (1, 3) round to (2, 2), under its own block');
+    assert.deepStrictEqual(waves[2].falls.map((f) => f.join()), ['2,2,2', '2,3,2']);
+    assert.deepStrictEqual(waves.map((wv) => wv.rows), [[], [], [0]]);
+    assert.deepStrictEqual(rowsOf(t, 2), ['.#..', '.##.']);
+    // Supported, with nothing hanging over a hole: nothing moves.
+    t = at(['.a..', '.a..', 'aa.X', 'XXXX']);
     const before = Array.from(t.board.cells);
     waves = Jelly.cascade(t, t.board);
     assert.strictEqual(waves.length, 0);
     assert.deepStrictEqual(Array.from(t.board.cells), before);
     // The sprout holds up what rests on it; a stone (never placed) falls, a lump of one.
-    t = at(['aa..', 'A..F', '....', '....']);
+    t = at(['aa..', 'AA.F', '....', '....']);
     waves = Jelly.cascade(t, t.board);
-    assert.deepStrictEqual(rowsOf(t, 4), ['##..', '#...', '....', '...#']);
+    assert.deepStrictEqual(rowsOf(t, 4), ['##..', '##..', '....', '...#']);
     assert(t.board.get(0, 2) & CELL.ASSET, 'the sprout never falls');
+  });
+
+  test('jelly: ooze: a lump drips down a crack one wide a block a step, sags over an edge, flops; flat lumps stay', () => {
+    const at = (rows, w, h) => { const t = new Game({ w: w || rows[0].length, h: h || 8, seed: 1, recipe: JELLY }); fill(t, rows); return t; };
+    // An O over a crack one wide: it pours in a block a step, each step one move (from, to), and fills the crack.
+    let t = at(['..aa..', '..aa..', 'XX.XX.', 'XX.XX.', 'XX.XX.'], 6, 8);
+    let waves = Jelly.cascade(t, t.board);
+    assert(waves.length >= 3 && waves.every((wv) => wv.falls.length || wv.moves.length === 1), JSON.stringify(waves.map((wv) => [wv.falls, wv.moves])));
+    for (const wv of waves) for (const [f, to] of wv.moves) assert(to < f - (f % 6) || Math.floor(to / 6) < Math.floor(f / 6), 'every move goes down');
+    assert.deepStrictEqual([2, 1, 0].map((y) => !!t.board.get(2, y)), [true, true, true], 'the crack is full');
+    assert.strictEqual(t.board.count(), 12 + 4, 'no block lost or made');
+    assert.strictEqual(Jelly.lumps(t.board).list.filter((l) => l.length > 1).length, 1, 'still one lump');
+    // A flat bar and a standing bar on a flat floor, an O: nothing moves.
+    for (const rows of [['aaaa..'], ['a.....', 'a.....', 'a.....', 'a.....'], ['aa....', 'aa....']]) {
+      t = at(rows, 6, 8);
+      assert.deepStrictEqual(Jelly.cascade(t, t.board), [], rows.join('/'));
+    }
+    // A T set nub down flops onto its flat side; an S lying flat sags its overhang to the floor.
+    t = at(['aaa...', '.a....'], 6, 8);
+    Jelly.cascade(t, t.board);
+    assert.deepStrictEqual(rowsOf(t, 2), ['.#....', '###...']);
+    t = at(['.aa...', 'aa....'], 6, 8);
+    Jelly.cascade(t, t.board);
+    assert.deepStrictEqual(rowsOf(t, 2), ['.#....', '###...']);
+    // A bar over a ledge drapes down it to the floor, a block a step (the farther end first).
+    t = at(['aaaa..', 'XX....', 'XX....', 'XX....'], 6, 8);
+    waves = Jelly.cascade(t, t.board);
+    assert.deepStrictEqual(waves.map((wv) => wv.moves), [[[21, 14]], [[18, 8]], [[19, 2]]]);
+    assert.strictEqual(rowsOf(t, 4).join('/'), '..#.../###.../###.../###...');
+    // A notch one deep beside a lump's bottom row: it slips in; a crack deeper than one beside it: only from above.
+    t = at(['.a....', '.a....', '.a....', 'XX.X..'], 6, 8);
+    Jelly.cascade(t, t.board);
+    assert(t.board.get(2, 0), 'slipped into the notch');
+    t = at(['.a....', '.a....', '.a....', 'XX.X..', 'XX.X..'], 6, 8);
+    assert.deepStrictEqual(Jelly.cascade(t, t.board), [], 'a deeper crack beside it is left');
+    // What holds another lump up never oozes out from under it.
+    t = at(['.bb...', 'aa....', 'a.....'], 6, 8);
+    const hold = Array.from(t.board.cells);
+    Jelly.cascade(t, t.board);
+    assert(t.board.get(1, 1), 'a keeps the block b rests on');
+    assert.notDeepStrictEqual(Array.from(t.board.cells), hold, 'b, hanging over, oozes');
+  });
+
+  test('jelly: settling always ends, never makes or loses a block but by a clear, leaves nothing that moves, and is seeded', () => {
+    const rng = new L.RNG(42);
+    for (let n = 0; n < 300; n++) {
+      const w = 4 + (rng.u32() % 9), h = 8 + (rng.u32() % 10), g = new Game({ w, h, seed: n, recipe: JELLY });
+      const b = g.board;
+      for (let i = 0; i < w * h; i++) if (rng.next() < 0.45) b.cells[i] = (1 + (rng.u32() % 7)) | (rng.next() < 0.6 ? JR : 0) | (rng.next() < 0.6 ? JU : 0) | (rng.next() < 0.05 ? CELL.FOREIGN : 0);
+      b.fixJoins();
+      const start = Array.from(b.cells), count = b.count();
+      const waves = Jelly.cascade(g, b);
+      assert(waves.length <= w * h * h + h, 'bounded');
+      const cleared = waves.reduce((a, wv) => a + wv.removed.reduce((k, row) => k + row.filter((v) => v).length, 0), 0);
+      assert.strictEqual(b.count(), count - cleared, 'blocks kept');
+      for (const wv of waves) for (const [f, to] of wv.moves) assert(Math.floor(to / w) < Math.floor(f / w), 'a move goes down');
+      assert.deepStrictEqual(Jelly.cascade(g, b), [], 'settled: nothing moves again');
+      assert.deepStrictEqual(b.fullRows(), [], 'no full row left');
+      // The same board and seed settle the same way.
+      const g2 = new Game({ w, h, seed: n, recipe: JELLY });
+      g2.board.cells.set(start);
+      Jelly.cascade(g2, g2.board);
+      assert.deepStrictEqual(Array.from(g2.board.cells), Array.from(b.cells), 'deterministic');
+    }
+  });
+
+  test('jelly: rows oozing fills clear as plain cascades (chained), paid half; Undo and the save keep the oozed board', () => {
+    const g = jelly({ seed: 4 });
+    // A crack one wide, three deep, in three rows full but for it: an O set over it pours in, and each row it fills clears.
+    fill(g, [
+      'XXXX.XXXXX',
+      'XXXX.XXXXX',
+      'XXXX.XXXXX',
+    ]);
+    const cells0 = Array.from(g.board.cells);
+    const r = dropAt(g, 'O', 3);
+    assert.strictEqual(r.n, 0, 'the O cleared nothing itself');
+    assert(r.cascade.some((wv) => wv.moves && wv.moves.length), 'it oozed');
+    assert.strictEqual(r.c, 3, 'three rows, cleared by oozing');
+    assert.strictEqual(r.waves, 3, 'three cascades, chained');
+    assert.strictEqual(r.own, 1.5, 'each paid half');
+    assert.strictEqual(g.board.count(), 1, 'one block of the O is left');
+    const after = Array.from(g.board.cells), s = JSON.parse(JSON.stringify(g.s));
+    g.undo();
+    assert.deepStrictEqual(Array.from(g.board.cells), cells0, 'Undo: the board as it was');
+    dropAt(g, 'O', 3);
+    assert.deepStrictEqual(Array.from(g.board.cells), after, 'the same drop settles the same way');
+    const h = new Game({ saved: JSON.parse(JSON.stringify(g.toJSON())) });
+    assert.deepStrictEqual(Array.from(h.board.cells), after, 'the save keeps it');
+    assert.strictEqual(h.s.cascades, s.cascades);
   });
 
   test('jelly: a cluster’s corner part (joined only at a corner) falls at once when the piece sets', () => {
@@ -259,16 +353,16 @@ module.exports = function jellyTests(test) {
     assert(rests(g), 'nothing hangs after a laser');
     // Settle's and Trapdoor's test (roomAfter) runs the cascade: a lump that would come down into the piece refuses it.
     g = jelly();
+    // (b holds a up: its overhang has a on top, so it never oozes.)
     fill(g, [
       'aa........',
-      'X.........',
-      'X.........',
-      'X.........',
+      'bb........',
+      'b.........',
     ]);
     g.piece = { type: Pieces.get('M1'), rot: 0, x: 1, y: 0, special: null, entry: { id: 'M1', rot: 0 }, lastRot: false };
     const snap = Array.from(g.board.cells);
     assert.strictEqual(g.roomAfter(() => {}), true, 'held up: room');
-    assert.strictEqual(g.roomAfter(() => { g.board.set(0, 0, 0); g.board.set(0, 1, 0); g.board.set(0, 2, 0); }), false, 'its hold gone, the lump would fall into the piece');
+    assert.strictEqual(g.roomAfter(() => { g.board.set(0, 0, 0); g.board.set(0, 1, 0); g.board.set(1, 1, 0); }), false, 'its hold gone, the lump would fall into the piece');
     assert.deepStrictEqual(Array.from(g.board.cells), snap, 'the test leaves the board as it was');
     // Settle refused when blocks would come down into the piece.
     g = jelly();
@@ -293,8 +387,9 @@ module.exports = function jellyTests(test) {
     g.piece = { type: Pieces.get('O'), rot: 0, x: 7, y: 15, special: null, entry: { id: 'O', rot: 0 }, lastRot: false };
     const row = g.trapdoor();
     assert(row);
-    assert.deepStrictEqual(rowsOf(g, 2), ['##........', '#.........']);
-    assert.strictEqual(g.board.get(0, 0) & JU, JU, 'the lump keeps its own links');
+    // Down one row, its overhang now over the floor: it flops onto it.
+    assert.deepStrictEqual(rowsOf(g, 2), ['#.........', '##........']);
+    assert.deepStrictEqual([links(g, 0, 0), links(g, 0, 1), links(g, 1, 0)], ['RU', '', ''], 'the lump is joined afresh, one body');
   });
 
   test('jelly: Undo and a resumed board keep the links, the cascades and the counts', () => {
@@ -351,7 +446,7 @@ module.exports = function jellyTests(test) {
     assert(!got.some((x) => x.id === 'quad'));
   });
 
-  test('jelly: Best Fit runs the cascade only for placements that clear rows (200 at most a piece), and is quick on a 20 × 40 board', () => {
+  test('jelly: Best Fit settles the placements that clear rows or can ooze (200 at most a piece), and is quick on a 20 × 40 board', () => {
     const g = jelly({ w: 20, h: 40, seed: 3 });
     // The worst case: tall ragged towers of lumps over holes, rows nearly full, every candidate clearing something.
     for (let y = 0; y < 34; y++) for (let x = 0; x < 20; x++) {
