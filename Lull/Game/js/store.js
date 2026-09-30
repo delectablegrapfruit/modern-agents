@@ -26,7 +26,7 @@
   // shared by both, bought one at a time and given free as a pack (`pack`: every free grant gives that many).
   const ITEMS = {
     reroll:    { group: 'shape', name: 'Reroll', icon: '⟳', price: 15, rarity: 'common', desc: 'Swap the piece in play for a different one.' },
-    mirror:    { group: 'shape', name: 'Mirror', icon: '⇋', price: 15, rarity: 'common', desc: 'Flip the piece in play: J and L, S and Z swap.' },
+    mirror:    { group: 'shape', name: 'Turnabout', icon: '⇋', price: 15, rarity: 'common', desc: 'Flip the piece in play: J and L, S and Z swap.' },
     pebble:    { group: 'shape', name: 'Pebble', icon: '●', price: 20, rarity: 'common', desc: 'The piece in play becomes a single block.' },
     noodle:    { group: 'shape', name: 'Noodle', icon: '∿', price: 25, rarity: 'uncommon', desc: 'The piece becomes a six-long rod.' },
     giant:     { group: 'shape', name: 'Giant', icon: '▣', price: 30, rarity: 'uncommon', desc: 'The piece grows to twice its size.' },

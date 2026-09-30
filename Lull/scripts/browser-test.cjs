@@ -4002,6 +4002,8 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await require('./sizes-test.cjs')({ browser, check, PAGE, OUT });
   // ---- the board recipe: the New board window's tabs and rules, labels, the controller, pixels as before (recipe-test.cjs)
   await require('./recipe-test.cjs')({ browser, check, PAGE, OUT });
+  // ---- the Mirror modifier: made, drawn, the mouse and a touch on the copy's side, screenshots (mirror-test.cjs) --------
+  await require('./mirror-test.cjs')({ browser, check, PAGE, OUT });
   // ---- touch: an emulated phone, played with gestures (scripts/touch-test.cjs) -----------------------------------------
   await require('./touch-test.cjs')({ browser, check, PAGE, OUT });
   // ---- what the device can do: a phone, a desktop browser, the app, a tablet with a trackpad (device-test.cjs) -------

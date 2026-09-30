@@ -9,7 +9,7 @@ const L = load([
   'util.js', 'pieces.js', 'board.js', 'recipe.js', 'engine.js', 'items.js', 'library.js', 'puzzlegen.js', 'factory.js', 'store.js', 'achievements.js',
   // The board options' pure parts (js/recipe.js): each branch replaces its own line.
   // part:shapes
-  // part:mirror
+  'mirror.js',
   // part:jelly
   // part:protect
   // part:battle
@@ -3123,7 +3123,10 @@ console.log('board recipe');
     const log = [];
     const mk = (key, order) => ({ key, order, engine: () => ({ step: () => log.push(key), afterPlace: () => log.push(key + ':placed') }) });
     withParts([mk('tzz', 50), mk('taa', 10), mk('tmm', 30)], () => {
-      assert.deepStrictEqual(Recipe.parts().map((p) => p.key), ['core', 'taa', 'tmm', 'tzz']);
+      // (The real parts loaded with the game, Mirror's and the others', sit among them by their own order.)
+      const ordered = Recipe.parts();
+      assert.deepStrictEqual(ordered.map((p) => p.key).filter((k) => ['core', 'taa', 'tmm', 'tzz'].includes(k)), ['core', 'taa', 'tmm', 'tzz']);
+      assert(ordered.every((p, i) => i === 0 || (ordered[i - 1].order || 0) <= (p.order || 0)), 'every part in ascending order');
       const g = new Game({ w: 10, h: 20, seed: 1, recipe: {} });
       assert.deepStrictEqual(g.ext.map((e) => [e.key, e.order]), [['taa', 10], ['tmm', 30], ['tzz', 50]]);
       g.drop();
@@ -4407,6 +4410,9 @@ console.log('touch gestures');
     assert(e.hs.retired.mouseTurn, 'tap turns retire the hint');
   });
 }
+
+// The Mirror modifier's rules (scripts/mirror-unit.cjs).
+require('./mirror-unit.cjs')({ L, test });
 
 // The Home Screen web app: the offline copy, the manifest and icons, the deployed build (scripts/web-test.cjs).
 require('./web-test.cjs')(test).then(() => {
