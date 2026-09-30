@@ -41,7 +41,11 @@ const FILES = [
   "js/modes.js",
   "js/retiredview.js",
   "js/collapse.js",
-  // part:shapes
+  "css/shapes.css",
+  "js/polytable.js",
+  "js/minsize.js",
+  "js/shapes.js",
+  "js/shapepicker.js",
   // part:mirror
   // part:jelly
   // part:protect

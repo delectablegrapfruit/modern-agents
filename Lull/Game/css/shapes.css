@@ -1,0 +1,89 @@
+/* Lull — the Custom shapes window (js/shapepicker.js): a row for each source, and a source's view (its weight, its
+   shapes to pick, a grid to draw one). Every target is 44 px tall by touch. */
+
+.modal-shapes .body { padding-top: 2px; }
+.sp-body { display: flex; flex-direction: column; gap: 10px; position: relative; }
+.sp-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* The Custom line under the chips keeps its 44 px (the panel is exactly the height of its tallest state). */
+.nb-custom { flex: none; }
+
+/* ---- the list ---- */
+.sp-list { display: flex; flex-direction: column; gap: 2px; }
+.sp-row { height: 44px; display: flex; align-items: center; gap: 8px; min-width: 0; border-radius: 10px; }
+.sp-check { flex: 1; min-width: 0; height: 44px; display: flex; align-items: center; gap: 10px; padding: 0 8px 0 6px; border: 0; border-radius: 10px; background: transparent; color: var(--fg); font-size: var(--fs-md); font-weight: 600; text-align: left; }
+@media (hover: hover) { .sp-check:not([aria-disabled="true"]):hover { background: var(--panel-2); } }
+.sp-check .bx { flex: none; width: 20px; height: 20px; border-radius: 6px; display: grid; place-items: center; background: var(--well); box-shadow: inset 0 0 0 1px var(--line-2); color: var(--on-accent); }
+.sp-check .bx svg { width: 13px; height: 13px; }
+.sp-check[aria-checked="true"] .bx { background: var(--accent); box-shadow: none; }
+.sp-check[aria-disabled="true"] { cursor: default; }
+.sp-check[aria-disabled="true"] .bx { opacity: 0.55; }
+.sp-check .nm { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sp-row:not(.on) .sp-check .nm { color: var(--muted); font-weight: 550; }
+.sp-sample { flex: none; width: 28px; height: 28px; display: grid; place-items: center; }
+.sp-row:not(.on) .sp-sample { opacity: 0.45; }
+.sp-sample canvas { display: block; }
+.sp-more, .sp-more-off { flex: none; width: 104px; }
+.sp-more { height: 36px; display: flex; align-items: center; justify-content: flex-end; gap: 2px; padding: 0 4px 0 8px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--fg); font-size: var(--fs-sm); font-weight: 600; font-variant-numeric: tabular-nums; }
+.sp-more > span:first-child { min-width: 0; flex: 1; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sp-more .ch { flex: none; width: 16px; height: 16px; color: var(--muted); display: grid; place-items: center; }
+.sp-more .ch svg { width: 14px; height: 14px; }
+@media (hover: hover) { .sp-more:hover { background: var(--panel-2); } }
+
+/* ---- a source's view ---- */
+.sp-top { display: flex; align-items: center; gap: 8px; min-height: 36px; margin-left: -6px; }
+.sp-back { padding-left: 4px; gap: 2px; }
+.sp-back .ch { width: 16px; height: 16px; display: grid; place-items: center; }
+.sp-back .ch svg { width: 14px; height: 14px; }
+.sp-name { font-size: var(--fs-md); font-weight: 650; color: var(--fg); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sp-segrow { display: flex; align-items: center; gap: 10px; }
+.sp-segrow .sp-lab { flex: none; margin: 0; }
+.sp-seg { flex: 1; min-width: 0; }
+.sp-seg, .sp-tabs { display: flex; width: 100%; }
+.sp-seg button, .sp-tabs button { flex: 1 1 0; min-width: 0; justify-content: center; height: 32px; padding: 0 4px; }
+.sp-status { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.sp-grid { display: grid; gap: 4px; justify-content: center; }
+.sp-shape { width: 44px; height: 44px; padding: 0; display: grid; place-items: center; border-radius: 9px; border: 1px solid var(--line); background: var(--panel); }
+.sp-shape canvas { display: block; }
+@media (hover: hover) { .sp-shape:not([aria-disabled="true"]):hover { background: var(--panel-2); } }
+.sp-shape[aria-pressed="true"] { border-color: var(--accent-line); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent-line); }
+.sp-shape[aria-disabled="true"] { opacity: 0.4; cursor: default; }
+.sp-pages { display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.sp-pages .icon-btn[aria-disabled="true"] { opacity: 0.35; cursor: default; }
+.sp-empty, .sp-note { margin: 4px 2px !important; color: var(--muted); font-size: var(--fs-sm); }
+.sp-steps { display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: space-between; }
+.sp-step { display: flex; align-items: center; gap: 4px; }
+.sp-lab { color: var(--muted); font-size: var(--fs-sm); margin-right: 4px; }
+.sp-num { min-width: 22px; text-align: center; font-weight: 700; font-size: var(--fs-md); font-variant-numeric: tabular-nums; }
+.sp-pm { width: 32px; height: 32px; }
+.sp-pm[aria-disabled="true"] { opacity: 0.35; cursor: default; }
+.sp-samples { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; padding: 4px 0; }
+
+/* ---- drawing a shape ---- */
+.sp-drawer { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.sp-draw { display: grid; gap: 0; border-radius: 8px; overflow: hidden; background: var(--well); box-shadow: inset 0 0 0 1px var(--line); touch-action: none; cursor: crosshair; user-select: none; -webkit-user-select: none; }
+.sp-draw:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; }
+.sp-dc { box-shadow: inset 0 0 0 0.5px var(--line); }
+.sp-dc.on { background: var(--accent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 70%, #000); }
+.sp-dc.cur { box-shadow: inset 0 0 0 2px var(--accent-line); }
+.sp-dc.on.cur { box-shadow: inset 0 0 0 2px var(--fg); }
+.sp-draw-row { width: 100%; display: flex; align-items: center; gap: 6px; }
+.sp-draw-status { flex: 1; min-width: 0; font-size: var(--fs-sm); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sp-draw-status.bad { color: var(--bad); }
+.sp-draw-status.ok { color: var(--fg); }
+
+@media (pointer: coarse) {
+  /* 44 px to a finger, drawn 38 tall: the top 6 px are clear (the chips sit right above the line). */
+  .nb-custom .btn.sm { height: 44px; padding: 0 14px; border: 0; border-top: 6px solid transparent; background-clip: padding-box; box-shadow: inset 0 0 0 1px var(--line), var(--hi); }
+  .nb-custom > span { padding-top: 6px; }
+  .sp-more { height: 44px; }
+  .sp-seg button, .sp-tabs button { height: 44px; }
+  .modal-shapes .sp-back.btn.sm, .modal-shapes .sp-status .btn.sm, .modal-shapes .sp-draw-row .btn.sm, .modal-shapes .sp-pages .btn.sm { height: 44px; }
+  .sp-pm, .sp-pages .icon-btn { width: 44px; height: 44px; }
+}
+@media (max-width: 359px) {
+  .modal-shapes .body { padding-left: 12px; padding-right: 12px; }
+  .sp-more, .sp-more-off { width: 92px; }
+  .sp-check { gap: 8px; }
+}
+@media (prefers-reduced-motion: reduce) { .sp-shape, .sp-check, .sp-more { transition: none; } }
