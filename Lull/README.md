@@ -548,9 +548,9 @@ and **Custom**, whose line under the chips says what it deals ("4 and 5 blocks",
 
 *The Custom shapes window* (over New board; Done keeps it, Cancel does not): a row for each group of 1 to 12 blocks
 (one-sided, mirror images apart as J and L are, a shape with a sealed hole left out: 1, 1, 2, 7, 18, 60, 195, 693, 2432,
-8808, 31968 and 117487 of them), Clusters and Big, each on or off (the last one on stays on: it says so). An on row's
+8808, 31968 and 117487 of them), Clusters and Big, each on or off (the last one on stays on, and a group whose picks would take the picks past 60 stays off: each says so). An on row's
 button ("All ›", "3 picked ›", "3–5 ›", "Even ›") opens its view (Back, or Escape): How often (Less, Even or More: 7,
-14 or 28 of a round's pieces), then for a group All (its shapes a page at a time: 48, or 45 in the five columns under
+14 or 28 of a round's pieces), then for a group Shapes (its shapes a page at a time: 48, or 45 in the five columns under
 360 px; ‹ › or Page Up / Down), Picked, Shuffle (a random page, for a group of more than 60; 9 blocks and up open on it
 and draw eight shapes a frame) and Draw (6 blocks and up: a grid of max(n, 6) squared, at most 12, cells at least 20 px;
 drag paints or erases, the arrows and Space do it by key; it reads "7 of 9 blocks", "Not joined", "Has a hole" or
@@ -588,11 +588,12 @@ to 12 blocks and Big clusters of 8 never do, and are dealt only on 20 × 40. Pro
 eight rows (four Big lines), its feats need 20 columns. Every other set pays ×1, with no difficult clear, no skill combo,
 and Double or Nothing and Safety Net refused ("Needs Normal shapes"). What a block pays is `f = min(1, 4/E)` of a
 Standard one, E the mean blocks a piece (a doubled piece four times its own, each source by its share of a round),
-counted up by 19/D for a set whose shapes have D < 19 different turns between them (the seven's 19): a set of few
+counted up by 19/D for a set whose shapes have D < 19 different turns between them (the seven's 19; by share: the
+listed shapes' turns for their share of a round, 19 for the share drawn fresh, clusters and 7 blocks up): a set of few
 turns is quicker to place (bars and squares alone drop where they appear, a press a piece), so Tiny pays about half,
 the I alone a tenth. With that, no set pays more a piece than Standard, nor more a press than Standard (than Normal on
 4 × 8, the fastest board of the seven, on a board under 10 × 20): `scripts/shapes-test.cjs` plays every preset, 12
-blocks, clusters, Big mixes and sets of bars and squares with a bot and holds them to it. Board shapes never count
+blocks, clusters, Big mixes and sets of bars and squares (with a few clusters too) with a bot and holds them to it. Board shapes never count
 toward the Factory; there are no new achievements.
 
 ### Mirror

@@ -272,6 +272,11 @@ module.exports = function shapesTests(test, L) {
     assert.strictEqual(rules({ preset: 'tiny' }).E, (34 / 14) * (19 / 9));
     assert.strictEqual(rules(custom({ groups: [{ n: 4, picks: ['0,0;1,0;2,0;3,0'] }] })).E, 4 * 19 / 2, 'the I alone: two turns');
     assert.strictEqual(rules(custom({ groups: [{ n: 12 }], clusters: { min: 2, max: 8 } })).E, (12 * 14 + 5 * 14) / 28);
+    // Clusters or drawn groups count 19 turns for their share alone: squares (More) with a few Less clusters stay near
+    // the square's one turn.
+    const sq = '0,0;1,0;0,1;1,1', oc = custom({ groups: [{ n: 4, weight: 'more', picks: [sq] }], clusters: { min: 2, max: 2, weight: 'less' } });
+    assert(Math.abs(S.variety(oc) - (28 * 1 + 7 * 19) / 35) < 1e-9, 'variety by share');
+    assert(Math.abs(rules(oc).E - ((4 * 28 + 2 * 7) / 35) * 19 / ((28 + 7 * 19) / 35)) < 1e-9, 'squares and clusters: counted up');
     // Two Big lines (four rows) on a Big board: no quad, no streak, no bonus; four Big lines are a quad.
     const g = game({ preset: 'big' }, 8, 16, 1, { previewCount: 1 });
     const fill = (rows) => { for (let y = 0; y < rows; y++) for (let x = 0; x < 6; x++) g.board.set(x, y, 1); };
@@ -319,6 +324,9 @@ module.exports = function shapesTests(test, L) {
       ['12 blocks', custom({ groups: [{ n: 12 }] })], ['clusters', custom({ clusters: { min: 2, max: 8 } })], ['big less', custom({ groups: [{ n: 4 }], big: 'less' })],
       // Sets a player could pick to place quickly: bars and squares, one or two shapes, Big squares.
       ['I alone', custom({ groups: [pick(4, [bar(4)])] })], ['I and O', custom({ groups: [pick(4, [bar(4), rect(2, 2)])] })], ['Big dominoes', custom({ groups: [{ n: 2 }], big: 'all' })],
+      // Mostly one easy shape, with a few clusters (drawn fresh) beside it.
+      ['O more + clusters 2-2 less', custom({ groups: [{ n: 4, weight: 'more', picks: [rect(2, 2)] }], clusters: { min: 2, max: 2, weight: 'less' } })],
+      ['I+O more + clusters 2-2 less', custom({ groups: [{ n: 4, weight: 'more', picks: [bar(4), rect(2, 2)] }], clusters: { min: 2, max: 2, weight: 'less' } })],
       ['Big 1-2', custom({ groups: [{ n: 1 }, { n: 2 }], big: 'all' })], ['a 12 bar', custom({ groups: [pick(12, [bar(12)])] })],
       ['bars 1-12', custom({ groups: [{ n: 1 }, { n: 2 }].concat([3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => pick(n, [bar(n)]))) })],
       ['rectangles', custom({ groups: [{ n: 1 }, { n: 2 }, pick(3, [bar(3)]), pick(4, [bar(4), rect(2, 2)]), pick(5, [bar(5)]), pick(6, [bar(6), rect(2, 3)]), pick(8, [rect(2, 4)])] })]]) {

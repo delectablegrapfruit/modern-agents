@@ -123,7 +123,7 @@ module.exports = async function shapesBrowserTests({ browser, check, PAGE, OUT }
     await ev(() => document.querySelector('.sp-check[data-focus="g5"]').click());
     await page.click('.sp-more[data-focus="m9"]');
     const g9 = await ev(() => ({ tab: document.querySelector('.sp-tabs [aria-pressed="true"]').textContent, tabs: [...document.querySelectorAll('.sp-tabs button')].map((b) => b.textContent).join(), status: document.querySelector('.sp-status span').textContent }));
-    check('a group of 9 blocks opens on Shuffle (All, Picked, Shuffle, Draw), all 2,432 of it dealt', g9.tab === 'Shuffle' && g9.tabs === 'All,Picked,Shuffle,Draw' && g9.status === 'All 2,432 shapes', JSON.stringify(g9));
+    check('a group of 9 blocks opens on Shuffle (Shapes, Picked, Shuffle, Draw: no tab claims All), all 2,432 of it dealt', g9.tab === 'Shuffle' && g9.tabs === 'Shapes,Picked,Shuffle,Draw' && g9.status === 'All 2,432 shapes', JSON.stringify(g9));
     await ev(() => document.querySelector('.sp-tabs [data-focus="tab-all"]').click());
     await page.waitForTimeout(100);
     const paged = await ev(() => ({ n: document.querySelectorAll('.sp-shape').length, page: document.querySelector('.sp-pages span').textContent }));
@@ -131,6 +131,9 @@ module.exports = async function shapesBrowserTests({ browser, check, PAGE, OUT }
     await page.keyboard.press('PageDown');
     const pg2 = await ev(() => ({ page: document.querySelector('.sp-pages span').textContent, focus: document.activeElement.dataset.i }));
     const picked = await ev(() => ({ status: document.querySelector('.sp-status span').textContent, keys: Lull.Shapes.openCustom.last.sp.groups[9].picks.slice() }));
+    // Picks made, the browse tab still reads Shapes (never All while the group deals its picks).
+    const browse = await ev(() => ({ pressed: document.querySelector('.sp-tabs [aria-pressed="true"]').textContent, status: document.querySelector('.sp-status span').textContent }));
+    check('picks made on the browse tab: it reads Shapes, the status "3 picked" (nothing says All)', browse.pressed === 'Shapes' && browse.status === '3 picked', JSON.stringify(browse));
     check('the picker: a page of 48 shapes (page 1 / 51), three picked; Page Down turns the page', paged.n === 48 && paged.page === '1 / 51' && picked.status === '3 picked' && picked.keys.length === 3 && pg2.page === '2 / 51', JSON.stringify({ paged, pg2, picked }));
     await ev(() => document.querySelector('.sp-tabs [data-focus="tab-draw"]').click());
     // Draw an L of nine: five across the bottom, four up the left.
@@ -152,6 +155,24 @@ module.exports = async function shapesBrowserTests({ browser, check, PAGE, OUT }
     await page.keyboard.press('Escape');
     const esc = await ev(() => ({ open: !!document.querySelector('.modal-shapes'), kind: Lull.Shapes.openCustom.last.sp.view.kind, more: document.querySelector('.sp-more[data-focus="m9"]').textContent }));
     check('Escape in a group’s view goes back to the list (the window stays), the row says 4 picked', esc.open && esc.kind === 'list' && esc.more === '4 picked', JSON.stringify(esc));
+    // 60 picks at most, off groups' picks too: 9 blocks (4 picked) off, 57 picked in 6 blocks; 9 blocks stays off.
+    const capped = await ev(() => {
+      const s = Lull.Shapes.openCustom.last.sp, P = Lull.Pieces;
+      Object.assign(s.groups[6], { on: true, picks: Lull.Shapes.page(6, 0, 57).map((id) => P.canonKey(P.get(id).rots[0])) });
+      s.draw('g6');
+      const box = () => document.querySelector('.sp-check[data-focus="g9"]');
+      box().click();
+      const off = box().getAttribute('aria-checked');
+      box().click();
+      const r = { off, again: box().getAttribute('aria-checked'), live: document.querySelector('.sp-live').textContent, total: Object.values(s.groups).reduce((a, g) => a + (g.on ? g.picks.length : 0), 0) };
+      Object.assign(s.groups[6], { on: false, picks: [] });
+      s.draw('g9');
+      box().click();
+      r.back = box().getAttribute('aria-checked');
+      r.picks9 = s.groups[9].picks.length;
+      return r;
+    });
+    check('a group whose picks would take the picks past 60 stays off ("60 picks at most"); under 60 it turns on with its picks', capped.off === 'false' && capped.again === 'false' && capped.live === '60 picks at most' && capped.total === 57 && capped.back === 'true' && capped.picks9 === 4, JSON.stringify(capped));
     await page.click('.modal-shapes footer .btn.primary');
     const after = await ev(() => ({ line: document.querySelector('.nb-custom span').textContent, live: document.querySelector('.nb-live').textContent, size: [...document.querySelectorAll('.nb-val')].map((v) => +v.textContent).join('x') }));
     check('Done: the Custom line and the live region say "9 blocks (4 picked)", and the size it grew to', after.line === '9 blocks (4 picked)' && after.live === '9 blocks (4 picked), ' + after.size.replace('x', ' × '), JSON.stringify(after));
@@ -193,6 +214,15 @@ module.exports = async function shapesBrowserTests({ browser, check, PAGE, OUT }
     const list = await fitOf(ev, '.modal-shapes', '.sp-check, .sp-more, footer .btn');
     check('320 × 568: the Custom shapes window fits (footer shown, rows 44 px, nothing wider than it; the list scrolls)', list.inside && list.footer && list.noSide && !list.small.length && !list.wide.length, JSON.stringify(list));
     await shot('shapes-07-custom-320x568-light');
+    // Each row's sample: 36 px; a 1 block sample is a block of 7 px or more, a 3 block one a shape (not a dash).
+    const samples = await ev(() => ['g1', 'g3', 'g12'].map((f) => {
+      const c = document.querySelector('.sp-check[data-focus="' + f + '"]').closest('.sp-row').querySelector('.sp-sample canvas'), r = c.getBoundingClientRect(), d = c.width / r.width;
+      const px = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      let x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1;
+      for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) if (px[(y * c.width + x) * 4 + 3] > 40) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+      return { f, size: Math.round(r.width) + 'x' + Math.round(r.height), w: Math.round((x1 - x0 + 1) / d), h: Math.round((y1 - y0 + 1) / d) };
+    }));
+    check('320 × 568: every row sample is 36 px; 1 block draws 7 px or more, 3 blocks 20 px or more across', samples.every((s) => s.size === '36x36') && samples[0].w >= 7 && samples[0].h >= 7 && Math.max(samples[1].w, samples[1].h) >= 20 && Math.max(samples[2].w, samples[2].h) <= 36, JSON.stringify(samples));
     await page.click('.sp-more[data-focus="m5"]');
     await page.waitForTimeout(100);
     const cols = await ev(() => getComputedStyle(document.querySelector('.sp-grid')).gridTemplateColumns.split(' ').length);

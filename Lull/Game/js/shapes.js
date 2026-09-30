@@ -485,23 +485,28 @@
   }
   /** A shape's different turns (1, 2 or 4): the seven have 19 between them. */
   const turnsOf = (id) => { const t = Pieces.get(id); return t ? new Set(t.keys).size : 4; };
-  /** How many different turns of shapes a set deals (19 or more: 19 is enough to know). */
+  /**
+   * How many different turns of shapes a set deals, by share (19 or more: 19 is enough to know): the turns between its
+   * listed shapes (every list together) for the listed share of a round, 19 for the share drawn fresh (clusters, groups
+   * of 7 or more blocks). A set mostly of one easy shape stays near that shape's turns, however few clusters it adds.
+   */
   function variety(sh) {
     const c = compile(sh);
     if (!c) return 19;
-    let n = 0;
+    let n = 0, listQ = 0, drawnQ = 0;
     const ids = new Set();
     for (const s of c.src) {
-      if (s.poly || s.cluster) return 19;
+      if (s.poly || s.cluster) { drawnQ += s.q; continue; }
+      listQ += s.q;
       for (const id of s.ids || s.bag) if (!ids.has(id)) { ids.add(id); n += turnsOf(id); }
     }
-    return Math.min(19, n);
+    return (listQ * Math.min(19, n) + drawnQ * 19) / (listQ + drawnQ);
   }
   /**
    * The mean blocks a piece as the pay counts them (R.E: f = min(1, 4/E)): meanCells, counted up by 19/D for a set
-   * whose shapes have D < 19 different turns between them (the seven's 19). A set of few turns is quicker to place (a
-   * set of bars and squares alone is dropped where it appears, a press or two a piece), so it pays that share of
-   * Standard's a block: no board of other shapes earns faster a piece or a press than the seven do.
+   * whose shapes have D < 19 different turns between them by share (the seven's 19). A set of few turns is quicker to
+   * place (a set of bars and squares alone is dropped where it appears, a press or two a piece), so it pays that share
+   * of Standard's a block: no board of other shapes earns faster a piece or a press than the seven do.
    */
   function payCells(sh) { return meanCells(sh) * Math.max(1, 19 / variety(sh)); }
   /** Whether the set deals the seven alone (none doubled or all of them): the only rated sets. */

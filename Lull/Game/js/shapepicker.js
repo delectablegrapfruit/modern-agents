@@ -148,9 +148,10 @@
   /**
    * The Custom shapes window, over New board: a row for each group of 1 to 12 blocks (on or off; All or how many are
    * picked), Clusters (from–to blocks) and Big (Less, Even, More or All). A row's button opens its view: the weight
-   * (Less, Even, More: 7, 14 or 28 of a round) and, for a group, its shapes to pick (All, a page at a time; Picked;
-   * Shuffle, a random page, for a group of more than 60; Draw, for 6 blocks and more). The last source that is on stays
-   * on. Done gives the set to onDone; Cancel changes nothing.
+   * (Less, Even, More: 7, 14 or 28 of a round) and, for a group, its shapes to pick (Shapes, every shape a page at a
+   * time; Picked; Shuffle, a random page, for a group of more than 60; Draw, for 6 blocks and more). The last source
+   * that is on stays on, and a group whose picks would take the picks past 60 stays off. Done gives the set to onDone;
+   * Cancel changes nothing.
    */
   function openCustom(app, custom, onDone) {
     const c = clone(Shapes.normalize({ preset: 'custom', custom }).custom || Shapes.CUSTOM_DEFAULT);
@@ -174,7 +175,10 @@
     });
     const say = (t) => { live.textContent = t; };
 
-    const canvas = (px, id, rot) => UI.canvasFor(px, px, (ctx) => { if (id) Render.drawPieceIn(ctx, { id, rot: rot == null ? sampleRot(id) : rot }, { x: 0, y: 0, w: px, h: px }, Math.max(3, Math.floor(px / 5)), lk); });
+    // A shape drawn to fit px (blocks of `cell` px at most: a fifth of px by default).
+    const canvas = (px, id, rot, cell) => UI.canvasFor(px, px, (ctx) => { if (id) Render.drawPieceIn(ctx, { id, rot: rot == null ? sampleRot(id) : rot }, { x: 0, y: 0, w: px, h: px }, cell || Math.max(3, Math.floor(px / 5)), lk); });
+    /** A list row's sample: 36 px, its blocks up to 8 px (a group of 1 to 3 blocks reads as its shape). */
+    const rowSample = (id) => h('span', { class: 'sp-sample', 'aria-hidden': 'true' }, canvas(36, id, null, 8));
     /** A checkbox row's box (role checkbox): the last source that is on is off-limits. */
     const check = (on, name, toggle, focus) => h('button', {
       type: 'button', role: 'checkbox', class: 'sp-check', 'aria-checked': String(on), 'data-focus': focus,
@@ -195,18 +199,22 @@
       for (let n = 1; n <= Shapes.MAX_N; n++) {
         const g = groups[n], sample = Shapes.SMALL[n] ? Shapes.SMALL[n][n === 4 ? 2 : 0] : null;
         rows.push(h('div', { class: 'sp-row' + (g.on ? ' on' : '') },
-          check(g.on, groupName(n), () => { g.on = !g.on; say(groupName(n) + (g.on ? ' on' : ' off')); }, 'g' + n),
-          h('span', { class: 'sp-sample', 'aria-hidden': 'true' }, canvas(28, sample || sampleOf(n))),
+          check(g.on, groupName(n), () => {
+            // A group turned on again brings back its picks: never past 60 in all.
+            if (!g.on && picksTotal() + g.picks.length > Shapes.MAX_PICKS) { say(Shapes.MAX_PICKS + ' picks at most'); return; }
+            g.on = !g.on; say(groupName(n) + (g.on ? ' on' : ' off'));
+          }, 'g' + n),
+          rowSample(sample || sampleOf(n)),
           g.on ? more(g.picks.length ? g.picks.length + ' picked' : 'All', groupName(n) + ': ' + (g.picks.length ? g.picks.length + ' picked' : 'all') + ', ' + Shapes.WEIGHT_NAMES[g.weight], () => go({ kind: 'group', n }), 'm' + n) : h('span', { class: 'sp-more-off' })));
       }
       const clText = cl.min === cl.max ? String(cl.min) : cl.min + '–' + cl.max;
       rows.push(h('div', { class: 'sp-row' + (cl.on ? ' on' : '') },
         check(cl.on, 'Clusters', () => { cl.on = !cl.on; say('Clusters' + (cl.on ? ' on' : ' off')); }, 'cl'),
-        h('span', { class: 'sp-sample', 'aria-hidden': 'true' }, canvas(28, CLUSTER_SAMPLE())),
+        rowSample(CLUSTER_SAMPLE()),
         cl.on ? more(clText, 'Clusters: ' + clText + ' blocks, ' + Shapes.WEIGHT_NAMES[cl.weight], () => go({ kind: 'clusters' }), 'mcl') : h('span', { class: 'sp-more-off' })));
       rows.push(h('div', { class: 'sp-row' + (big.on ? ' on' : '') },
         check(big.on, 'Big', () => { big.on = !big.on; say('Big' + (big.on ? ' on' : ' off')); }, 'big'),
-        h('span', { class: 'sp-sample', 'aria-hidden': 'true' }, canvas(28, 'BT')),
+        rowSample('BT'),
         big.on ? more(Shapes.WEIGHT_NAMES[big.weight], 'Big: ' + Shapes.WEIGHT_NAMES[big.weight], () => go({ kind: 'big' }), 'mbig') : h('span', { class: 'sp-more-off' })));
       return [h('div', { class: 'sp-list', role: 'group', 'aria-label': 'Sources' }, rows)];
     }
@@ -261,7 +269,8 @@
       const g = groups[n], total = Shapes.count(n);
       const tabs = ['all', 'picked'].concat(total > 60 ? ['shuffle'] : []).concat(n >= 6 ? ['draw'] : []);
       if (!tabs.includes(view.tab)) view.tab = n >= 9 ? 'shuffle' : 'all';
-      const TAB_NAMES = { all: 'All', picked: 'Picked', shuffle: 'Shuffle', draw: 'Draw' };
+      // Tabs only choose what the grid shows (the group deals its picks, else all of it): Shapes, not All.
+      const TAB_NAMES = { all: 'Shapes', picked: 'Picked', shuffle: 'Shuffle', draw: 'Draw' };
       const tabRow = h('div', { class: 'seg sp-tabs', role: 'group', 'aria-label': 'Show' }, tabs.map((t) => h('button', {
         type: 'button', 'aria-pressed': String(view.tab === t), 'data-focus': 'tab-' + t,
         onclick: () => { if (t === 'shuffle') view.seed = (Math.random() * 4294967296) >>> 0; view.tab = t; view.page = 0; draw('tab-' + t); },

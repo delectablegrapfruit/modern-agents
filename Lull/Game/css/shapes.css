@@ -20,7 +20,7 @@
 .sp-check[aria-disabled="true"] .bx { opacity: 0.55; }
 .sp-check .nm { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sp-row:not(.on) .sp-check .nm { color: var(--muted); font-weight: 550; }
-.sp-sample { flex: none; width: 28px; height: 28px; display: grid; place-items: center; }
+.sp-sample { flex: none; width: 36px; height: 36px; display: grid; place-items: center; }
 .sp-row:not(.on) .sp-sample { opacity: 0.45; }
 .sp-sample canvas { display: block; }
 .sp-more, .sp-more-off { flex: none; width: 104px; }
