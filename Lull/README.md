@@ -564,7 +564,8 @@ laid out in a box (`layout(box)`; the whole canvas for one board). A part's view
 the first painter whose `claims(v)` is true draws a stored cell, then a `claims: 'rest'` painter the own cells, the
 piece, its ghost and the trays, then the plain cell; overlays after the stack, the piece and the rim; `busy` keeps
 frames coming; move (a mouse slide's steps too), turn and lock triggers; no red rim; which turn the trays draw and how
-long the first Next slot and the Hold box are for a long piece (`traySlot`); how opaque each cell of the piece in play
+long the first Next slot and the Hold box are for a long piece (`traySlot`), and how many pieces Next shows at most
+(`nextCount`: fewer when a later one would be specks); how opaque each cell of the piece in play
 is (`pieceAlpha`: Mirror's copy); and marks on the New board preview and the library's thumbnails
 (`Render.previewBoard`, which draws both). An item that acts at more than one spot (the engine's `targets`) is previewed
 and animated at each. With `?freeze=1` every frame is drawn at one
@@ -573,7 +574,64 @@ look, the red rim, thumbnails and previews at four window sizes in both themes, 
 render split, and the drawing now matches it pixel for pixel.
 
 ### Shapes
-<!-- part:shapes -->
+
+What a board deals (`js/shapes.js`, the rules; `js/shapepicker.js`, the window and the view). Six chips on the Shapes
+tab, each with a sample: **Normal** (the seven in a 7-bag: today's code path exactly, with no dealer of its own),
+**Tiny** (a round of 14: the monomino twice, the domino four times, each tromino four times), **Frantic** (a round of
+21: the seven once each, seven pentominoes from a bag of all 18 kept between rounds, two of each tromino, two dominoes,
+one monomino: 3.8 blocks a piece), **Pentominoes** (the 18 one-sided ones in an 18-bag: the twelve and the mirror images
+of the six that have one, `Fm Pm Nm Ym Z5m L5m`, each its base's colour), **Big** (the seven doubled, TGM's big mode)
+and **Custom**, whose line under the chips says what it deals ("4 and 5 blocks", Custom first chosen) beside Edit.
+
+*The Custom shapes window* (over New board; Done keeps it, Cancel does not): a row for each group of 1 to 12 blocks
+(one-sided, mirror images apart as J and L are, a shape with a sealed hole left out: 1, 1, 2, 7, 18, 60, 195, 693, 2432,
+8808, 31968 and 117487 of them), Clusters and Big, each on or off (the last one on stays on, and a group whose picks would take the picks past 60 stays off: each says so). An on row's
+button ("All ›", "3 picked ›", "3–5 ›", "Even ›") opens its view (Back, or Escape): How often (Less, Even or More: 7,
+14 or 28 of a round's pieces), then for a group Shapes (its shapes a page at a time: 48, or 45 in the five columns under
+360 px; ‹ › or Page Up / Down), Picked, Shuffle (a random page, for a group of more than 60; 9 blocks and up open on it
+and draw eight shapes a frame) and Draw (6 blocks and up: a grid of max(n, 6) squared, at most 12, cells at least 20 px;
+drag paints or erases, the arrows and Space do it by key; it reads "7 of 9 blocks", "Not joined", "Has a hole" or
+"Picked already", and Add picks it). A press on a shape picks it (60 picks in all at most, kept as each shape's
+canonical key: of its four turns, the one whose key sorts first); a group with picks deals only those, Clear goes back
+to All. Clusters: 2 to 8 blocks (From, To; 3–5 at first), joined through sides or corners with at least one join
+through a corner alone and no sealed hole, each fitting a box ⌈√k⌉ + 1 wide, made new for every piece. Big: Less, Even
+or More deal that share of doubled pieces from the groups of 1 to 5 blocks that are on (the seven when none is), All
+doubles every piece.
+
+*Dealing.* A round is a shuffled list of tokens, each source's share of it, a list's shapes drawn without repeats from
+shuffled cycles; the rest of the round (and Frantic's bag) is `game.bag` (`'2.5'`, `'3'`, `'~11'`), so Undo, the save
+and a reload need nothing new, and every draw is on the game's own stream. Groups of 1 to 5 blocks deal the built-in
+pieces (the seven keep SRS and T-spins); 6 blocks deals its 60 in cycles; 7 to 12 are drawn uniformly through
+`js/polytable.js` (built by `scripts/polytable.cjs`: for each group, how many shapes lie under each node of its
+enumeration tree at depth 8 or 9; a draw walks to the node that holds shape k, skipping whole subtrees, then enumerates
+that node alone, with typed arrays: a 12-block draw well under a millisecond). A shape is named by its cells (`P:` a
+polyomino, family "7 blocks", which Stats ▸ Pieces placed shows; `K:` a cluster; `B` + any id doubled) and rebuilt from
+the id alone, its colour one of slots 9–14 by its key; types made this way are kept to the last 512 used. Reroll draws
+from the set on its own random stream; Best Fit and Order Slip choose from the set's shapes when they are 29 or fewer
+(Normal, Tiny, Frantic, Pentominoes, groups of 1 to 5), else from 7 drawn. Every piece of a set other than Normal appears
+with its top in the top row, turned its flattest way that fits (ties: more blocks on its bottom row, then the lowest
+turn: the seven appear as SRS has them); the trays draw it that way, or in the turn whose blocks are more than a quarter
+larger in that slot; the first Next slot and the Hold box are half its length long; and when the piece after the first
+would be under 3 px a block (12 blocks on a phone), Next shows the first alone. The New board preview shows the set's
+first few pieces, faint, on its floor.
+
+*Sizes.* A set's smallest board is its sources' largest: at least the geometric floor (w ≥ max(4, M+2), h ≥ max(8,
+L+4), M the largest short side of its shapes and L the longest, doubled with Big), raised to where a plain bot
+(`scripts/shapes-bot.cjs`) lives as long, as the median of 20 boards, as it does with Normal shapes on 4 × 8
+(`js/minsize.js`, measured by `scripts/minsize.cjs`: Pentominoes 6 × 10, Big 8 × 16, 12 blocks 13 × 26); Big shapes of 9
+to 12 blocks and Big clusters of 8 never do, and are dealt only on 20 × 40. Protect keeps two rows more.
+
+*Pay.* Only a set of the seven is rated (Normal; Big; Custom with the seven alone, none doubled or all): Big's quad is
+eight rows (four Big lines), its feats need 20 columns. Every other set pays ×1, with no difficult clear, no skill combo,
+and Double or Nothing and Safety Net refused ("Needs Normal shapes"). What a block pays is `f = min(1, 4/E)` of a
+Standard one, E the mean blocks a piece (a doubled piece four times its own, each source by its share of a round),
+counted up by 19/D for a set whose shapes have D < 19 different turns between them (the seven's 19; by share: the
+listed shapes' turns for their share of a round, 19 for the share drawn fresh, clusters and 7 blocks up): a set of few
+turns is quicker to place (bars and squares alone drop where they appear, a press a piece), so Tiny pays about half,
+the I alone a tenth. With that, no set pays more a piece than Standard, nor more a press than Standard (than Normal on
+4 × 8, the fastest board of the seven, on a board under 10 × 20): `scripts/shapes-test.cjs` plays every preset, 12
+blocks, clusters, Big mixes and sets of bars and squares (with a few clusters too) with a bot and holds them to it. Board shapes never count
+toward the Factory; there are no new achievements.
 
 ### Mirror
 A line runs down the middle of the well, and the piece in play has a copy: its reflection across the line (x →

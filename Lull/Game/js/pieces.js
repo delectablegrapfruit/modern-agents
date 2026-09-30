@@ -100,7 +100,10 @@
     return cells.map(([x, y]) => (x - b.minX) + ',' + (y - b.minY)).sort().join(';');
   }
 
-  function add(id, cells, opts) { TYPES[id] = defineType(id, cells, opts); return TYPES[id]; }
+  // Types made on demand, by id (see LRU below).
+  const MADE = new Map();
+  let tracking = false;
+  function add(id, cells, opts) { TYPES[id] = defineType(id, cells, opts); if (tracking) made(id); return TYPES[id]; }
 
   // The seven, in SRS spawn orientation.
   add('I', [[0, 2], [1, 2], [2, 2], [3, 2]], { n: 4, color: COLOR.I, kicks: 'i', family: 'tetromino' });
@@ -135,6 +138,15 @@
   };
   const PENTOMINOES = Object.keys(PENTO);
   PENTOMINOES.forEach((id, i) => add(id, PENTO[id], { color: 9 + (i % 6), family: 'pentomino', name: id.replace(/\d/, '') + '-pento' }));
+  // The mirror images of the six chiral ones (the board recipe's shapes deal all eighteen one-sided pentominoes, as J and
+  // L are both dealt): each its base's colour, and a pair for mirrorOf. PENTOMINOES stays the twelve (puzzles use it).
+  const CHIRAL5 = ['F', 'P', 'N', 'Y', 'Z5', 'L5'];
+  for (const id of CHIRAL5) {
+    const base = TYPES[id];
+    add(id + 'm', base.rots[0].map(([x, y]) => [base.n - 1 - x, y]), { n: base.n, color: base.color, family: 'pentomino', name: base.name + ' (mirror)' });
+  }
+  /** The eighteen one-sided pentominoes: the twelve and the six mirror images. */
+  const PENTO18 = PENTOMINOES.concat(CHIRAL5.map((id) => id + 'm'));
 
   /** A 2× scaled copy of a type: every cell becomes a 2×2 block (TGM's big mode). Any type that get() knows can be doubled. */
   function bigOf(id) {
@@ -147,22 +159,100 @@
     return add(key, cells, { n: base.n * 2, color: base.color, kicks: base.kicks === 'none' ? 'none' : 'big', family: 'big', big: true, name: 'Big ' + base.name });
   }
 
-  /** A player-drawn shape (Blueprint item) or a mirrored piece. Registered under a key derived from its cells. */
+  /**
+   * A player-drawn shape (Blueprint item), a mirrored piece or a board recipe's shape. Registered under a key derived
+   * from its cells: opts { prefix ('C'), color, family ('custom'), name }.
+   */
   function customType(cells, opts) {
     opts = opts || {};
     const b = boundsOf(cells);
     const norm = cells.map(([x, y]) => [x - b.minX, y - b.minY]);
     const key = (opts.prefix || 'C') + ':' + shapeKey(norm);
     if (TYPES[key]) return TYPES[key];
-    return add(key, norm, { color: opts.color || COLOR.CUSTOM, family: 'custom', name: opts.name || 'Custom', kicks: norm.length === 1 ? 'none' : 'generic' });
+    return add(key, norm, { color: opts.color || COLOR.CUSTOM, family: opts.family || 'custom', name: opts.name || 'Custom', kicks: norm.length === 1 ? 'none' : 'generic' });
+  }
+
+  // ---- the board recipe's shapes: polyominoes of any size ('P:') and clusters ('K:') ------------------------------------
+  //
+  // A shape the board recipe deals (js/shapes.js) is named by its cells in its canonical turn (of its four turns, the
+  // one whose key sorts first), so a shape has one id however it was found, and its colour (one of the other shapes'
+  // slots, 9-14, by that key: slot 15 stays for Blueprint) survives a reload. 'P:' is a polyomino (its blocks joined by
+  // their sides, no sealed hole), family '<n> blocks'; 'K:' a cluster (joined by sides or corners), family 'cluster'.
+
+  /** The key of cells in their canonical turn: the least of the four turns' keys. */
+  function canonKey(cells) {
+    let best = null, cur = cells;
+    for (let r = 0; r < 4; r++) {
+      const k = shapeKey(cur);
+      if (best === null || k < best) best = k;
+      cur = cur.map(([x, y]) => [y, -x]);
+    }
+    return best;
+  }
+  const cellsOf = (key) => key.split(';').map((p) => p.split(',').map(Number));
+  /** Cells from a key, or null: whole numbers 0-23, each cell once, 1 to 48 of them. */
+  function parseKey(key) {
+    if (typeof key !== 'string' || !/^\d{1,2},\d{1,2}(;\d{1,2},\d{1,2}){0,47}$/.test(key)) return null;
+    const cells = cellsOf(key);
+    if (cells.some(([x, y]) => x > 23 || y > 23) || new Set(cells.map((c) => c.join(','))).size !== cells.length) return null;
+    return cells;
+  }
+  /** Joined through corners too. */
+  function isLinked(cells) {
+    if (!cells.length) return false;
+    const set = new Set(cells.map((c) => c.join(','))), seen = new Set([cells[0].join(',')]), stack = [cells[0]];
+    while (stack.length) {
+      const [x, y] = stack.pop();
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const k = (x + dx) + ',' + (y + dy);
+        if (set.has(k) && !seen.has(k)) { seen.add(k); stack.push([x + dx, y + dy]); }
+      }
+    }
+    return seen.size === set.size;
+  }
+  /** Whether cells enclose an empty cell (one no path through the sides of empty cells leads out of). */
+  function hasHole(cells) {
+    const b = boundsOf(cells), w = b.w + 2, hh = b.h + 2, g = new Uint8Array(w * hh);
+    for (const [x, y] of cells) g[(y - b.minY + 1) * w + (x - b.minX + 1)] = 1;
+    const st = [0]; g[0] = 2; let reached = 1;
+    while (st.length) {
+      const i = st.pop(), x = i % w, y = (i / w) | 0;
+      if (x > 0 && !g[i - 1]) { g[i - 1] = 2; reached++; st.push(i - 1); }
+      if (x < w - 1 && !g[i + 1]) { g[i + 1] = 2; reached++; st.push(i + 1); }
+      if (y > 0 && !g[i - w]) { g[i - w] = 2; reached++; st.push(i - w); }
+      if (y < hh - 1 && !g[i + w]) { g[i + w] = 2; reached++; st.push(i + w); }
+    }
+    return reached + cells.length < w * hh;
+  }
+  const SIZE_NAMES = ['', '1 block'].concat(Array.from({ length: 11 }, (_, i) => (i + 2) + ' blocks'));
+  /** A polyomino of the board recipe's shapes by its cells (any turn): 'P:' + its canonical key. */
+  function polyType(cells) {
+    const key = canonKey(cells.map(([x, y]) => [x, y]));
+    const id = 'P:' + key;
+    if (TYPES[id]) return TYPES[id];
+    const t = customType(cellsOf(key), { prefix: 'P', color: hashColor(key), family: SIZE_NAMES[cells.length] || cells.length + ' blocks', name: SIZE_NAMES[cells.length] || 'Shape' });
+    return t;
+  }
+  /** A cluster by its cells (any turn): 'K:' + its canonical key. */
+  function clusterType(cells) {
+    const key = canonKey(cells.map(([x, y]) => [x, y]));
+    const id = 'K:' + key;
+    if (TYPES[id]) return TYPES[id];
+    return customType(cellsOf(key), { prefix: 'K', color: hashColor(key), family: 'cluster', name: 'Cluster' });
   }
 
   const MIRROR = { I: 'I', O: 'O', T: 'T', S: 'Z', Z: 'S', J: 'L', L: 'J' };
+  for (const id of CHIRAL5) { MIRROR[id] = id + 'm'; MIRROR[id + 'm'] = id; }
 
-  /** The mirror image of a type (J and L, S and Z; any other shape is reflected). */
+  /**
+   * The mirror image of a type (J and L, S and Z, a pentomino and its mirror; a board recipe's shape is another of its
+   * kind, 'P:' or 'K:'; any other shape is reflected).
+   */
   function mirrorOf(type) {
     if (MIRROR[type.id]) return TYPES[MIRROR[type.id]];
     const cells = type.rots[0].map(([x, y]) => [-x, y]);
+    if (/^P:/.test(type.id)) return polyType(cells);
+    if (/^K:/.test(type.id)) return clusterType(cells);
     return customType(cells, { prefix: 'M', color: type.color, name: type.name + ' (mirror)' });
   }
 
@@ -174,11 +264,23 @@
   const cellsFrom = (rest) => rest.split(';').map((p) => p.split(',').map(Number));
   resolver('C', (rest) => customType(cellsFrom(rest), { prefix: 'C' }));
   resolver('M', (rest) => customType(cellsFrom(rest), { prefix: 'M' }));
+  // A board recipe's shape: only a key in its canonical turn names one ('P:' 1-12 blocks joined by their sides with no
+  // sealed hole; 'K:' 2-8 joined through corners, not all by sides, with no sealed hole).
+  resolver('P', (rest) => {
+    const cells = parseKey(rest);
+    if (!cells || cells.length > 12 || canonKey(cells) !== rest || !isConnected(cells) || hasHole(cells)) return null;
+    return polyType(cells);
+  });
+  resolver('K', (rest) => {
+    const cells = parseKey(rest);
+    if (!cells || cells.length < 2 || cells.length > 8 || canonKey(cells) !== rest || !isLinked(cells) || isConnected(cells) || hasHole(cells)) return null;
+    return clusterType(cells);
+  });
 
   /** The type an id names: a built-in one, 'B' + any id (doubled, recursively), or one a resolver rebuilds. */
   function get(id) {
     if (typeof id !== 'string' || !id) return null;
-    if (TYPES[id]) return TYPES[id];
+    if (TYPES[id]) { if (MADE.has(id)) { MADE.delete(id); MADE.set(id, true); } return TYPES[id]; }
     const m = /^([A-Za-z]+):(.+)$/.exec(id);
     if (m && RESOLVERS[m[1]]) {
       return RESOLVERS[m[1]](m[2], id) || null;
@@ -191,7 +293,16 @@
   // built-in shapes stay.
   const BUILTIN = new Set(Object.keys(TYPES));
   /** Drops a type made on demand (the next get rebuilds it); built-in ones stay. Returns whether it went. */
-  function evict(id) { if (BUILTIN.has(id) || !TYPES[id]) return false; delete TYPES[id]; return true; }
+  function evict(id) { if (BUILTIN.has(id) || !TYPES[id]) return false; delete TYPES[id]; MADE.delete(id); return true; }
+  // The types made on demand, least recently asked for first: past LRU of them, the oldest is dropped (a board of
+  // 12-block shapes makes a new one nearly every piece; every cache is keyed by id, and get rebuilds it).
+  const LRU = 512;
+  tracking = true;
+  function made(id) {
+    if (BUILTIN.has(id)) return;
+    MADE.delete(id); MADE.set(id, true);
+    while (MADE.size > LRU) evict(MADE.keys().next().value);
+  }
 
   /** A colour slot for a shape known by its key: one of the other shapes' slots, 9–14, the same every time. */
   function hashColor(key) {
@@ -262,8 +373,9 @@
 
   Object.assign(L, {
     Pieces: {
-      COLOR, TYPES, TETROMINOES, PENTOMINOES, MIRROR,
+      COLOR, TYPES, TETROMINOES, PENTOMINOES, PENTO18, MIRROR, LRU,
       get, bigOf, customType, mirrorOf, defineType, kicksFor, rotateCW, boundsOf, shapeKey, resolver, evict, hashColor, BUILTIN,
+      canonKey, parseKey, polyType, clusterType, isLinked, hasHole, made: () => MADE.size,
       normalize, keyOf, freeKey, isConnected, freePolyominoes,
     },
   });

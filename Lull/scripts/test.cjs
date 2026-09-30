@@ -8,7 +8,7 @@ const load = require('./load.cjs');
 const L = load([
   'util.js', 'pieces.js', 'board.js', 'recipe.js', 'engine.js', 'items.js', 'library.js', 'puzzlegen.js', 'factory.js', 'store.js', 'achievements.js',
   // The board options' pure parts (js/recipe.js): each branch replaces its own line.
-  // part:shapes
+  'polytable.js', 'minsize.js', 'shapes.js',
   'mirror.js',
   // part:jelly
   // part:protect
@@ -3405,11 +3405,13 @@ console.log('board recipe');
   const clone = (x) => JSON.parse(JSON.stringify(x));
   /** A throwaway part for one test (js/recipe.js): registered, used, taken away again. */
   const withParts = (defs, fn) => { defs.forEach((d) => Recipe.part(d)); try { return fn(); } finally { defs.forEach((d) => Recipe.unpart(d.key)); } };
+  /** The foundation alone: the feature parts loaded (shapes, …) taken away for one test, then put back. */
+  const bare = (fn) => { const had = Recipe.parts().filter((p) => p.key !== 'core'); had.forEach((p) => Recipe.unpart(p.key)); try { return fn(); } finally { had.forEach((p) => Recipe.part(p)); } };
   const fill = (g, rows) => rows.forEach((row, i) => { for (let x = 0; x < row.length; x++) if (row[x] !== '.') g.board.set(x, rows.length - 1 - i, row[x] === 'F' ? CELL.FOREIGN | 8 : row[x] === 'A' ? CELL.ASSET | 31 : 1 + (x % 7)); });
   /** Sets the piece in play to `id` at column x (its box), turned rot, from the top, and drops it. */
   const dropAt = (g, id, x, rot) => { g.piece = { type: Pieces.get(id), rot: rot || 0, x, y: g.h - 4, special: null, entry: { id, rot: 0 }, lastRot: false }; return g.drop(); };
 
-  test('recipe: the default is today’s board, and anything unknown or invalid falls back to it', () => {
+  test('recipe: the default is today’s board, and anything unknown or invalid falls back to it', () => bare(() => {
     assert.deepStrictEqual(clone(Recipe.DEFAULT), { v: 1, shapes: { preset: 'normal' }, mods: { jelly: false, mirror: false }, mode: 'plain' });
     assert(Object.isFrozen(Recipe.DEFAULT) && Object.isFrozen(Recipe.DEFAULT.mods));
     for (const junk of [null, undefined, 5, 'x', [], { mode: 'battle' }, { mode: 'protect', protect: { level: 'easy' } }, { mods: { jelly: true, mirror: 1 } }, { shapes: { preset: 'frantic' }, extra: 1 }, { v: 9 }]) {
@@ -3422,7 +3424,7 @@ console.log('board recipe');
     const t = Recipe.thin(Recipe.DEFAULT);
     assert.deepStrictEqual(t, clone(Recipe.DEFAULT));
     assert(t !== Recipe.DEFAULT && !Object.isFrozen(t));
-  });
+  }));
 
   test('recipe: sizes clamp into the limits every part has raised (Library.clampSize with a recipe goes there)', () => {
     assert.deepStrictEqual(Recipe.limits(Recipe.DEFAULT), { w: [4, 20], h: [8, 40] });
@@ -3484,7 +3486,7 @@ console.log('board recipe');
     });
   });
 
-  test('recipe: parts run in their order, never in the order they registered; labels; the last choice wins', () => {
+  test('recipe: parts run in their order, never in the order they registered; labels; the last choice wins', () => bare(() => {
     const log = [];
     const mk = (key, order) => ({ key, order, engine: () => ({ step: () => log.push(key), afterPlace: () => log.push(key + ':placed') }) });
     withParts([mk('tzz', 50), mk('taa', 10), mk('tmm', 30)], () => {
@@ -3525,7 +3527,7 @@ console.log('board recipe');
       assert.strictEqual(res.recipe.mods.mirror, true, 'and back on once the mode allows it');
       assert.deepStrictEqual(memo, {});
     });
-  });
+  }));
 
   test('recipe: a board keeps its recipe and its parts’ state through the save, the library and a retire; junk is made safe', () => {
     const part = {
@@ -4781,6 +4783,9 @@ require('./econ-test.cjs')(test, L);
 
 // The Mirror modifier's rules (scripts/mirror-unit.cjs).
 require('./mirror-unit.cjs')({ L, test });
+
+// Shapes, the board recipe's shape sets (scripts/shapes-test.cjs).
+require('./shapes-test.cjs')(test, L);
 
 // The Home Screen web app: the offline copy, the manifest and icons, the deployed build (scripts/web-test.cjs).
 require('./web-test.cjs')(test).then(() => {
