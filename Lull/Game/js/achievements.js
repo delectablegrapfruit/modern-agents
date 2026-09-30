@@ -14,7 +14,7 @@
     // "No power-ups on the board" (the skill ones) is said in each description; what it means exactly, once, here.
     // Board sizes (js/library.js): lines count by width, and a board narrower than Standard makes feats easy.
     { id: 'play', name: 'Free Play', icon: 'play', noteTitle: 'How these count',
-      note: 'No power-ups on the board: none used since the board was last empty. Luck power-ups, and one taken back before its piece is set, do not count. Lines count by width: a line on a board 5 wide is half of one, on 20 wide two. Feats count on boards 10 wide or more.' },
+      note: 'No power-ups on the board: none used since the board was last empty. Luck power-ups, and one taken back before its piece is set, do not count. Lines count by width: a line on a board 5 wide is half of one, on 20 wide two. Feats count on Normal shapes, 10 wide or more, not on Jelly boards.' },
     { id: 'classic', name: 'Classic', icon: 'classic' },
     { id: 'puzzle', name: 'Puzzles', icon: 'puzzle' },
     { id: 'lull', name: 'Lifetime', icon: 'lifetime' },
@@ -30,7 +30,7 @@
     // waited out: the skill ones count only what was done by hand — "no power-ups on the board" (no item that touches the pieces or the
     // board — Undo included — during the feat, or since the board was last empty; Luck items never count against
     // it: see freshStats in js/engine.js), the score ones only boards without a single item, and a few ask for pace.
-    { id: 'quad', group: 'play', name: 'Four at Once', desc: 'Clear 4 lines with one piece. No power-ups on the board.', pay: 15, on: 'play', test: (s, e) => e.r.lines >= 4 && e.r.hand },
+    { id: 'quad', group: 'play', name: 'Four at Once', desc: 'Clear 4 lines with one piece. No power-ups on the board.', pay: 15, on: 'play', test: (s, e) => quadOf(e.r) && e.r.hand },
     { id: 'tsd', group: 'play', name: 'Twist', desc: 'Clear 2 lines with a T-spin. No power-ups on the board.', pay: 20, on: 'play', test: (s, e) => e.r.tspin && e.r.lines === 2 && e.r.hand },
     { id: 'combo5', group: 'play', name: 'In the Groove', desc: 'Reach a 5-combo. No power-ups on the board.', pay: 25, on: 'play', test: (s, e) => hs(e).hcombo >= 5 },
     { id: 'b2b3', group: 'play', name: 'Back to Back to Back', desc: '3 quads or T-spins back to back. No power-ups on the board.', pay: 30, on: 'play', test: (s, e) => hs(e).hb2b >= 3 },
@@ -44,28 +44,28 @@
     { id: 'golden_ts', group: 'play', name: 'Gilded Twist', desc: 'T-spin triple while gold is out. No other power-ups on the board.', pay: 75, on: 'play', test: (s, e) => e.r.golden && e.r.tspin && e.r.lines >= 3 && e.r.hand },
     // Pace: the last hundred pieces set by hand, timed on the wall clock (nothing pauses it), clearing 36 lines —
     // a tidy stack at a steady clip.
-    { id: 'pace33', group: 'play', name: 'Allegro', desc: '100 pieces in 3 minutes, clearing 36+ lines. No power-ups on the board.', pay: 90, on: 'play', test: (s, e) => pace(e.g, 180e3) },
+    { id: 'pace33', group: 'play', name: 'Allegro', desc: '100 pieces in 3 minutes, clearing 36+ lines. No power-ups on the board.', pay: 90, on: 'play', counts: (r, g, R) => paceCounts(R), test: (s, e) => pace(e.g, 180e3) },
     { id: 'quads4', group: 'play', name: 'Quartet', desc: '4 quads in a row, no other clears between. No power-ups on the board.', pay: 90, on: 'play', test: (s, e) => hs(e).hquads >= 4 },
     { id: 'lines500', group: 'play', name: 'Marathon', desc: 'Clear 500 lines on one board.', pay: 90, on: 'play', test: (s, e) => std(e.g) >= 500, progress: (s) => [s.stats.free.bestLines, 500] },
     { id: 'b2b8', group: 'play', name: 'Relentless', desc: '8 quads or T-spins back to back. No power-ups on the board.', pay: 100, on: 'play', test: (s, e) => hs(e).hb2b >= 8 },
     { id: 'tst_b2b', group: 'play', name: 'Spiral Staircase', desc: 'A back-to-back T-spin triple. No power-ups on the board.', pay: 100, on: 'play', test: (s, e) => e.r.tspin && e.r.lines >= 3 && e.r.hand && hs(e).hb2b >= 1 },
     { id: 'old_growth', group: 'play', name: 'Old Growth', desc: 'Keep one board for 30 days and 2,000 pieces.', pay: 100, on: 'play', test: (s, e) => e.g.s.pieces >= 2000 && Date.now() - (e.g.s.startedAt || Date.now()) >= 30 * 86400e3 },
     // The perfect-clear opener: ten pieces from an empty board, four lines, nothing left, no items.
-    { id: 'pc_open', group: 'play', name: 'Opening Act', desc: 'Clear the whole board within the first 10 pieces. No power-ups used.', pay: 100, on: 'play', test: (s, e) => e.r.perfect && e.g.s.pieces <= 10 && e.g.s.pieces * 4 === e.g.s.lines * e.g.w && !usedItems(e.g) },
+    { id: 'pc_open', group: 'play', name: 'Opening Act', desc: 'Clear the whole board within the first 10 pieces. No power-ups used.', pay: 100, on: 'play', test: (s, e) => e.r.perfect && e.g.s.pieces <= 10 && cellsOf(e.g) === e.g.s.lines * e.g.w && !usedItems(e.g) },
     // Power-ups played well: three different power-up combos on one board.
     { id: 'it_showman', group: 'play', name: 'Showman', desc: 'Find 3 different power-up combos on one board.', pay: 100, on: 'play', test: (s, e) => itemCombos(e.g) >= 3 },
     { id: 'pc3', group: 'play', name: 'Spotless', desc: 'Clear the whole board 3 times on one board. No power-ups on the board.', pay: 125, on: 'play', test: (s, e) => (e.g.s.hperfect || 0) >= 3 },
-    { id: 'pc_b2b', group: 'play', name: 'Grand Finale', desc: 'A back-to-back quad that clears the whole board. No power-ups on the board.', pay: 125, on: 'play', test: (s, e) => e.r.perfect && e.r.lines >= 4 && e.r.b2b && e.r.hand && hs(e).hb2b >= 1 },
+    { id: 'pc_b2b', group: 'play', name: 'Grand Finale', desc: 'A back-to-back quad that clears the whole board. No power-ups on the board.', pay: 125, on: 'play', test: (s, e) => e.r.perfect && quadOf(e.r) && e.r.b2b && e.r.hand && hs(e).hb2b >= 1 },
     { id: 'all_items', group: 'play', name: 'Tried Everything', desc: 'Use every power-up once.', pay: 125, on: 'play', test: (s) => itemsTried(s) >= L.ITEM_ORDER.length, progress: (s) => [itemsTried(s), L.ITEM_ORDER.length] },
     { id: 'it_sweep', group: 'play', name: 'Clean Sweep', desc: 'Empty a board of 60+ blocks with one power-up.', pay: 125, on: 'play', test: (s, e) => swept(e) },
     { id: 'score250k', group: 'play', name: 'Quarter Million', desc: 'Score 250,000 on one board. No power-ups used.', pay: 150, on: 'play', test: (s, e) => e.g.s.score >= 250000 && !usedItems(e.g) },
     { id: 'sb_combos', group: 'play', name: 'Tinkerer', desc: 'Find every Free Play combo.', pay: 150, on: 'play', test: (s) => combosFound(s) >= combosAll(), progress: (s) => [combosFound(s), combosAll()] },
     { id: 'tspin100', group: 'play', name: 'Spin Cycle', desc: '100 line-clearing T-spins on one board. No power-ups on the board.', pay: 175, on: 'play', test: (s, e) => (e.g.s.htspins || 0) >= 100 },
     // Forty lines in a hundred pieces is every block cleared: a perfect clear on the hundredth piece.
-    { id: 'clean40', group: 'play', name: 'Nothing Left Over', desc: 'Clear 40 lines in the first 100 pieces, ending empty. No power-ups used.', pay: 200, on: 'play', test: (s, e) => e.r.perfect && std(e.g) >= 40 && e.g.s.pieces <= 100 && e.g.s.pieces * 4 === e.g.s.lines * e.g.w && !usedItems(e.g) },
+    { id: 'clean40', group: 'play', name: 'Nothing Left Over', desc: 'Clear 40 lines in the first 100 pieces, ending empty. No power-ups used.', pay: 200, on: 'play', test: (s, e) => e.r.perfect && std(e.g) >= 40 && e.g.s.pieces <= 100 && cellsOf(e.g) === e.g.s.lines * e.g.w && !usedItems(e.g) },
 
     { id: 'chain20', group: 'play', name: 'Maxed Out', desc: 'Reach a chain of 20. No power-ups on the board.', pay: 250, tier: 'legend', on: 'play', test: (s, e) => hs(e).hchain >= 20 },
-    { id: 'pace67', group: 'play', name: 'Presto', desc: '100 pieces in 90 seconds, clearing 36+ lines. No power-ups on the board.', pay: 300, tier: 'legend', on: 'play', test: (s, e) => pace(e.g, 90e3) },
+    { id: 'pace67', group: 'play', name: 'Presto', desc: '100 pieces in 90 seconds, clearing 36+ lines. No power-ups on the board.', pay: 300, tier: 'legend', on: 'play', counts: (r, g, R) => paceCounts(R), test: (s, e) => pace(e.g, 90e3) },
     { id: 'pc_tspin', group: 'play', name: 'Twist Ending', desc: 'Clear the whole board with a T-spin. No power-ups on the board.', pay: 300, tier: 'legend', on: 'play', test: (s, e) => e.r.perfect && e.r.tspin && e.r.hand },
     { id: 'quads10', group: 'play', name: 'Ten Tall', desc: '10 quads in a row, no other clears between. No power-ups on the board.', pay: 325, tier: 'legend', on: 'play', test: (s, e) => hs(e).hquads >= 10 },
     { id: 'pc10', group: 'play', name: 'Perfect Ten', desc: 'Clear the whole board 10 times on one board. No power-ups on the board.', pay: 350, tier: 'legend', on: 'play', test: (s, e) => (e.g.s.hperfect || 0) >= 10 },
@@ -164,19 +164,35 @@
 
   /** The board's numbers after this lock (its hand counts: see freshStats in js/engine.js). */
   const hs = (e) => e.g.s;
-  // Board sizes (js/library.js). Lines are counted in Standard lines: a line w wide is w/10 of one.
-  const scale = (g) => (L.Library ? L.Library.scale(g.w) : 1);
-  /** The board's lines, in Standard lines. */
-  const std = (g) => g.s.lines * scale(g);
-  /** A board narrower than Standard: quads, combos, perfect clears and points come in a few pieces there. */
-  const narrow = (g) => !!g && g.w < (L.Library ? L.Library.STANDARD.w : 10);
+  // Board sizes and recipes (js/library.js, js/recipe.js). Lines are counted in Standard lines: a row on a board is
+  // worth Library.worth of one (w/10 on a Normal board).
+  const scale = (g) => (L.Library ? L.Library.worth(g) : 1);
+  /** The board's rules (a Game's own; a board made by hand in a test: a Normal board of its width). */
+  const rulesOf = (g) => (g && g.rules ? g.rules : L.Recipe ? L.Recipe.rules(g && g.recipe, g && g.w) : { feats: !!g && g.w >= 10, f: 1, rated: true, u: 1, copies: 1 });
+  /** The board's lines, in Standard lines (s.own: its own cells cleared, by rows). */
+  const std = (g) => (g.s.own !== undefined ? g.s.own : g.s.lines) * scale(g);
+  /** Cells placed on the board (a board made before it was counted: four a piece). */
+  const cellsOf = (g) => (g.s.cells != null ? g.s.cells : g.s.pieces * 4);
+  /** A quad set by a piece (the board's R.quad rows: 4 on Normal shapes); a result made by hand, 4 own lines. */
+  const quadOf = (r) => (r.quad !== undefined ? !!r.quad : (r.lines || 0) - (r.plain || 0) >= 4);
+  /**
+   * Where the Free Play feats do not count (!R.feats): a board narrower than Standard (quads, combos, perfect clears and
+   * points come in a few pieces there), shapes other than Normal, Jelly.
+   */
+  const narrow = (g) => !!g && !rulesOf(g).feats;
   // Free Play ones that count on any board: counted in Standard lines (the line counts and pace), by width (Clean
-  // Sweep), or not about the stack at all. Every other Free Play one counts only on a board at least Standard width.
+  // Sweep), or not about the stack at all. Every other Free Play one counts only where the feats do (R.feats). One that
+  // says where it counts itself (counts(recipe, g, R): the pace ones, and any a board option adds) goes by that.
   const ANY_SIZE = new Set(['lines150', 'lines500', 'lines5000', 'purist', 'pace33', 'pace67', 'it_sweep', 'toolbox', 'all_items', 'sb_combos', 'old_growth']);
   /** The last hundred pieces by hand: within ms, clearing 36 lines or more. */
   const pace = (g, ms) => { const p = L.paceOf ? L.paceOf(g.s, 100) : null; return !!p && p.ms <= ms && p.lines * scale(g) >= 36; };
+  /**
+   * The pace ones count at any width (a hundred pieces are forty Standard lines' worth anywhere), but only where a piece
+   * is a Normal piece: no Big, no Mirror copy, rated shapes, no Jelly.
+   */
+  const paceCounts = (R) => !!R && !!R.rated && !R.noFeats && R.u === 1 && R.copies === 1;
   /** One power-up (a Tool piece or a Board item) took a board of 60 blocks or more to empty: six rows' worth on a board wider than Standard. */
-  const swept = (e) => !!e.r.special && (e.r.had || 0) >= 60 * Math.max(1, scale(e.g)) && e.g.board.isEmpty();
+  const swept = (e) => !!e.r.special && (e.r.had || 0) >= 60 * Math.max(1, scale(e.g)) / (rulesOf(e.g).f || 1) && (e.g.isClean ? e.g.isClean() : e.g.board.isEmpty());
   /** Different power-up combos found on this board. */
   const itemCombos = (g) => (L.Combos ? L.Combos.LIST.filter((c) => c.kind === 'item' && (g.s.combos || {})[c.id]).length : 0);
   const combosAll = () => (L.Combos ? L.Combos.LIST.length : 1);
@@ -209,7 +225,12 @@
     const out = [];
     for (const a of LIST) {
       if (got[a.id] || (a.on !== event.mode && a.on !== 'any')) continue;
-      if (a.on === 'play' && !ANY_SIZE.has(a.id) && narrow(event.g)) continue;
+      if (a.on === 'play') {
+        // Where it counts: its own rule (counts), else anywhere (ANY_SIZE), else where the feats do.
+        const g = event.g;
+        if (a.counts) { if (!g || !a.counts(g.recipe || (L.Recipe && L.Recipe.DEFAULT), g, rulesOf(g))) continue; }
+        else if (!ANY_SIZE.has(a.id) && narrow(g)) continue;
+      }
       let ok = false;
       try { ok = !!a.test(state, event); } catch (e) { ok = false; }
       if (ok) { got[a.id] = Date.now(); out.push(a); }
@@ -249,5 +270,34 @@
   /** An achievement's group (its place to play: the colour and icon it is shown with). */
   function groupOf(a) { return GROUPS.find((g) => g.id === a.group) || GROUPS[0]; }
 
-  L.Achievements = { LIST, GROUPS, ANY_SIZE, groupOf, check, total, puzzleRuns, earned, recent };
+  /**
+   * Adds achievements (a board option's): each { id, group, name, desc, pay, on, test, counts? }. counts(recipe, g,
+   * R) says on which boards it counts (Knock-On: a Jelly board), in place of the feats' rule. An id already there is
+   * replaced.
+   */
+  function add(...defs) {
+    for (const a of defs.flat()) {
+      const i = LIST.findIndex((x) => x.id === a.id);
+      if (i >= 0) LIST.splice(i, 1, a); else LIST.push(a);
+    }
+  }
+  /**
+   * Registers a group (a board option's own: Protect, Battle): { id, name, icon, note?, noteTitle?, after?, list? },
+   * shown after the group `after` (by default, after Free Play's last board-option group), its list added (add).
+   */
+  function group(def) {
+    const i = GROUPS.findIndex((g) => g.id === def.id);
+    const g = Object.assign({}, def);
+    delete g.list;
+    if (i >= 0) GROUPS.splice(i, 1, g);
+    else {
+      let at = GROUPS.findIndex((x) => x.id === (def.after || 'play'));
+      while (at >= 0 && at + 1 < GROUPS.length && GROUPS[at + 1].part) at++;
+      GROUPS.splice(at < 0 ? GROUPS.length : at + 1, 0, Object.assign(g, { part: true }));
+    }
+    if (def.list) add(def.list.map((a) => Object.assign({ group: def.id }, a)));
+    return g;
+  }
+
+  L.Achievements = { LIST, GROUPS, ANY_SIZE, groupOf, check, total, puzzleRuns, earned, recent, add, group, rulesOf };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

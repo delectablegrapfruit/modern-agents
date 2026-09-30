@@ -193,6 +193,7 @@
       const prev = this.tab;
       if (prev === 'factory' && id !== 'factory') this.modes.factory.hide();
       if (prev === 'classic' && id !== 'classic') { this.modes.classic.togglePause(true); L.Music.stop(); }
+      if (prev === 'play' && id !== 'play') this.pausePlay('tab');
       if (prev === 'achievements' && id !== 'achievements') this.achMenu = false;
       this.tab = id;
       this.state.tab = id;
@@ -248,10 +249,12 @@
         if (e.key === 'Escape' && this.tab === 'play' && this.modes.play.closeTray()) { e.preventDefault(); return; }
         if (e.key === 'Escape' && native.available) { this.saveNow(); native.post('hide'); return; }
         if (this.tab === 'factory' && !e.metaKey && !e.ctrlKey && this.modes.factory.key(e)) { e.preventDefault(); return; }
+        // A Free Play board's controller takes its own keys first (Battle's S and Shift+S).
+        if (this.tab === 'play' && !e.metaKey && !e.ctrlKey && this.modes.play.key(e)) { e.preventDefault(); this.activity(); return; }
         if (this.keys.down(e)) this.activity();
       });
       root.addEventListener('keyup', (e) => this.keys.up(e));
-      root.addEventListener('blur', () => { this.keys.releaseAll(); if (this.modes.classic && this.modes.classic.running()) this.modes.classic.togglePause(true); });
+      root.addEventListener('blur', () => { this.keys.releaseAll(); this.onAway('blur'); });
       root.addEventListener('focus', () => { this.focusedAt = performance.now(); setTimeout(() => this.announceUnheard(), 400); });
       root.addEventListener('mousedown', () => this.activity(), true);
       root.addEventListener('pointerdown', () => this.activity(), true);
@@ -261,7 +264,7 @@
         const b = e.target && e.target.closest && e.target.closest('button');
         if (b && !b.closest('.modal')) setTimeout(() => b.blur(), 0);
       });
-      document.addEventListener('visibilitychange', () => { if (document.hidden) { if (this.modes.classic) this.modes.classic.finishPile({ quiet: true }); this.saveNow(); L.Music.stop(); } else { this.modes.factory.catchUp(true); setTimeout(() => this.announceUnheard(), 400); } });
+      document.addEventListener('visibilitychange', () => { if (document.hidden) { if (this.modes.classic) this.modes.classic.finishPile({ quiet: true }); this.pausePlay('hidden'); this.saveNow(); L.Music.stop(); } else { this.modes.factory.catchUp(true); setTimeout(() => this.announceUnheard(), 400); } });
       root.addEventListener('pagehide', () => this.saveNow());
       root.addEventListener('beforeunload', () => this.saveNow());
       root.addEventListener('resize', () => { this.onResize(); });
@@ -297,12 +300,27 @@
 
     activity() { this.lastActivity = performance.now(); },
 
-    /** The pointer has left Lull's window: a running Classic game pauses, as P would. */
+    /** The pointer has left Lull's window: a running Classic game pauses, as P would (and a timed board, the same way). */
     pointerLeft() {
       if (this.touchNow()) return; // a finger lifting is not a pointer leaving (Classic pauses when the page is hidden)
-      const c = this.modes.classic;
-      if (this.settings.pauseAway !== false && c && c.running()) c.togglePause(true);
+      this.onAway('pointer');
     },
+
+    /**
+     * Lull is no longer in front: the window lost focus ('blur'), or the pointer left it ('pointer', only with Settings
+     * ▸ Controls ▸ Pause Classic when the pointer leaves). A running Classic game pauses, and so does the Free Play
+     * board's controller (ctl.pause: a timed board stops its clock; the plain one has none).
+     */
+    onAway(why) {
+      const c = this.modes.classic;
+      if (why === 'blur' || this.settings.pauseAway !== false) {
+        if (c && c.running()) c.togglePause(true);
+        this.pausePlay(why);
+      }
+    },
+
+    /** The Free Play board's controller is told to pause (a window, the tab, the page hidden, away, rolled up). */
+    pausePlay(why) { const p = this.modes.play; if (p && p.ctl) p.ctl.pause(why); },
 
     /** Touch in use (a finger was down a moment ago, or the device has no mouse or trackpad at all). */
     touchNow() { return !!(L.Touch && (L.Touch.recent() || L.Touch.only)); },
@@ -370,7 +388,9 @@
       const dt = this.frameStep || Math.min(0.1, Math.max(0, (t - this.lastTime) / 1000));
       this.lastTime = t;
       this.keys.update(t);
-      if (L.Collapse.on) { /* rolled up: the boards and the floor rest (the factory runs on in second()) */ }
+      // Rolled up, the boards and the floor rest (the factory runs on in second()); a timed board pauses.
+      if (L.Collapse.on !== !!this.rolled) { this.rolled = !!L.Collapse.on; if (this.rolled) this.pausePlay('collapse'); }
+      if (L.Collapse.on) { /* resting */ }
       else if (this.tab === 'play') this.modes.play.frame(t, dt);
       else if (this.tab === 'classic') this.modes.classic.frame(t, dt);
       else if (this.tab === 'puzzle') this.modes.puzzle.frame(t, dt);
@@ -391,7 +411,12 @@
         const S = this.state.stats.timeMs;
         S.total += 1000;
         // (A retired board in full view is not play: the board in play's time waits.)
-        if (this.tab === 'play') { if (!this.modes.play.fullView) { S.play += 1000; const bs = this.modes.play.game.s; bs.playMs = (bs.playMs || 0) + 1000; } }
+        if (this.tab === 'play' && !this.modes.play.fullView) {
+          S.play += 1000;
+          // The board's own Played time, while its controller says this second counts (a paused timed board does not).
+          const pm = this.modes.play, bs = pm.game.s;
+          if (!pm.ctl || pm.ctl.counts()) bs.playMs = (bs.playMs || 0) + 1000;
+        }
         else if (this.tab === 'classic') S.classic = (S.classic || 0) + 1000;
         else if (this.tab === 'puzzle') S.puzzle += 1000;
         else if (this.tab === 'factory') S.factory += 1000;

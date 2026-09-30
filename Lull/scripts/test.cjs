@@ -5,7 +5,15 @@
 'use strict';
 const assert = require('assert');
 const load = require('./load.cjs');
-const L = load(['util.js', 'pieces.js', 'board.js', 'engine.js', 'items.js', 'library.js', 'puzzlegen.js', 'factory.js', 'store.js', 'achievements.js']);
+const L = load([
+  'util.js', 'pieces.js', 'board.js', 'recipe.js', 'engine.js', 'items.js', 'library.js', 'puzzlegen.js', 'factory.js', 'store.js', 'achievements.js',
+  // The board options' pure parts (js/recipe.js): each branch replaces its own line.
+  // part:shapes
+  // part:mirror
+  // part:jelly
+  // part:protect
+  // part:battle
+]);
 const { Pieces, Board, Game, Puzzles, Factory, RNG } = L;
 
 let passed = 0, failed = 0;
@@ -1840,7 +1848,9 @@ test('achievements: a fresh save and a short ordinary game earn nothing', () => 
 test('achievements: every new one is earned by its own feat, once', () => {
   const A = L.Achievements;
   const fresh = () => { const st = L.defaultState(); return st; };
-  const board = (o) => { const g = new Game({ w: 10, h: 20, seed: 1 }); Object.assign(g.s, o || {}); return g; };
+  // A Normal board's stats as they would be: its own rows are its lines, and its cells four a piece (js/engine.js, score).
+  const asPlayed = (s, o) => Object.assign(s, o || {}, o && 'lines' in o && !('own' in o) ? { own: o.lines } : null, o && 'pieces' in o && !('cells' in o) ? { cells: o.pieces * 4 } : null);
+  const board = (o) => { const g = new Game({ w: 10, h: 20, seed: 1 }); asPlayed(g.s, o); return g; };
   const play = (r, s) => ({ mode: 'play', r: Object.assign({ lines: 0, combo: 0 }, r), g: board(s) });
   const classic = (o, s) => Object.assign({ mode: 'classic', r: { lines: 0, combo: 0 }, g: board(s), score: 0, level: 1, lines: 0, tetrises: 0, ms: 1e7 }, o);
   const puzzle = (o) => Object.assign({ mode: 'puzzle', diff: 'H', firstTry: false, hinted: false, undos: 0, ms: 60000, mods: [] }, o);
@@ -3351,7 +3361,8 @@ console.log('board sizes');
     assert.strictEqual(L.Earn.lines(e, 1, (n - 1) * k, (n - 2) * k), 0);
     assert.strictEqual(L.Earn.lines(e, 1, n * k, (n - 1) * k), 1);
     const A = L.Achievements;
-    const on = (w, h, s, r) => { const g = new Game({ w, h, seed: 1 }); Object.assign(g.s, s || {}); return { mode: 'play', r: Object.assign({ lines: 1, combo: 0 }, r), g }; };
+    const asPlayed = (s, o) => Object.assign(s, o || {}, o && 'lines' in o && !('own' in o) ? { own: o.lines } : null, o && 'pieces' in o && !('cells' in o) ? { cells: o.pieces * 4 } : null);
+    const on = (w, h, s, r) => { const g = new Game({ w, h, seed: 1 }); asPlayed(g.s, s); return { mode: 'play', r: Object.assign({ lines: 1, combo: 0 }, r), g }; };
     const ids = (st, ev) => A.check(st, ev).map((a) => a.id);
     let st = L.defaultState();
     assert.deepStrictEqual(ids(st, on(5, 20, { lines: 299 })), [], '299 lines 5 wide are under 150');
@@ -3383,6 +3394,721 @@ console.log('board sizes');
     const painted = (w) => { const g = new Game({ w, h: 20, seed: 1 }); return L.Combos.detect({ lines: 1, removed: [Array(w).fill(1)] }, g); };
     assert.deepStrictEqual([painted(4), painted(9), painted(10), painted(16)], [[], [], ['painted'], ['painted']]);
     assert(['lines150', 'lines500', 'lines5000', 'purist', 'pace33', 'pace67', 'it_sweep'].every((id) => A.ANY_SIZE.has(id)));
+  });
+}
+
+console.log('board recipe');
+{
+  const { Recipe, Library, CELL, Pay } = L;
+  const clone = (x) => JSON.parse(JSON.stringify(x));
+  /** A throwaway part for one test (js/recipe.js): registered, used, taken away again. */
+  const withParts = (defs, fn) => { defs.forEach((d) => Recipe.part(d)); try { return fn(); } finally { defs.forEach((d) => Recipe.unpart(d.key)); } };
+  const fill = (g, rows) => rows.forEach((row, i) => { for (let x = 0; x < row.length; x++) if (row[x] !== '.') g.board.set(x, rows.length - 1 - i, row[x] === 'F' ? CELL.FOREIGN | 8 : row[x] === 'A' ? CELL.ASSET | 31 : 1 + (x % 7)); });
+  /** Sets the piece in play to `id` at column x (its box), turned rot, from the top, and drops it. */
+  const dropAt = (g, id, x, rot) => { g.piece = { type: Pieces.get(id), rot: rot || 0, x, y: g.h - 4, special: null, entry: { id, rot: 0 }, lastRot: false }; return g.drop(); };
+
+  test('recipe: the default is today’s board, and anything unknown or invalid falls back to it', () => {
+    assert.deepStrictEqual(clone(Recipe.DEFAULT), { v: 1, shapes: { preset: 'normal' }, mods: { jelly: false, mirror: false }, mode: 'plain' });
+    assert(Object.isFrozen(Recipe.DEFAULT) && Object.isFrozen(Recipe.DEFAULT.mods));
+    for (const junk of [null, undefined, 5, 'x', [], { mode: 'battle' }, { mode: 'protect', protect: { level: 'easy' } }, { mods: { jelly: true, mirror: 1 } }, { shapes: { preset: 'frantic' }, extra: 1 }, { v: 9 }]) {
+      assert.deepStrictEqual(clone(Recipe.normalize(junk)), clone(Recipe.DEFAULT), JSON.stringify(junk));
+      assert(Recipe.equal(junk, Recipe.DEFAULT) && Recipe.isDefault(junk));
+    }
+    assert.strictEqual(Recipe.key({ mode: 'plain', v: 1 }), Recipe.key({ v: 1, mode: 'plain' }), 'key order is not meaning');
+    assert.strictEqual(Recipe.label(Recipe.DEFAULT), '');
+    assert.strictEqual(Recipe.label({}, true), '');
+    const t = Recipe.thin(Recipe.DEFAULT);
+    assert.deepStrictEqual(t, clone(Recipe.DEFAULT));
+    assert(t !== Recipe.DEFAULT && !Object.isFrozen(t));
+  });
+
+  test('recipe: sizes clamp into the limits every part has raised (Library.clampSize with a recipe goes there)', () => {
+    assert.deepStrictEqual(Recipe.limits(Recipe.DEFAULT), { w: [4, 20], h: [8, 40] });
+    assert.deepStrictEqual(Recipe.clampSize({ w: 2, h: 99 }, Recipe.DEFAULT), { w: 4, h: 40 });
+    assert.deepStrictEqual(Recipe.clampSize(null, Recipe.DEFAULT), { w: 10, h: 20 });
+    assert.deepStrictEqual(Library.clampSize({ w: 12.4, h: 'x' }, Recipe.DEFAULT), Library.clampSize({ w: 12.4, h: 'x' }));
+    withParts([{ key: 'tbig', order: 45, owns: ['tbig'], normalize: (raw, out) => { if (raw.tbig === true) out.tbig = true; }, limits: (r, lim) => { if (r.tbig) { lim.w[0] = 6; lim.h[0] = 12; } } }], () => {
+      const r = { tbig: true };
+      assert.deepStrictEqual(Recipe.limits(r), { w: [6, 20], h: [12, 40] });
+      assert.deepStrictEqual(Recipe.clampSize({ w: 4, h: 8 }, r), { w: 6, h: 12 });
+      assert.deepStrictEqual(Library.clampSize({ w: 4, h: 8 }, r), { w: 6, h: 12 });
+      assert(!Recipe.sizeOk(4, 8, r) && Recipe.sizeOk(6, 12, r) && Recipe.sizeOk(4, 8, Recipe.DEFAULT));
+      assert.deepStrictEqual(clone(Recipe.DEFAULT), { v: 1, shapes: { preset: 'normal' }, mods: { jelly: false, mirror: false }, mode: 'plain' }, 'a part that is off leaves the default alone');
+    });
+  });
+
+  test('recipe: R, the rules: the defaults, and f, lk, wEff, feats and quad derived from what the parts set', () => {
+    const R = Recipe.rules(Recipe.DEFAULT, 10);
+    for (const [k, v] of Object.entries({ u: 1, copies: 1, E: 4, f: 1, lk: 1, wEff: 10, feats: true, quad: 4, undo: true, hints: true, rated: true, timed: false, noFeats: false, k: 0 })) assert.strictEqual(R[k], v, k);
+    assert.deepStrictEqual(R.refuse, {});
+    for (let w = 4; w <= 20; w++) {
+      assert.strictEqual(Recipe.rules({}, w).lk, Library.scale(w), 'lk is w/10 on a Normal board, ' + w);
+      assert.strictEqual(Recipe.rules({}, w).feats, w >= 10);
+    }
+    withParts([{ key: 'trules', order: 45, rules: (r, R) => { R.E = 8; R.copies = 2; R.u = 2; R.rated = false; } }], () => {
+      const T = Recipe.rules({}, 16);
+      assert.deepStrictEqual([T.f, T.lk, T.wEff, T.quad, T.feats], [0.5, 0.8, 4, 8, false]);
+      assert.deepStrictEqual(T.refuse, { double: 'Needs Normal shapes', net: 'Needs Normal shapes' }, 'unrated: Double or Nothing and Safety Net are refused');
+      const g = new Game({ w: 16, h: 20, seed: 1, recipe: {} });
+      assert.strictEqual(g.allow('double'), 'Needs Normal shapes');
+      assert.strictEqual(g.allow('bomb'), null);
+      assert.strictEqual(Library.worth(g), 0.8);
+      assert.strictEqual(Library.worth({ w: 16, recipe: {} }), 0.8, 'a saved board: from its recipe');
+    });
+  });
+
+  test('recipe: Full Blast and Event Horizon count one copy\'s share (R.copies), or a part\'s own count (comboCount); a plain board every cell', () => {
+    const cells = (n) => Array.from({ length: n }, (_, i) => [i % 10, Math.floor(i / 10), 1]);
+    const found = (g, r) => L.Combos.detect(Object.assign({ lines: 0 }, r), g);
+    const plain = new Game({ w: 10, h: 20, seed: 1, recipe: {} });
+    assert.deepStrictEqual(found(plain, { special: 'bomb', blast: cells(10) }), ['fullblast'], 'plain: ten blocks is Full Blast');
+    assert.deepStrictEqual(found(plain, { special: 'bomb', blast: cells(9) }), []);
+    assert.deepStrictEqual(found(plain, { special: 'blackhole', swallowed: cells(20) }), ['horizon']);
+    assert.strictEqual(L.Combos.blocksOf('fullblast', cells(12), plain), 12);
+    assert.strictEqual(L.Combos.blocksOf('fullblast', cells(12), { w: 10, s: {} }), 12, 'a board with no rules: every cell');
+    withParts([{ key: 'tcopy', order: 45, rules: (r, R) => { R.copies = 2; } }], () => {
+      const g = new Game({ w: 10, h: 20, seed: 1, recipe: {} });
+      assert.deepStrictEqual(found(g, { special: 'bomb', blast: cells(19) }), [], 'two copies: 19 blocks is 9.5 on one half');
+      assert.deepStrictEqual(found(g, { special: 'bomb', blast: cells(20) }), ['fullblast']);
+      assert.deepStrictEqual(found(g, { special: 'blackhole', swallowed: cells(39) }), []);
+      assert.deepStrictEqual(found(g, { special: 'blackhole', swallowed: cells(40) }), ['horizon']);
+    });
+    // A part's own count wins (here: only the left half's cells).
+    withParts([{ key: 'tcopy', order: 45, rules: (r, R) => { R.copies = 2; }, engine: () => ({ comboCount: (g, id, cs) => cs.filter(([x]) => x < g.w / 2).length }) }], () => {
+      const g = new Game({ w: 10, h: 20, seed: 1, recipe: {} });
+      assert.strictEqual(L.Combos.blocksOf('fullblast', cells(20), g), 10);
+      assert.deepStrictEqual(found(g, { special: 'bomb', blast: cells(20) }), ['fullblast']);
+      assert.deepStrictEqual(found(g, { special: 'bomb', blast: cells(10).concat(cells(9).map(([x, y, v]) => [x + 5, y + 5, v])) }), [], 'five on the left half only');
+    });
+  });
+
+  test('recipe: parts run in their order, never in the order they registered; labels; the last choice wins', () => {
+    const log = [];
+    const mk = (key, order) => ({ key, order, engine: () => ({ step: () => log.push(key), afterPlace: () => log.push(key + ':placed') }) });
+    withParts([mk('tzz', 50), mk('taa', 10), mk('tmm', 30)], () => {
+      assert.deepStrictEqual(Recipe.parts().map((p) => p.key), ['core', 'taa', 'tmm', 'tzz']);
+      const g = new Game({ w: 10, h: 20, seed: 1, recipe: {} });
+      assert.deepStrictEqual(g.ext.map((e) => [e.key, e.order]), [['taa', 10], ['tmm', 30], ['tzz', 50]]);
+      g.drop();
+      assert.deepStrictEqual(log, ['taa:placed', 'tmm:placed', 'tzz:placed', 'taa', 'tmm', 'tzz']);
+      const plain = new Game({ w: 10, h: 20, seed: 1 });
+      assert.deepStrictEqual(plain.ext, [], 'Classic and Puzzles (no recipe): no extensions');
+    });
+    const MODS = [
+      { key: 'tmirror', order: 20, mod: 'mirror' },
+      { key: 'tjelly', order: 30, mod: 'jelly' },
+      { key: 'tprotect', order: 40, mode: 'protect', owns: ['protect'],
+        normalize: (raw, out) => { if (out.mode === 'protect') out.protect = { level: ['easy', 'medium', 'hard'].includes(raw.protect && raw.protect.level) ? raw.protect.level : 'easy' }; },
+        label: (r) => (r.mode === 'protect' ? 'Protect ' + r.protect.level[0].toUpperCase() + r.protect.level.slice(1) : '') },
+      { key: 'tbattle', order: 50, mode: 'battle', label: (r) => (r.mode === 'battle' ? 'Battle' : ''), conflicts: (r, out) => { if (r.mode === 'battle') out['mods.mirror=true'] = 'Not in Battle'; } },
+    ];
+    withParts(MODS, () => {
+      assert.deepStrictEqual(clone(Recipe.DEFAULT), { v: 1, shapes: { preset: 'normal' }, mods: { jelly: false, mirror: false }, mode: 'plain' });
+      assert.strictEqual(Recipe.label({ mods: { mirror: true, jelly: true } }), 'Jelly, Mirror');
+      assert.strictEqual(Recipe.label({ mods: { jelly: true }, mode: 'protect', protect: { level: 'hard' } }, true), 'Jelly · Protect Hard');
+      assert.deepStrictEqual(Recipe.normalize({ mode: 'protect', protect: { level: 'nope' } }).protect, { level: 'easy' });
+      withParts([{ key: 'tshapes', order: 10, label: () => 'Frantic' }], () => {
+        assert.strictEqual(Recipe.label({ mods: { jelly: true }, mode: 'protect', protect: { level: 'easy' } }, true), 'Frantic \u00b7 Jelly \u00b7 Protect Easy', 'shapes, then modifiers, then the mode');
+      });
+      const memo = {};
+      let res = Recipe.resolve({ mods: { mirror: true }, mode: 'battle' }, 'mode', memo);
+      assert.strictEqual(res.recipe.mods.mirror, false, 'Battle turns Mirror off');
+      assert.deepStrictEqual(res.changes, [{ path: 'mods.mirror', from: true, to: false }]);
+      assert.deepStrictEqual(memo, { 'mods.mirror': true });
+      assert.deepStrictEqual(Recipe.conflicts(res.recipe), { 'mods.mirror=true': 'Not in Battle' });
+      res = Recipe.resolve(Object.assign(clone(res.recipe), { mode: 'plain' }), 'mode', memo);
+      assert.strictEqual(res.recipe.mods.mirror, true, 'and back on once the mode allows it');
+      assert.deepStrictEqual(memo, {});
+    });
+  });
+
+  test('recipe: a board keeps its recipe and its parts’ state through the save, the library and a retire; junk is made safe', () => {
+    const part = {
+      key: 'tkeep', order: 60, owns: ['tkeep'],
+      normalize: (raw, out) => { if (Array.isArray(raw.tkeep)) out.tkeep = raw.tkeep.filter((x) => typeof x === 'string'); },
+      thin: (r) => { if (r.tkeep) r.tkeep = r.tkeep.length; },
+      label: (r) => (r.tkeep ? r.tkeep.length + ' kept' : ''),
+      valid: (g, r) => !(r.tkeep && g.h < 12),
+      summary: (x) => (x ? { steps: x.steps } : null),
+      engine: (game, saved) => (game.recipe.tkeep ? { steps: saved ? saved.steps : 0, step() { this.steps++; }, save() { return { steps: this.steps }; }, summary() { return { steps: this.steps }; } } : null),
+    };
+    withParts([part], () => {
+      const r = { tkeep: ['a', 'b', 3] };
+      const g = new Game({ w: 10, h: 20, seed: 3, recipe: r });
+      for (let i = 0; i < 5; i++) g.drop();
+      const json = clone(g.toJSON());
+      assert.deepStrictEqual(json.recipe, Recipe.normalize(r));
+      assert.deepStrictEqual(json.x, { tkeep: { steps: 5 } });
+      const back = new Game({ saved: clone(json) });
+      assert(Recipe.equal(back.recipe, r) && back.ext[0].steps === 5, 'resumed with its recipe and its part’s state');
+      back.drop();
+      assert.strictEqual(back.toJSON().x.tkeep.steps, 6);
+      assert.strictEqual(new Game({ w: 10, h: 20, seed: 3 }).toJSON().recipe, undefined, 'no recipe, no key: Classic and Puzzles save as before');
+      assert(Library.playable(json));
+      // The library: shelved, taken back, retired (thinned), and made safe when it loads.
+      const st = L.loadState({});
+      st.free = json;
+      Library.ensure(st, 1000);
+      assert.deepStrictEqual(clone(st.boards.recipe), clone(Recipe.DEFAULT), 'the last choice starts as the default');
+      const idA = st.boards.cur;
+      Library.startNew(st, json, 2000);
+      assert.deepStrictEqual(Library.find(st.boards, idA).game.recipe, json.recipe);
+      const opened = Library.open(L.loadState(clone(st)) && st, idA, new Game({ w: 10, h: 20, seed: 4, recipe: {} }).toJSON(), 3000);
+      assert.deepStrictEqual(opened.recipe, json.recipe);
+      const entry = Library.retire(st, st.boards.cur, opened, 4000, 'manual');
+      assert.deepStrictEqual(entry.recipe.tkeep, 2, 'a retired record keeps a thin copy');
+      assert.deepStrictEqual(entry.sum.ext, { tkeep: { steps: 5 } }, 'and the parts’ own numbers in its summary');
+      assert.deepStrictEqual(Library.summarize(g.s, 5000, g).ext, { tkeep: { steps: 5 } }, 'from a live game too');
+      const junk = L.loadState(clone(st));
+      junk.boards.recipe = 'junk';
+      junk.boards.retired[0].recipe = 'junk';
+      Library.ensure(junk, 6000);
+      assert.deepStrictEqual(clone(junk.boards.recipe), clone(Recipe.DEFAULT));
+      assert.deepStrictEqual(junk.boards.retired[0].recipe, clone(Recipe.DEFAULT));
+      const kept = L.loadState(clone(st));
+      Library.ensure(kept, 6000);
+      assert.deepStrictEqual(kept.boards.retired[0].recipe.tkeep, 2, 'a thin copy is kept as it is (never read back as a recipe to play)');
+      // Not resumed: a recipe that is not an object, a part's own check, a height the recipe does not allow, a piece no one knows.
+      const bad = (f) => { const j = clone(json); f(j); return Library.playable(j); };
+      assert(!bad((j) => { j.recipe = 5; }));
+      assert(!bad((j) => { j.h = 10; j.cells = j.cells.slice(0, 100); }), 'the part’s check');
+      assert(!bad((j) => { j.queue[0].id = 'nope'; }));
+      assert(!bad((j) => { j.hold = { id: 'Q:1' }; }));
+      assert(!bad((j) => { j.piece.entry.id = 'Zz'; }));
+      assert(bad((j) => { j.hold = { id: 'BC:0,0;1,0' }; }), 'any id the pieces can rebuild is fine');
+      const listed = L.loadState(clone(st));
+      listed.boards.list.push({ id: 'b99', name: 'Odd', game: Object.assign(clone(json), { queue: [{ id: '??' }] }) });
+      Library.ensure(listed, 7000);
+      assert(!Library.find(listed.boards, 'b99'), 'a board that cannot be resumed is dropped');
+    });
+  });
+
+  test('recipe: each Undo step keeps the parts’ state (snap, restore); a board without Undo keeps no history', () => {
+    const part = { key: 'tsnap', order: 60, rules: (r, R) => { if (r.mode === 'plain' && r.tsnapOff) R.undo = false; },
+      normalize: (raw, out) => { if (raw.tsnapOff === true) out.tsnapOff = true; },
+      engine: () => ({ n: 0, step() { this.n++; }, snap() { return this.n; }, restore(g, v) { this.n = v; } }) };
+    withParts([part], () => {
+      const g = new Game({ w: 10, h: 20, seed: 5, recipe: {} });
+      g.drop(); g.drop(); g.drop();
+      assert.strictEqual(g.ext[0].n, 3);
+      g.undo();
+      assert.strictEqual(g.ext[0].n, 2);
+      g.undo(); g.drop();
+      assert.strictEqual(g.ext[0].n, 2);
+      const off = new Game({ w: 10, h: 20, seed: 5, recipe: { tsnapOff: true } });
+      assert.strictEqual(off.rules.undo, false);
+      off.drop(); off.drop();
+      assert.deepStrictEqual([off.maxHistory, off.history.length, off.undo()], [0, 0, null]);
+    });
+  });
+
+  test('recipe: the engine’s hooks act where they are called (dealer, spawnAt, placed, targets, refuseLock, rows, keep, clean, afterChange, allow)', () => {
+    const calls = [];
+    const mirror = { key: 'tmir', order: 20, engine: (game) => (game.recipe.v ? {
+      placed: (g, b, abs) => { const out = abs.slice(), seen = new Set(abs.map((c) => c.join(','))); for (const [x, y] of abs) { const k = (b.w - 1 - x) + ',' + y; if (!seen.has(k)) { seen.add(k); out.push([b.w - 1 - x, y]); } } return out; },
+      targets: (g, b, kind, cells) => { calls.push(kind); return cells.concat(cells.map(([x, y]) => [b.w - 1 - x, y])); },
+      spawnAt: (g, b, pos) => Object.assign({}, pos, { x: 0 }),
+      afterChange: (g, kind) => calls.push('change:' + kind),
+      allow: (g, id) => (id === 'flip' ? 'Not on a Mirror board' : null),
+    } : null) };
+    withParts([mirror], () => {
+      const g = new Game({ w: 10, h: 20, seed: 1, recipe: {} });
+      const p = g.piece, cells = g.absCells(p);
+      assert.strictEqual(p.x, 0, 'spawnAt had the last word');
+      assert.strictEqual(cells.length, p.type.size * 2, 'the piece and its reflection');
+      assert.strictEqual(g.allow('flip'), 'Not on a Mirror board');
+      const r = g.drop();
+      assert.strictEqual(r.placed, p.type.size * 2);
+      assert.strictEqual(g.board.count(), p.type.size * 2);
+      assert.strictEqual(g.s.cells, p.type.size * 2);
+      for (const [x, y] of r.cells) assert(g.board.get(g.w - 1 - x, y), 'mirrored on the board');
+      // The copy blocks the piece: a cell right of the reflection's column is taken.
+      const q = g.piece;
+      const at = g.absCells(q, q.rot, q.x, q.y).map(([x, y]) => [g.w - 1 - x, y]);
+      g.board.set(at[0][0], at[0][1] - 1, 0);
+      // Items act in pairs: two bomb centres.
+      g.board.cells.fill(0);
+      fill(g, ['X.X.X.X.X.', 'XXXXXXXXX.']);
+      g.replacePiece({ id: 'M1', special: 'bomb' });
+      const b = g.drop();
+      assert(b.centers && b.centers.length === 2 && calls.includes('bomb'));
+      g.settle();
+      assert(calls.includes('change:settle') || g.board.isEmpty());
+    });
+    // One dealer a game; a lock refused; rows that never clear; cells no item removes; a clean board that is not empty.
+    let dealt = 0;
+    const guard = { key: 'tguard', order: 40, engine: (game) => (game.recipe.v ? {
+      dealer: { next: () => (dealt++ % 2 ? 'O' : 'I'), reroll: () => 'T', candidates: () => ['O', 'I'] },
+      refuseLock: (g, b, abs) => (abs.some(([, y]) => y >= 15) ? 'Too high' : null),
+      rows: (g, b, rows) => rows.filter((y) => y !== 0),
+      keep: (g, b, v) => !!(v & CELL.ASSET),
+      clean: (g, b) => b.count((v) => !(v & CELL.ASSET)) === 0,
+    } : null) };
+    withParts([guard], () => {
+      const g = new Game({ w: 10, h: 20, seed: 1, recipe: {} });
+      assert.deepStrictEqual([g.piece.type.id].concat(g.queue.slice(0, 4).map((e) => e.id)), ['I', 'O', 'I', 'O', 'I'], 'the part’s dealer');
+      assert.strictEqual(g.dealer.reroll(g, 'O'), 'T');
+      const notes = [];
+      g.on('refused', (n) => notes.push(n));
+      fill(g, Array(15).fill('XXXXX.....'));
+      g.piece = { type: Pieces.get('O'), rot: 0, x: 0, y: 15, special: null, entry: { id: 'O', rot: 0 }, lastRot: false };
+      assert.strictEqual(g.lock(), false);
+      assert.deepStrictEqual(notes, ['Too high']);
+      g.board.cells.fill(0);
+      fill(g, ['AAXXXXXX..', 'XXXXXXXX..']);
+      const r = dropAt(g, 'O', 8);
+      assert.deepStrictEqual(r.rows, [1], 'row 0 never clears (rows hook)');
+      g.board.cells.fill(0);
+      fill(g, ['AA........']);
+      g.replacePiece({ id: 'M1', special: 'bomb' });
+      g.piece.x = 1; g.piece.y = 3;
+      g.drop();
+      assert.strictEqual(g.board.get(0, 0), CELL.ASSET | 31, 'a bomb never takes a kept cell');
+      g.board.cells.fill(0);
+      fill(g, ['A.........', 'X.........', '..........']);
+      g.board.set(0, 3, 1);
+      g.replacePiece({ id: 'M1', special: 'drill' });
+      g.piece.x = 0; g.piece.y = 4;
+      const d = g.drop();
+      assert.deepStrictEqual(d.drilled.map(([x, y]) => [x, y]), [[0, 3]], 'the drill stops at a kept cell');
+      g.board.cells.fill(0);
+      fill(g, ['XXXXXXXX..', 'XXXXXXXX..', 'AAAAAAAAAA']);
+      const pc = dropAt(g, 'O', 8);
+      assert.deepStrictEqual(pc.rows, [1, 2]);
+      assert(pc.perfect, 'a perfect clear with only the kept cells left (clean)');
+      g.board.cells.fill(0);
+      fill(g, ['A.........', '..........']);
+      g.board.set(0, 3, 5); g.board.set(2, 2, 6);
+      assert(g.settle());
+      assert.deepStrictEqual([g.board.get(0, 1), g.board.get(0, 2), g.board.get(0, 3), g.board.get(2, 0)], [CELL.ASSET | 31, 5, 0, 6], 'settle: kept cells stay, what is above lands on them');
+    });
+  });
+
+  test('recipe: rows holding a FOREIGN cell are plain and pay only their own cells; a quad is R.quad rows', () => {
+    const g = new Game({ w: 10, h: 20, seed: 2, recipe: {} });
+    fill(g, ['XXXXXXXXX.', 'XXXXXXXXX.', 'XFXXXXXXX.', 'FXXXXXFXX.']);
+    const r = dropAt(g, 'I', 7, 1);
+    assert.deepStrictEqual([r.n, r.c, r.lines, r.plain, r.quad, r.ownCells, r.own], [2, 2, 4, 2, false, 37, 3.7]);
+    assert.strictEqual(g.s.b2b, -1, 'not a quad: no back-to-back');
+    assert.strictEqual(g.s.own, 3.7);
+    assert.strictEqual(g.s.lines, 4, 'lines stay rows cleared');
+    assert.strictEqual(Pay.clear({ mult: 1 }, r, g.rules).pay, 3.7, 'pays its own cells: 37 of 40');
+    const h = new Game({ w: 10, h: 20, seed: 2, recipe: {} });
+    fill(h, Array(4).fill('XXXXXXXXX.'));
+    const q = dropAt(h, 'I', 7, 1);
+    assert.deepStrictEqual([q.n, q.c, q.quad, q.own, h.s.b2b], [4, 0, true, 4, 0]);
+    withParts([{ key: 'tbigq', order: 10, rules: (rc, R) => { R.u = 2; R.E = 16; } }], () => {
+      const b = new Game({ w: 10, h: 20, seed: 2, recipe: {} });
+      assert.strictEqual(b.rules.quad, 8);
+      fill(b, Array(4).fill('XXXXXXXXX.'));
+      const x = dropAt(b, 'I', 7, 1);
+      assert.deepStrictEqual([x.n, x.quad, b.s.b2b, b.s.quadRun], [4, false, -1, 0], 'four rows of big blocks are two big lines, not a quad');
+      assert.strictEqual(Pay.clear({ mult: 1 }, x, b.rules).pay, 1, 'f = 1/4: four rows pay one Standard line');
+    });
+  });
+
+  test('recipe: an unrated board has no difficult clears: four rows keep no streak, a T-spin is no link, pay is own × lk at ×1', () => {
+    withParts([{ key: 'tunr', order: 10, rules: (rc, R) => { R.rated = false; R.E = 5; } }], () => {
+      const g = new Game({ w: 10, h: 20, seed: 2, recipe: {} });
+      assert.deepStrictEqual([g.rules.rated, g.rules.quad, g.rules.lk], [false, 4, 0.8]);
+      for (let i = 0; i < 12; i++) {
+        g.board.cells.fill(0);
+        fill(g, ['X.........'].concat(Array(4).fill('XXXXXXXXX.')));
+        const r = dropAt(g, 'I', 7, 1);
+        assert.deepStrictEqual([r.n, r.quad, r.b2b, g.s.b2b, g.s.quadRun, g.s.hb2b], [4, false, false, -1, 0, -1], 'lock ' + i);
+        assert.strictEqual(r.score, 800 + 50 * i, 'the rows’ points and the combo, never ×1.5');
+        g.s.mult = Pay.mult(g);
+        assert.strictEqual(g.s.mult, 1);
+        assert.strictEqual(Pay.clear({ mult: g.s.mult }, r, g.rules).pay, 3.2, 'own × lk: no difficult bonus');
+        assert.strictEqual(Pay.clear({ mult: 1 }, r, g).pay, 3.2, 'from the game too');
+      }
+      const t = new Game({ w: 10, h: 20, seed: 4, recipe: {} });
+      t.board.cells.fill(0);
+      fill(t, ['....X.....', 'XX...XXXXX', 'XXX.XXXXXX']);
+      t.replacePiece({ id: 'T' });
+      Object.assign(t.piece, { rot: 2, x: 2, y: 0, lastRot: true });
+      const r = t.lock();
+      assert(r.tspin && r.lines === 2 && !r.b2b && t.s.b2b === -1, 'a T-spin scores its points and is no link');
+      assert.strictEqual(r.score, 1200);
+      assert.strictEqual(Pay.clear({ mult: 1 }, r, t.rules).pay, 1.6);
+    });
+    // Rated (the default): the same four rows are a quad, a link and a bonus, as always.
+    const d = new Game({ w: 10, h: 20, seed: 2, recipe: {} });
+    fill(d, Array(4).fill('XXXXXXXXX.'));
+    const q = dropAt(d, 'I', 7, 1);
+    assert.deepStrictEqual([q.quad, d.s.b2b, Pay.clear({ mult: 1 }, q, d.rules).pay], [true, 0, 5]);
+  });
+
+  test('recipe: the parts’ controllers compose over the plain one in order (Recipe.compose)', () => {
+    const log = [];
+    const plain = { id: 'plain', view: 'single', timed: false, frame() { log.push('plain.frame'); }, pause() {}, counts: () => true, onLock: (r) => log.push('plain.lock:' + r), onEnd: () => 'full',
+      cards: { full: () => 'Board full' }, status: (parts) => [parts.lines, parts.score], tiles: () => [], onKey: () => false, action: () => false, input: (kind, v) => v, attach() { log.push('plain.attach'); }, detach() {} };
+    assert.strictEqual(Recipe.compose(plain, []), plain, 'no part’s: plain itself');
+    const mirror = { key: 'mirror', input: (kind, v) => (kind === 'aim' ? 9 - v : kind === 'tap' && v === 'left' ? null : v), attach() { log.push('mirror.attach'); } };
+    const protect = { key: 'protect', leaves: 3, onEnd(kind) { return kind === 'wilted' ? 'wilted ' + this.leaves : this.base.onEnd(kind); },
+      onLock(r) { this.base.onLock(r); log.push('protect.lock'); this.leaves--; }, status(parts, o) { return o.prev.slice(0, 1).concat(['Leaves ' + this.leaves]); },
+      tiles: () => [['3', 'Waves']], cards: { wilted: () => 'Wilted' }, onKey: (e) => e === 'w', frame() { log.push('protect.frame'); } };
+    const jelly = { id: 'jelly', tiles: () => [['2', 'Cascades']], input: (kind, v) => (kind === 'aim' ? v + 100 : v), key(e) { return e === 'j'; } };
+    const ctl = Recipe.compose(plain, [{ part: 'mirror', ctl: mirror }, protect, jelly]);
+    assert.strictEqual(typeof ctl.onKey, 'function', 'a string key is a name, never the key hook');
+    assert.strictEqual(ctl.id, 'jelly');
+    assert.deepStrictEqual([ctl.onKey('w'), ctl.onKey('j'), ctl.onKey('x')], [true, true, false], 'asked in turn; a function key is onKey');
+    assert.strictEqual(ctl.input('aim', 2), 107, 'input chained in order: Mirror’s answer goes to Jelly');
+    assert.strictEqual(ctl.input('tap', 'left'), null, 'a tap taken (null) ends it');
+    assert.strictEqual(ctl.input('tap', 'right'), 'right');
+    assert.deepStrictEqual(ctl.tiles(), [['3', 'Waves'], ['2', 'Cascades']], 'tiles joined');
+    assert.deepStrictEqual(ctl.status({ lines: 'L', score: 'S' }, {}), ['L', 'Leaves 3'], 'status gets the list before it');
+    assert.deepStrictEqual(Object.keys(ctl.cards).sort(), ['full', 'wilted']);
+    ctl.attach(); ctl.frame();
+    ctl.onLock('r');
+    assert.deepStrictEqual(log, ['plain.attach', 'mirror.attach', 'plain.frame', 'protect.frame', 'plain.lock:r', 'protect.lock'], 'run for every part, earlier first; a replaced hook reaches the one before as this.base');
+    assert.strictEqual(ctl.leaves, 2, 'a part’s state lives on the one controller');
+    assert.deepStrictEqual([ctl.onEnd('wilted'), ctl.onEnd('full')], ['wilted 2', 'full']);
+    assert.strictEqual(typeof ctl.base.onLock, 'function', 'outside a hook, base is the plain controller');
+    assert.strictEqual(ctl.base.id, 'plain');
+    withParts([{ key: 'tc1', order: 70, controller: (play, game) => (game.recipe.v ? { id: 'a' } : null) }, { key: 'tc0', order: 60, controller: () => ({ id: 'b' }) }], () => {
+      const g = new Game({ w: 10, h: 20, seed: 1, recipe: {} });
+      assert.deepStrictEqual(Recipe.controllers(null, g).map((c) => c.part + ':' + c.ctl.id), ['tc0:b', 'tc1:a'], 'every part’s, in order');
+      assert.strictEqual(Recipe.controller(null, g).id, 'b');
+    });
+  });
+
+  test('recipe: Tornado’s columns go through the parts (columns), drawn on the game’s stream as before; a bad order is ignored', () => {
+    const mirrorCols = (g, b, kind, order) => {
+      // The left half shuffled as drawn (its own columns, in the order they came), the right half its mirror.
+      const W = order.length, half = Math.floor(W / 2), left = order.filter((c) => c < half);
+      const out = order.slice();
+      left.forEach((c, i) => { out[i] = c; out[W - 1 - i] = W - 1 - c; });
+      return out;
+    };
+    const seen = [];
+    withParts([{ key: 'tcols', order: 20, engine: () => ({ columns: mirrorCols, afterChange: (g, kind, what) => seen.push(kind + ':' + (what && what.order ? what.order.length : '-')) }) }], () => {
+      for (let seed = 1; seed <= 30; seed++) {
+        const g = new Game({ w: 10, h: 20, seed, recipe: {} });
+        fill(g, ['X........X', 'XX......XX', '.X..XX..X.']);
+        g.piece.y = 15;
+        assert(g.tornado(), 'seed ' + seed);
+        for (let y = 0; y < 3; y++) for (let x = 0; x < 5; x++) assert.strictEqual(!!g.board.get(x, y), !!g.board.get(9 - x, y), 'still symmetric, seed ' + seed);
+      }
+    });
+    assert(seen.length === 30 && seen.every((k) => k === 'tornado:10'), 'afterChange hears the order');
+    // The stream is drawn as always: a part that keeps the order changes nothing.
+    const a = new Game({ w: 10, h: 20, seed: 7, recipe: {} }), b0 = new Game({ w: 10, h: 20, seed: 7 });
+    withParts([{ key: 'tbad', order: 20, engine: () => ({ columns: () => [0, 0, 1] }) }], () => {
+      const b = new Game({ w: 10, h: 20, seed: 7, recipe: {} });
+      for (const g of [a, b, b0]) { fill(g, ['XXXX......', 'X.X.X.X.X.']); g.piece.y = 15; }
+      const ma = a.tornado(), mb = b.tornado(), m0 = b0.tornado();
+      assert.deepStrictEqual(mb, ma, 'a bad order is ignored');
+      assert.deepStrictEqual(m0, ma);
+      assert.deepStrictEqual(Array.from(b.board.cells), Array.from(a.board.cells));
+    });
+  });
+
+  test('recipe: a drill’s rows the recipe fills (Jelly’s cascades) clear and are scored as plain; a plain drill scores nothing', () => {
+    const plain = new Game({ w: 10, h: 20, seed: 3, recipe: {} });
+    fill(plain, ['XXXXX.XXXX', 'XXXXXXXXX.']);
+    Object.assign(plain.s, { combo: 2 });
+    plain.replacePiece({ id: 'M1', special: 'drill' });
+    plain.piece.x = 3; plain.piece.y = 10;
+    const d = plain.drop();
+    assert.deepStrictEqual([d.lines, d.rows, d.removed, d.score, plain.s.combo, plain.s.lines, d.bits], [0, [], [], 0, 2, 0, undefined], 'as before: nothing scored, the combo kept');
+    const calls = [];
+    const jelly = { key: 'tjel', order: 30, engine: () => ({
+      afterClear(g, b, res) {
+        calls.push('afterClear:' + res.special);
+        // A lump the drill left hanging falls into the hole under it and fills row 0: one cascade wave.
+        if (res.special === 'drill' && b.get(6, 2)) { b.set(6, 2, 0); b.set(3, 0, 4); const row = b.fullRows(); res.cascade = [{ rows: row, removed: b.clearRows(row) }]; }
+      },
+      afterChange(g, kind, what) { calls.push('afterChange:' + kind + ':' + (what && what.special)); },
+    }) };
+    withParts([jelly], () => {
+      const g = new Game({ w: 10, h: 20, seed: 3, recipe: {} });
+      fill(g, ['......X...', '.X.X......', 'XXX.XXXXXX']);
+      g.replacePiece({ id: 'M1', special: 'drill' });
+      g.piece.x = 3; g.piece.y = 12;
+      const r = g.drop();
+      assert.deepStrictEqual(calls, ['afterClear:drill', 'afterChange:bore:drill']);
+      assert.deepStrictEqual([r.lines, r.c, r.n, r.own, r.quad, g.s.lines, g.s.own, g.s.combo], [1, 1, 0, 1, false, 1, 1, 0], 'one plain row, counted and scored');
+      assert.strictEqual(r.score, 100);
+      assert.strictEqual(Pay.clear({ mult: 1 }, r, g.rules).pay, 1);
+    });
+    // Two bits (targets): both are in the result for the view.
+    withParts([{ key: 'tbits', order: 20, engine: () => ({ targets: (g, b, kind, cells) => (kind === 'bore' ? cells.concat(cells.map(([x, y]) => [b.w - 1 - x, y])) : cells) }) }], () => {
+      const g = new Game({ w: 10, h: 20, seed: 3, recipe: {} });
+      g.replacePiece({ id: 'M1', special: 'drill' });
+      g.piece.x = 2; g.piece.y = 10;
+      assert.deepStrictEqual(g.drop().bits, [[2, 10], [7, 10]]);
+    });
+  });
+
+  test('recipe: a part ends a board (Game.end): after the lock, kept in the save, taken back by Undo and a reset', () => {
+    const wilt = { key: 'twilt', order: 40, engine: (game, saved, o) => ({ n: saved ? saved.n : 0, seen: { rng: typeof game.rng, seed: game.seed, o: o && o.previewCount, recipe: !!game.recipe },
+      step(g) { if (++this.n === 3) g.end('wilted'); }, save() { return { n: this.n }; }, snap() { return this.n; }, restore(g, v) { this.n = v; } }) };
+    withParts([wilt], () => {
+      const g = new Game({ w: 10, h: 20, seed: 11, recipe: {}, previewCount: 4 });
+      assert.deepStrictEqual(g.ext[0].seen, { rng: 'object', seed: 11, o: 4, recipe: true }, 'engine() sees the stream, the seed and the options');
+      const ev = [];
+      g.on('lock', () => ev.push('lock')); g.on('topout', () => ev.push('topout:' + g.endKind)); g.on('spawn', () => ev.push('spawn'));
+      g.drop(); g.drop();
+      ev.length = 0;
+      g.drop();
+      assert.deepStrictEqual(ev, ['lock', 'topout:wilted'], 'the end comes after the lock, and no piece');
+      assert(g.over && g.piece === null);
+      const json = JSON.parse(JSON.stringify(g.toJSON()));
+      assert.strictEqual(json.ended, 'wilted');
+      const back = new Game({ saved: json });
+      assert.deepStrictEqual([back.over, back.endKind, back.piece, back.queue.map((e) => e.id).join()], [true, 'wilted', null, g.queue.map((e) => e.id).join()], 'comes back ended, no piece dealt');
+      g.undo();
+      assert.deepStrictEqual([g.over, g.endKind, !!g.piece, g.toJSON().ended], [false, null, true, undefined], 'Undo takes it back');
+      g.drop();
+      assert(g.over && g.endKind === 'wilted');
+      g.resetBoard();
+      assert.deepStrictEqual([g.over, g.endKind, !!g.piece], [false, null, true]);
+      // A drill that ends the board spawns nothing either.
+      const d = new Game({ w: 10, h: 20, seed: 11, recipe: {} });
+      d.ext[0].n = 2;
+      d.replacePiece({ id: 'M1', special: 'drill' });
+      const e2 = [];
+      d.on('topout', () => e2.push('topout')); d.on('spawn', () => e2.push('spawn')); d.on('lock', () => e2.push('lock'));
+      d.drop();
+      assert.deepStrictEqual([e2, d.piece, d.endKind], [['lock', 'topout'], null, 'wilted']);
+      // Called outside a step: at once.
+      const n = new Game({ w: 10, h: 20, seed: 11, recipe: {} }), e3 = [];
+      n.on('topout', () => e3.push(n.endKind));
+      n.end('closed');
+      assert.deepStrictEqual(e3, ['closed']);
+    });
+    const plain = new Game({ w: 10, h: 20, seed: 11, recipe: {} });
+    assert(!('ended' in plain.toJSON()) && plain.seed === 11, 'nothing more saved for a plain board');
+  });
+
+  test('recipe: a full board’s last piece stays where the parts put it (spawnAt), inside the walls', () => {
+    withParts([{ key: 'tspl', order: 20, engine: () => ({ spawnAt: (g, b, pos) => Object.assign({}, pos, { x: 0 }) }) }], () => {
+      for (const findRoom of [true, false]) {
+        const g = new Game({ w: 10, h: 20, seed: 1, recipe: {}, findRoom });
+        for (let y = 0; y < 20; y++) for (let x = 0; x < 10; x++) if ((x + y) % 3) g.board.set(x, y, 1);
+        g.spawnNext();
+        assert(g.over, 'full');
+        const at = g.spawnPosition(g.piece.type, g.piece.rot);
+        assert.strictEqual(g.piece.x, Math.max(at.x, -g.piece.type.rotBounds[g.piece.rot].minX), 'findRoom ' + findRoom);
+      }
+    });
+  });
+
+  test('recipe: simulate is Best Fit’s one path, and Best Fit picks as it always did (500 positions)', () => {
+    // Best Fit as it was (js/engine.js before the recipe), verbatim.
+    const oldBest = (g) => {
+      const b = g.board, W = g.w, H = g.h;
+      const heights = (cells) => { const hs = []; for (let x = 0; x < W; x++) { let t = 0; for (let y = H - 1; y >= 0; y--) if (cells[y * W + x]) { t = y + 1; break; } hs.push(t); } return hs; };
+      const holes = (cells) => { let n = 0; for (let x = 0; x < W; x++) { let roof = false; for (let y = H - 1; y >= 0; y--) { if (cells[y * W + x]) roof = true; else if (roof) n++; } } return n; };
+      const holes0 = holes(b.cells);
+      let best = null;
+      for (const id of Pieces.TETROMINOES) {
+        const type = Pieces.get(id), seen = new Set();
+        for (let rot = 0; rot < 4; rot++) {
+          const cells = type.rots[rot], key = Pieces.keyOf(cells);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const bnd = type.rotBounds[rot];
+          const top = H - 1 - bnd.maxY;
+          for (let x = -bnd.minX; x <= W - 1 - bnd.maxX; x++) {
+            if (!b.fits(cells, x, top)) continue;
+            let y = top;
+            while (b.fits(cells, x, y - 1)) y--;
+            const t = b.clone();
+            t.place(cells, x, y, type.color);
+            const lines = t.fullRows().length;
+            t.clearRows(t.fullRows());
+            const hs = heights(t.cells), bump = hs.slice(1).reduce((a, h, i) => a + Math.abs(h - hs[i]), 0);
+            const cost = -lines * 1000 + (holes(t.cells) - holes0) * 60 + Math.max(...hs) * 4 + hs.reduce((a, h) => a + h, 0) * 0.5 + bump;
+            if (!best || cost < best.cost) best = { cost, id, rot, x, y, top };
+          }
+        }
+      }
+      return best;
+    };
+    const rng = new RNG('bestfit');
+    for (let i = 0; i < 500; i++) {
+      const w = 4 + rng.int(17), h = 8 + rng.int(12), g = new Game({ w, h, seed: i, recipe: {} });
+      const tall = rng.int(h - 2);
+      for (let x = 0; x < w; x++) { const top = rng.int(tall + 1); for (let y = 0; y < top; y++) if (rng.chance(0.8)) g.board.set(x, y, 1 + rng.int(7)); }
+      g.board.clearRows(g.board.fullRows());
+      const want = oldBest(g), got = g.bestFit();
+      assert.deepStrictEqual(got, want, 'position ' + i + ' (' + w + 'x' + h + ')');
+    }
+    const g = new Game({ w: 10, h: 20, seed: 1, recipe: {} });
+    fill(g, ['XXXXXXXXX.', 'XXXXXXXXX.']);
+    const sim = g.simulate(Pieces.get('I'), 1, 7);
+    assert.deepStrictEqual([sim.n, sim.c, sim.placed, sim.y], [2, 0, 4, 0]);
+    assert.strictEqual(g.board.count(), 18, 'on a copy: the board is as it was');
+    assert.strictEqual(sim.board.count(), 2);
+    assert.strictEqual(g.simulate(Pieces.get('I'), 0, 20), null, 'no room at the top');
+  });
+
+  test('recipe: inject, takeCurrent and takeNext (received pieces first, never held or taken)', () => {
+    const g = new Game({ w: 10, h: 20, seed: 7, recipe: {} });
+    const q0 = g.queue.map((e) => e.id), cur = g.piece.type.id;
+    g.inject('T', { received: true });
+    g.inject('S', { received: true });
+    assert.deepStrictEqual(g.queue.slice(0, 3).map((e) => e.id), ['T', 'S', q0[0]], 'first in, first out');
+    const took = g.takeCurrent();
+    assert.strictEqual(took.id, cur);
+    assert.strictEqual(g.piece.type.id, 'T');
+    assert(g.piece.entry.received);
+    assert.strictEqual(g.takeCurrent(), null, 'a received piece is not sent on');
+    assert.strictEqual(g.holdPiece(), false, 'nor held');
+    assert.strictEqual(g.takeNext(), null, 'the received piece next in line stays too');
+    g.drop();
+    g.drop();
+    const next = g.queue[0].id, e = g.takeNext();
+    assert.strictEqual(e.id, next);
+    assert(g.queue.length >= 6, 'the queue fills up behind it');
+    // No room for the next piece: nothing changes.
+    const f = new Game({ w: 10, h: 20, seed: 7, recipe: {} });
+    for (let y = 0; y < 20; y++) for (let x = 0; x < 10; x++) if (!f.absCells(f.piece).some(([cx, cy]) => cx === x && cy === y)) f.board.set(x, y, 1);
+    const before = JSON.stringify(f.toJSON());
+    assert.strictEqual(f.takeCurrent(), null);
+    assert.strictEqual(JSON.stringify(f.toJSON()), before);
+  });
+
+  test('recipe: on a default board worth is scale and own is lines, at every width from 4 to 20', () => {
+    for (let w = 4; w <= 20; w++) {
+      const g = new Game({ w, h: 16, seed: w, recipe: {} }), rng = new RNG('own' + w);
+      assert.strictEqual(Library.worth(g), Library.scale(w));
+      for (let i = 0; i < 150 && !g.over; i++) {
+        const k = rng.int(20);
+        if (k === 0) g.settle(); else if (k === 1) g.setSpecial('laser'); else if (k === 2) g.setSpecial('bomb'); else if (k === 3 && g.history.length) g.undo();
+        if (g.over || !g.piece) break;
+        if (rng.chance(0.6)) g.rotate(rng.chance(0.5) ? 1 : -1);
+        for (let m = rng.int(w) - Math.floor(w / 2), j = 0; j < Math.abs(m); j++) g.move(Math.sign(m));
+        g.drop();
+        assert.strictEqual(g.s.own, g.s.lines, w + ' wide, piece ' + i);
+      }
+      assert(g.s.lines > 0 || g.over, w + ' wide cleared something');
+    }
+  });
+
+  test('cells: one table of bits; outside the board is a WALL that is never stored; flags never change colours, scores or saves', () => {
+    const bits = ['GEM', 'HIDDEN', 'FOREIGN', 'JOIN_R', 'JOIN_U', 'ASSET', 'MOLE', 'FILL', 'WALL'].map((k) => CELL[k]);
+    assert.strictEqual(bits.concat([CELL.MOLE_SLOT, CELL.COLOR]).reduce((a, b) => a + b, 0), 0xffff, 'all 16 bits, each once');
+    assert.strictEqual(CELL.MOLE_SLOT >> CELL.SLOT_SHIFT, 3);
+    const b = new Board(6, 6);
+    for (const [x, y] of [[-1, 0], [6, 0], [0, -1], [0, 6], [-5, 9]]) {
+      assert.strictEqual(b.get(x, y), CELL.WALL);
+      assert.strictEqual(b.get(x, y) & (CELL.FOREIGN | CELL.ASSET | CELL.MOLE | CELL.FILL), 0);
+      assert(b.filled(x, y));
+    }
+    b.set(-1, 0, 5);
+    assert.strictEqual(b.count(), 0, 'nothing is stored outside');
+    const wrap = new Board(6, 6, { wrap: true });
+    wrap.set(5, 0, 3);
+    assert.strictEqual(wrap.get(-1, 0), 3, 'a wraparound board has no side walls');
+    // Every stored flag on a cell: the colour reads the same, the save encodes the same, the row clears as its own.
+    const flags = CELL.GEM | CELL.HIDDEN | CELL.JOIN_R | CELL.JOIN_U | CELL.ASSET | CELL.MOLE | CELL.MOLE_SLOT | CELL.FILL;
+    const plain = [1, 2, 3, 4, 5, 6, 7, 8, 9, 15], flagged = plain.map((v) => v | flags);
+    assert.strictEqual(Library.encodeCells(flagged), Library.encodeCells(plain));
+    assert(flagged.every((v, i) => (v & CELL.COLOR) === plain[i]));
+    assert.strictEqual(Library.encodeCells([CELL.ASSET | CELL.SPROUT]), 'v', 'the sprout is colour 31 in a thumbnail');
+    const g = new Game({ w: 10, h: 20, seed: 3, recipe: {} });
+    for (let x = 0; x < 9; x++) g.board.set(x, 0, 3 | (flags & ~CELL.HIDDEN));
+    const r = dropAt(g, 'I', 7, 1);
+    assert.deepStrictEqual([r.n, r.c, r.own, r.score], [1, 0, 1, 100]);
+    assert.deepStrictEqual(L.Combos.detect({ lines: 1, n: 1, quad: false, removed: [Array(10).fill(3 | CELL.JOIN_R | CELL.GEM)] }, g), ['painted'], 'Painted Row reads colours');
+    // Nothing a game does stores a WALL.
+    const p = new Game({ w: 6, h: 10, seed: 4, recipe: {} });
+    for (let i = 0; i < 60 && !p.over; i++) { p.move(i % 3 - 1); p.drop(); }
+    assert(Array.from(p.board.cells).every((v) => !(v & CELL.WALL)));
+  });
+
+  test('board: fitsAbs, inBoundsAbs, placeCells, and compact with cells that never move', () => {
+    const b = new Board(5, 5);
+    b.placeCells([[0, 0], [1, 0], [4, 4]], 2);
+    assert.deepStrictEqual([b.get(0, 0), b.get(1, 0), b.get(4, 4), b.count()], [2, 2, 2, 3]);
+    assert(b.fitsAbs([[2, 0], [3, 1]]) && !b.fitsAbs([[1, 0]]) && !b.fitsAbs([[5, 0]]) && !b.fitsAbs([[0, -1]]));
+    assert(b.inBoundsAbs([[1, 0], [4, 4]]) && !b.inBoundsAbs([[-1, 2]]));
+    assert.strictEqual(b.fitsAbs([[2, 0], [3, 0]]), b.fits([[0, 0], [1, 0]], 2, 0));
+    const c = new Board(3, 6);
+    c.set(0, 1, CELL.ASSET | 31); c.set(0, 4, 5); c.set(1, 5, 6); c.set(2, 3, 7);
+    c.compact((v) => !!(v & CELL.ASSET));
+    assert.deepStrictEqual([c.get(0, 1), c.get(0, 2), c.get(0, 4), c.get(1, 0), c.get(2, 0)], [CELL.ASSET | 31, 5, 0, 6, 7]);
+    const d = new Board(3, 6);
+    d.set(0, 4, 5); d.compact();
+    assert.strictEqual(d.get(0, 0), 5);
+  });
+
+  test('pieces: get rebuilds doubled and drawn shapes from their ids alone; resolvers; a colour from a key', () => {
+    const ids = ['BT', 'BC:0,0;1,0;2,0;2,1', 'C:0,0;0,1;1,1', 'BBO', 'M:0,0;1,0;1,1', 'BM:0,0;1,0;1,1'];
+    const cellsOf = (id) => Pieces.keyOf(Pieces.get(id).rots[0]);
+    const want = ids.map(cellsOf);
+    for (const id of Object.keys(Pieces.TYPES)) Pieces.evict(id);
+    assert(Pieces.TETROMINOES.concat(Pieces.PENTOMINOES, ['M1', 'D2', 'I3', 'V3']).every((id) => Pieces.TYPES[id]), 'built-in shapes stay');
+    assert(!Pieces.TYPES.BT && !Pieces.TYPES['BC:0,0;1,0;2,0;2,1'], 'made ones went');
+    assert.deepStrictEqual(ids.map(cellsOf), want, 'rebuilt the same');
+    assert.strictEqual(Pieces.get('BC:0,0;1,0;2,0;2,1').size, 16);
+    assert.strictEqual(Pieces.get('BBO').size, 64, 'doubled twice');
+    assert.strictEqual(Pieces.get('Bnope'), null);
+    assert.strictEqual(Pieces.get('Q:1,2'), null, 'no resolver, no type');
+    Pieces.resolver('Q', (rest, id) => Pieces.defineType && (Pieces.TYPES[id] = Pieces.defineType(id, [[0, 0], [Number(rest), 0]], { color: Pieces.hashColor(id) })));
+    assert.strictEqual(Pieces.get('Q:1').size, 2);
+    assert.strictEqual(Pieces.get('BQ:1').size, 8, 'doubled through the resolver');
+    for (const k of ['a', 'P:0,0;1,0', 'K:x', '']) { const c = Pieces.hashColor(k); assert(c >= 9 && c <= 14 && c === Pieces.hashColor(k)); }
+  });
+
+  test('pieces: every made type dropped mid-game changes nothing: the game plays on, saves and resumes the same', () => {
+    const g = new Game({ w: 10, h: 20, seed: 8, recipe: {} });
+    g.replacePiece({ id: Pieces.bigOf('T').id });
+    g.inject('C:0,0;1,0;2,0;1,1');
+    g.inject('BC:0,0;1,0');
+    for (const id of Object.keys(Pieces.TYPES)) Pieces.evict(id);
+    const twin = new Game({ saved: clone(g.toJSON()) });
+    for (const x of [g, twin]) { for (let i = 0; i < 4; i++) { for (const id of Object.keys(Pieces.TYPES)) Pieces.evict(id); x.drop(); } }
+    assert.deepStrictEqual(twin.toJSON(), g.toJSON());
+    assert.deepStrictEqual([g.s.byType.big, g.s.byType.custom, g.s.pieces], [2, 1, 4], 'the Giant, the doubled domino and the drawn shape were played');
+  });
+
+  test('store: a part’s stats defaults are in a new save, and never over one already there', () => {
+    withParts([{ key: 'tstats', order: 60, stats: { free: { tguard: { waves: 0, best: { easy: 0 } } }, tbattle: { rounds: 0 }, timeMs: { tbattle: 0 } } }], () => {
+      const st = L.defaultState();
+      assert.deepStrictEqual(st.stats.free.tguard, { waves: 0, best: { easy: 0 } });
+      assert.deepStrictEqual([st.stats.tbattle, st.stats.timeMs.tbattle, st.stats.timeMs.total], [{ rounds: 0 }, 0, 0]);
+      const loaded = L.loadState({ v: 1, stats: { tbattle: { rounds: 7 } } });
+      assert.strictEqual(loaded.stats.tbattle.rounds, 7);
+      assert.strictEqual(loaded.stats.free.tguard.waves, 0);
+      st.stats.free.tguard.waves = 3;
+      assert.strictEqual(L.defaultState().stats.free.tguard.waves, 0, 'each save its own copy');
+    });
+    assert.strictEqual(L.defaultState().stats.tbattle, undefined);
+  });
+
+  test('achievements: the feats count where R.feats does; a part’s group, and one that says where it counts', () => {
+    const A = L.Achievements;
+    const on = (g, r) => ({ mode: 'play', r: Object.assign({ lines: 4, n: 4, quad: true, hand: true, combo: 0 }, r), g });
+    assert.deepStrictEqual(A.check(L.defaultState(), on(new Game({ w: 10, h: 20, seed: 1, recipe: {} }))).map((a) => a.id), ['quad']);
+    withParts([{ key: 'tnofeat', order: 30, rules: (r, R) => { R.noFeats = true; } }], () => {
+      const g = new Game({ w: 12, h: 20, seed: 1, recipe: {} });
+      assert.deepStrictEqual(A.check(L.defaultState(), on(g)).map((a) => a.id), [], 'no feats on this board');
+      g.s.lines = g.s.own = 1500;
+      assert(A.check(L.defaultState(), on(g)).some((a) => a.id === 'lines150'), 'the line counts still count');
+    });
+    const n0 = A.LIST.length, g0 = A.GROUPS.length;
+    try {
+      A.group({ id: 'tgrp', name: 'Test', icon: 'play', note: 'Test note.', list: [
+        { id: 't_any', name: 'Anywhere', desc: 'x', pay: 1, on: 'play', counts: (r, g) => g.w === 4, test: () => true },
+        { id: 't_feat', name: 'Feat', desc: 'x', pay: 1, on: 'play', test: () => true },
+      ] });
+      assert.strictEqual(A.GROUPS[A.GROUPS.findIndex((x) => x.id === 'play') + 1].id, 'tgrp', 'after Free Play');
+      assert.deepStrictEqual(A.check(L.defaultState(), on(new Game({ w: 4, h: 8, seed: 1, recipe: {} }), { quad: false, lines: 0 })).map((a) => a.id), ['t_any'], 'its own rule, not the feats’');
+      assert.deepStrictEqual(A.check(L.defaultState(), on(new Game({ w: 10, h: 20, seed: 1, recipe: {} }), { quad: false, lines: 0 })).map((a) => a.id), ['t_feat']);
+      assert.strictEqual(A.groupOf(A.LIST.find((a) => a.id === 't_any')).id, 'tgrp');
+    } finally {
+      A.LIST.splice(n0); A.GROUPS.splice(A.GROUPS.findIndex((x) => x.id === 'tgrp'), 1);
+    }
+    assert.strictEqual(A.GROUPS.length, g0);
+  });
+
+  test('golden: a default board plays exactly as boards did before the recipe (scripts/golden.cjs)', () => {
+    const out = require('child_process').spawnSync(process.execPath, [require('path').join(__dirname, 'golden.cjs')], { encoding: 'utf8' });
+    assert.strictEqual(out.status, 0, (out.stdout || '') + (out.stderr || ''));
   });
 }
 

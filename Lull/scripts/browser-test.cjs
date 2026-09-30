@@ -4177,6 +4177,8 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
 
   // ---- board sizes: the New board window, sizes at every extreme, pay by width, layout (scripts/sizes-test.cjs) --------
   await require('./sizes-test.cjs')({ browser, check, PAGE, OUT });
+  // ---- the board recipe: the New board window's tabs and rules, labels, the controller, pixels as before (recipe-test.cjs)
+  await require('./recipe-test.cjs')({ browser, check, PAGE, OUT });
   // ---- touch: an emulated phone, played with gestures (scripts/touch-test.cjs) -----------------------------------------
   await require('./touch-test.cjs')({ browser, check, PAGE, OUT });
   // ---- what the device can do: a phone, a desktop browser, the app, a tablet with a trackpad (device-test.cjs) -------
