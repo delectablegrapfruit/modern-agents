@@ -12,6 +12,7 @@ const L = load([
   'mirror.js',
   'jelly.js',
   'guard.js',
+  'classic.js',
   // part:battle
 ]);
 const { Pieces, Board, Game, Puzzles, Factory, RNG } = L;
@@ -4796,6 +4797,9 @@ require('./jelly-test.cjs')(test);
 
 // Protect's rules (scripts/protect-unit.cjs).
 require('./protect-unit.cjs')({ L, test });
+
+// Classic, a board mode, and editing a board's rules (scripts/classic-unit.cjs).
+require('./classic-unit.cjs')({ L, test });
 
 // The Home Screen web app: the offline copy, the manifest and icons, the deployed build (scripts/web-test.cjs).
 require('./web-test.cjs')(test).then(() => {

@@ -23,7 +23,7 @@ module.exports = async function shapesBrowserTests({ browser, check, PAGE, OUT }
       Lull.app.settings.theme = theme; Lull.app.applySettings();
       while (Lull.UI.modalOpen()) Lull.UI.closeTopModal();
       Lull.app.store.state.settings.hints = false; Lull.app.hints.sync();
-      for (const k of ['play', 'puzzle', 'classic']) Lull.app.modes[k].setGrace = 0;
+      for (const k of ['play', 'puzzle']) Lull.app.modes[k].setGrace = 0;
       Lull.app.setTab('play');
     }, (o && o.colorScheme) || 'light');
     const shot = async (name) => { if (OUT) { await page.waitForTimeout(120); await page.screenshot({ path: path.join(OUT, name + '.png') }); } };

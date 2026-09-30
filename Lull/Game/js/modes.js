@@ -1,4 +1,4 @@
-// Lull — the three things to do: Free Play, Puzzles, and the Factory.
+// Lull — the three things to do: Free Play (Classic is one of its board modes: js/classicview.js), Puzzles, and the Factory.
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
@@ -21,9 +21,6 @@
   // double-tap lands within ~150 ms, while aiming a new piece takes longer than this. Moving and turning still work,
   // and Classic's gravity and lock delay are never held up by it.
   const SET_GRACE_MS = 180;
-  // Classic's top out: after the piece that could not appear, this many more from the queue pile up on it, PILE_GAP
-  // seconds apart; the card comes PILE_REST seconds after the last.
-  const PILE_MORE = 3, PILE_GAP = 0.42, PILE_REST = 0.55;
 
   // Items that change the board at once (Board): one that leaves it empty is a fresh start. The rest change the piece
   // in play (Shapers, Choice, Tools) or what the next clears pay (Luck); those can be taken back until the piece sets.
@@ -425,288 +422,6 @@
     }
   }
 
-  // ---- classic ----------------------------------------------------------------------------------------------------
-
-  /**
-   * Plain Tetris: pieces fall, faster every ten lines, with a half-second lock delay (renewed up to 15 times by
-   * moving or turning), soft and hard drops, hold, and a game over. Lines still bank. Music optional.
-   */
-  class ClassicMode extends BoardMode {
-    constructor(app) {
-      super(app, 'cv-classic', 'classic-overlay');
-      this.statusEl = document.getElementById('classic-status');
-      this.controlsEl = document.getElementById('classic-controls');
-      this.newGame(false);
-    }
-
-    get cs() { return this.app.store.state.stats.classic; }
-
-    newGame(start) {
-      const game = new Game({ w: 10, h: 20, previewCount: 3, maxHistory: 0, freeHold: false, ceiling: true });
-      this.attachGame(game, {});
-      this.view.showBank = true;
-      Object.assign(this, { tetrises: 0, level: 1, lines: 0, score: 0, ms: 0, acc: 0, lockT: 0, resets: 0, over: false, paused: false, started: !!start, counted: false, mult: 1, pile: null, newBest: false });
-      if (start) { this.hideCard(); L.Music.rewind(); }
-      else this.showStart();
-      this.renderStatus();
-      this.renderControls();
-    }
-
-    showStart() {
-      this.showCard([
-        h('h2', null, 'Classic'),
-        this.cs.best ? h('p', null, 'Best ', h('span', { class: 'big' }, fmtInt(this.cs.best))) : null,
-        h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => this.newGame(true) }, 'Start ', h('kbd', null, 'Space'))),
-      ]);
-    }
-
-    blocked() { return this.cardOpen || this.paused || this.over || !this.started; }
-
-    /** A tap on the board starts a game (or the next one) when no card is up: as Space does. */
-    touchTapStarts() { return (!this.started || this.over) && !this.cardOpen && !this.paused; }
-
-    /** Seconds per row at the current level (the guideline curve). */
-    gravity() { const l = Math.min(this.level, 20); return Math.max(0.012, Math.pow(0.8 - (l - 1) * 0.007, l - 1)); }
-
-    running() { return this.app.tab === 'classic' && this.started && !this.paused && !this.over && !UI.modalOpen(); }
-
-    frame(now, dt) {
-      const g = this.game, p = g.piece;
-      if (this.pile && !this.pile.done) this.pileFrame(dt);
-      else if (this.running() && p && !g.fitsAt(p, p.rot, p.x, p.y)) { g.over = true; this.onTopout(); }
-      else if (this.running() && p) {
-        this.ms += dt * 1000; // the game's own clock: running time only, never paused time
-        if (this.ms >= 60000) this.countGame();
-        this.acc += dt;
-        const iv = this.gravity();
-        while (this.acc >= iv) {
-          this.acc -= iv;
-          if (g.fitsAt(p, p.rot, p.x, p.y - 1)) { p.y--; p.lastRot = false; this.lockT = 0; this.view.dirty = true; } else { this.acc = 0; break; }
-        }
-        if (g.piece === p && !g.fitsAt(p, p.rot, p.x, p.y - 1)) {
-          this.lockT += dt;
-          if (this.lockT >= 0.5) { this.lockT = 0; g.lock(); }
-        }
-      }
-      this.syncMusic();
-      super.frame(now, dt);
-    }
-
-    syncMusic() {
-      const st = this.app.settings;
-      const want = st.music && this.running() && !document.hidden;
-      // Steady tempo; it only quickens as the stack nears the top (and eases back when it comes down).
-      const hgt = this.game.board.stackHeight(), danger = Math.max(0, Math.min(1, (hgt - 11) / 6));
-      const target = 1 + 0.3 * danger;
-      L.Music.tempo += (target - L.Music.tempo) * 0.05;
-      if (Math.abs(target - L.Music.tempo) < 0.002) L.Music.tempo = target;
-      L.Music.setVolume(st.musicVolume);
-      L.Announcer.setVolume(st.announcerVolume != null ? st.announcerVolume : 0.35);
-      if (want && !L.Music.playing) L.Music.start();
-      else if (!want && L.Music.playing) L.Music.stop();
-    }
-
-    /** Moving or turning a resting piece buys it more time (up to 15 times). */
-    afterAction(a) {
-      const g = this.game, p = g.piece;
-      if (!p || !/^(moveL|moveR|rotate|rotateInv|cw|ccw|r180)$/.test(a)) return;
-      if (!g.fitsAt(p, p.rot, p.x, p.y - 1) && this.resets < 15) { this.lockT = 0; this.resets++; }
-    }
-
-    softDrop(rep) {
-      const g = this.game, p = g.piece;
-      if (!p) return false;
-      if (g.fitsAt(p, p.rot, p.x, p.y - 1)) { p.y--; p.lastRot = false; this.score += 1; this.acc = 0; this.renderStatus(); return true; }
-      if (rep) return false;
-      g.lock();
-      return true;
-    }
-
-    modeAction(a) {
-      if (a === 'retry') { this.restart(); return true; }
-      return false;
-    }
-
-    action(act, rep) {
-      if (!rep && act === 'drop' && !this.started && !this.over) { this.newGame(true); return true; }
-      // A second Space right after the drop that ended the game does not start the next one unseen (nor skip the top
-      // out); during the top out, Space goes straight to the card.
-      if (!rep && act === 'drop' && this.over) {
-        if (this.settling('drop')) return true;
-        if (this.pile && !this.pile.done) this.finishPile();
-        else this.newGame(true);
-        return true;
-      }
-      if (!rep && act === 'pause') { this.togglePause(); return true; }
-      return super.action(act, rep);
-    }
-
-    togglePause(force) {
-      // Pausing, leaving the tab or rolling up during the top out: it ends there, at the card (quietly when away).
-      if (this.pile && !this.pile.done) { this.finishPile({ quiet: force === true }); return; }
-      if (!this.started || this.over) return;
-      this.paused = force != null ? force : !this.paused;
-      if (this.paused) this.showCard([h('h2', null, 'Paused'), h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => this.togglePause(false) }, 'Resume'))]);
-      else this.hideCard();
-      this.renderControls();
-    }
-
-    restart() {
-      this.newGame(true);
-    }
-
-    /** A game counts as played once it has run a minute or cleared ten lines (so a quick restart is not a game). */
-    countGame() {
-      if (this.counted) return;
-      this.counted = true;
-      this.cs.games++;
-      this.app.store.touch();
-    }
-
-    onLock(r) {
-      const st = this.app.store, S = this.cs;
-      const before = this.level;
-      this.lines += r.lines;
-      if (this.lines >= 10) this.countGame();
-      this.level = 1 + Math.floor(this.lines / 10);
-      this.score += (r.score || 0) * before + (r.dropDist ? r.dropDist * 2 : 0);
-      this.resets = 0; this.lockT = 0; this.acc = 0;
-      // The lines Classic banks (never its score) are multiplied by the back-to-back streak: ×0.05 a link, ×1.5 at
-      // eleven; seven tenths of a line a line (Chain.CLASSIC.rate), to the hundredth.
-      this.mult = Chain.mult(Chain.streak(this.game), 'classic');
-      if (r.lines) {
-        r.mult = this.mult; r.banked = Library.bank(r.lines * Chain.CLASSIC.rate * this.mult);
-        st.addLines(r.banked, 'play'); this.app.refreshWallet(true); S.lines += r.lines;
-      }
-      S.pieces++;
-      st.day().pieces++;
-      playLockSound(this.app.sound, r);
-      this.view.onLock(r, this.reduced);
-      const st2 = this.app.settings;
-      if (st2.announcer !== false && st2.sound) {
-        const say = L.Announcer.phrase(r, this.level > before && this.level);
-        if (say) L.Announcer.say(say);
-      }
-      if (this.level > before) { this.app.sound.play('solve'); const b = this.view.lay.board; this.view.fx.text('LEVEL ' + this.level, b.x + b.w / 2, b.y + b.h * 0.3, '#ffe28a', 20); }
-      S.bestLevel = Math.max(S.bestLevel, this.level);
-      S.bestLines = Math.max(S.bestLines, this.lines);
-      if (r.lines >= 4) { this.tetrises++; st.day().tetris = 1; }
-      this.renderStatus();
-      st.touch();
-      this.app.achieve({ mode: 'classic', r, g: this.game, score: this.score, level: this.level, lines: this.lines, tetrises: this.tetrises, ms: this.ms });
-    }
-
-    /**
-     * Topped out: the game ends here, and everything it counts (score, lines, level, best, stats) is final and saved
-     * now. Then the classic top out plays out (see startPile), and the card comes after it.
-     */
-    onTopout() {
-      if (this.over) return;
-      this.over = true;
-      const S = this.cs;
-      this.newBest = this.score > S.best;
-      S.best = Math.max(S.best, this.score);
-      this.app.store.touch();
-      if (this.app.saveNow) this.app.saveNow();
-      this.renderStatus();
-      this.renderControls();
-      this.startPile();
-    }
-
-    /**
-     * The classic top out: the piece that could not appear sets where it appears, over the stack, and the next few
-     * from the queue appear one after another at the same spot, each over the last. The game itself is never
-     * touched (no cells, queue or numbers change): the pile is only drawn (BoardView.pileup). Under reduced motion it
-     * is all there at once.
-     */
-    startPile() {
-      const g = this.game, steps = [];
-      const add = (type, rot, x, y) => steps.push({ color: type.color, cells: type.rots[rot].map(([cx, cy]) => [g.board.wx(x + cx), y + cy]).filter(([, cy]) => cy >= 0 && cy < g.h) });
-      if (g.piece) add(g.piece.type, g.piece.rot, g.piece.x, g.piece.y);
-      const queued = g.queue.slice(0, PILE_MORE);
-      for (const e of queued) {
-        const type = Pieces.get(e.id);
-        if (!type) continue;
-        const rot = e.rot || 0, pos = g.spawnPosition(type, rot);
-        add(type, rot, pos.x, pos.y);
-      }
-      this.pile = { steps, shown: 0, t: 0, done: false, fromQueue: steps.length - (g.piece ? 1 : 0), quietFirst: this.now() - (this.setAt || -1e9) < 150 };
-      this.view.pileup = [];
-      this.view.queueSkip = 0;
-      if (this.reduced) { this.finishPile(); return; }
-      this.pileFrame(0);
-    }
-
-    /** One step of the pile: the next piece appears, with a soft set sound. */
-    pileStep(quiet) {
-      const P = this.pile, st = P.steps[P.shown++];
-      this.view.pileup.push({ cells: st.cells, color: st.color, t: quiet ? -1 : P.t });
-      this.view.queueSkip = Math.max(0, P.shown - (P.steps.length - P.fromQueue));
-      // The first is the piece that could not appear: when it came right as the last piece set, that set sound is its.
-      if (!quiet && !(P.shown === 1 && P.quietFirst)) this.app.sound.play('lock');
-      this.view.dirty = true;
-    }
-
-    pileFrame(dt) {
-      const P = this.pile;
-      P.t += dt;
-      while (P.shown < P.steps.length && P.t >= P.shown * PILE_GAP) this.pileStep();
-      this.view.pileT = P.t;
-      this.view.dirty = true;
-      if (P.shown >= P.steps.length && P.t >= (P.steps.length - 1) * PILE_GAP + PILE_REST) this.finishPile();
-    }
-
-    /** The top out's end, now: the whole pile, the game over sound and call (unless quiet), and the card. */
-    finishPile(o) {
-      const P = this.pile;
-      if (!P || P.done) return;
-      while (P.shown < P.steps.length) this.pileStep(true);
-      P.done = true;
-      this.view.pileT = Infinity; // every piece of it fully there
-      this.view.dirty = true;
-      if (!(o && o.quiet)) {
-        this.app.sound.play('fail');
-        if (this.app.settings.announcer !== false && this.app.settings.sound) L.Announcer.say(['gameover']);
-      }
-      this.showOverCard();
-    }
-
-    showOverCard() {
-      this.showCard([
-        h('h2', null, this.newBest ? 'New best!' : 'Game over'),
-        h('p', null, h('span', { class: 'big' }, fmtInt(this.score)), ' points'),
-        h('p', null, 'Level ' + this.level + ' · ' + this.lines + ' lines'),
-        h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => this.newGame(true) }, 'Play again ', h('kbd', null, 'Space'))),
-      ]);
-      this.renderControls();
-    }
-
-    renderStatus() {
-      this.statusEl.replaceChildren(
-        h('div', { class: 'stats' },
-          stat('Score', fmtInt(this.score)),
-          stat('Level', String(this.level)),
-          stat('Lines', String(this.lines)),
-          stat('Bank', Chain.fmt(this.mult || 1), this.mult > 1 ? 'chain opt' : 'slot-off', this.bankTip()),
-          stat('Best', fmtInt(Math.max(this.cs.best, this.score)), 'opt')));
-    }
-
-    /** The Bank tile's tooltip: what a line banks, in lines (the tile itself shows only the back-to-back multiplier). */
-    bankTip() {
-      const C = Chain.CLASSIC, m = this.mult || 1;
-      return 'Each line banks ' + fmtLines(C.rate) + ' ' + LINE + '; back-to-back multiplies it, up to ' + Chain.fmt(C.cap) +
-        (m > 1 ? '. Now ' + Chain.fmt(m) + ': ' + fmtLines(Library.bank(C.rate * m)) + ' ' + LINE + ' a line' : '');
-    }
-
-    renderControls() {
-      const st = this.app.settings;
-      this.controlsEl.replaceChildren(
-        h('button', { class: 'btn sm' + (st.music ? ' on' : ''), 'aria-label': 'Music', 'aria-pressed': String(!!st.music), onclick: () => { st.music = !st.music; this.app.store.touch(); this.renderControls(); } }, ico(st.music ? 'music' : 'musicOff'), st.music ? 'On' : 'Off'),
-        h('button', { class: 'btn sm', disabled: !this.started || this.over, 'data-tip': this.paused ? 'Resume' : 'Pause', 'data-tip-foot': 'P', onclick: () => this.togglePause() }, ico(this.paused ? 'playIcon' : 'pause'), this.paused ? 'Resume' : 'Pause'),
-        h('button', { class: 'btn sm', 'data-tip': 'Restart', 'data-tip-foot': 'R', onclick: () => this.restart() }, ico('retry'), 'Restart'));
-    }
-  }
-
   // ---- free play ----------------------------------------------------------------------------------------------------
 
   /**
@@ -845,6 +560,20 @@
 
     /** Actions the game does not know go to the controller (Battle's pause). */
     modeAction(a, rep) { return !!this.ctl.action(a, rep); }
+
+    /**
+     * A controller may take an action before the game's own (its gate(act, rep): an answer other than undefined is the
+     * action's result; Classic's Space starts it, P pauses, a hard drop may be off), hold the board still (blocked),
+     * let a tap start it (tapStarts), lower it its own way (softDrop) and hear each move (afterAction).
+     */
+    action(act, rep) {
+      const t = this.ctl && typeof this.ctl.gate === 'function' ? this.ctl.gate(act, rep) : undefined;
+      return t !== undefined ? t : super.action(act, rep);
+    }
+    blocked() { return !!(this.ctl && typeof this.ctl.blocked === 'function' && this.ctl.blocked()); }
+    touchTapStarts() { return !!(this.ctl && typeof this.ctl.tapStarts === 'function' && this.ctl.tapStarts()); }
+    get softDrop() { const c = this.ctl; return c && typeof c.softDrop === 'function' ? (rep) => c.softDrop(rep) : null; }
+    afterAction(a) { if (this.ctl && typeof this.ctl.afterAction === 'function') this.ctl.afterAction(a); }
 
     /** A key the controller takes before the game's own keys (its onKey). */
     key(e) { return typeof this.ctl.onKey === 'function' && this.ctl.onKey(e) === true; }
@@ -1235,13 +964,22 @@
      * api: { recipe, choose(path, value), why(text), refresh(), look, app }. A panel's control keeps focus through a
      * refresh when it carries data-focus="a name of its own" (or an id, or data-path and data-value as the options do);
      * one that cannot be found again leaves focus on the tab, never outside the window (where Enter is Create).
+     *
+     * With `edit` ({ id, recipe, size, json }: a saved board), it is Edit rules: the same window on that board's
+     * recipe and size, with Apply in place of Create. Apply's price is on it (Recipe.editPrice: a flat price for each
+     * section changed; nothing when nothing did); a size that would cut the stack, or rules the board cannot take as
+     * it stands, are refused with the reason (Library.rebuild); a mode a board keeps for life (Protect) can be neither
+     * entered nor left (Recipe.editConflicts). Apply spends the lines and changes the board (applyEdit).
      */
-    openNewBoard(done) {
+    openNewBoard(done, edit) {
       const st = this.app.store, B = st.state.boards, R = L.Recipe;
       const clone = (v) => JSON.parse(JSON.stringify(v));
-      let recipe = R.normalize(B.recipe), memo = {}, tab = 'size';
+      let recipe = R.normalize(edit ? edit.recipe : B.recipe), memo = {}, tab = 'size';
       // What was asked for (any size a board can have) and what is shown (that, as a board of this recipe can be).
-      let asked = Library.clampSize(B.size), z = R.clampSize(asked, recipe), lim = R.limits(recipe);
+      let asked = Library.clampSize(edit ? edit.size : B.size), z = R.clampSize(asked, recipe), lim = R.limits(recipe);
+      /** Every option ruled out now: the recipe's conflicts, and in an edit what the board keeps for life. */
+      const conflictsOf = (r) => (edit ? Object.assign(R.editConflicts(edit.recipe, r), R.conflicts(r)) : R.conflicts(r));
+      let applyBtn = null, price = null, lastCut = null;
       const uis = () => R.uis();
       const cap = (t) => String(t).charAt(0).toUpperCase() + String(t).slice(1);
       const modName = (k) => { const u = uis().find((x) => x.mod === k); return (u && u.name) || cap(k); };
@@ -1302,7 +1040,10 @@
         const W = z.w * c, H = z.h * c;
         preview.width = W; preview.height = H;
         preview.style.width = W / dpr + 'px'; preview.style.height = H / dpr + 'px';
-        Render.previewBoard(preview.getContext('2d'), { x: 0, y: 0, w: W, h: H }, z.w, z.h, recipe, this.app.theme, { cell: c, dpr });
+        // In an edit, the board's own stack at the size shown (none where that size would cut it).
+        const cut = edit ? Library.reshape(edit.json, z.w, z.h).json : null;
+        const cells = cut ? cut.cells.map((v) => v & CELL.COLOR) : undefined;
+        Render.previewBoard(preview.getContext('2d'), { x: 0, y: 0, w: W, h: H }, z.w, z.h, recipe, this.app.theme, cells ? { cell: c, dpr, cells, look: Render.makeLook(this.app.store.state.equipped, this.app.theme, 0, true) } : { cell: c, dpr });
       };
       // A button, a preset or an option changes what does not have focus: the change is read out (VoiceOver).
       const live = h('div', { class: 'nb-live', 'aria-live': 'polite' });
@@ -1330,7 +1071,7 @@
 
       /** An option's button: pressed when the recipe has it, off (with why) when the other choices rule it out. */
       const option = (path, value, cls, kids, role) => {
-        const bad = R.conflicts(recipe)[idOf(path, value)] || null;
+        const bad = conflictsOf(recipe)[idOf(path, value)] || null;
         const on = R.canon(R.getPath(recipe, path)) === R.canon(value);
         return h('button', Object.assign({ type: 'button', class: cls, 'data-path': path, 'data-value': typeof value === 'string' ? value : JSON.stringify(value), 'aria-disabled': bad ? 'true' : null, 'data-tip': bad, onclick: () => choose(path, value) },
           role === 'switch' ? { role: 'switch', 'aria-checked': String(on) } : { 'aria-pressed': String(on) }), kids);
@@ -1347,7 +1088,7 @@
       };
       /** A choice: refused with its reason when ruled out; else made, and whatever it rules out moves (the last choice wins). */
       const choose = (path, value) => {
-        const bad = R.conflicts(recipe)[idOf(path, value)];
+        const bad = conflictsOf(recipe)[idOf(path, value)];
         if (bad) { showWhy(bad); return; }
         const next = clone(recipe);
         R.setPath(next, path, value);
@@ -1362,7 +1103,7 @@
         if (was.w !== z.w || was.h !== z.h) words.push(Library.sizeLabel(z.w, z.h));
         live.textContent = words.join(', ');
       };
-      const api = { get recipe() { return recipe; }, choose, why: showWhy, refresh: () => refresh(), look, app: this.app };
+      const api = { get recipe() { return recipe; }, choose, why: showWhy, refresh: () => refresh(), look, app: this.app, option, edit: edit || null };
       const extras = (k) => uis().filter((u) => u.tab === k && u.panel).map((u) => u.panel(recipe, api)).filter(Boolean);
       const panels = {
         size: () => {
@@ -1389,7 +1130,7 @@
         },
       };
       // A switch shows the recipe's state: a press asks for the other one (option() is built with the value to choose).
-      const fixSwitches = () => content.querySelectorAll('.nb-switch').forEach((b) => b.setAttribute('aria-checked', String(!!recipe.mods[b.dataset.path.slice(5)])));
+      const fixSwitches = () => content.querySelectorAll('.nb-switch').forEach((b) => b.setAttribute('aria-checked', String(!!R.getPath(recipe, b.dataset.path))));
       const refresh = () => {
         lim = R.limits(recipe);
         z = R.clampSize(asked, recipe);
@@ -1430,6 +1171,20 @@
           sp.plus.setAttribute('aria-disabled', String(z[sp.key] >= hi));
         }
         paint();
+        if (edit) {
+          // Apply says its price, and is quiet when the size would cut the stack (a press says why).
+          price = R.editPrice(edit.recipe, recipe, edit.size, z);
+          const cut = (z.w !== edit.size.w || z.h !== edit.size.h) ? Library.reshape(edit.json, z.w, z.h).why : null;
+          price.why = cut || null;
+          if (applyBtn) {
+            applyBtn.replaceChildren(...['Apply', price.cost ? h('span', { class: 'gem' }, ' ' + LINE + fmtInt(price.cost)) : null].filter(Boolean));
+            applyBtn.setAttribute('aria-label', price.cost ? 'Apply, costs ' + fmtInt(price.cost) + ' lines' : 'Apply');
+            applyBtn.setAttribute('aria-disabled', String(!!cut));
+            if (cut) why.textContent = cut;
+            else if (why.textContent && why.textContent === lastCut) why.textContent = '';
+            lastCut = cut;
+          }
+        }
       };
       const set = (o, say) => {
         const was = z;
@@ -1443,8 +1198,8 @@
         h('div', { class: 'nb-main' }, h('div', { class: 'nb-well' }, preview), h('div', { class: 'nb-fields' }, steppers.map((sp) => sp.el))),
         tabs, panel, live);
       const handle = UI.openModal({
-        title: 'New board', icon: 'newBoard', cls: 'modal-newboard', body,
-        buttons: [{ label: 'Cancel' }, { label: 'Create', kind: 'primary', onClick: () => {
+        title: edit ? 'Edit rules' : 'New board', icon: edit ? 'settings' : 'newBoard', cls: 'modal-newboard' + (edit ? ' modal-edit' : ''), body,
+        buttons: [{ label: 'Cancel' }, edit ? { label: 'Apply', kind: 'primary', onClick: () => this.applyEdit(edit, recipe, { w: z.w, h: z.h }, price, (text) => { showWhy(text); this.app.sound.play('error'); }, done) } : { label: 'Create', kind: 'primary', onClick: () => {
           let out = { recipe, size: { w: z.w, h: z.h } };
           for (const u of uis()) if (u.commit) out = u.commit(out.recipe, out.size) || out;
           B.size = { w: out.size.w, h: out.size.h };
@@ -1454,14 +1209,56 @@
           if (done) done(made);
         } }],
       });
+      if (edit) { applyBtn = handle.el.querySelector('footer .btn.primary'); refresh(); }
       // Enter on a button (a stepper's, a preset, a tab, an option, Cancel, Close) presses that button; anywhere else
       // it is Create.
       handle.el.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.closest('button') && !e.target.closest('.btn.primary')) e.stopPropagation(); });
       steppers[0].val.focus();
       // For the tests: the window's recipe and size as they stand.
-      handle.nb = { get recipe() { return recipe; }, get size() { return z; }, select, choose };
+      handle.nb = { get recipe() { return recipe; }, get size() { return z; }, get price() { return price; }, select, choose };
       this.lastNB = handle;
       return handle;
+    }
+
+    /**
+     * Edit rules for a saved board (the one in play, or a shelved one): the New board window on its recipe and size.
+     * A board that ended keeps its rules (the action is not offered).
+     */
+    openEditRules(id, done) {
+      const B = this.app.store.state.boards, rec = Library.find(B, id);
+      if (!rec) return null;
+      const cur = id === B.cur, json = cur ? this.boardJSON() : rec.game;
+      if (!json || json.over || json.ended) { toast('A board that ended keeps its rules', 'bad'); return null; }
+      const R = L.Recipe;
+      return this.openNewBoard(done, { id, recipe: R.normalize(json.recipe), size: { w: json.w, h: json.h }, json });
+    }
+
+    /**
+     * Apply in Edit rules: nothing changed closes it for nothing; else the board is rebuilt with the new rules
+     * (Library.rebuild: refused, with why, when the stack or the piece would not fit), the price is spent (short: Not
+     * enough lines, nothing changes) and the board changes where it is: in play (a new game object: no Undo history),
+     * or on the shelf. False keeps the window open.
+     */
+    applyEdit(edit, recipe, size, price, why, done) {
+      const st = this.app.store, B = st.state.boards, R = L.Recipe;
+      price = price || R.editPrice(edit.recipe, recipe, edit.size, size);
+      if (!price.cost) { if (done) done(false); return true; }
+      const res = Library.rebuild(edit.json, recipe, size);
+      if (res.why) { why(res.why); return false; }
+      if (st.state.lines < price.cost) { why('Not enough lines'); toast('Not enough lines', 'bad'); return false; }
+      const cur = edit.id === B.cur, rec = Library.find(B, edit.id);
+      if (!rec) return true;
+      st.spend(price.cost);
+      this.app.refreshWallet();
+      if (cur) {
+        this.syncCounters();
+        this.setGame(res.game);
+      } else rec.game = res.json;
+      this.app.sound.play('hold');
+      toast('Rules changed', 'good', 1600);
+      this.persist();
+      if (done) done(true);
+      return true;
     }
 
     /** Resumes a shelved board exactly as it was left; the one in play is shelved as it stands. */
@@ -1656,6 +1453,7 @@
         return h('div', { class: 'lib-row' + (cur ? ' current' : ''), 'data-id': rec.id }, open,
           h('div', { class: 'lib-acts' },
             act('rename', 'Rename', () => { editing = rec.id; draw(); }),
+            full || (g && g.ended) ? gap() : act('settings', 'Edit rules', () => this.openEditRules(rec.id, (made) => { if (made && handle && handle.el.isConnected) draw(rec.id); })),
             s.pieces ? act('retire', 'Retire', () => this.confirmRetire(rec.id, afterGone(rec.id))) : gap(),
             act('trash', 'Delete', () => this.confirmDelete(rec.id, afterGone(rec.id)), 'del')));
       };
@@ -1820,6 +1618,7 @@
      */
     renderItems() {
       // A controller with a bar of its own (Battle: Send, Start over, Pause) draws it instead of the power-ups.
+      this.itembar.classList.remove('cl-bar');
       if (this.ctl.bar(this.itembar) === true) { this.tray = null; this.renderTray(); return; }
       const inv = this.app.store.state.inventory;
       const armedId = this.armed && this.armed.piece === this.game.piece ? this.armed.id : null;
@@ -3452,6 +3251,6 @@
     }
   }
 
-  L.Modes = { ClassicMode, BoardMode, PlayMode, PuzzleMode, FactoryMode, AIM_STICK, CLICK_GRACE_MS, SET_GRACE_MS };
+  L.Modes = { BoardMode, playLockSound, PlayMode, PuzzleMode, FactoryMode, AIM_STICK, CLICK_GRACE_MS, SET_GRACE_MS };
   void CELL;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

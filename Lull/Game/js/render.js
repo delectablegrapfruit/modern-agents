@@ -946,6 +946,16 @@
         for (let x = 1; x < w; x++) ctx.fillRect(x * c, 0, 1, H);
         for (let y = 1; y < h; y++) ctx.fillRect(0, y * c, W, 1);
       }
+      // A stack to show (Edit rules: the board's own), as plain squares.
+      if (o.cells && o.look) {
+        const gap = c >= 5 ? 1 : 0;
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+          const v = o.cells[y * w + x];
+          if (!v) continue;
+          ctx.fillStyle = o.look.colors[v & CELL.COLOR] || o.look.colors[8];
+          ctx.fillRect(x * c, (h - 1 - y) * c, c - gap, c - gap);
+        }
+      }
       geom = { x: 0, y: 0, c, w, h, style, dpr: o.dpr || 1 };
     }
     for (const p of viewParts()) if (p.preview) { ctx.save(); p.preview(ctx, geom, recipe, theme); ctx.restore(); }
@@ -1273,7 +1283,8 @@
       const p = g.piece;
       const pieceCells = p ? g.absCells(p) : [];
       const gy = p ? g.ghostY(p) : null;
-      const ghostCells = p && gy != null && gy !== p.y ? g.absCells(p, p.rot, p.x, gy) : [];
+      // A Classic board with its ghost off (view.noGhost) draws none.
+      const ghostCells = p && gy != null && gy !== p.y && !this.view.noGhost ? g.absCells(p, p.rot, p.x, gy) : [];
 
       // Fog: only what is near the piece (and where it would land) can be seen.
       let near = null;

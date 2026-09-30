@@ -11,6 +11,7 @@ module.exports = async function touchTests({ browser, check, PAGE, OUT }) {
   const errors = [];
   const open = async (width, height, theme) => {
     const ctx = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 3, hasTouch: true, isMobile: true, colorScheme: theme || 'dark' });
+    await ctx.addInitScript(require('./classic-shim.cjs'));
     const page = await ctx.newPage();
     page.on('pageerror', (e) => errors.push(e.message + '\n' + e.stack));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
@@ -59,7 +60,7 @@ module.exports = async function touchTests({ browser, check, PAGE, OUT }) {
     return { x: r.left + b.x, y: r.top + b.y, w: b.w, h: b.h, s: v.lay.s, cx: r.left + b.x + b.w / 2, cy: r.top + b.y + b.h / 2,
       hold: [r.left + hb.x + hb.w / 2, r.top + hb.y + hb.h / 2], step: Lull.Touch.stepFor(v.lay.s, Lull.app.settings.touchSens) };
   }, tab);
-  const piece = (tab) => ev((t) => { const g = Lull.app.modes[t].game, p = g.piece; return p ? { id: p.type.id, rot: p.rot, x: p.x, y: p.y, pieces: g.s.pieces, hold: g.hold && (g.hold.id || g.hold.type || g.hold), score: Lull.app.modes[t].score } : null; }, tab);
+  const piece = (tab) => ev((t) => { const g = Lull.app.modes[t].game, p = g.piece; return p ? { id: p.type.id, rot: p.rot, x: p.x, y: p.y, pieces: g.s.pieces, hold: g.hold && (g.hold.id || g.hold.type || g.hold), score: g.s.score } : null; }, tab);
   const fresh = (tab, id) => ev(([t, k]) => { const m = Lull.app.modes[t], g = m.game; g.board.cells.fill(0); g.hold = null; g.holdLocked = false; g.replacePiece({ id: k }); g.piece.x = 3; m.setAt = 0; m.view.dirty = true; }, [tab, id || 'T']);
 
   // ---- Relaxed ----
@@ -252,40 +253,41 @@ module.exports = async function touchTests({ browser, check, PAGE, OUT }) {
   check('no page zoom or scroll during play', still.scale === 1 && still.sx === 0 && still.sy === 0 && still.sw <= still.cw, JSON.stringify(still));
 
   // ---- Classic ----
-  await ev(() => Lull.app.setTab('classic'));
+  // A Classic board (a board mode), at its Start card; the plain board comes back after.
+  await ev(() => { Lull.app.setTab('play'); window.__keepPlain = Lull.app.modes.play.game.toJSON(); window.makeClassic(); });
   await page.waitForTimeout(200);
-  G = await geo('classic');
+  G = await geo('play');
   await page.waitForTimeout(400); // the card settles in
-  const startBtn = await ev(() => { const b = document.querySelector('#classic-overlay .btn.primary'); const r = b.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2, r.height, getComputedStyle(b.querySelector('kbd') || b).display]; });
+  const startBtn = await ev(() => { const b = document.querySelector('#play-overlay .btn.primary'); const r = b.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2, r.height, getComputedStyle(b.querySelector('kbd') || b).display]; });
   check('Classic\'s Start is a 44 px button, its key cap hidden on a phone', startBtn[2] >= 44 && startBtn[3] === 'none', JSON.stringify(startBtn));
   await page.touchscreen.tap(startBtn[0], startBtn[1]);
   await page.waitForTimeout(100);
-  check('tapping Start starts Classic', await ev(() => Lull.app.modes.classic.started && !Lull.app.modes.classic.cardOpen));
-  await ev(() => { const m = Lull.app.modes.classic; m.level = 1; m.acc = -30; }); // hold gravity off for the moment
-  a = await piece('classic');
+  check('tapping Start starts Classic', await ev(() => CM.started && !CM.cardOpen));
+  await ev(() => { const m = CM; m.level = 1; m.acc = -30; }); // hold gravity off for the moment
+  a = await piece('play');
   await drag(G.cx, G.y + 60, -G.step * 2.2, 0);
-  b = await piece('classic');
+  b = await piece('play');
   check('Classic: a drag moves the piece', b.x - a.x === -2 && b.pieces === a.pieces, JSON.stringify([a, b]));
   // A slow drag on a held clock: each touch stamped 17 ms after the last, and the board's clock (BoardMode.clock: the
   // one a finger resting down the board goes by) held at the latest, so a busy machine's pauses between them are never
   // a rest (a finger that does rest is the next check's). Gravity is held off for it: the first row lowered restarts
   // its count, and a busy machine can take a second or more to deliver the drag.
-  await ev(() => { const m = Lull.app.modes.classic; m.acc = -30; m.gravity = () => Infinity; });
-  a = await piece('classic');
+  await ev(() => { const m = CM; m.acc = -30; m.gravity = () => Infinity; });
+  a = await piece('play');
   {
     const pts = line(G.cx, G.y + 40, 0, G.step * 3.3, Math.max(2, Math.ceil((G.step * 3.3) / 6)));
-    const [origin, t0] = await ev(() => { window.__clockT = performance.now(); Lull.app.modes.classic.clock = () => window.__clockT; return [performance.timeOrigin, window.__clockT]; });
+    const [origin, t0] = await ev(() => { window.__clockT = performance.now(); CM.clock = () => window.__clockT; return [performance.timeOrigin, window.__clockT]; });
     const at = async (type, p, ms) => { await ev((v) => { window.__clockT = v; }, t0 + ms); await touch(type, p ? [p] : [], (origin + t0 + ms) / 1000); };
     await at('touchStart', pts[0], 0);
     for (let i = 1; i < pts.length; i++) await at('touchMove', pts[i], i * 17);
     await at('touchEnd', null, (pts.length - 1) * 17 + 4);
   }
-  b = await piece('classic');
-  await ev(() => { const m = Lull.app.modes.classic; delete m.clock; delete m.gravity; });
+  b = await piece('play');
+  await ev(() => { const m = CM; delete m.clock; delete m.gravity; });
   check('Classic: a slow drag down soft-drops a row a step (and never locks)', a.y - b.y === 3 && b.pieces === a.pieces && b.score - a.score === 3, JSON.stringify([a, b]));
   // Resting the finger down the board keeps lowering (every Lower repeat), without moving it further.
-  await ev(() => { Lull.app.modes.classic.acc = -30; });
-  a = await piece('classic');
+  await ev(() => { CM.acc = -30; });
+  a = await piece('play');
   {
     const pts = line(G.cx, G.y + 40, 0, G.step * 1.3, 8);
     await touch('touchStart', [pts[0]]);
@@ -293,28 +295,29 @@ module.exports = async function touchTests({ browser, check, PAGE, OUT }) {
     await sleep(520);
     await touch('touchEnd', []);
   }
-  b = await piece('classic');
+  b = await piece('play');
   check('Classic: a finger resting down the board keeps lowering', b.score - a.score >= 4 && b.pieces === a.pieces, JSON.stringify([a, b]));
   await sleep(200);
-  a = await piece('classic');
+  a = await piece('play');
   await flick(G.cx, G.y + 60, 0, 170);
   await page.waitForTimeout(40);
-  b = await piece('classic');
+  b = await piece('play');
   check('Classic: a flick down hard-drops', b.pieces === a.pieces + 1, JSON.stringify([a, b]));
   await sleep(200);
-  a = await piece('classic');
+  a = await piece('play');
   await flick(G.cx, G.cy + 120, 0, -170);
-  b = await piece('classic');
+  b = await piece('play');
   check('Classic: a flick up holds (once a piece)', b.hold === a.id && b.pieces === a.pieces, JSON.stringify([a, b]));
-  const pauseBtn = await ev(() => { const b = [...document.querySelectorAll('#classic-controls .btn')].find((x) => /Pause/.test(x.textContent)); const r = b.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; });
+  const pauseBtn = await ev(() => { const b = [...document.querySelectorAll('#itembar .btn')].find((x) => /Pause/.test(x.textContent)); const r = b.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; });
   await page.touchscreen.tap(pauseBtn[0], pauseBtn[1]);
   await page.waitForTimeout(80);
-  a = await piece('classic');
+  a = await piece('play');
   await drag(G.cx, G.y + 60, G.step * 2.2, 0);
-  b = await piece('classic');
-  const paused = await ev(() => Lull.app.modes.classic.paused);
+  b = await piece('play');
+  const paused = await ev(() => CM.paused);
   check('Classic paused (by a tap on Pause): the board takes no gestures', paused && b.x === a.x, JSON.stringify({ paused, a, b }));
   await shot('71-touch-classic');
+  await ev(() => { Lull.app.modes.play.setGame(new Lull.Game({ saved: window.__keepPlain, previewCount: Lull.app.settings.preview })); });
 
   // ---- puzzles on a turned board, and solved by touch alone ----
   await ev(() => Lull.app.setTab('puzzle'));
@@ -414,7 +417,7 @@ module.exports = async function touchTests({ browser, check, PAGE, OUT }) {
   for (const [w, h, theme] of [[390, 844, 'dark'], [390, 844, 'light'], [375, 667, 'dark'], [375, 667, 'light'], [667, 375, 'dark']]) {
     const P2 = w === 390 && theme === 'dark' ? P : await open(w, h, theme);
     await P2.ev((t) => { while (Lull.UI.modalOpen()) Lull.UI.closeTopModal(); Lull.app.settings.theme = t; Lull.app.applySettings(); document.getElementById('toasts').replaceChildren(); }, theme);
-    for (const tab of ['play', 'puzzle', 'classic']) {
+    for (const tab of ['play', 'puzzle']) {
       await P2.ev((t) => Lull.app.setTab(t), tab);
       await P2.page.waitForTimeout(250);
       await layout(P2, w + 'x' + h + ' ' + theme + ' ' + tab);
@@ -473,15 +476,16 @@ module.exports = async function touchTests({ browser, check, PAGE, OUT }) {
     el.dispatchEvent(new TouchEvent('touchstart', { touches: [T(x)], changedTouches: [T(x)], bubbles: true }));
     setTimeout(() => { el.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [T(x + dx)], bubbles: true })); r(Lull.app.tab); }, ms);
   }), [sel, dx, ms]);
+  await ev(() => Lull.app.setTab('puzzle'));
+  const sw = { next: await swipe('#view-puzzle', -120, 120) };
+  sw.last = await swipe('#view-factory', -120, 120);
+  sw.back = await swipe('#view-factory', 120, 120);
   await ev(() => Lull.app.setTab('factory'));
-  const sw = { next: await swipe('#view-factory', -120, 120) };
-  sw.back = await swipe('#view-classic .status, #view-classic', 120, 120);
-  await ev(() => Lull.app.setTab('factory'));
-  sw.slow = await swipe('#view-factory', -120, 600);
+  sw.slow = await swipe('#view-factory', 120, 600);
   await ev(() => Lull.app.setTab('play'));
   sw.board = await swipe('#cv-play', -120, 120);
-  check('a quick sideways swipe changes game tab (left: next, right: back); not on a board, not slow',
-    sw.next === 'classic' && sw.back === 'factory' && sw.slow === 'factory' && sw.board === 'play', JSON.stringify(sw));
+  check('a quick sideways swipe changes game tab along Play, Puzzles, Factory (left: next, right: back; no Classic tab, none past Factory); not on a board, not slow',
+    sw.next === 'factory' && sw.last === 'factory' && sw.back === 'puzzle' && sw.slow === 'factory' && sw.board === 'play', JSON.stringify(sw));
 
   check('no page errors on the phone', errors.length === 0, errors.slice(0, 5).join('\n'));
   await P.ctx.close();

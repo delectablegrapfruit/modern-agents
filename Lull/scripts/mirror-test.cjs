@@ -49,7 +49,7 @@ module.exports = async function mirrorTests({ browser, check, PAGE, OUT }) {
       Lull.app.settings.theme = t; Lull.app.applySettings();
       while (Lull.UI.modalOpen()) Lull.UI.closeTopModal();
       Lull.app.store.state.settings.hints = false; Lull.app.hints.sync();
-      for (const k of ['play', 'puzzle', 'classic']) Lull.app.modes[k].setGrace = 0;
+      for (const k of ['play', 'puzzle']) Lull.app.modes[k].setGrace = 0;
       Lull.app.setTab('play');
     }, theme || 'light');
     await page.evaluate(() => document.fonts && document.fonts.ready);

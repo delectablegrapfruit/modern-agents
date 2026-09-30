@@ -419,7 +419,9 @@
   }
 
   const PART = {
-    key: 'protect', order: 40, mode: 'protect', owns: ['protect'], options: { 'protect.level': IDS.slice() },
+    key: 'protect', order: 40, mode: 'protect', name: 'Protect', owns: ['protect'], options: { 'protect.level': IDS.slice() },
+    // The sprout is planted when the board is made: an edit never makes a board Protect, or a Protect board another.
+    editFixed: true,
     normalize(raw, out) {
       if (out.mode !== 'protect') return;
       const lv = isObj(raw.protect) && raw.protect.level;

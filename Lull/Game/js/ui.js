@@ -904,7 +904,7 @@
           row('Mute', null, toggle('muted')),
           row('Sound effects', null, toggle('sound')),
           row('Volume', null, range('volume', 0, 100, 1, '%', 100)),
-          row('Classic music', null, toggle('music', () => app.modes.classic && app.modes.classic.renderControls())),
+          row('Classic music', null, toggle('music', () => app.modes.play && app.modes.play.renderItems())),
           row('Announcer', null, toggle('announcer')),
           row('Announcer in Relaxed', null, toggle('announcerRelaxed')),
           row('Music volume', null, range('musicVolume', 0, 60, 1, '%', 100)),

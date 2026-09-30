@@ -9,12 +9,12 @@ tinted or solid background inside a distinct border. ⌥⌘L shows and hides it 
 same game runs in any browser from `Game/index.html`, and on iPhone and iPad from the Home Screen, offline
 ([iPhone and iPad](#iphone-and-ipad)).
 
-**Title bar** — left to right: the places to play (Play, Puzzles, Factory, Classic) in one recessed track; empty bar to
+**Title bar** — left to right: the places to play (Play, Puzzles, Factory) in one recessed track; empty bar to
 drag the window by; the places to look (Stats, Achievements) as quiet icons; the wallet, which is also the Shop's
 button (it lights up while the Shop is open); the speaker and Settings; the collapse chevron; and in the app, float on
 top, hide and quit.
-⌘1–⌘7 run in that order, the wallet last. The tab you are on is a raised pill with its icon in the accent colour. Labels
-give way as the window narrows — all four play tabs named, then only the one you are on, then icons alone (Stats and
+⌘1–⌘6 run in that order, the wallet last. (Classic is no longer a tab: it is a board mode, [Classic](#classic).) The tab you are on is a raised pill with its icon in the accent colour. Labels
+give way as the window narrows — all three play tabs named, then only the one you are on, then icons alone (Stats and
 Achievements are named only in a wide window) — and every control's tooltip is its name and key, nothing more (what a place is, you find by going there;
 no button carries a line of explanation or a key cap), so nothing wraps or crowds, down to the app's 400 px minimum (and 300 px in a browser).
 
@@ -129,7 +129,7 @@ milestone twice). Lifetime totals count play once, whichever board it was on, an
 duplicate: a copy would be a way to replay a board's future. The daily gift, the factory and the control hints do not
 look at boards at all.
 
-**Classic** — its own tab, the last of the places to play. Plain Tetris: pieces fall, faster every ten
+**Classic** — a board mode ([Classic](#classic) under Board options: New board ▸ Mode ▸ Classic), played on the Play tab like any board; what follows is how it plays with its settings at their defaults. Plain Tetris: pieces fall, faster every ten
 lines (guideline speed curve), half-second lock delay, soft and hard drop, hold (once per piece), game over, best
 score. The well's top row is a row like any other: every piece appears with its top in it (the I too), a piece touching
 the ceiling still touches it after a turn (the space above the well counts as open, so a T turned flat against the
@@ -399,7 +399,7 @@ the board, so on Upside Down and Sideways boards things fall toward its floor; s
 It is all for show — the board is already final, so the next piece is never kept waiting — mostly over in about 0.7 s,
 with fixed pools of bodies and particles; Reduced motion turns it into plain fades. Shapes beyond the seven (a Noodle, a Giant, a Blueprint drawing, a mirrored odd shape) turn wherever there is room: when no kick fits, a turn that would poke past the ceiling, floor or a wall is nudged back in by exactly that much (if the way in is clear), and one that would dip into the stack is stood on it or slid off the block beside it, never out of a well or through blocks. The seven keep plain SRS, and puzzles keep exactly the turns they were built with.
 
-**Shop** — click the wallet (or ⌘7). Cosmetics only (power-ups are not sold), one kind at a time: a row of kinds (←/→ step
+**Shop** — click the wallet (or ⌘6). Cosmetics only (power-ups are not sold), one kind at a time: a row of kinds (←/→ step
 while it has focus) picks which — when it does not fit, a chevron at each end pages it a visible width at a time,
 snapped to whole kinds, dimmed at each end, never picking one — and only that
 kind's tiles are shown — the list scrolls within the kind, never on into the next; the Shop reopens on the kind you
@@ -518,7 +518,7 @@ board its own way: `game.end(kind)`, told after the lock and kept in the save un
 Horizon count what an item took: `comboCount`, or by default one copy's share, `R.copies`, so a Mirror Bomb counts
 one half), its view and its window. An
 unrated board (shapes other than the seven) has no difficult clears: no quad, no back-to-back streak, no bonus, ×1. Parts always run in a fixed
-order (shapes, mirror, jelly, protect, battle), whatever order they load in. What pays and counts is measured in own
+order (shapes, mirror, jelly, protect, classic, battle), whatever order they load in. What pays and counts is measured in own
 cells: a row holding a cell the player never placed is plain and pays only the player's cells, and no option pays more
 per piece or per action than a Standard board (`f = min(1, 4 / E)`, E the mean cells a piece). Outside the board,
 `Board.get` reads as a wall (`CELL.WALL`); every cell bit has one name in `CELL` (`js/board.js`), and anything that
@@ -750,6 +750,56 @@ Wilted card (its summary, Undo, which brings the leaf back, Boards and Retire), 
 full view says so; its summary adds Waves, Leaves lost, Stones and Moles boxed in, and Stats ▸ Free Play a Protect
 section. The New board window's Mode tab has Protect and its level row, and the preview shows the sprout.
 
+### Classic
+A mode (`js/classic.js`, its controller and settings `js/classicview.js`): the board plays by Classic's rules (see
+**Classic** under Play) and is a Relaxed board in every other way — made in New board, named, saved and shelved in the
+library, resumed exactly, retired and deleted like any other; its row and record say `Classic A` (or B), with its
+level. It waits at a Start card (Space, a tap or Start; Edit rules from there too) and after a switch or a reload at a
+Paused card; away from the board (another tab, window or app, the pointer gone with Pause when the pointer leaves,
+rolled up) it pauses there; a window over it only holds it. Pieces fall by the level's gravity (the guideline curve,
+as before), spawn flush with the ceiling, and a piece that cannot appear where it appears is the classic top out,
+pile and all, then the Game over card (its score, level and lines; Boards, and Play again, which retires the board as
+Retire does and starts the next of the same rules at once; Space there too). The score is Classic's (a clear's points
+times its level, two a row of hard drop, one of soft drop); the board banks at Classic's rate (0.7 of a line a row,
+by the board's worth like every board, times the back-to-back streak to ×1.5; an unrated board has no streak), so it
+never earns faster than Standard. No power-ups (each says Not in Classic; its bar under the board is Music and
+Pause), no Undo, no control hints. Its best score, stats (Stats ▸ Classic, and its time) and the Classic achievements
+count on a board where the feats count (Normal shapes, 10 wide or more); a level feat counts the levels reached by
+lines, as from level 1, so a high start level is no shortcut.
+
+*Its settings* — the Mode tab, under Plain, Protect and Classic, once Classic is chosen, in the spirit of the NES and
+Game Boy Advance games:
+
+| Setting | Values | |
+|---|---|---|
+| Game type | A (endless), B (clear 25 lines) | B ends the board, Cleared (its tag and full view say so), level fixed |
+| Start level | 1–15 (default 1) | A type goes up every ten lines from there, never below it |
+| Garbage height (B) | 0–5 | the NES heights, 0, 3, 5, 8, 10 or 12 rows of 20, scaled to the board; each row about three in five full, never full, grey, never the player's (it pays nothing) |
+| Next | 0–5 (default 3) | whatever Settings ▸ Next says |
+| Randomizer | 7-bag, NES random | NES: a roll of eight, a repeat or the eighth rolled once more of seven (a repeat about one in 28); needs Normal shapes (other shapes bring their own dealer), so other shapes move it to the 7-bag and Normal brings it back |
+| Lock delay | Modern, NES | Modern: half a second, renewed by a move or a turn up to 15 times; NES: it sets on the next row's time |
+| Music | Korobeiniki, Off | the one Classic track there is (the bar's Music button and Settings ▸ Sound ▸ Classic music still turn it off everywhere) |
+| Hard drop, Hold, Ghost | on or off | hard drop off: Space, a click and a flick down do nothing; hold off: no Hold; ghost off: none drawn |
+
+Left out: the NES's own speed table and 0–19 levels (the levels stay the guideline curve Classic has always had, so
+its records and achievements keep meaning what they did), DAS and ARE timing (movement is the keyboard's repeat and
+the touch gestures, as everywhere in Lull), and B type's NES "height" variants beyond the six. It composes with the
+board size, the shape sets (unrated ones pay without a streak), Mirror and Jelly; Protect is another mode.
+
+### Editing a board's rules
+Every saved board that has not ended (the board in play too, and from a Classic board's Start and Paused card) has
+Edit rules on its library row: the New board window on that board's size and recipe, with Apply. Its price is on it:
+20 lines for each section changed (Size, Shapes, Modifiers, Mode; a mode's own settings are its section; Classic's
+music alone is free), nothing when nothing changed (`Recipe.editPrice`, `EDIT_PRICE`). A size keeps the stack:
+columns come and go on the right, rows at the top, and a size that would cut a block is refused with the reason
+("Blocks stand in the rows it would lose"), Apply quiet (`Library.reshape`); the preview shows the stack at the size
+chosen. Protect is kept for a board's life: an edit neither makes a board Protect nor changes one
+(`Recipe.editConflicts`: a part's `editFixed`). Apply rebuilds the board (`Library.rebuild`): the stack, its numbers
+and every other part's state stay, the piece in play comes again first as the new rules place it (no room: refused),
+another dealer starts its own bag, the mode it left drops its state, and the Undo history is cleared; short of lines,
+Not enough lines and nothing changes. Pay stays fair: an edit only costs, and every board, however edited, pays by its
+own rules, never faster than Standard.
+
 ### Battle
 <!-- part:battle -->
 
@@ -763,9 +813,9 @@ section. The New board window's Mode tab has Protect and its level row, and the 
 | ↑ / X, Z, A | turn clockwise, counter-clockwise, 180° |
 | C / Shift | hold; again to swap back (Free Play and Puzzles: as often as you like). On the Factory tab, C collects the crate |
 | ⌫ / U, R, N, H | undo, retry, next puzzle, hint |
-| ⌘1–⌘7, ⌘, | tabs (⌘7 the Shop), settings |
+| ⌘1–⌘6, ⌘, | tabs (⌘6 the Shop), settings |
 | ⌘J | collapse into the title bar, or expand (so does a double-click on the empty bar) |
-| P | pause Classic |
+| P | pause a Classic board (Space or P starts and resumes it) |
 | M | mute everything, on any tab (again to unmute) |
 | mouse: point | slide the piece left and right (at its height; slightly sticky at column edges: the pointer goes 0.15 of a cell past one before the piece follows; mirrored under Inverted Controls; keys keep working while the pointer rests there) |
 | left click | drop it straight down — anywhere on the board side (a slip into the next column in the last 0.06 s before the click is ignored) |
@@ -777,8 +827,8 @@ By touch alone Settings ▸ Keys is Settings ▸ Gestures, and lists the gesture
 
 ## Touch
 
-A quick swipe left or right anywhere off the board changes game tab (left: the next of Play, Puzzles, Factory,
-Classic; right: the one before). A swipe on a board steers the piece instead, and slow drags, dialogs and anything
+A quick swipe left or right anywhere off the board changes game tab (left: the next of Play, Puzzles, Factory;
+right: the one before; it follows the title bar's list, `TABS`). A swipe on a board steers the piece instead, and slow drags, dialogs and anything
 that scrolls sideways are left alone (`bindTabSwipe` in `js/app.js`).
 
 On a phone or a tablet the board is played with one finger, anywhere on it (`js/touch.js` reads the gestures;
