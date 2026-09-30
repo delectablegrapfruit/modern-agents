@@ -82,7 +82,7 @@
     pixel:   { name: 'Pixel', price: 450 },
     bubble:  { name: 'Bubble', price: 600 },
     glass:   { name: 'Glass', price: 750 },
-    jelly:   { name: 'Jelly', price: 900 },
+    jelly:   { name: 'Gummy', price: 900 },
     neon:    { name: 'Neon Tube', price: 1100 },
     gem:     { name: 'Gem', price: 1400 },
     lantern: { name: 'Lantern', price: 1800 },

@@ -43,7 +43,8 @@ const FILES = [
   "js/collapse.js",
   // part:shapes
   // part:mirror
-  // part:jelly
+  "js/jelly.js",
+  "js/jellyview.js",
   // part:protect
   // part:battle
   "js/app.js",
