@@ -44,7 +44,9 @@ const FILES = [
   // part:shapes
   // part:mirror
   // part:jelly
-  // part:protect
+  "css/protect.css",
+  "js/guard.js",
+  "js/guardview.js",
   // part:battle
   "js/app.js",
   "js/webapp.js",

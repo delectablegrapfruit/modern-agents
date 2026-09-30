@@ -1,0 +1,5 @@
+/* Lull — Protect (js/guardview.js): its achievements' place colour (a leaf green, 4.5:1 on its own tint in both
+   themes, as the other places'). */
+:root { --area-protect: #86cf95; }
+:root[data-theme="light"] { --area-protect: #2f6b3c; }
+[data-area="protect"] { --area: var(--area-protect); }
