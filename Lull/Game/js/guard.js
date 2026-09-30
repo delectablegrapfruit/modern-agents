@@ -10,10 +10,11 @@
 //               2. seq++; 3. each mole acts: next to the sprout it nibbles a leaf and leaves; boxed in on all four
 //               sides by solid cells that are not stones (your blocks, other moles, the walls and floor) it curls up
 //               into a stone; out of patience it wanders off; else it moves one cell along its route (Easy: every
-//               second piece), digging through a stone in the level's time; 4. stones that are due fall, each column
-//               onto that column's own top ("crumble to fit": no covered hole), and one that would land on the sprout
-//               costs a leaf and places nothing; 5. moles that are due arrive at a side wall, on its column's top;
-//               6. the phase moves on (a calm, then a wave of 24 pieces; a wave that ends regrows a leaf);
+//               second piece), digging through a stone in the level's time (in pieces, whatever the pace); 4. stones
+//               that are due fall, each column onto that column's own top ("crumble to fit": no covered hole), and one
+//               that would land on the sprout costs a leaf and places nothing; 5. moles that are due arrive at a side
+//               wall, on its column's top; 6. the phase moves on (a calm, then a wave of 24 pieces; a wave that ends
+//               regrows a leaf);
 //               7. at 0 leaves: game.end('wilted').
 //   Routes      Dijkstra over empty cells that touch something solid side by side (a cell, a side wall, the floor;
 //               never the open top of the well), and stones (dug through); never your blocks, the sprout or the walls.
@@ -260,7 +261,8 @@
       if (bySprout(G, x, y)) { loseLeaf(); G.st.taps++; leave('nibble', 0); continue; }
       if (DIRS.every(([dx, dy]) => solidAt(b, x + dx, y + dy) && !isStone(b.get(x + dx, y + dy)))) { G.st.boxed++; leave('boxed', STONE); continue; }
       if (--m.patience <= 0) { G.st.gone++; leave('gone', 0); continue; }
-      if (G.seq % T.pace) continue;
+      // Digging counts every piece (the level's time is in pieces, pace aside); a move into an empty cell waits for the
+      // mole's turn (Easy: every second piece).
       const next = route(b, G, x, y).path[0];
       if (!next) continue;
       const [nx, ny] = next;
@@ -269,7 +271,7 @@
         m.tx = nx; m.ty = ny;
         if (m.dig < T.dig) { ev.moles.push({ slot: m.slot, kind: 'dig', from: [x, y], to: [nx, ny] }); continue; }
         G.st.dug++;
-      }
+      } else if (G.seq % T.pace) continue;
       m.dig = 0; m.tx = -1; m.ty = -1;
       if (nx !== x) m.face = nx > x ? 1 : -1;
       b.set(x, y, 0);
@@ -370,6 +372,14 @@
     if (!G.book) G.book = blankStats();
     return {
       G,
+      // Settle with nothing but the sprout on the board settles nothing (the engine's own refusal reads isEmpty, and the
+      // sprout is never empty): refused here, so nothing is spent.
+      allow(g, id) {
+        if (id !== 'settle') return null;
+        const b = g.board;
+        for (let i = 0; i < b.cells.length; i++) if (b.cells[i] && !(b.cells[i] & ASSET)) return null;
+        return 'Nothing to settle';
+      },
       // The bed never clears.
       rows(g, b, rows) { return rows.filter((y) => y >= BED); },
       // No item removes the sprout (and Settle leaves it where it is).

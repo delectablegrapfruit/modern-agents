@@ -553,14 +553,15 @@ bed rows) and Settle leaves it where it is. Time is counted in pieces set, never
 tool piece and the Drill too) the guard takes one step, in this order: the moles are read off the board (one a clear
 took was swept away); each mole acts (next to the sprout it nibbles a leaf and leaves; boxed in on all four sides by
 solid cells that are not stones, your blocks, other moles, the side walls and the floor, it curls up into a stone; out
-of patience it wanders off; else it moves a cell along its route, digging through a stone in the level's time); stones
-that are due fall, each column onto that column's own top, so a stone never leaves a covered hole, and one that would
-land on the sprout breaks there and costs a leaf; moles that are due come in at a side wall, on that column's top (at
-most four are out); then the wave or calm moves on. A mole crawls through open cells that touch something solid side
-by side (never along the open top of the well), so it climbs faces and floors but cannot round a corner in the open:
-your blocks stop it, and it digs only through stones. Settle and Undo take no step (Undo takes the last one back with
-the rest), and at 0 leaves the board wilts. Tornado, Trapdoor and Mirror World are refused ("Not in Protect"). A board
-is at least 6 × 12, and the shapes must fit in the rows above the bed (a shape set's minimum height plus 2).
+of patience it wanders off; else it moves a cell along its route, digging through a stone in the level's time, counted
+in pieces whatever the pace); stones that are due fall, each column onto that column's own top, so a stone never
+leaves a covered hole, and one that would land on the sprout breaks there and costs a leaf; moles that are due come in
+at a side wall, on that column's top (at most four are out); then the wave or calm moves on. A mole crawls through
+open cells that touch something solid side by side (never along the open top of the well), so it climbs faces and
+floors but cannot round a corner in the open: your blocks stop it, and it digs only through stones. Settle and Undo
+take no step (Undo takes the last one back with the rest; Settle is refused, "Nothing to settle", while the sprout is
+all there is), and at 0 leaves the board wilts. Tornado, Trapdoor and Mirror World are refused ("Not in Protect"). A
+board is at least 6 × 12, and the shapes must fit in the rows above the bed (a shape set's minimum height plus 2).
 
 | | Easy | Medium | Hard |
 |---|---|---|---|

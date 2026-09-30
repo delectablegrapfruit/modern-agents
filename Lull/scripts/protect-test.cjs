@@ -144,6 +144,18 @@ module.exports = async function protectTests({ browser, check, PAGE, OUT }) {
     return { toast: toastT, tornado: st.inventory.tornado, trapdoor: st.inventory.trapdoor, lines: st.lines === lines, why: m.game.allow('flip') };
   });
   check('Tornado, Trapdoor and Mirror World are refused ("Not in Protect"), nothing spent or bought', refused.toast === 'Not in Protect' && refused.tornado === 2 && refused.trapdoor === 0 && refused.lines && refused.why === 'Not in Protect', JSON.stringify(refused));
+  // Settle on a board that holds only the sprout settles nothing: refused, nothing spent, no power-up counted.
+  await ev(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
+  await ev(SCENE, { w: 10, h: 20, level: 'hard', piece: ['T', 3, 17, 0] });
+  const bare = await ev(() => {
+    const m = Lull.app.modes.play, st = Lull.app.store.state;
+    st.inventory.settle = 1;
+    const lines = st.lines, items = JSON.stringify(m.game.s.items || {});
+    m.useItem('settle');
+    const toastT = [...document.querySelectorAll('.toast')].map((t) => t.textContent).pop();
+    return { toast: toastT, settle: st.inventory.settle, lines: st.lines === lines, items: JSON.stringify(m.game.s.items || {}) === items };
+  });
+  check('Settle with only the sprout on the board is refused ("Nothing to settle"), nothing spent', bare.toast === 'Nothing to settle' && bare.settle === 1 && bare.lines && bare.items, JSON.stringify(bare));
 
   // ---- the Wilted card, its Undo; a reload resumes the guard ----------------------------------------------------------
   await ev(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));

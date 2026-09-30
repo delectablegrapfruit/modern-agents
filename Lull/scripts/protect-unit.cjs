@@ -99,7 +99,15 @@ module.exports = function protectUnit({ L, test }) {
     assert(R.rated && R.feats && R.lk === 1 && R.undo, 'rated, as the shape set is (D6)');
     const g = mk();
     for (const id of ['tornado', 'trapdoor', 'flip']) assert.strictEqual(g.allow(id), 'Not in Protect');
-    for (const id of ['settle', 'bomb', 'drill', 'laser', 'blackhole', 'rewind', 'fit', 'double', 'net']) assert.strictEqual(g.allow(id), null, id);
+    for (const id of ['bomb', 'drill', 'laser', 'blackhole', 'rewind', 'fit', 'double', 'net']) assert.strictEqual(g.allow(id), null, id);
+    // Settle with only the sprout on the board settles nothing: refused (the engine's isEmpty never is, the sprout is
+    // there), so the power-up bar spends nothing and Not a Leaf's run is not broken. Any other cell allows it.
+    assert.strictEqual(g.allow('settle'), 'Nothing to settle');
+    assert.strictEqual(std().allow('settle'), null, 'a Standard board leaves it to the engine (an empty board refuses)');
+    for (const put of [(k) => own(k, 0, 0), (k) => k.board.set(0, 0, Guard.STONE), (k) => k.board.set(0, 0, Guard.moleCell(0))]) {
+      const k = mk('hard'); put(k);
+      assert.strictEqual(k.allow('settle'), null);
+    }
     assert(!std().ext.some((e) => e.key === 'protect') && G(std()) === null, 'a default board has no guard');
     assert.deepStrictEqual(Recipe.conflicts(P()), {}, 'Protect goes with every shape set and modifier');
     // The engine refuses them too, whatever asks (the power-up bar refuses first).
@@ -256,17 +264,20 @@ module.exports = function protectUnit({ L, test }) {
 
   test('protect: a mole digs through a stone in the level’s time (Easy 3 pieces, Medium 2, Hard 1)', () => {
     for (const [level, dig] of [['easy', 3], ['medium', 2], ['hard', 1]]) {
-      const g = mk(level, 10, 20, 1), x = quiet(g);
-      // A tall stone pillar: no way over it.
-      for (let y = 0; y < 20; y++) g.board.set(2, y, Guard.STONE);
-      putMole(g, 0, 1, 0);
-      const pace = Guard.LEVELS[level].pace;
-      // It steps into the stone on the dig-th piece it acts on.
-      let acted = 0, at = null;
-      for (let i = 0; i < 12 && !at; i++) { idle(g); if (x.seq % pace === 0) acted++; if (moleAt(g, 0)[0] === 2) at = acted; }
-      assert.strictEqual(at, dig, level + ': in after ' + at + ' of its turns');
-      assert.strictEqual(x.st.dug, 1);
-      assert(g.board.get(2, 0) & CELL.MOLE, 'the stone is gone, the mole in its place');
+      // Pieces, whatever the pace (Easy's moles walk every second piece, but digging counts every piece), and from
+      // either parity of the piece count.
+      for (const start of [0, 1]) {
+        const g = mk(level, 10, 20, 1), x = quiet(g);
+        x.seq = start;
+        // A tall stone pillar: no way over it.
+        for (let y = 0; y < 20; y++) g.board.set(2, y, Guard.STONE);
+        putMole(g, 0, 1, 0);
+        let at = null;
+        for (let i = 1; i <= 12 && !at; i++) { idle(g); if (moleAt(g, 0)[0] === 2) at = i; }
+        assert.strictEqual(at, dig, level + ' (from piece ' + start + '): in after ' + at + ' pieces');
+        assert.strictEqual(x.st.dug, 1);
+        assert(g.board.get(2, 0) & CELL.MOLE, 'the stone is gone, the mole in its place');
+      }
     }
   });
 
