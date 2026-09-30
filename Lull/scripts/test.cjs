@@ -9,7 +9,7 @@ const L = load([
   'util.js', 'pieces.js', 'board.js', 'recipe.js', 'engine.js', 'items.js', 'library.js', 'puzzlegen.js', 'factory.js', 'store.js', 'achievements.js',
   // The board options' pure parts (js/recipe.js): each branch replaces its own line.
   // part:shapes
-  // part:mirror
+  'mirror.js',
   // part:jelly
   // part:protect
   // part:battle
@@ -1766,18 +1766,20 @@ test('achievements pay a modest share: bands, the old order kept, a total well u
     fac_stamp: 150, fac_silo: 150, fac_35: 150, fac_10k: 150, fac_days30: 150, fac_hundred: 200, fac_days100: 1200,
     fac_108: 1500, fac_mountain: 2500
   };
-  assert.deepStrictEqual(Object.keys(OLD).sort(), A.LIST.map((a) => a.id).sort(), 'the same achievements');
-  for (const a of A.LIST) for (const b of A.LIST) if (OLD[a.id] < OLD[b.id]) assert(a.pay <= b.pay, a.id + ' ' + a.pay + ' > ' + b.id + ' ' + b.pay);
-  assert(A.LIST.every((a) => a.pay >= 15), 'every one pays something real');
-  const normal = A.LIST.filter((a) => a.tier !== 'legend').map((a) => a.pay), legend = A.LIST.filter((a) => a.tier === 'legend').map((a) => a.pay);
+  // The game's own achievements (a board option's own, Achievements.add, are its tests' to hold).
+  const LIST = A.LIST.filter((a) => a.id in OLD);
+  assert.deepStrictEqual(Object.keys(OLD).sort(), LIST.map((a) => a.id).sort(), 'the same achievements');
+  for (const a of LIST) for (const b of LIST) if (OLD[a.id] < OLD[b.id]) assert(a.pay <= b.pay, a.id + ' ' + a.pay + ' > ' + b.id + ' ' + b.pay);
+  assert(LIST.every((a) => a.pay >= 15), 'every one pays something real');
+  const normal = LIST.filter((a) => a.tier !== 'legend').map((a) => a.pay), legend = LIST.filter((a) => a.tier === 'legend').map((a) => a.pay);
   assert(Math.max(...normal) <= 200 && Math.max(...normal) < 250 && Math.min(...legend) >= 250, 'normal 15–200, legendary 250 and up');
-  assert.deepStrictEqual(A.LIST.filter((a) => a.pay >= 1000).map((a) => [a.id, a.pay]), [['lu_all', 1000]], 'only Lull reaches 1,000');
-  const total = A.LIST.reduce((n, a) => n + a.pay, 0);
+  assert.deepStrictEqual(LIST.filter((a) => a.pay >= 1000).map((a) => [a.id, a.pay]), [['lu_all', 1000]], 'only Lull reaches 1,000');
+  const total = LIST.reduce((n, a) => n + a.pay, 0);
   const forSale = Object.values(L.COSMETICS).flatMap((k) => Object.values(k)).filter((c) => c.price > 0 && !c.reward).reduce((n, c) => n + c.price, 0);
   assert(total <= 20000 && total <= 0.5 * forSale, total + ' against ' + forSale + ' for sale');
   assert.strictEqual(total, 19165);
   const sums = {};
-  for (const a of A.LIST) { const k = a.group; sums[k] = sums[k] || [0, 0]; sums[k][a.tier === 'legend' ? 1 : 0] += a.pay; }
+  for (const a of LIST) { const k = a.group; sums[k] = sums[k] || [0, 0]; sums[k][a.tier === 'legend' ? 1 : 0] += a.pay; }
   assert.deepStrictEqual(sums, { play: [2430, 3925], classic: [1450, 2800], puzzle: [1080, 2300], lull: [495, 2950], factory: [610, 1125] });
 });
 test('achievements: a fresh save and a short ordinary game earn nothing', () => {
@@ -3486,7 +3488,10 @@ console.log('board recipe');
     const log = [];
     const mk = (key, order) => ({ key, order, engine: () => ({ step: () => log.push(key), afterPlace: () => log.push(key + ':placed') }) });
     withParts([mk('tzz', 50), mk('taa', 10), mk('tmm', 30)], () => {
-      assert.deepStrictEqual(Recipe.parts().map((p) => p.key), ['core', 'taa', 'tmm', 'tzz']);
+      // (The real parts loaded with the game, Mirror's and the others', sit among them by their own order.)
+      const ordered = Recipe.parts();
+      assert.deepStrictEqual(ordered.map((p) => p.key).filter((k) => ['core', 'taa', 'tmm', 'tzz'].includes(k)), ['core', 'taa', 'tmm', 'tzz']);
+      assert(ordered.every((p, i) => i === 0 || (ordered[i - 1].order || 0) <= (p.order || 0)), 'every part in ascending order');
       const g = new Game({ w: 10, h: 20, seed: 1, recipe: {} });
       assert.deepStrictEqual(g.ext.map((e) => [e.key, e.order]), [['taa', 10], ['tmm', 30], ['tzz', 50]]);
       g.drop();
@@ -4773,6 +4778,9 @@ console.log('touch gestures');
 
 // The economy against the models of play: bots on the real engine, the puzzle model, the career (scripts/econ-test.cjs).
 require('./econ-test.cjs')(test, L);
+
+// The Mirror modifier's rules (scripts/mirror-unit.cjs).
+require('./mirror-unit.cjs')({ L, test });
 
 // The Home Screen web app: the offline copy, the manifest and icons, the deployed build (scripts/web-test.cjs).
 require('./web-test.cjs')(test).then(() => {

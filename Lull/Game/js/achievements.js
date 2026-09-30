@@ -14,7 +14,7 @@
     // "No power-ups on the board" (the skill ones) is said in each description; what it means exactly, once, here.
     // Board sizes (js/library.js): lines count by width, and a board narrower than Standard makes feats easy.
     { id: 'play', name: 'Free Play', icon: 'play', noteTitle: 'How these count',
-      note: 'No power-ups on the board: none used since the board was last empty. Luck power-ups, and one taken back before its piece is set, do not count. Lines count by width: a line on a board 5 wide is half of one, on 20 wide two. Feats count on Normal shapes, 10 wide or more, not on Jelly boards.' },
+      note: 'No power-ups on the board: none used since the board was last empty. Luck power-ups, and one taken back before its piece is set, do not count. Lines count by width: a line on a board 5 wide is half of one, on 20 wide two, and on a Mirror board half that. Feats count on Normal shapes, 10 wide or more (a Mirror board 20 wide), not on Jelly boards.' },
     { id: 'classic', name: 'Classic', icon: 'classic' },
     { id: 'puzzle', name: 'Puzzles', icon: 'puzzle' },
     { id: 'lull', name: 'Lifetime', icon: 'lifetime' },

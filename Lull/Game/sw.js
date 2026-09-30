@@ -42,7 +42,8 @@ const FILES = [
   "js/retiredview.js",
   "js/collapse.js",
   // part:shapes
-  // part:mirror
+  "js/mirror.js",
+  "js/mirrorview.js",
   // part:jelly
   // part:protect
   // part:battle

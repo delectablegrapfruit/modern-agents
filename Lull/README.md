@@ -335,7 +335,7 @@ clicking it asks once (its name and a Buy & use button with the price) — dimme
 
 | Type | Power-ups (price ⦵, rarity) |
 |---|---|
-| Shapers | Reroll (15, common: a different piece), Mirror (15, common: J and L, S and Z swap), Pebble (20, common: a single block), Noodle (30, uncommon: a six-long rod), Giant (30, uncommon: twice the size), Blueprint (100, rare: draw your own, up to six blocks) |
+| Shapers | Reroll (15, common: a different piece), Turnabout (15, common: J and L, S and Z swap), Pebble (20, common: a single block), Noodle (30, uncommon: a six-long rod), Giant (30, uncommon: twice the size), Blueprint (100, rare: draw your own, up to six blocks) |
 | Choice | Pick of Three (20, common: play one of the next three now; this piece takes its place in line), Best Fit (45, uncommon: the piece becomes whichever of the seven fits the stack best, right over its spot), Order Slip (55, rare: choose the piece in play) |
 | Tools | Patch (20, common: one block that drops into the highest covered hole in its column), Ghost (50, uncommon: passes through blocks into the first gap below where it fits), Drill (40, uncommon: bores out its column), Bomb (45, uncommon: clears a 13-block diamond where it lands), Laser (65, rare: clears every row it touches, full or not), Black Hole (90, rare: swallows everything within three blocks) |
 | Board | Mirror World (20, common: flips the board left to right), Undo (5, common: takes back the last placement and its lines; one item with Puzzles' Undo, the count shared, and every free one comes as a pack of 5), Trapdoor (40, uncommon: the bottom row falls away, whatever it holds), Tornado (60, rare: shuffles the columns, holes and all), Settle (70, rare: every block falls straight down; full rows clear) |
@@ -576,7 +576,34 @@ render split, and the drawing now matches it pixel for pixel.
 <!-- part:shapes -->
 
 ### Mirror
-<!-- part:mirror -->
+A line runs down the middle of the well, and the piece in play has a copy: its reflection across the line (x →
+w − 1 − x, `js/mirror.js`), which moves and turns with it as one rigid pair (you go left, the copy goes right; you turn
+clockwise, it turns the other way). The line is not a wall: the piece may cross it and meet its own reflection, the two
+overlapping where they meet, and on an odd width the centre column is its own mirror. Everything that asks where a
+piece is sees the pair (the engine's `placed`): fitting, the ghost, setting, Best Fit, and the room a held or swapped
+piece is given, so either half stops the pair and it lands when either half rests, even on a board that is not
+symmetric. A piece appears centred in the left half (one wider than the half, centred on the board). A lock is one piece
+(its shape counted once) that placed the pair's cells; a T-spin reads the piece's own box. Items act at both spots
+(`targets`): two drill bits, two bombs, two black holes, the pair's laser rows; a Patch goes into a covered hole only
+where its copy's hole is open in the same row, else lands like a block; a Ghost is a pair. Tornado shuffles the left
+half and gives the right half the reflection of that order (an odd width's centre column stays put); Settle and
+Trapdoor are as ever; Mirror World is refused ("Not on a Mirror board"). Mirror is never in Battle.
+
+*Pay* — the copy is placed by the piece, never by hand, so a piece is worth its pair's cells: `copies` 2, E doubled
+(8 on Normal shapes, f ½), so a row pays w/20 Standard lines (half a Standard single on a Mirror board 10 wide) and a
+quad is still four rows, paying half; the streak's links count by that worth, so quads come twice as often and each is
+half a link. `wEff` is w/2: the feats count on a Mirror board 20 wide; Full Blast and Event Horizon count one half
+(`comboCount`: the larger half, an odd width's centre column in each). Measured with a streak bot (quads, back to back,
+hold, the real controls; `scripts/mirror-unit.cjs`), a Mirror board earns no more per action than Standard at 10, 11
+and 20 wide, and no more per piece than Standard at 10 and 11; at 20 (where a row is a Standard line) no more per piece
+than a plain board 20 wide. **Butterfly** (45): clear the whole board by hand on a Mirror board 20 wide.
+
+*The look* (`js/mirrorview.js`) — the copy is drawn at 0.8 of the piece's opacity, so the piece you steer reads first;
+the pair's ghost in full. The line is still and runs through the open well, never across a block: on an even width a
+1.5 px accent line between the middle columns at 0.35, on an odd width the centre column tinted, a hairline on each
+edge. The same line is on the New board preview and the library's thumbnails. *Controls* — keys steer the piece. A mouse pointed on the copy's side of the line aims the copy,
+so the copy lands under the pointer; a touch that starts on the copy's side turns that gesture's sideways moves round,
+so the copy follows the finger. Taps are unchanged.
 
 ### Jelly
 <!-- part:jelly -->
