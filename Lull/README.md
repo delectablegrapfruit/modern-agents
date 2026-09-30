@@ -552,20 +552,25 @@ never placed is a lump of one; the sprout never falls, and holds up what rests o
 
 Rows a piece clears itself count as always (a quad, a T-spin, the back-to-back streak). Rows a cascade clears are plain:
 they count as lines and belong to the same lock (one step of the combo), neither add to the streak nor end it, and pay
-half a row each. Cascades forgive holes, and at half a Jelly board never pays more per piece or per action than a Normal
-one (bots that seek cascades, save keys or play greedily, widths 4 to 20: `scripts/jelly-test.cjs`). Each wave that
-clears scores 100 points times its number. The feats and skill combos do not count on Jelly; Knock-On (three cascades
-from one piece) does. A Bomb, a Black Hole, a Drill or a Laser brings down what it leaves hanging; Settle and Trapdoor
-are refused when something would come down into the piece; Mirror World turns the links with the board; Tornado is
-refused (it would tear every lump apart). Best Fit counts the cascades of the spots that clear rows (200 at most a piece).
+half a row each (the plan had them paid whole; half is what keeps Jelly fair). Cascades forgive holes, and at half a
+Jelly board never pays more per piece than Standard, nor more per action than a Normal board of its own width (a narrow
+Normal board already pays more a key than Standard: that is its size, not Jelly). Tested with bots that seek cascades,
+save keys or play greedily, widths 4 to 20, each pooled over seeds, with no allowance (`scripts/jelly-test.cjs`). Each
+wave that clears scores 100 points times its number. The feats and skill combos do not count on Jelly; Knock-On (three
+cascades from one piece) does. A Bomb, a Black Hole, a Drill or a Laser brings down what it leaves hanging; Settle and
+Trapdoor are refused when something would come down into the piece; Mirror World turns the links with the board; Tornado
+is refused (it would tear every lump apart). Best Fit counts the cascades of the spots that clear rows (200 at most a
+piece).
 
 Every block is drawn as jelly, whatever the skin: the stack, the piece, its ghost and the trays, each lump one rounded
 body with no seams. It gives a little when it lands, moves, turns or lowers (springs of about 6 Hz, still again within
-half a second, at most 60 blocks at a time). A cascade is shown wave by wave over the board that is already final:
-the lumps fall, land with a squash, and their rows clear with the look's own effect and "CASCADE ×n", while the next
-piece and its ghost already use the final board; a lower, a drop, or the piece reaching a lump still in the air ends it
-at once. Reduced motion: no give, and each wave is a short crossfade. A Jelly board's summary has a Cascades tile, and
-Stats ▸ Free Play a Jelly section once there has been one.
+half a second, at most 60 blocks at a time). A cascade is shown wave by wave over the board that is already final: the
+lumps fall, land with a squash, and their rows clear with the look's own effect and "CASCADE ×n", while the next piece
+and its ghost already use the final board (the ghost is hidden under the blocks the replay still draws); a lower, a
+drop, the piece reaching a block still drawn, or its ghost a lump still in the air, ends it at once. The lock is heard
+for the piece's own rows; each wave's rows are heard as the replay reaches them (those an early end skips, then).
+Reduced motion: no give, and each wave is a short crossfade. A Jelly board's summary has a Cascades tile, and Stats ▸
+Free Play a Jelly section once there has been one.
 
 ### Protect
 <!-- part:protect -->

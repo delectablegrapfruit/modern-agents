@@ -253,6 +253,8 @@
       return true;
     }
     if (kind === 'ghost') {
+      // Under a block a cascade's replay still draws (the stack a clear has yet to bring down), the ghost is hidden.
+      if (J.replay && ghostCovered(view, at.x, at.y)) return true;
       const style = at.style === 'soft' || at.style === 'dotted' || at.style === 'glow' ? at.style : 'outline';
       blit(ctx, lumpSprite(color, maskOfShape(at.cells || [[at.x, at.y]], at.x, at.y, (dx, dy) => view.screenDir(dx, dy)), P, lightOf(ctx), style), sx, sy, s, P, true);
       return true;
@@ -357,14 +359,55 @@
       endReplay(view, J, true);
       return;
     }
-    // The next piece meets a lump still drawn where it was: the replay jumps to its end.
-    if (g.piece) {
-      const arr = at.t < at.wv.fall ? at.wv.before : at.wv.mid;
-      for (const [x, y] of g.absCells(g.piece)) if (x >= 0 && x < g.w && y >= 0 && y < g.h && arr[y * g.w + x] && !g.board.cells[y * g.w + x]) { endReplay(view, J, false); return; }
-    }
+    // The next piece meets a block still drawn where it was, or its ghost a lump in mid-air: the replay jumps to its end.
+    if (meets(view, at, rp.reduced)) { flush(view, rp, false); endReplay(view, J, false); return; }
     // Each wave's clear, in order, as the replay reaches it (every one, even when a slow frame skipped past it).
     const upto = at.t >= at.wv.fall ? at.i : at.i - 1;
     while (rp.fired < upto) fireWave(view, rp, rp.waves[++rp.fired]);
+  }
+  /**
+   * Does the piece in play, or its ghost, meet a block the replay still draws (at `at`)? The piece: any block drawn
+   * where the final board has none. Its ghost (where it lands on the final board, as the view draws it): a lump of
+   * this wave in mid-air, where it is drawn now or on the rest of its way down. (The ghost below the replay's other
+   * blocks, the stack a clear has yet to bring down, is only hidden under them: see ghostCovered.)
+   */
+  function meets(view, at, reduced) {
+    const g = view.game, p = g.piece, wv = at.wv;
+    if (!p) return false;
+    const w = g.w, fin = g.board.cells, arr = at.t < wv.fall ? wv.before : wv.mid;
+    for (const [x, y] of g.absCells(p)) if (x >= 0 && x < w && y >= 0 && y < g.h && arr[y * w + x] && !fin[y * w + x]) return true;
+    if (at.t >= wv.fall || !wv.falls.length) return false;
+    const gy = view.look && view.look.ghost === 'off' ? null : g.ghostY(p);
+    if (gy == null || gy === p.y) return false;
+    const k = at.t / wv.fall, e = reduced ? 0 : k * k;
+    const ghost = g.absCells(p, p.rot, p.x, gy);
+    for (const [x, y, dy] of wv.falls) {
+      const top = Math.ceil(y - dy * e - 1e-9);
+      for (const [gx, gy2] of ghost) if (gx === x && gy2 >= y - dy && gy2 <= top) return true;
+    }
+    return false;
+  }
+  /** While a cascade is replayed: does a block it draws cover board cell (x, y)? The ghost is not drawn under one. */
+  function ghostCovered(view, x, y) {
+    const rp = stateOf(view).replay;
+    if (!rp || x < 0 || x >= rp.w || y < 0 || y >= rp.h) return false;
+    const at = replayAt(rp, performance.now());
+    if (!at) return false;
+    const i = y * rp.w + x, wv = at.wv;
+    if (at.t < wv.fall) return !!(wv.before[i] || (rp.reduced && wv.mid[i]));
+    return !!wv.mid[i];
+  }
+  /**
+   * The replay jumps to its end: the clears it had not reached yet are still seen and heard (heard only: the board has
+   * moved on, another lock).
+   */
+  function flush(view, rp, heardOnly) {
+    while (rp.fired < rp.waves.length - 1) {
+      const wv = rp.waves[++rp.fired];
+      if (!heardOnly) { fireWave(view, rp, wv); continue; }
+      if (wv.rows.length) rp.n++;
+      if (rp.onWave) { try { rp.onWave(wv, rp.n); } catch (e) { /* a sound that fails is only a sound */ } }
+    }
   }
   /** A wave's rows clearing: the look's effect, "CASCADE ×n" over the board, a little shake, its sound. */
   function fireWave(view, rp, wv) {
@@ -454,7 +497,7 @@
     },
     onLock(view, r, reduced) {
       const J = stateOf(view), g = view.game;
-      if (J.replay) endReplay(view, J, false);
+      if (J.replay) { flush(view, J.replay, true); endReplay(view, J, false); }
       J.piece = null;
       J.springs = []; J.byCell = new Map();
       J.last = performance.now();
@@ -477,7 +520,7 @@
     onRotate(view) { pieceKick(view, 0.06, 0); },
     onLower(view) {
       const J = stateOf(view);
-      if (J.replay) endReplay(view, J, false);
+      if (J.replay) { flush(view, J.replay, false); endReplay(view, J, false); }
       pieceKick(view, 0.03, 0);
     },
   };
@@ -505,5 +548,5 @@
     });
   }
 
-  L.JellyView = { lumpSprite, stateOf, startReplay, replayAt, maskIn, view: viewPart };
+  L.JellyView = { lumpSprite, stateOf, startReplay, replayAt, meets, ghostCovered, maskIn, view: viewPart };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

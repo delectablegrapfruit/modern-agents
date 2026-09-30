@@ -162,15 +162,36 @@ module.exports = async function jellyTests({ browser, check, PAGE, OUT }) {
       g.replacePiece({ id: 'I' });
       g.piece.rot = 1; g.piece.x = 7; g.piece.y = 12;
       const F = Lull.app.store.state.stats.free, before = F.cascades || 0;
+      // The sounds of rows clearing, as [id, rows] (a quad or a clear), from here on.
       const sounds = [];
       const snd = Lull.app.sound, play = snd.play.bind(snd);
-      snd.play = (id, n) => { sounds.push(id); return play(id, n); };
-      window.__snd = () => { snd.play = play; return sounds; };
+      snd.play = (id, n) => { if (id === 'clear' || id === 'quad' || id === 'lock') sounds.push([id, n || 0]); return play(id, n); };
+      window.__sounds = sounds;
+      window.__snd = () => sounds.filter(([id]) => id !== 'lock').map(([id]) => id);
+      // The next piece moved (before a frame is drawn) where neither it nor its ghost meets a lump the replay still
+      // draws in the air, so the replay runs its course, and where most of its ghost shows; its column, or null.
+      window.__safe = () => {
+        const m = Lull.app.modes.play, g = m.game, v = m.view, JV = Lull.JellyView, rp = JV.stateOf(v).replay, p = g.piece;
+        if (!rp || !p) return null;
+        const x0 = p.x, bnd = p.type.rotBounds[p.rot];
+        let best = null;
+        for (let x = -bnd.minX; x <= g.w - 1 - bnd.maxX; x++) {
+          if (!g.fitsAt(p, p.rot, x, p.y)) continue;
+          p.x = x;
+          if (!rp.waves.every((wv) => !JV.meets(v, { wv, t: 0 }) && !JV.meets(v, { wv, t: wv.fall }))) continue;
+          const gy = g.ghostY(p), shows = gy == null ? 0 : g.absCells(p, p.rot, x, gy).filter(([cx, cy]) => !JV.ghostCovered(v, cx, cy)).length;
+          if (!best || shows > best.shows) best = { x, shows };
+        }
+        p.x = best ? best.x : x0;
+        return best ? best.x : null;
+      };
       m.action('drop');
+      const safe = window.__safe();
       const J = Lull.JellyView.stateOf(m.view);
-      return { replay: !!J.replay, waves: J.replay ? J.replay.waves.length : 0, t0: J.replay ? J.replay.t0 : 0, cascades: (F.cascades || 0) - before, ach: !!Lull.app.store.state.achievements.knock_on };
+      return { replay: !!J.replay, waves: J.replay ? J.replay.waves.length : 0, t0: J.replay ? J.replay.t0 : 0, cascades: (F.cascades || 0) - before, ach: !!Lull.app.store.state.achievements.knock_on, safe, atLock: sounds.slice() };
     });
-    check(theme + ': a lock with cascades starts a replay of its waves; the cascades are counted; Knock-On (3 waves) is earned', casc.replay && casc.waves === 3 && casc.cascades === 3 && casc.ach, JSON.stringify(casc));
+    check(theme + ': a lock with cascades starts a replay of its waves; the cascades are counted; Knock-On (3 waves) is earned', casc.replay && casc.waves === 3 && casc.cascades === 3 && casc.ach && casc.safe != null, JSON.stringify(casc));
+    check(theme + ': the lock is heard for the piece\'s own row only (the cascade\'s rows are heard as the replay reaches them)', JSON.stringify(casc.atLock) === '[["clear",1]]', JSON.stringify(casc.atLock));
     // Mid-wave: time held a little into the first wave's fall.
     await freeze(ev, casc.t0 + 130);
     await ev(() => { const v = Lull.app.modes.play.view; v.dirty = true; v.render(performance.now()); });
@@ -183,7 +204,8 @@ module.exports = async function jellyTests({ browser, check, PAGE, OUT }) {
       const m = Lull.app.modes.play, v = m.view, J = Lull.JellyView.stateOf(v);
       return { replay: !!J.replay, sounds: window.__snd().filter((s) => s === 'clear').length, texts: v.fx.texts.map((t) => t.str) };
     });
-    check(theme + ': the replay ends by itself (each wave heard as it clears)', !after.replay && after.sounds >= 3, JSON.stringify(after));
+    // Four clears heard: the piece's own row at the lock, then one for each of the three waves (never a row twice).
+    check(theme + ': the replay ends by itself (each wave heard once, as it clears)', !after.replay && after.sounds === 4, JSON.stringify(after));
     // CASCADE words over the board: the replay puts them up wave by wave (seen on the next cascade, held mid-way).
     const words = await ev(async () => {
       const m = Lull.app.modes.play, v = m.view, J = Lull.JellyView.stateOf(v);
@@ -198,14 +220,14 @@ module.exports = async function jellyTests({ browser, check, PAGE, OUT }) {
       g.replacePiece({ id: 'I' }); g.piece.rot = 1; g.piece.x = 7; g.piece.y = 12;
       // Row 1 (the 9 joined) is held by row 0; the I fills column 9 of row 1: it clears, the pair falls into row 0.
       m.action('drop');
-      const started = !!J.replay;
-      await new Promise((r) => setTimeout(r, 450));
-      const seen = v.fx.texts.map((t) => t.str);
+      const started = !!J.replay, safe = window.__safe();
+      await new Promise((r) => setTimeout(r, 300));
+      const seen = v.fx.texts.map((t) => t.str), still = !!J.replay;
       m.action('down');
       const lowered = !J.replay;
-      return { started, seen, lowered };
+      return { started, safe, seen, still, lowered };
     });
-    check(theme + ': "CASCADE" over the board as the wave clears; a lower ends the replay at once', words.started && words.seen.includes('CASCADE') && words.lowered, JSON.stringify(words));
+    check(theme + ': "CASCADE" over the board as the wave clears; a lower ends the replay at once', words.started && words.safe != null && words.seen.includes('CASCADE') && words.still && words.lowered, JSON.stringify(words));
     // The Board full card: a Cascades tile; Stats ▸ Free Play: the Jelly rows.
     const card = await ev(async () => {
       const m = Lull.app.modes.play;
@@ -226,6 +248,61 @@ module.exports = async function jellyTests({ browser, check, PAGE, OUT }) {
     });
     check(theme + ': the Board full card has a Cascades tile (and the Board tile says Jelly); nothing in it overflows', card.cascades === '4' && card.board === 'Jelly' && card.fits, JSON.stringify(card));
     check(theme + ': Stats ▸ Free Play has the Jelly rows', card.heads >= 0 && card.rows === 'Cascades4Most from one piece3', JSON.stringify(card));
+    // The next piece high up, its ghost landing where a lump is still drawn in mid-air: the replay ends at once (and
+    // its clear is still seen and heard); with the ghost clear of it, it goes on. And a lock whose only rows are a
+    // cascade's (a lump left hanging falls at the next lock) is heard as a lock, its row once, as the replay reaches it.
+    const ghost = await ev(async () => {
+      const m = Lull.app.modes.play, v = m.view, R = Lull.Recipe, C = Lull.CELL, JV = Lull.JellyView;
+      const setUp = () => {
+        m.setGame(new Lull.Game({ w: 10, h: 20, seed: 9, recipe: R.normalize({ mods: { jelly: true } }), previewCount: m.settings.preview }));
+        const g = m.game;
+        // Row 0 full but column 4; a lump of two over it, hanging (it falls into row 0 at the next lock, which clears).
+        for (let x = 0; x < 10; x++) if (x !== 4) g.board.set(x, 0, 5);
+        g.board.set(4, 3, 2 | C.JOIN_U); g.board.set(4, 4, 2);
+        g.replacePiece({ id: 'O' }); g.piece.rot = 0; g.piece.x = 7; g.piece.y = 12;
+        return g;
+      };
+      const vertical = (g, col) => { g.replacePiece({ id: 'I' }); g.piece.rot = 1; g.piece.x = col - 2; g.piece.y = 14; };
+      const sounds = window.__sounds, J = { get replay() { return JV.stateOf(v).replay; } };
+      // Its ghost clear of the lump (column 8): the replay goes on.
+      let g = setUp();
+      sounds.length = 0;
+      m.action('drop');
+      const lock = sounds.slice();
+      vertical(g, 8);
+      const at = { wv: J.replay && J.replay.waves[0], t: 0 };
+      const clearOf = !!J.replay && !JV.meets(v, at);
+      // Its ghost (column 8, rows 2-5) runs under the piece set before, which the clear has yet to bring down (row 2):
+      // that cell of the ghost is not drawn, the rest are.
+      const gy = g.ghostY(g.piece), covered = g.absCells(g.piece, g.piece.rot, g.piece.x, gy).filter(([x, y]) => JV.ghostCovered(v, x, y));
+      const vp = JV.view, cell = vp.cell, ghostDraws = [];
+      vp.cell = function (ctx, val, x, y, s, kind) {
+        if (kind !== 'ghost') return cell.apply(this, arguments);
+        const di = ctx.drawImage;
+        let k = 0;
+        ctx.drawImage = function () { k++; return di.apply(this, arguments); };
+        try { return cell.apply(this, arguments); } finally { ctx.drawImage = di; ghostDraws.push(k); }
+      };
+      v.dirty = true; v.render(performance.now());
+      vp.cell = cell;
+      await new Promise((r) => setTimeout(r, 80));
+      const goesOn = !!J.replay;
+      await new Promise((r) => setTimeout(r, 900));
+      const heard = sounds.slice(lock.length);
+      // Its ghost in column 4, landing on the lump's place in the air (the piece itself far above it): over at once.
+      g = setUp();
+      m.action('drop');
+      sounds.length = 0;
+      vertical(g, 4);
+      const rp = J.replay, wv = rp && rp.waves[0];
+      const pieceOnly = !!wv && g.absCells(g.piece).some(([x, y]) => y < g.h && wv.before[y * g.w + x] && !g.board.cells[y * g.w + x]);
+      const meets = !!wv && JV.meets(v, { wv, t: 0 });
+      await new Promise((r) => setTimeout(r, 80));
+      return { lock, clearOf, covered, ghostDraws, goesOn, heard, pieceOnly, meets, ended: !J.replay, flushed: sounds.slice() };
+    });
+    check(theme + ': a lock whose rows are only a cascade\'s is heard as a lock, then its row once as the replay clears it', JSON.stringify(ghost.lock) === '[["lock",0]]' && JSON.stringify(ghost.heard) === '[["clear",1]]', JSON.stringify(ghost));
+    check(theme + ': during the replay the ghost is not drawn under a block it still shows (and is drawn elsewhere)', JSON.stringify(ghost.covered) === '[[8,2]]' && ghost.ghostDraws.length === 4 && ghost.ghostDraws.filter((k) => k > 0).length === 3, JSON.stringify(ghost));
+    check(theme + ': the ghost landing on a lump still in the air ends the replay at once (its clear still heard); clear of it, it goes on', ghost.clearOf && ghost.goesOn && !ghost.pieceOnly && ghost.meets && ghost.ended && JSON.stringify(ghost.flushed) === '[["clear",1]]', JSON.stringify(ghost));
     await ctx.close();
   }
 

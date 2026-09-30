@@ -459,35 +459,37 @@ module.exports = function jellyTests(test) {
     const cap = Jelly.SIM_CAP;
     Jelly.SIM_CAP = 1e9; // the bots see every cascade (Best Fit's cap is for its speed, not its judgement)
     try {
-      const N = 200, T = process.env.JELLY_TABLE, fmt = (v) => (typeof v === 'number' ? Math.round(v * 1000) / 1000 : v);
-      // Standard: a Normal 10 × 20 board, the best of the bots over two seeds, a piece.
+      const T = process.env.JELLY_TABLE, fmt = (v) => (typeof v === 'number' ? Math.round(v * 100000) / 100000 : v);
+      // Each bot's runs are pooled over seeds (where a short run stops is noise), a Normal and a Jelly board of the same
+      // size playing the same seeds. No allowance: at these counts what is left of the noise is well under half a
+      // percent, and Jelly's cascade rows paying half keeps it below (README, Jelly: fairness).
+      const pooled = (recipe, w, h, bot, seeds, n) => {
+        const t = { pay: 0, pieces: 0, actions: 0, quads: 0 };
+        for (const seed of seeds) { const r = play(recipe, w, h, seed, bot, n); for (const k of Object.keys(t)) t[k] += r[k]; }
+        return t;
+      };
+      const range = (a, k, step) => Array.from({ length: k }, (_, i) => a + i * step);
+      // Standard: a Normal 10 × 20 board, its best bot, a piece.
       let stdPiece = 0;
-      for (const seed of [1, 2]) for (const bot of ['greedy', 'cascade', 'lean']) { const s = play({}, 10, 20, seed, bot, N); stdPiece = Math.max(stdPiece, s.pay / s.pieces); }
+      for (const bot of ['greedy', 'cascade', 'lean']) { const s = pooled({}, 10, 20, bot, bot === 'greedy' ? range(1, 12, 1) : [1, 2, 3], bot === 'greedy' ? 400 : 200); stdPiece = Math.max(stdPiece, s.pay / s.pieces); }
       const over = [];
       for (let w = 4; w <= 20; w++) {
         const h = Math.max(16, Math.min(40, 2 * w));
         // Looking a piece ahead costs a board's spots squared: those bots play the narrow boards (where Jelly helps
-        // most); the greedy one plays every width, longer and over more seeds. Each bot's runs are pooled (where a
-        // short run stops is noise), on a Normal and a Jelly board of the same size.
+        // most) over fewer, shorter runs; the greedy one plays every width, over twelve seeds of 400 pieces.
         const bots = w <= 10 ? ['greedy', 'cascade', 'lean'] : ['greedy'];
-        const seeds = w <= 10 ? [w, w + 30] : [w, w + 30, w + 60, w + 90], n = w <= 10 ? N : 2 * N;
-        const pooled = (recipe, bot) => {
-          const t = { pay: 0, pieces: 0, actions: 0, quads: 0 };
-          for (const seed of seeds) { const r = play(recipe, w, h, seed, bot, n); for (const k of Object.keys(t)) t[k] += r[k]; }
-          return t;
-        };
+        const runOf = (bot) => (bot === 'greedy' ? [range(w, 12, 30), 400] : [range(w, 3, 30), 200]);
         // What a Normal board this size pays a key at best (a narrow board needs fewer keys a piece whatever it holds:
         // that is its size, not Jelly).
         let nrmAction = 0;
-        for (const bot of bots) { const r = pooled({}, bot); nrmAction = Math.max(nrmAction, r.pay / r.actions); }
+        for (const bot of bots) { const r = pooled({}, w, h, bot, ...runOf(bot)); nrmAction = Math.max(nrmAction, r.pay / r.actions); }
         for (const bot of bots) {
-          const j = pooled(JELLY, bot);
+          const j = pooled(JELLY, w, h, bot, ...runOf(bot));
           const perPiece = j.pay / j.pieces, perAction = j.pay / j.actions;
           if (T) console.log([w, bot, perPiece, stdPiece, perAction, nrmAction].map(fmt).join('\t'));
           // No more than a piece's own cells can pay, whatever falls: 4 cells a piece, the multiplier, a quad's bonus.
           assert(j.pay <= j.pieces * 0.4 * Chain.mult(1e9) + j.quads * Chain.mult(1e9) + 1e-9, 'within the cells’ ceiling');
-          // A little room for where a run stops (what is left on the board): half a hundredth a piece, 1.5% a key.
-          if (perPiece > stdPiece + 0.005 || perAction > nrmAction * 1.015) over.push([w, bot, perPiece, stdPiece, perAction, nrmAction].map(fmt).join(' '));
+          if (perPiece > stdPiece || perAction > nrmAction) over.push([w, bot, perPiece, stdPiece, perAction, nrmAction].map(fmt).join(' '));
         }
       }
       assert.deepStrictEqual(over, [], 'earns more than a Normal board');

@@ -17,7 +17,8 @@
   /**
    * What a row a cascade clears is worth, of a row the piece cleared itself: half. Cascades forgive holes, so a stack
    * on Jelly clears more of its blocks for the same pieces and keys; at half, measured with bots over widths 4-20, a
-   * Jelly board never pays more per piece or per action than a Normal one (scripts/jelly-test.cjs, fairness).
+   * Jelly board never pays more per piece than Standard, nor per action than a Normal board of its width
+   * (scripts/jelly-test.cjs, fairness).
    */
   const CASCADE_WORTH = 0.5;
 
@@ -220,22 +221,33 @@
 
   // ---- Free Play ----------------------------------------------------------------------------------------------------
 
-  /** Free Play's controller on a Jelly board: the plain lock, then the cascades counted and heard wave by wave. */
+  /** The rows a lock's cascade cleared, all its waves. */
+  const cascadeRows = (r) => (r && r.cascade ? r.cascade.reduce((a, wv) => a + ((wv.rows && wv.rows.length) || 0), 0) : 0);
+
+  /**
+   * Free Play's controller on a Jelly board: the plain lock, heard for the piece's own rows only (r.heardLater: the
+   * cascade's are heard wave by wave as the board shows them), then the cascades counted.
+   */
   function controller(play, game) {
     if (!game || !isOn(game.recipe)) return null;
     return {
       id: 'jelly',
       onLock(r) {
+        const later = cascadeRows(r);
+        if (later) r.heardLater = later;
         this.base.onLock(r);
+        if (later) {
+          // Each wave's clear is heard when the board shows it (js/jellyview.js replays them); with no replay, now.
+          const rp = play.view && play.view.jelly && play.view.jelly.replay;
+          const snd = play.app.sound;
+          if (rp) rp.onWave = (wv) => { if (wv.rows.length && snd) snd.play('clear', wv.rows.length); };
+          else if (snd) snd.play('clear', later);
+        }
         const k = r.waves || 0;
         if (!k) return;
         const F = play.app.store.state.stats.free;
         F.cascades = (F.cascades || 0) + k;
         F.bestCascade = Math.max(F.bestCascade || 0, k);
-        // Each wave's clear is heard when the board shows it (js/jellyview.js replays them).
-        const rp = play.view && play.view.jelly && play.view.jelly.replay;
-        const snd = play.app.sound;
-        if (rp) rp.onWave = (wv) => { if (wv.rows.length && snd) snd.play('clear', wv.rows.length); };
         play.app.store.touch();
       },
     };
@@ -269,5 +281,5 @@
     });
   }
 
-  L.Jelly = { link, lumps, drop, cascade, flipLinks, cleared, isOn, part, SIM_CAP, CASCADE_WORTH };
+  L.Jelly = { link, lumps, drop, cascade, flipLinks, cleared, cascadeRows, isOn, part, SIM_CAP, CASCADE_WORTH };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
