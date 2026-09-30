@@ -666,34 +666,54 @@ so the copy follows the finger. Taps are unchanged.
 
 ### Jelly
 A modifier (Modifiers ▸ Jelly; the rules in `js/jelly.js`, the look in `js/jellyview.js`): every piece sets as one soft
-lump, and a lump that nothing holds up falls as a whole. At a lock the piece's blocks are joined to each other (the
-links live in the cells, `CELL.JOIN_R` and `CELL.JOIN_U`, so Undo, the save and a resumed board keep them). A clear cuts
-the lumps it runs through, and every lump left hanging over a hole falls until it rests, which can fill rows that clear
-in turn: a *cascade*, wave after wave until nothing falls. A lump keeps its shape (pieces never ooze into holes); the
-parts of a shape joined only at a corner are lumps of their own, and one left hanging falls at once. A block the player
-never placed is a lump of one; the sprout never falls, and holds up what rests on it.
+lump that keeps living after it lands. It falls when nothing holds it up, sags and flops over the edges it hangs over,
+and squeezes down through cracks a block at a time, bending into whatever shape that leaves, until it settles. At a
+lock the piece's blocks are joined to each other (the links live in the cells, `CELL.JOIN_R` and `CELL.JOIN_U`, so
+Undo, the save and a resumed board keep them). The parts of a shape joined only at a corner are lumps of their own. A
+block the player never placed is a lump of one that never oozes; the sprout never moves, and holds up what rests on it.
 
-Rows a piece clears itself count as always (a quad, a T-spin, the back-to-back streak). Rows a cascade clears are plain:
+*Settling* runs on the grid, at the lock (and after a clear, an item, Trapdoor), step by step until nothing moves:
+1. *Fall*: every lump that nothing holds up (the floor, the sprout, or a lump that is held) falls, whole, until it rests.
+2. *Ooze*, only when nothing fell: each lump of two or more placed blocks, in order of its lowest, leftmost block,
+   moves at most one block one step. Its targets: an empty cell right under one of its blocks (it sags, flops over an
+   edge, drips into a crack), or beside a block of its bottom row over a notch one wide and one deep (it slips in). Its
+   sources: its blocks with nothing on top, higher than the target. The lump must stay one body (4-connected). The
+   lowest target with a source wins, then the highest source, then the nearest; ties are broken by a hash seeded
+   from the board's seed and its piece count, so the same board settles the same way on Undo and replay. The block
+   squeezes through the lump to the target and the lump is joined afresh; lumps never merge.
+3. The rows that fills clear (a *cascade*), and the next step goes on.
+
+Every step lowers a block or takes blocks away, so settling always ends (a guard stops it at blocks × height steps
+anyway). A lump over a crack one wide pours into it and can come out the bottom as a bar; a bar hanging over a ledge
+drapes down it, comes off and lands beside it; a T set nub down flops over onto its flat side. A lump lying flat, or
+standing on a flat floor, stays as it is, and a lump with another resting on its overhang is held. Deeper cracks
+beside a lump are only oozed into from above: letting a stack pour into its wells by itself made placing pieces barely
+matter and paid more a key than a Normal board. Best Fit settles each spot it weighs (the ones that clear rows or can
+ooze, 200 at most a piece).
+
+Rows a piece clears itself count as always (a quad, a T-spin, the back-to-back streak). Rows settling clears are plain:
 they count as lines and belong to the same lock (one step of the combo), neither add to the streak nor end it, and pay
-half a row each (the plan had them paid whole; half is what keeps Jelly fair). Cascades forgive holes, and at half a
-Jelly board never pays more per piece than Standard, nor more per action than a Normal board of its own width (a narrow
-Normal board already pays more a key than Standard: that is its size, not Jelly). Tested with bots that seek cascades,
-save keys or play greedily, widths 4 to 20, each pooled over seeds, with no allowance (`scripts/jelly-test.cjs`). Each
-wave that clears scores 100 points times its number. The feats and skill combos do not count on Jelly; Knock-On (three
-cascades from one piece) does. A Bomb, a Black Hole, a Drill or a Laser brings down what it leaves hanging; Settle and
-Trapdoor are refused when something would come down into the piece; Mirror World turns the links with the board; Tornado
-is refused (it would tear every lump apart). Best Fit counts the cascades of the spots that clear rows (200 at most a
-piece).
+half a row each (the plan had them paid whole; half is what keeps Jelly fair). At half a Jelly board never pays more
+per piece than Standard, nor more per action than a Normal board of its own width (a narrow Normal board already pays
+more a key than Standard: that is its size, not Jelly). Tested with bots that seek cascades, save keys or play
+greedily, widths 4 to 20, each pooled over seeds, with no allowance (`scripts/jelly-test.cjs`). Each wave that clears
+scores 100 points times its number. The feats and skill combos do not count on Jelly; Knock-On (three cascades from
+one piece) does. A Bomb, a Black Hole, a Drill or a Laser brings down what it leaves hanging; Settle and Trapdoor are
+refused when something would come down (or ooze) into the piece; Mirror World turns the links with the board; Tornado
+is refused (it would tear every lump apart).
 
 Every block is drawn as jelly, whatever the skin: the stack, the piece, its ghost and the trays, each lump one rounded
 body with no seams. It gives a little when it lands, moves, turns or lowers (springs of about 6 Hz, still again within
-half a second, at most 60 blocks at a time). A cascade is shown wave by wave over the board that is already final: the
-lumps fall, land with a squash, and their rows clear with the look's own effect and "CASCADE ×n", while the next piece
-and its ghost already use the final board (the ghost is hidden under the blocks the replay still draws); a lower, a
-drop, the piece reaching a block still drawn, or its ghost a lump still in the air, ends it at once. The lock is heard
-for the piece's own rows; each wave's rows are heard as the replay reaches them (those an early end skips, then).
-Reduced motion: no give, and each wave is a short crossfade. A Jelly board's summary has a Cascades tile, and Stats ▸
-Free Play a Jelly section once there has been one.
+half a second, at most 60 blocks at a time). Settling is replayed step by step over the board that is already final:
+lumps fall (ease in) and land with a squash; an oozing block is a round blob stretched along its way, squeezing from
+where it was to where it goes with a strand of jelly bridging it to its lump and trailing back, while its lump squashes
+and leans the way it goes (0.05–0.16 s a step, about 1.8 s of oozing at most); rows clear with the look's own effect
+and "CASCADE ×n". The next piece and its ghost already use the final board (the ghost is hidden under the blocks the
+replay still draws); a lower, a drop, the piece reaching a block still drawn, or its ghost a lump still in the air,
+ends it at once. Each frame draws one step. The lock is heard for the piece's own rows; each wave's rows are heard as
+the replay reaches them (those an early end skips, then). Reduced motion: no give and no warping, ooze steps are
+instant and each fall a short crossfade. A Jelly board's summary has a Cascades tile, and Stats ▸ Free Play a Jelly
+section once there has been one.
 
 ### Protect
 A mode: shield a sprout from falling stones and burrowing moles (`js/guard.js`). The sprout sits on the floor in the

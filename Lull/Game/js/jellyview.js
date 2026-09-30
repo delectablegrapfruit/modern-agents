@@ -1,8 +1,10 @@
 // Lull — Jelly's look and window (js/jelly.js has its rules). On a Jelly board every block is drawn as soft jelly
 // (the stack, the piece in play, its ghost and the trays): a lump is one rounded body, its joined sides meeting with no
 // seam. It wobbles a little when it lands, moves, turns or lowers (render-only springs, at rest again within half a
-// second), and a cascade is replayed wave by wave over the board that is already final. Reduced motion: no springs,
-// and each wave is a short crossfade. Also the New board window's switch, the Cascades tile and the Stats rows.
+// second), and settling is replayed step by step over the board that is already final: lumps fall and squash, an
+// oozing block is a stretched blob squeezing along a strand of jelly while its lump warps. Reduced motion: no springs,
+// no warping, ooze steps instant and each fall a short crossfade. Also the New board window's switch, the Cascades
+// tile and the Stats rows.
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
@@ -305,15 +307,33 @@
   function startReplay(view, r) {
     const g = view.game, w = g.w, h = g.h, reduced = quiet(view);
     const waves = [];
+    const oozes = r.cascade.filter((wv) => wv.moves && wv.moves.length).length;
+    // An ooze step: 0.05–0.16 s, the more steps the quicker (about 1.8 s of oozing at most); instant under reduced motion.
+    const step = reduced ? 0 : Math.max(0.05, Math.min(0.16, 1.8 / Math.max(1, oozes)));
     for (const wv of r.cascade) {
       if (!wv.before || !wv.falls) return null;
-      const mid = wv.before.slice(), moved = new Map();
-      let maxDy = 0;
-      for (const [x, y] of wv.falls) mid[y * w + x] = 0;
-      for (const [x, y, dy] of wv.falls) { mid[(y - dy) * w + x] = wv.before[y * w + x]; moved.set(y * w + x, dy); maxDy = Math.max(maxDy, dy); }
-      const fall = reduced ? 0.15 : Math.min(0.4, 0.12 + 0.07 * Math.sqrt(maxDy));
-      const clear = wv.rows.length ? (reduced ? 0.15 : 0.2) : 0.06;
-      waves.push({ before: wv.before, mid, moved, rows: wv.rows, removed: wv.removed, falls: wv.falls, fall, clear, dur: fall + clear });
+      const moved = new Map();
+      let maxDy = 0, mid = wv.after;
+      if (!mid) {
+        mid = wv.before.slice();
+        for (const [x, y] of wv.falls) mid[y * w + x] = 0;
+        for (const [x, y, dy] of wv.falls) mid[(y - dy) * w + x] = wv.before[y * w + x];
+      }
+      for (const [x, y, dy] of wv.falls) { moved.set(y * w + x, dy); maxDy = Math.max(maxDy, dy); }
+      const moves = wv.moves || [];
+      // Each oozing block: where it goes from and to, the lump it joins (on the board after), a block of it to hang on.
+      let ooze = null;
+      if (moves.length && L.Jelly) {
+        const { id, list } = L.Jelly.lumps({ w, h, cells: mid });
+        ooze = moves.map(([from, to]) => {
+          const k = id[to], cells = k >= 0 ? list[k] : [to];
+          const x = to % w, nb = [to - w, to + w, x > 0 ? to - 1 : -1, x + 1 < w ? to + 1 : -1].find((j) => j >= 0 && j !== from && id[j] === k && j !== to);
+          return { from, to, v: mid[to], cells: new Set(cells), hang: nb == null ? -1 : nb };
+        });
+      }
+      const fall = wv.falls.length ? (reduced ? 0.15 : Math.min(0.4, 0.12 + 0.07 * Math.sqrt(maxDy))) : moves.length ? step : 0;
+      const clear = wv.rows.length ? (reduced ? 0.15 : 0.2) : wv.falls.length ? 0.06 : 0;
+      waves.push({ before: wv.before, mid, moved, rows: wv.rows, removed: wv.removed, falls: wv.falls, ooze, fall, clear, dur: fall + clear });
     }
     if (!waves.length) return null;
     return { waves, i: 0, t0: performance.now(), fired: -1, n: 0, reduced, final: g.board.cells.slice(), pieces: g.s.pieces, onWave: null, w, h };
@@ -343,6 +363,7 @@
     if (last.rows.length) return;
     const w = rp.w, idxs = [];
     for (const [x, y, dy] of last.falls) if (dy > 0) idxs.push((y - dy) * w + x);
+    for (const o of last.ooze || []) idxs.push(o.to);
     const dy = Math.max(1, ...last.falls.map((f) => f[2]));
     kickLumps(view, idxs, Math.min(0.15, 0.03 * dy), 0);
   }
@@ -434,6 +455,7 @@
       each(arr, (v, x, y) => { const [sx, sy] = view.toScreen(x, y); drawStackCell(ctx, view, arr, v, x, y, sx, sy, s, null); });
       if (alpha < 1) ctx.restore();
     };
+    if (at.t < wv.fall && wv.ooze) { drawOoze(ctx, view, wv, at.t / wv.fall, each); return; }
     if (at.t < wv.fall) {
       const k = at.t / wv.fall;
       if (rp.reduced) { plain(wv.before, 1 - k); plain(wv.mid, k); return; }
@@ -453,6 +475,15 @@
       const [sx, sy] = view.toScreen(x, y);
       drawStackCell(ctx, view, wv.mid, v, x, y, sx, sy, s, null);
     });
+    if (squash && wv.ooze) {
+      // The lumps that oozed wobble as the block lands.
+      for (const o of wv.ooze) {
+        const cells = Array.from(o.cells).filter((i) => !rows.has((i - (i % w)) / w) && wv.mid[i]).map((i) => [i % w, (i - (i % w)) / w]);
+        if (!cells.length) continue;
+        const sp = { a: 0.07 * squash, b: 0 };
+        withSpring(ctx, view, sp, boxOf(view, cells), () => { for (const [x, y] of cells) { const [sx, sy] = view.toScreen(x, y); drawStackCell(ctx, view, wv.mid, wv.mid[y * w + x], x, y, sx, sy, s, null); } });
+      }
+    }
     if (squash && wv.falls.length) {
       // The fallen lumps again, squashed over themselves (drawn once more with the spring's shape).
       const dy = Math.max(...wv.falls.map((f) => f[2]));
@@ -462,6 +493,65 @@
         const box = boxOf(view, cells);
         withSpring(ctx, view, sp, box, () => { for (const [x, y] of cells) { const [sx, sy] = view.toScreen(x, y); drawStackCell(ctx, view, wv.mid, wv.mid[y * w + x], x, y, sx, sy, s, null); } });
       }
+    }
+  }
+
+  /**
+   * An ooze step, k of the way (0–1): the lumps as they are after it, each oozing lump warped (squashed, sheared the
+   * way its block goes), and the block itself a stretched blob squeezing from where it was to where it goes, with a
+   * strand of jelly bridging it to its lump and trailing back to where it left.
+   */
+  function drawOoze(ctx, view, wv, k, each) {
+    const g = view.game, w = g.w, s = view.lay.s, e = k * k * (3 - 2 * k), bump = Math.sin(Math.PI * k);
+    const skip = new Set(), inLump = new Map();
+    for (const o of wv.ooze) { skip.add(o.to); for (const i of o.cells) inLump.set(i, o); }
+    // The board after the step, less the blocks still on their way (their lumps round off where they will join).
+    const arr = wv.mid.slice();
+    for (const i of skip) arr[i] = 0;
+    const xy = (i) => [i % w, (i - (i % w)) / w];
+    const centre = (x, y) => { const [sx, sy] = view.toScreen(x, y); return [sx + s / 2, sy + s / 2]; };
+    // The strands under the blocks: from the blob back to where it left (thinning as it goes) and to its lump.
+    ctx.save();
+    ctx.lineCap = 'round';
+    for (const o of wv.ooze) {
+      const [fx, fy] = xy(o.from), [tx, ty] = xy(o.to), bx = fx + (tx - fx) * e, by = fy + (ty - fy) * e;
+      const color = view.colorOf(o.v), c0 = centre(fx, fy), c1 = centre(bx, by);
+      const strands = [[c0, c1, s * (0.5 - 0.3 * k)]];
+      if (o.hang >= 0) { const [hx, hy] = xy(o.hang); strands.push([centre(hx, hy), c1, s * (0.36 + 0.2 * k)]); }
+      for (const [p0, p1, lw] of strands) {
+        ctx.beginPath(); ctx.moveTo(p0[0], p0[1]); ctx.lineTo(p1[0], p1[1]);
+        ctx.lineWidth = lw + Math.max(1, s * 0.08); ctx.strokeStyle = rgba(shade(color, lightOf(ctx) ? -0.3 : -0.42), 0.95); ctx.stroke();
+        ctx.lineWidth = lw; ctx.strokeStyle = color; ctx.stroke();
+      }
+    }
+    ctx.restore();
+    // Every block but the oozing ones' lumps, as it is after the step.
+    each(wv.mid, (v, x, y) => {
+      const i = y * w + x;
+      if (skip.has(i) || inLump.has(i)) return;
+      const [sx, sy] = view.toScreen(x, y);
+      drawStackCell(ctx, view, arr, v, x, y, sx, sy, s, null);
+    });
+    // Each oozing lump, warped: squashed a little and sheared towards the way its block goes.
+    for (const o of wv.ooze) {
+      const cells = Array.from(o.cells).filter((i) => i !== o.to && wv.mid[i]).map(xy);
+      if (!cells.length) continue;
+      const dx = (o.to % w) - (o.from % w), d = view.screenDir(dx > 0 ? 1 : dx < 0 ? -1 : 0, 0);
+      const sp = { a: 0.08 * bump, b: 0.07 * bump * (d[0] || d[1] || 0) };
+      withSpring(ctx, view, sp, boxOf(view, cells), () => { for (const [x, y] of cells) { const [sx, sy] = view.toScreen(x, y); drawStackCell(ctx, view, arr, arr[y * w + x], x, y, sx, sy, s, null); } });
+    }
+    // The blobs: round, stretched along the way they go.
+    for (const o of wv.ooze) {
+      const [fx, fy] = xy(o.from), [tx, ty] = xy(o.to);
+      const [sx, sy] = view.toScreen(fx + (tx - fx) * e, fy + (ty - fy) * e);
+      const P = Math.round(s * dprOf(ctx)), img = lumpSprite(view.colorOf(o.v), 0, P, lightOf(ctx), 'body');
+      const [ax, ay] = view.toScreen(tx, ty), [bx0, by0] = view.toScreen(fx, fy);
+      const ang = Math.atan2(ay - by0, ax - bx0), st = 1 + 0.35 * bump;
+      ctx.save();
+      ctx.translate(sx + s / 2, sy + s / 2);
+      ctx.rotate(ang); ctx.scale(st, 1 / Math.sqrt(st)); ctx.rotate(-ang);
+      blit(ctx, img, -s / 2, -s / 2, s, P);
+      ctx.restore();
     }
   }
 

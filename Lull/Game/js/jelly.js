@@ -1,7 +1,8 @@
-// Lull — Jelly, a board modifier (js/recipe.js): every piece sets as one soft lump, and a lump left hanging when rows
-// clear falls as a whole until it rests, which can fill rows and clear them again (a cascade). Pure rules, no DOM: the
-// links, the cascade, the part's rules and engine hooks, its Free Play controller, its stats and Knock-On. The look (the
-// lumps, their wobble, the cascade replayed) is js/jellyview.js.
+// Lull — Jelly, a board modifier (js/recipe.js): every piece sets as one soft lump that keeps living after it lands: it
+// falls when nothing holds it up, sags and flops over edges, and oozes a block at a time down through cracks, until it
+// settles; the rows that fills clear (cascades). Pure rules on the grid, no DOM: the links, settling, the part's rules
+// and engine hooks, its Free Play controller, its stats and Knock-On. The look (the lumps, their wobble, settling
+// replayed step by step) is js/jellyview.js.
 //
 // Links live in the cells (js/board.js: JOIN_R, joined to the cell on its right; JOIN_U, to the cell above), so Undo,
 // the save and a resumed board keep them with no state of their own. At a lock every 4-adjacent pair of the cells the
@@ -42,8 +43,12 @@
    * The lumps: { id (a lump per cell; -1 empty, or not looked at), list: [[cell index]] }, by flood fill over the links.
    * from: only lumps with a cell in row `from` or above (all of each such lump, wherever it reaches).
    */
-  function lumps(b, from) {
-    const w = b.w, c = b.cells, N = c.length, id = new Int32Array(N).fill(-1), list = [], st = new Int32Array(N);
+  let scratch = null;
+  function lumps(b, from, reuse) {
+    const w = b.w, c = b.cells, N = c.length;
+    // reuse: the settling loop's own scratch arrays (its lumps are never kept past the next step).
+    if (reuse && (!scratch || scratch.id.length !== N)) scratch = { id: new Int32Array(N), st: new Int32Array(N) };
+    const id = reuse ? scratch.id.fill(-1) : new Int32Array(N).fill(-1), list = [], st = reuse ? scratch.st : new Int32Array(N);
     for (let i = (from || 0) * w; i < N; i++) {
       if (!c[i] || id[i] >= 0) continue;
       const k = list.length, cells = [i];
@@ -67,9 +72,10 @@
    * known to rest: what is there stays and holds up what is on it). Returns the cells that fell, [[x, y, dy]] (where
    * each was, and how far it fell).
    */
-  function drop(b, from) {
+  function drop(b, from, rest) {
     const w = b.w, c = b.cells, N = c.length;
-    const { id, list } = lumps(b, from);
+    const lm = lumps(b, from, !!rest), { id, list } = lm;
+    if (rest) rest.lumps = lm;
     const n = list.length;
     if (!n) return [];
     const anchor = new Uint8Array(n), dy = new Int32Array(n), from0 = [];
@@ -117,27 +123,152 @@
     return falls;
   }
 
+  /** A seeded hash of two numbers (the ooze's tie-breaks: the same board and seed always settle the same way). */
+  function hash(a, b) {
+    let h = Math.imul((a | 0) ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul((b | 0) + 0x632be5ab, 0xc2b2ae35);
+    h ^= h >>> 13; h = Math.imul(h, 0x27d4eb2f);
+    return (h ^ (h >>> 15)) >>> 0;
+  }
+
+  /** Are these cell indices (a lump, small) one 4-connected body? */
+  function connected(cells, w) {
+    const n = cells.length;
+    if (n < 2) return true;
+    const seen = new Uint8Array(n), st = [0];
+    seen[0] = 1;
+    let got = 1;
+    while (st.length) {
+      const j = cells[st.pop()];
+      for (let q = 0; q < n; q++) {
+        if (seen[q]) continue;
+        const d = cells[q] - j;
+        if (d === w || d === -w || (d === 1 && j % w !== w - 1) || (d === -1 && j % w !== 0)) { seen[q] = 1; got++; st.push(q); }
+      }
+    }
+    return got === n;
+  }
+
+  /** Joins a lump's cells (indices) afresh: every 4-adjacent pair of them, and nothing else. */
+  function relink(b, cells) {
+    const c = b.cells, w = b.w;
+    for (const j of cells) c[j] &= ~(JR | JU);
+    link(b, cells.map((j) => [j % w, (j - (j % w)) / w]));
+  }
+
   /**
-   * The cascade on a board (after a clear, or anything that took blocks away): links to nothing are dropped, then
-   * again and again: every lump left hanging falls, and the rows that fills (the game's own rule: fullRows) clear.
-   * It ends when nothing falls, or a fall fills no row. Returns the waves, [{ before (the board before it fell; not
-   * for a quick run), falls: [[x, y, dy]], rows, removed }]: the last may fill no row. quick: no record of the waves'
-   * boards and falls (a test or a simulation); from: the lowest row a clear just took (a board that rested before it:
-   * nothing lower can have lost its hold), 0 to look at everything.
+   * One ooze step (the board rests: nothing hangs). Each lump of two or more placed blocks, in order of its lowest,
+   * leftmost cell, moves at most one of its blocks, strictly down:
+   *   targets: an empty cell right under one of its blocks (it sags, flops over an edge, drips into a crack), or beside
+   *     a block in its bottom row over a notch one wide and one deep (mouth: it slips in);
+   *   sources: its blocks with nothing on top (the cell above empty), higher than the target;
+   *   the lump must still be one body (4-connected) with the block moved.
+   * The lowest target that has a source wins (ties: seeded), then the highest source (ties: the nearest to the
+   * target, then seeded); the block squeezes through the lump to it and the lump is joined afresh. Blocks the player
+   * never placed and the sprout never ooze; lumps never merge. from: only lumps reaching row `from` or above.
+   * Returns the moves, [[from index, to index]].
+   */
+  function ooze(b, salt, from, lm) {
+    const w = b.w, c = b.cells, N = c.length;
+    const { list } = lm || lumps(b, from);
+    const moves = [];
+    for (const cells of list) {
+      if (cells.length < 2) continue;
+      if (cells.some((j) => c[j] & SOLO)) continue;
+      let minY = Infinity;
+      for (const j of cells) minY = Math.min(minY, (j - (j % w)) / w);
+      const T = new Set();
+      for (const j of cells) {
+        const x = j % w, y = (j - x) / w;
+        if (y > 0 && !c[j - w]) T.add(j - w);
+        if (y === minY && y > 0) {
+          if (x > 0 && mouth(b, j - 1)) T.add(j - 1);
+          if (x + 1 < w && mouth(b, j + 1)) T.add(j + 1);
+        }
+      }
+      if (!T.size) continue;
+      const ts = Array.from(T).sort((p, q) => (p - (p % w)) - (q - (q % w)) || hash(salt, p) - hash(salt, q));
+      for (const t of ts) {
+        const ty = (t - (t % w)) / w, tx = t % w;
+        let best = -1, bk = null;
+        for (const s of cells) {
+          const sy = (s - (s % w)) / w;
+          if (sy <= ty || (s + w < N && c[s + w])) continue;
+          const key = [sy, Math.abs((s % w) - tx) + (sy - ty), hash(salt ^ 0x5bd1e995, s)];
+          if (bk && (key[0] < bk[0] || (key[0] === bk[0] && (key[1] > bk[1] || (key[1] === bk[1] && key[2] <= bk[2]))))) continue;
+          const q = cells.indexOf(s);
+          cells[q] = t;
+          const ok = connected(cells, w);
+          cells[q] = s;
+          if (ok) { best = s; bk = key; }
+        }
+        if (best < 0) continue;
+        c[t] = c[best] & ~(JR | JU); c[best] = 0;
+        cells[cells.indexOf(best)] = t;
+        relink(b, cells);
+        moves.push([best, t]);
+        break;
+      }
+    }
+    return moves;
+  }
+
+  /**
+   * Is cell t the mouth of a notch: empty, over an empty cell that is walled in on both sides (a block or the board's
+   * edge) and has a block or the floor under it: a hole one wide and one deep. (A deeper crack is only oozed into from
+   * above: a mouth into any crack would let a stack pour into its wells by itself, and pay more a key than a Normal
+   * board; scripts/jelly-test.cjs, fairness.)
+   */
+  function mouth(b, t) {
+    const w = b.w, c = b.cells, x = t % w, u = t - w;
+    return u >= 0 && !c[t] && !c[u] && (x === 0 || !!c[u - 1]) && (x === w - 1 || !!c[u + 1]) && (u < w || !!c[u - w]);
+  }
+
+  /** Could the lump of these just-set cells ([[x, y]]) ooze at all: a block of it over an empty cell, or a mouth beside its bottom row? */
+  function mayOoze(b, abs) {
+    const w = b.w, c = b.cells;
+    let minY = Infinity;
+    for (const [, y] of abs) minY = Math.min(minY, y);
+    for (const [x, y] of abs) {
+      if (x < 0 || x >= w || y <= 0 || y >= b.h) continue;
+      const i = y * w + x;
+      if (!c[i - w]) return true;
+      if (y === minY && ((x > 0 && mouth(b, i - 1)) || (x + 1 < w && mouth(b, i + 1)))) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Settling (after a lock, a clear, or anything that took blocks away): links to nothing are dropped, then step after
+   * step until nothing moves:
+   *   1. every lump that nothing holds up falls, whole, until it rests (drop); if none does,
+   *   2. every resting lump oozes at most one block one step (ooze);
+   *   3. the rows that fills (the game's own rule: fullRows) clear.
+   * Every step lowers a block or takes blocks away, so it ends (at most the board's blocks times its height steps; a
+   * guard stops it there anyway). Returns the steps, [{ before (the board before it), falls: [[x, y, dy]], moves:
+   * [[from, to]], after (the board after it moved, before its rows went), rows, removed }]; those that clear rows are
+   * the cascades. quick: no before, falls, moves or after (a test or a simulation). from: the lowest row that can move
+   * (a board that rested before a clear or a piece: nothing lower can), 0 to look at everything. The ooze's ties are
+   * seeded from the game's seed and its piece count (the same board settles the same way on Undo and replay).
    */
   function cascade(g, b, quick, from) {
     if (b.fixJoins) b.fixJoins();
     const waves = [];
+    const salt = ((g && g.seed) | 0) ^ Math.imul(((g && g.s && g.s.pieces) | 0) + 1, 0x9e3779b1);
     let low = from || 0;
-    for (let guard = 0; guard <= b.h; guard++) {
+    const cap = b.w * b.h * b.h + b.h;
+    for (let guard = 0; guard < cap; guard++) {
       const before = quick ? null : b.cells.slice();
-      const falls = drop(b, low);
-      if (!falls.length) break;
+      const rest = {};
+      const falls = drop(b, low, rest);
+      const moves = falls.length ? [] : ooze(b, salt + guard, low, rest.lumps);
+      if (!falls.length && !moves.length) break;
+      for (const [, t] of moves) low = Math.min(low, (t - (t % b.w)) / b.w);
+      for (const [, y, dy] of falls) low = Math.min(low, y - dy);
+      const after = quick ? null : b.cells.slice();
       const rows = g && g.fullRows ? g.fullRows(b) : b.fullRows();
       const removed = rows.length ? b.clearRows(rows) : [];
-      waves.push({ before, falls: quick ? null : falls, rows, removed });
-      if (!rows.length) break;
-      low = from ? rows[0] : 0;
+      waves.push({ before, falls: quick ? null : falls, moves: quick ? null : moves, after, rows, removed });
+      if (rows.length) low = Math.min(low, rows[0]);
     }
     return waves;
   }
@@ -170,12 +301,19 @@
       afterPlace(g, b, abs) { link(b, abs); },
       afterClear(g, b, res) {
         if (simulating(g, b)) {
-          if (!res.rows || !res.rows.length) return;
+          // A placement that clears nothing moves only if the piece can ooze (a block over a hole, or its bottom row
+          // beside one): most do not, and are judged as they are.
+          if ((!res.rows || !res.rows.length) && res.cells && !mayOoze(b, res.cells)) return;
           if (simKey !== g.piece || simPieces !== g.s.pieces) { simKey = g.piece; simPieces = g.s.pieces; simN = 0; }
           if (simN >= (L.Jelly ? L.Jelly.SIM_CAP : SIM_CAP)) return;
           simN++;
-          // A simulated board rested before the piece: only what is at or above its lowest cleared row can fall.
-          const waves = cascade(g, b, true, Math.max(0, Math.min.apply(null, res.rows)));
+          // A simulated board rested before the piece: only the piece's lump, and what is at or above its lowest
+          // cleared row, can move.
+          const rows = res.rows || [];
+          let low = rows.length ? rows[0] : b.h;
+          for (const [, y] of res.cells || []) low = Math.min(low, y);
+          if (!res.cells) low = 0;
+          const waves = cascade(g, b, true, Math.max(0, low - rows.length));
           if (waves.length) res.cascade = (res.cascade || []).concat(waves);
           return;
         }
@@ -199,9 +337,9 @@
         const waves = res && res.cascade;
         if (!waves || !waves.length) return;
         let k = 0, pts = 0, own = 0;
-        waves.forEach((wv, i) => {
+        waves.forEach((wv) => {
           if (!wv.rows || !wv.rows.length) return;
-          k++; pts += 100 * (i + 1);
+          k++; pts += 100 * k;
           for (const row of wv.removed || []) for (let x = 0; x < row.length; x++) if (!(row[x] & CELL.FOREIGN)) own++;
         });
         res.waves = k;
@@ -281,5 +419,5 @@
     });
   }
 
-  L.Jelly = { link, lumps, drop, cascade, flipLinks, cleared, cascadeRows, isOn, part, SIM_CAP, CASCADE_WORTH };
+  L.Jelly = { link, lumps, drop, ooze, connected, cascade, flipLinks, cleared, cascadeRows, isOn, part, SIM_CAP, CASCADE_WORTH };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

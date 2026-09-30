@@ -2,7 +2,8 @@
 // Jelly in the page (js/jelly.js, js/jellyview.js): a Jelly board made from the New board window, drawn in the Jelly
 // look (stack, piece, ghost, trays), its wobble at rest again within a second, none under reduced motion, a cascade
 // replayed and counted (CASCADE, the Cascades tile, Stats, Knock-On), Tornado refused, no console errors; and the
-// screenshots: at rest and mid-wobble at 10 × 20 and 20 × 40 in both themes, a cascade mid-wave, the trays.
+// screenshots: at rest and mid-wobble at 10 × 20 and 20 × 40 in both themes, a cascade mid-wave, the trays, and a lump
+// oozing down a crack and a bar flopping over a ledge, frame by frame, in both themes.
 // Run by browser-test.cjs: require('./jelly-browser-test.cjs')({ browser, check, PAGE, OUT }); or on its own:
 //   node Lull/scripts/jelly-browser-test.cjs [screenshot-dir]
 'use strict';
@@ -120,6 +121,14 @@ module.exports = async function jellyTests({ browser, check, PAGE, OUT }) {
       // Mid-wobble: a lock, a turn and a move, time held a moment later.
       const wob = await ev(() => {
         const m = Lull.app.modes.play, g = m.game, v = m.view, J = Lull.JellyView.stateOf(v);
+        // Where the piece sets and stays (an O, nothing to ooze, no row): a lock that plays no replay.
+        g.replacePiece({ id: 'O' });
+        const p = g.piece, bnd = p.type.rotBounds[p.rot];
+        for (let x = -bnd.minX; x <= g.w - 1 - bnd.maxX; x++) {
+          if (!g.fitsAt(p, p.rot, x, p.y)) continue;
+          const sim = g.simulate(p.type, p.rot, x, g.board);
+          if (sim && !sim.n && !sim.c && !(sim.res.cascade || []).length) { p.x = x; break; }
+        }
         m.action('drop');
         m.action('cw');
         m.action('moveL');
@@ -303,6 +312,35 @@ module.exports = async function jellyTests({ browser, check, PAGE, OUT }) {
     check(theme + ': a lock whose rows are only a cascade\'s is heard as a lock, then its row once as the replay clears it', JSON.stringify(ghost.lock) === '[["lock",0]]' && JSON.stringify(ghost.heard) === '[["clear",1]]', JSON.stringify(ghost));
     check(theme + ': during the replay the ghost is not drawn under a block it still shows (and is drawn elsewhere)', JSON.stringify(ghost.covered) === '[[8,2]]' && ghost.ghostDraws.length === 4 && ghost.ghostDraws.filter((k) => k > 0).length === 3, JSON.stringify(ghost));
     check(theme + ': the ghost landing on a lump still in the air ends the replay at once (its clear still heard); clear of it, it goes on', ghost.clearOf && ghost.goesOn && !ghost.pieceOnly && ghost.meets && ghost.ended && JSON.stringify(ghost.flushed) === '[["clear",1]]', JSON.stringify(ghost));
+    // Physics: a lump oozes down a crack one wide, and a bar hanging over a ledge flops over it; each replayed step by
+    // step (frames held at a few moments), the board final at once.
+    for (const [name, rows, piece] of [
+      ['crack', ['XXXXX.XXX.', 'XXXXX.XXX.', 'XXXXX.XXX.', 'XXXXX.XXX.'], { id: 'O', rot: 0, x: 4 }],
+      ['flop', ['XXXX......', 'XXXX......', 'XXXX......', 'XXXX......'], { id: 'I', rot: 0, x: 2 }],
+    ]) {
+      const oz = await ev(([rows, piece]) => {
+        const m = Lull.app.modes.play, R = Lull.Recipe;
+        m.setGame(new Lull.Game({ w: 10, h: 20, seed: 11, recipe: R.normalize({ mods: { jelly: true } }), previewCount: m.settings.preview }));
+        const g = m.game, H = rows.length;
+        for (let y = 0; y < H; y++) for (let x = 0; x < 10; x++) if (rows[H - 1 - y][x] === 'X') g.board.set(x, y, 1 + ((x * 3 + y) % 7));
+        g.replacePiece({ id: piece.id }); g.piece.rot = piece.rot; g.piece.x = piece.x; g.piece.y = 12;
+        const r = m.action('drop') || null;
+        g.replacePiece({ id: 'T' }); g.piece.x = 0; g.piece.y = 15;
+        const J = Lull.JellyView.stateOf(m.view), rp = J.replay;
+        const col = (x) => { let s = ''; for (let y = 5; y >= 0; y--) s += g.board.get(x, y) ? '#' : '.'; return s; };
+        return { replay: !!rp, t0: rp ? rp.t0 : 0, steps: rp ? rp.waves.map((wv) => (wv.ooze ? 'ooze' : wv.falls.length ? 'fall' : '-') + '@' + wv.dur.toFixed(2)) : [], cols: [col(4), col(5), col(6)], count: g.board.count() };
+      }, [rows, piece]);
+      const want = name === 'crack' ? oz.cols[1] === '..####' : oz.steps.length >= 2;
+      check(theme + ': ' + name + ': the lump oozes, a step at a time, replayed (' + oz.steps.join(' ') + ')', oz.replay && oz.steps.filter((x) => x.startsWith('ooze')).length >= 2 && want && oz.count === (name === 'crack' ? 36 : 20), JSON.stringify(oz));
+      let k = 0;
+      for (const dt of [70, 230, 420, 1400]) {
+        await freeze(ev, oz.t0 + dt);
+        await ev(() => { const v = Lull.app.modes.play.view; Lull.JellyView.view.busy(v); v.dirty = true; v.render(performance.now()); });
+        await shot('jelly-' + name + '-' + (++k) + '-' + theme);
+        await release(ev);
+      }
+      await page.waitForTimeout(100);
+    }
     await ctx.close();
   }
 
@@ -330,6 +368,17 @@ module.exports = async function jellyTests({ browser, check, PAGE, OUT }) {
       return J.replay ? J.replay.waves.map((w) => +(w.fall + w.clear).toFixed(2)) : null;
     });
     check('reduced motion: each wave is a 0.15 s crossfade (and its clear)', cf && cf.every((d) => d <= 0.3 + 1e-9), JSON.stringify(cf));
+    const inst = await ev(() => {
+      const m = Lull.app.modes.play, R = Lull.Recipe;
+      m.setGame(new Lull.Game({ w: 10, h: 20, seed: 9, recipe: R.normalize({ mods: { jelly: true } }), previewCount: m.settings.preview }));
+      const g = m.game;
+      for (let y = 0; y < 4; y++) for (let x = 0; x < 10; x++) if (x !== 5 && x !== 9) g.board.set(x, y, 5);
+      g.replacePiece({ id: 'O' }); g.piece.rot = 0; g.piece.x = 4; g.piece.y = 12;
+      m.action('drop');
+      const rp = Lull.JellyView.stateOf(m.view).replay;
+      return rp ? rp.waves.map((w) => (w.ooze ? 'ooze' : 'fall') + '@' + w.dur) : [];
+    });
+    check('reduced motion: ooze steps are instant (no warping)', inst.filter((x) => x.startsWith('ooze')).length >= 2 && inst.every((x) => x === 'ooze@0' || x.startsWith('fall')), JSON.stringify(inst));
     await page.waitForTimeout(800);
     const done = await ev(() => { const v = Lull.app.modes.play.view; return { replay: !!Lull.JellyView.stateOf(v).replay, busy: Lull.JellyView.view.busy(v) }; });
     check('reduced motion: the replay is over at once', !done.replay && !done.busy, JSON.stringify(done));
