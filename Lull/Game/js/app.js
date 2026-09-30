@@ -25,6 +25,10 @@
   const app = {
     store: null, keys: null, sound: Sound, modes: {}, tab: null, theme: null,
     shopSub: null, statsSub: 'overview', focusedAt: 0, lastTime: 0, lastSave: 0, activeMs: 0,
+    // For tests only, null in play: when set, every display frame moves the boards' animations on by exactly this many
+    // seconds, whatever the wall clock did (a frozen clock, so a test can time an animation in its own time on a busy
+    // machine, where frames come late and the physics' capped steps would stretch it).
+    frameStep: null,
 
     get state() { return this.store.state; },
     get settings() { return this.store.state.settings; },
@@ -337,7 +341,7 @@
     // ---- loop ---------------------------------------------------------------------------------------------------------
 
     frame(t) {
-      const dt = Math.min(0.1, Math.max(0, (t - this.lastTime) / 1000));
+      const dt = this.frameStep || Math.min(0.1, Math.max(0, (t - this.lastTime) / 1000));
       this.lastTime = t;
       this.keys.update(t);
       if (L.Collapse.on) { /* rolled up: the boards and the floor rest (the factory runs on in second()) */ }

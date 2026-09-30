@@ -181,14 +181,20 @@ module.exports = async function retiredTests({ browser, check, PAGE, OUT }) {
   // (force: a button marked off, aria-disabled, is still pressed: it must do nothing.)
   const press = (P, sel, force) => (P.touch ? P.page.tap(sel, { force: !!force }) : P.page.click(sel, { force: !!force }));
   const focusInfo = (P) => P.ev(() => { const a = document.activeElement; return a ? (a.getAttribute('aria-label') || a.textContent || a.tagName) + '|' + (a.closest('.lib-row') ? a.closest('.lib-row').dataset.id : a.closest('.modal-retire') ? 'record' : '') : null; });
-  /** A finger swiped across the board of the full view (CDP touches: pointer events of type touch). */
+  /**
+   * A finger swiped across the board of the full view (CDP touches: pointer events of type touch). The touches carry
+   * their own time stamps, a move every 16 ms and the finger still for 0.1 s before it lifts, however a busy machine
+   * delivers them: a swipe that reached the browser in a burst would leave it flinging, and the browser takes the next
+   * tap (Previous, Next) as the one that stops the fling, with no click.
+   */
   const swipe = async (P, dx) => {
     const r = await P.ev(() => { const b = document.querySelector('.fv-stage').getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; });
     const pts = Array.from({ length: 7 }, (_, i) => [r[0] - dx / 2 + (dx * i) / 6, r[1] + i]);
-    const t = (type, p) => P.cdp.send('Input.dispatchTouchEvent', { type, touchPoints: p ? [{ x: p[0], y: p[1], id: 1, radiusX: 4, radiusY: 4, force: 1 }] : [] });
-    await t('touchStart', pts[0]);
-    for (const p of pts.slice(1)) { await sleep(16); await t('touchMove', p); }
-    await t('touchEnd', null);
+    const t0 = Date.now() / 1000;
+    const t = (type, p, at) => P.cdp.send('Input.dispatchTouchEvent', { type, touchPoints: p ? [{ x: p[0], y: p[1], id: 1, radiusX: 4, radiusY: 4, force: 1 }] : [], timestamp: at });
+    await t('touchStart', pts[0], t0);
+    for (let i = 1; i < pts.length; i++) { await sleep(16); await t('touchMove', pts[i], t0 + i * 0.016); }
+    await t('touchEnd', null, t0 + (pts.length - 1) * 0.016 + 0.1);
     await sleep(60);
   };
 

@@ -252,11 +252,15 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
 
   // Item animations: each Tool and Board item starts its animation (physics bodies, particles, sliding blocks or a
   // drawn moment), runs on its own without holding up the next piece, and is gone again within a second and a half.
+  // Timed in the animation's own time: the live loop runs it, but on the app's test clock (Lull.app.frameStep), a
+  // steady 60 fps whatever the machine is doing (a busy one delivers frames late, and the physics' capped steps would
+  // stretch the same animation well past its length in wall time).
   const BOARD = ['settle', 'tornado', 'trapdoor', 'flip'];
   const fxRun = (id, motion) => ev(async ([id, motion, BOARD]) => {
     const m = Lull.app.modes.play, g = m.game, st = Lull.app.store.state, w = m.view.fx.world, fx = m.view.fx;
-    const motion0 = st.settings.motion;
+    const motion0 = st.settings.motion, STEP = 1 / 60;
     st.settings.motion = motion;
+    Lull.app.frameStep = STEP;
     if (g.over) m.newBoard();
     fx.clear();
     g.board.cells.fill(0);
@@ -266,16 +270,17 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     m.apply(id);
     if (!BOARD.includes(id)) { g.piece.y = Math.min(g.piece.y, 15); m.action('drop'); }
     const next = !!g.piece && !g.piece.special;
-    const t0 = performance.now();
-    let peak = 0, props = 0;
+    let peak = 0, props = 0, frames = 0;
     const out = await new Promise((res) => {
+      // Each display frame the app's loop (registered first) steps the animation by STEP; then this looks.
       const f = () => {
         peak = Math.max(peak, w.nb + w.np); props = Math.max(props, fx.props.length + fx.movers.length);
-        const t = performance.now() - t0;
+        const t = ++frames * STEP * 1000;
         if ((t > 50 && !w.active && !fx.props.length && !fx.movers.length) || t > 5000) res(t); else requestAnimationFrame(f);
       };
       requestAnimationFrame(f);
     });
+    Lull.app.frameStep = null;
     st.settings.motion = motion0;
     return { peak, props, ms: Math.round(out), next };
   }, [id, motion, BOARD]);
@@ -331,6 +336,9 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     m.action('drop');
     off();
     window.__r = r;
+    // The callouts the drop put on the board (the entries themselves: read later, one that faded on its own is told
+    // apart from one taken off early).
+    window.__callouts = m.view.fx.texts.filter((t) => t.callout);
     return { lines: r ? r.lines : 0, gained: (g.s.banked || 0) - w0 };
   }, [rows, piece, item, x, y]);
   // A Patch dropped into a covered hole completes the row: Patch Job, paid at once, called out on the board, written
@@ -338,11 +346,17 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await ev(() => { delete Lull.app.store.state.combos.patchjob; });
   const bag0 = await ev(() => Object.values(Lull.app.store.state.inventory).reduce((a, b) => a + b, 0));
   const got0 = await ev(() => Object.assign({}, Lull.app.store.state.stats.items.got));
+  // Every toast from here on, kept as it comes (a toast leaves after 2.2 s: a late read must not miss it).
+  await ev(() => { window.__toasts = []; window.__toastObs = new MutationObserver((ms) => { for (const r of ms) for (const n of r.addedNodes) if (n.classList && n.classList.contains('toast')) window.__toasts.push(n.textContent); }); window.__toastObs.observe(document.getElementById('toasts'), { childList: true }); });
   const pj = await scene(['XXXX.XXXXX', 'XXXXXXXXX.'], 'O', 'patch', 4, 12);
   await page.waitForTimeout(250);
   await shot('16-patch-job');
   await page.waitForTimeout(1100);
-  const pjAfter = await ev(() => { const m = Lull.app.modes.play, g = m.game; return { found: Object.keys(g.s.combos || {}), book: Object.keys(Lull.app.store.state.combos || {}), texts: m.view.fx.texts.map((t) => t.str), bag: Object.values(Lull.app.store.state.inventory).reduce((a, b) => a + b, 0), toast: [...document.querySelectorAll('.toast')].map((t) => t.textContent).join() }; });
+  // Found for the first time, a power-up comes with it (0.9 s later, on a timer): waited for, however busy the machine.
+  await page.waitForFunction((b0) => Object.values(Lull.app.store.state.inventory).reduce((a, b) => a + b, 0) > b0, bag0, { timeout: 20000 }).catch(() => {});
+  const pjAfter = await ev(() => { const m = Lull.app.modes.play, g = m.game; window.__toastObs.disconnect(); return { found: Object.keys(g.s.combos || {}), book: Object.keys(Lull.app.store.state.combos || {}),
+    // Called out: on the board still, or gone only once its own time was up (never taken off early).
+    texts: window.__callouts.filter((t) => m.view.fx.texts.includes(t) || t.t >= t.dur).map((t) => t.str), bag: Object.values(Lull.app.store.state.inventory).reduce((a, b) => a + b, 0), toast: window.__toasts.join() }; });
   check('a Patch into a covered hole that completes the row is Patch Job: paid, called out, in the book', pj.lines === 1 && pj.gained === 3 && pjAfter.found.includes('patchjob') && pjAfter.book.includes('patchjob') && pjAfter.texts.includes('Patch Job'), JSON.stringify({ pj, pjAfter }));
   // One entry, drawn from the power-ups: one of it, or an Undo's pack of five.
   const earned = await ev((g0) => { const got = Lull.app.store.state.stats.items.got; return Object.keys(got).filter((k) => (got[k] || 0) !== (g0[k] || 0)).map((k) => [k, got[k] - (g0[k] || 0), Lull.packOf(k)]); }, got0);
@@ -531,8 +545,13 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await page.mouse.move(c3[0] + s0 * 0.6, c3[1]);
   check('sticky aim: just over the edge keeps the column', (await pieceCol()) === col3);
   const pcsG = await ev(() => Lull.app.modes.play.game.s.pieces);
-  await page.mouse.move(c3[0] + s0 * 1.0, c3[1]);
-  await page.mouse.down(); await page.mouse.up();
+  // The slip and the click carry their own time stamps (as touch-test's touches do): the slip 20 ms before the press,
+  // however slowly a busy machine delivers them (the grace is timed by the events' stamps).
+  const cdp = await ctx.newCDPSession(page);
+  const t0m = await ev(() => (performance.timeOrigin + performance.now()) / 1000), slip = [c3[0] + s0 * 1.0, c3[1]];
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: slip[0], y: slip[1], timestamp: t0m });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: slip[0], y: slip[1], button: 'left', buttons: 1, clickCount: 1, timestamp: t0m + 0.02 });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: slip[0], y: slip[1], button: 'left', buttons: 0, clickCount: 1, timestamp: t0m + 0.03 });
   const landed = await ev(() => { const b = Lull.app.modes.play.game.board; const cols = []; for (let x = 0; x < 10; x++) if (b.get(x, 0)) cols.push(x); return cols; });
   check('click grace: a slip just before the click drops where it was', landed.includes(3) && (await ev(() => Lull.app.modes.play.game.s.pieces)) === pcsG + 1, JSON.stringify([col3, landed]));
   // The stickiness is small now: a fifth of a cell past the edge already moves, and a click well after a slip
@@ -676,12 +695,16 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   check('in the bridge, A melodic minor (G# and F#, no F)', pitchedB.length > 20 && pitchedB.every((x) => x.ok && x.key === 'A melodic minor' && x.pc !== 5) && pitchedB.some((x) => x.pc === 8 || x.pc === 6),
     JSON.stringify(pitchedB.filter((x) => !x.ok).slice(0, 4)) + ' of ' + pitchedB.length + ' in ' + [...new Set(pitchedB.map((x) => x.section))]);
   check('no sound effect waits for the beat: every voice is played at once', keyed.concat(keyedB).every((x) => x.when === 0), JSON.stringify([...new Set(keyed.concat(keyedB).map((x) => x.n + ' ' + x.when))]));
-  await ev(() => { Lull.app.modes.classic.setGrace = Lull.Modes.SET_GRACE_MS; });
+  // A double Space: the second press 100 ms after the first on the set grace's clock (BoardMode.clock, held for the two
+  // presses), however slowly a busy machine delivers them.
+  await ev(() => { const m = Lull.app.modes.classic; m.setGrace = Lull.Modes.SET_GRACE_MS; window.__graceT = performance.now(); m.clock = () => window.__graceT; });
   const cp0 = await ev(() => Lull.app.modes.classic.game.s.pieces);
   await page.keyboard.press('Space');
+  await ev(() => { window.__graceT += 100; });
   await page.keyboard.press('Space');
-  const cp1 = await ev(() => Lull.app.modes.classic.game.s.pieces), cy1 = await ev(() => Lull.app.modes.classic.game.piece.y);
-  await page.waitForTimeout(1200);
+  const { cp1, cy1, ms1 } = await ev(() => { const m = Lull.app.modes.classic, g = m.game; delete m.clock; return { cp1: g.s.pieces, cy1: g.piece.y, ms1: m.ms }; });
+  // Gravity carries on: 1.2 s on Classic's own clock (running time, the clock its gravity counts), however slowly frames come.
+  await page.waitForFunction((ms) => Lull.app.modes.classic.ms - ms >= 1200, ms1, { timeout: 30000 });
   check('Classic: a double Space hard drops one piece; gravity carries on', cp1 === cp0 + 1 && (await ev((y) => { const g = Lull.app.modes.classic.game; return g.s.pieces > 0 && (!g.piece || g.piece.y < y || g.s.pieces > 1); }, cy1)), JSON.stringify([cp0, cp1]));
   await ev(() => { Lull.app.modes.classic.setGrace = 0; });
   check('hard drop scores', await ev(() => Lull.app.modes.classic.score > 0));
@@ -945,8 +968,11 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     const rp = await rctx.newPage();
     rp.on('pageerror', (e) => errors.push(e.message + '\n' + e.stack));
     const rev = (fn, a) => rp.evaluate(fn, a);
+    // Up when the app has started (and a first run's welcome, on its 250 ms timer, is open to be closed), however long a
+    // busy machine takes to load it.
+    const booted = () => rp.waitForFunction(() => window.Lull && Lull.app && Lull.app.lastTime > 0 && (Lull.app.store.loadedFrom !== 'new' || Lull.UI.modalOpen()), null, { timeout: 30000 });
     await rp.goto(PAGE);
-    await rp.waitForTimeout(500);
+    await booted();
     await rev(() => { while (Lull.UI.modalOpen()) Lull.UI.closeTopModal(); Lull.app.store.state.settings.hints = false; Lull.app.hints.sync(); Lull.app.setTab('classic'); });
     const rl = await rev(() => {
       const m = Lull.app.modes.classic; m.newGame(true);
@@ -956,7 +982,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
       return { over: m.over, card: m.cardOpen, pile: m.view.pileup && m.view.pileup.length, best: Lull.app.store.state.stats.classic.best, stored: JSON.parse(localStorage.getItem('lull.save.v1')).stats.classic.best };
     });
     await rp.reload();
-    await rp.waitForTimeout(600);
+    await booted();
     const rl1 = await rev(() => { const m = Lull.app.modes.classic; Lull.app.setTab('classic'); return { best: Lull.app.store.state.stats.classic.best, started: m.started, over: m.over, card: m.cardOpen, text: document.getElementById('classic-overlay').textContent }; });
     check('reload during the pile-up: the game over is kept (the best saved at the top out), Classic waits at its start card', rl.over && !rl.card && rl.pile === 1 && rl.stored === 987654 && rl1.best === 987654 && !rl1.started && rl1.card && /987,654/.test(rl1.text), JSON.stringify([rl, rl1]));
     await rctx.close();
@@ -982,7 +1008,31 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     return out;
   });
   check('the default sounds render without clipping or silence', Object.entries(audio).every(([n, a]) => !a.bad && a.peak < -3 && a.peak > -60), JSON.stringify(audio));
-  check('movement sounds stay faint', ['move', 'rotate', 'lower'].every((n) => audio[n].peak < -36), JSON.stringify([audio.move, audio.rotate, audio.lower]));
+  // Movement, every note it can play (the pack picks one at random each time), each rendered until two renders agree
+  // within 1 dB. A render that does not reproduce is a fault of the render, not the sound: once in a few hundred runs on
+  // a loaded machine, Chromium handed back lower's render with the set sound's audio in it (-26 dB, the set sound's
+  // exact figures). A sound that is too loud is too loud every time it renders, and fails.
+  const moves = await ev(async () => {
+    const S = Lull.Sound, soft = S.PACKS.soft, out = {};
+    const peak = (buf) => { let p = 0; for (let c = 0; c < buf.numberOfChannels; c++) for (const x of buf.getChannelData(c)) p = Math.max(p, Math.abs(x)); return +(20 * Math.log10(p)).toFixed(1); };
+    for (const n of ['move', 'rotate', 'lower']) {
+      out[n] = [];
+      let notes = 1;
+      for (let i = 0; i < notes; i++) {
+        const render = () => {
+          const pick = soft.pick;
+          soft.pick = (list) => { notes = list.length; return list[i]; };
+          try { return S.offline(2, () => { const { pack, list } = S.voices(n, 2, 'soft'); for (const v of list) S.voice(v, 0.02, pack); }); } finally { soft.pick = pick; }
+        };
+        const peaks = [peak(await render()), peak(await render())];
+        while (Math.abs(peaks[peaks.length - 1] - peaks[peaks.length - 2]) > 1 && peaks.length < 6) peaks.push(peak(await render()));
+        const [a, b] = peaks.slice(-2);
+        out[n].push({ peak: Math.max(a, b), agreed: Math.abs(a - b) <= 1, renders: peaks.length > 2 ? peaks : undefined });
+      }
+    }
+    return out;
+  });
+  check('movement sounds stay faint', ['move', 'rotate', 'lower'].every((n) => moves[n].length && moves[n].every((r) => r.agreed && r.peak < -36)), JSON.stringify(moves));
   check('the music has no holes', audio.music.quiet > -50, JSON.stringify(audio.music));
   // Heard, not just planned: sound effects rendered over the first bar of every section, the notes found in them by
   // FFT, and how much of their power is on the section's key — put in it, and as the pack made them
@@ -1008,6 +1058,12 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   console.log('puzzles');
   await page.click('.tabs button[data-tab="puzzle"]');
   await page.waitForTimeout(200);
+  // Every scripted press here is a tap. A tap is a key-down and a key-up sent one after the other, and on a busy machine
+  // the key-up can reach the page after the repeat delay (230 ms): the game then rightly takes the key for held and
+  // repeats it (a second turn, a move too far, or a ↓ that lowers the piece onto the stack so the next ↓ sets it, and the
+  // solver plays on past the end of the queue). These checks prove what each key does, not auto-repeat, so the repeat
+  // delay is put out of reach until the arrow-only solves below are done, then given back.
+  const das0 = await ev(() => { const s = Lull.app.store.state.settings, d = s.das; s.das = 1e9; return d; });
   // Screen-relative arrows under every view turn.
   for (const [mod, rot] of [['side', 90], ['flip', 180]]) {
     const seed = await ev(([m]) => { for (let n = 1; n < 400; n++) { for (const d of ['E', 'M', 'H']) { const s = Lull.Puzzles.numberedSeed(d, n); const p = Lull.Puzzles.generate(s); if (p.mods.includes(m) && !p.mods.includes('invert')) return s; } } return null; }, [mod]);
@@ -1048,7 +1104,9 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
       const pathMoves = plan.targets[i];
       // Hold puzzles: hold until the piece the solution wants is in play.
       for (let k = 0; k < 2; k++) {
-        const ok = await ev((j) => { const m = Lull.app.modes.puzzle, pc = m.game.piece, s = m.puzzle.solution[j]; return pc.type.id === s.id && (pc.entry.rot || 0) === (s.rot || 0); }, i);
+        // No piece in play before the last target: the queue ran out early, so a press set a piece it should not have.
+        const ok = await ev((j) => { const m = Lull.app.modes.puzzle, pc = m.game.piece, s = m.puzzle.solution[j]; return pc ? pc.type.id === s.id && (pc.entry.rot || 0) === (s.rot || 0) : null; }, i);
+        if (ok === null) return { solved: false, mods: plan.mods, why: 'no piece for target ' + (i + 1) + ' of ' + plan.targets.length };
         if (ok) break;
         await page.keyboard.press(KEY_FOR.hold);
       }
@@ -1067,7 +1125,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
       const seed = await ev(([dd, nn]) => Lull.Puzzles.numberedSeed(dd, nn), [d, n]);
       const r = await solveOne(seed);
       tried++;
-      if (r.solved) { solved++; r.mods.forEach((m) => modsSolved.add(m)); } else console.log('    unsolved ' + seed + ' ' + r.mods.join(','));
+      if (r.solved) { solved++; r.mods.forEach((m) => modsSolved.add(m)); } else console.log('    unsolved ' + seed + ' ' + r.mods.join(',') + (r.why ? ' (' + r.why + ')' : ''));
     }
   }
   check('puzzles solved with the keyboard (Hold ones by holding)', solved === tried && modsSolved.has('hold'), solved + '/' + tried + ' · wildcards seen: ' + Array.from(modsSolved).sort().join(' '));
@@ -1131,6 +1189,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     await page.waitForTimeout(50);
     check('solved ' + seed + ' (' + mods.join('+') + ') with the arrow keys alone', !need.length && (await ev(() => Lull.app.modes.puzzle.done)), need.length ? 'needs ' + need.join(' ') : '');
   }
+  await ev((d) => { Lull.app.store.state.settings.das = d; }, das0);
 
   // Mouse only: point, right-click, wheel, click. For each piece, a search over what the mouse can do (the piece
   // follows the pointer's column; right-click turns there; the wheel lowers; a click drops) finds a way to the known
@@ -3193,10 +3252,17 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     const pix = () => ev(() => document.getElementById('bar-idle').toDataURL());
     const K = await ev(() => { const B = Lull.BarIdle; return { ROWS: B.ROWS, CLEAR: B.CLEAR, POOL: B.POOL, slow: B.speedAt(B.KINDS[0][1]), fast: B.speedAt(B.KINDS[B.KINDS.length - 1][2]) }; });
     check('four lanes, and speeds from the game\'s own gravity: a Level 1 drift (a cell a second) up to a dart', K.ROWS === 4 && Math.abs(K.slow - 1) < 1e-9 && K.fast > 6 && K.fast < 14, JSON.stringify(K));
-    const f0 = await ev(() => Lull.Collapse.idle.frames), p0 = await pix();
-    await page.waitForTimeout(1500);
-    const f1 = await ev(() => Lull.Collapse.idle.frames), p1 = await pix();
-    check('pieces travel along the bar, drawn every display frame', p0 !== p1 && f1 - f0 >= 60 && f1 - f0 <= 100, String(f1 - f0));
+    // Drawn every display frame: as many frames drawn as display frames the page was given (counted by a frame callback
+    // of its own, at least 60 of them and 1.5 s; a busy machine gives fewer a second, so it may take longer).
+    const p0 = await pix();
+    const drawn = await ev(() => new Promise((res) => {
+      const i = Lull.Collapse.idle, f0 = i.frames, t0 = performance.now();
+      let shown = 0;
+      const f = (now) => { shown++; if ((shown >= 60 && now - t0 >= 1500) || now - t0 > 15000) res({ drawn: i.frames - f0, shown }); else requestAnimationFrame(f); };
+      requestAnimationFrame(f);
+    }));
+    const p1 = await pix();
+    check('pieces travel along the bar, drawn every display frame', p0 !== p1 && drawn.shown >= 60 && Math.abs(drawn.drawn - drawn.shown) <= 1, JSON.stringify(drawn));
     const cells = await ev(() => Lull.Collapse.idle.pieces.length);
     check('in the equipped look, a few pieces along the bar', cells >= 3, String(cells));
     // Run the parade by hand for four minutes of bar time at 30 fps and watch every frame and every move.
@@ -3277,6 +3343,9 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
           speeds: vs.length, vmin: Math.min(...vs), vmax: Math.max(...vs), gaps, rainMax, rainBehind, rainLooks,
           sig: JSON.stringify(i.pieces.map((p) => [p.id, p.rot, p.x.toFixed(6), p.y])) };
       };
+      // The same seed makes the same parade whatever ran before it: b starts where a ended, and a where the live bar was,
+      // here with a dart still owed a way in from that parade (its bar time runs on from 0 again: nothing may carry over).
+      i.owed = { kind: Lull.BarIdle.KINDS[Lull.BarIdle.KINDS.length - 1], until: i.t + 3 };
       const a = run(7919), b = run(7919), c = run(104729), d = run(31337, true);
       i.reset(i.cols);
       return { a, c: { bad: c.bad, passes: c.passes, braked: c.braked, yields: c.yields }, d: { bad: d.bad, passes: d.passes, braked: d.braked }, same: a.sig === b.sig && a.turns === b.turns && a.gaps.join() === b.gaps.join(), differs: a.sig !== c.sig };
@@ -3303,22 +3372,29 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
       }
       let worst = 0;
       for (const a of steps.values()) if (a.length > 30) { const [m, d] = sd(a); worst = Math.max(worst, d / m); }
-      // Live: the real loop's displacement per display frame, for 3 seconds.
+      // Live: the real loop's displacement per display frame, for 3 seconds. A busy machine skips display frames (a
+      // callback comes two or three frames after the last, or later after a stall), and the loop rightly steps whole
+      // frames then: so each callback's displacement is divided by the display frames it spans, counted from the
+      // callbacks' own timestamps (whole multiples of one frame: the median of the gaps within half again of the
+      // shortest; a stall counts as at most a tenth of a second, as the loop takes it).
       const live = await new Promise((res) => {
-        const rec = new Map();
+        const rec = new Map(), ts = [];
         let n = 0;
-        const frame = () => {
-          for (const p of i.pieces) { if (!rec.has(p.n)) rec.set(p.n, []); rec.get(p.n).push(i.screenX(p) * i.dpr); }
+        const frame = (now) => {
+          ts.push(now);
+          for (const p of i.pieces) { if (!rec.has(p.n)) rec.set(p.n, []); rec.get(p.n).push([n, i.screenX(p) * i.dpr]); }
           if (++n < 180) requestAnimationFrame(frame);
           else {
+            const gaps = ts.slice(1).map((t, k) => Math.min(100, t - ts[k])), single = gaps.filter((g) => g <= Math.min(...gaps) * 1.5).sort((u, v) => u - v), one = single[single.length >> 1];
+            const spans = gaps.map((g) => Math.max(1, Math.round(g / one)));
             const out = [];
-            for (const a of rec.values()) if (a.length > 90) { const [m, d] = sd(a.slice(1).map((x, k) => x - a[k])); out.push(+(d / m).toFixed(4)); }
-            res(out);
+            for (const a of rec.values()) if (a.length > 90) { const [m, d] = sd(a.slice(1).map(([k, x], j) => (x - a[j][1]) / spans[k - 1])); out.push(+(d / m).toFixed(4)); }
+            res({ out, skipped: spans.filter((k) => k > 1).length });
           }
         };
         requestAnimationFrame(frame);
       });
-      return { worst, live, pieces: steps.size, subpx: i.pieces.some((p) => Math.abs(i.screenX(p) * i.dpr - Math.round(i.screenX(p) * i.dpr)) > 0.01), rows: Number.isInteger(i.top * i.dpr) && Number.isInteger(i.s * i.dpr) };
+      return { worst, live: live.out, skipped: live.skipped, pieces: steps.size, subpx: i.pieces.some((p) => Math.abs(i.screenX(p) * i.dpr - Math.round(i.screenX(p) * i.dpr)) > 0.01), rows: Number.isInteger(i.top * i.dpr) && Number.isInteger(i.s * i.dpr) };
     });
     check('travel is even: the same step every frame for a steady piece, drawn at sub-pixel places (rows on whole pixels), in the live loop too', smooth.worst < 1e-6 && smooth.live.length >= 2 && Math.max(...smooth.live) < 0.03 && smooth.subpx && smooth.rows, JSON.stringify(smooth));
     // The rain is a steady stream: one piece alone on the bar keeps about the same number of glyphs lit, each fading

@@ -142,7 +142,7 @@
       this.cols = cols;
       this.pieces = [];
       this.bag = null;
-      this.t = 0; this.tick = 0; this.due = 0; this.lastIn = null; this.space = 0;
+      this.t = 0; this.tick = 0; this.due = 0; this.lastIn = null; this.space = 0; this.owed = null;
       this.rt.fill(-1e9); this.rn = 0;
       const warm = 8 + cols / speedAt(1.4);
       for (let f = 0; f < warm * 30; f++) this.step(1 / 30);
@@ -545,10 +545,12 @@
       this.draw();
       this.last = performance.now();
       let still = 0, looked = 0, lag = 0, seen = 0, first = true;
-      const recent = new Float64Array(15), sorted = new Float64Array(15);
+      const recent = new Float64Array(60), sorted = new Float64Array(60);
       // Every display frame, paced: each step is a whole number of display frames (the frame length is the median of
-      // the last few), so timer noise never shows as uneven travel; what that leaves over or short of the real clock is
-      // caught up a little at a time. After a stall it simply goes on (at most a tenth of a second).
+      // the last second's gaps that were one frame long: within half again of the shortest, so a busy machine skipping
+      // frames never passes two frames off as one), so timer noise never shows as uneven travel; what that leaves over
+      // or short of the real clock is caught up a little at a time. After a stall it simply goes on (at most a tenth of
+      // a second).
       const loop = (now) => {
         if (!this.running) return;
         this.raf = requestAnimationFrame(loop);
@@ -556,9 +558,9 @@
         const real = Math.max(0, Math.min(0.1, (now - this.last) / 1000));
         this.last = now;
         if (!real) return;
-        recent[seen++ % 15] = real;
-        const k = Math.min(seen, 15);
-        sorted.set(recent); const med = sorted.subarray(0, k).sort()[k >> 1];
+        recent[seen++ % 60] = real;
+        const k = Math.min(seen, 60);
+        sorted.set(recent); const srt = sorted.subarray(0, k).sort(); let one = 1; while (one < k && srt[one] <= srt[0] * 1.5) one++; const med = srt[one >> 1];
         const frame = first ? Math.min(real, 1 / 60) : med;
         first = false;
         const n = Math.max(1, Math.round(real / frame));

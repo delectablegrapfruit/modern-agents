@@ -608,6 +608,11 @@ node Lull/scripts/web-browser-test.cjs         # the web app alone: offline, upd
 node Lull/scripts/web-icons.cjs                # redraws Game/icons/ from the app icon's design (needs Playwright)
 ```
 
+The tests hold up on a busy machine: they wait for what they check rather than for a set time, time work by CPU time,
+and give inputs their own time stamps. Two test-only hooks, inert in play, help: `app.frameStep` (a fixed step per
+display frame, to time an animation in its own time) and a mode's `clock` (the time the set grace and a resting finger go
+by, held while a test sends its inputs).
+
 A packaged build is committed by CI to [`dist/Lull.app.zip`](../dist/). It is ad-hoc signed: right-click ▸ Open the
 first time. The save lives in `~/Library/Application Support/Lull/save.json` (Settings ▸ Export copies it).
 Settings ▸ Data ▸ Reset (everything but the settings) and Import replace the save outright: the page hands the new one

@@ -90,7 +90,7 @@
       this.view.attach(game, view);
       this.view.setLook(this.app.look());
       this.view.resize();
-      game.on('lock', (r) => { if (r.special !== 'settle') { this.setAt = performance.now(); if (this.app.hints) this.app.hints.lock(); } this.onLock(r); });
+      game.on('lock', (r) => { if (r.special !== 'settle') { this.setAt = this.now(); if (this.app.hints) this.app.hints.lock(); } this.onLock(r); });
       game.on('blocked', () => { if (this.quiet) return; this.app.sound.play('blocked'); this.view.bump(this.reduced); });
       game.on('spawn', () => {
         // A new piece meets the pointer where it is.
@@ -157,9 +157,17 @@
 
     blocked() { return false; }
 
+    /**
+     * The time the set grace (SET_GRACE_MS) and a finger resting down the board (TouchGestures.tick) go by: the
+     * page's own. Test hook: a test may set mode.clock (ms on the performance.now() timeline) for a moment, so that
+     * the inputs it sends are a set number of ms apart however slowly a busy machine delivers them, and delete it
+     * after. Nothing in the game sets it.
+     */
+    now() { return this.clock ? this.clock() : performance.now(); }
+
     /** True while a drop or set would come too soon after the last piece was set (see SET_GRACE_MS). */
     settling(a) {
-      if (!this.setAt || performance.now() - this.setAt >= this.setGrace) return false;
+      if (!this.setAt || this.now() - this.setAt >= this.setGrace) return false;
       if (a === 'drop') return true;
       // ↓ only counts when it would set the piece (lowering through the air is movement); Classic's soft drop never.
       const g = this.game, p = g.piece;
@@ -192,7 +200,7 @@
         if (moved) this.lastInput = 'mouse';
         const hold = this.view.onHold(...this.pointer);
         if (hold !== this.view.holdHover) { this.view.holdHover = hold; this.view.dirty = true; }
-        if (moved) this.follow();
+        if (moved) this.follow(e.timeStamp);
         c.style.cursor = hold ? 'pointer' : 'default';
       });
       c.addEventListener('pointerleave', (e) => { if ((e.pointerType || 'mouse') !== 'mouse') return; this.pointer = null; this.rawCol = null; this.view.pointerCol = null; this.view.holdHover = false; this.view.dirty = true; });
@@ -205,10 +213,12 @@
         if (e.button === 2) { mouse(() => { this.follow(); this.action('cw'); this.follow(); }); return; }
         if (e.button !== 0) return;
         mouse(() => {
-          this.follow();
+          // Timed by the events' own stamps (when the hand moved and pressed), not by when the page got round to them.
+          const t = e.timeStamp || performance.now();
+          this.follow(t);
           // Click grace: a pointer that slipped into the next column just before the click (within CLICK_GRACE_MS)
           // does not count; the piece drops where it had settled.
-          if (this.prevCol != null && performance.now() - this.colAt < CLICK_GRACE_MS) this.aimAt(this.prevCol);
+          if (this.prevCol != null && t - this.colAt < CLICK_GRACE_MS) this.aimAt(this.prevCol);
           this.action('drop');
         });
       });
@@ -224,8 +234,8 @@
       }, { passive: false });
     }
 
-    /** Slides the piece toward the pointer's column, at the height it floats at. */
-    follow() {
+    /** Slides the piece toward the pointer's column, at the height it floats at (t: when the pointer got there, for the click grace). */
+    follow(t) {
       const g = this.game;
       if (!this.pointer || !g || !g.piece || g.over || !this.settings.mouse) return;
       const [px, py] = this.pointer, cur = this.rawCol;
@@ -239,7 +249,7 @@
       }
       // Inverted Controls turn the mouse around too: the piece goes to the mirror of the pointer's column.
       const target = this.inverted ? g.w - 1 - col : col;
-      if (col !== cur) { this.prevCol = this.target; this.colAt = performance.now(); this.rawCol = col; this.target = target; }
+      if (col !== cur) { this.prevCol = this.target; this.colAt = t || performance.now(); this.rawCol = col; this.target = target; }
       this.aimAt(target);
       this.view.pointerCol = col;
     }
@@ -362,7 +372,7 @@
     get cardOpen() { return !this.overlay.classList.contains('hidden'); }
 
     frame(now, dt) {
-      if (this.gest && this.gest.active) { this.touchGuard(); this.gest.tick(now); }
+      if (this.gest && this.gest.active) { this.touchGuard(); this.gest.tick(this.clock ? this.clock() : now); }
       if (this.app.hints) this.app.hints.frame(this, now, dt);
       this.view.reducedMotion = this.reduced;
       this.view.fx.update(dt);
@@ -582,7 +592,7 @@
         const rot = e.rot || 0, pos = g.spawnPosition(type, rot);
         add(type, rot, pos.x, pos.y);
       }
-      this.pile = { steps, shown: 0, t: 0, done: false, fromQueue: steps.length - (g.piece ? 1 : 0), quietFirst: performance.now() - (this.setAt || -1e9) < 150 };
+      this.pile = { steps, shown: 0, t: 0, done: false, fromQueue: steps.length - (g.piece ? 1 : 0), quietFirst: this.now() - (this.setAt || -1e9) < 150 };
       this.view.pileup = [];
       this.view.queueSkip = 0;
       if (this.reduced) { this.finishPile(); return; }
@@ -1603,7 +1613,7 @@
           this.hideCard();
           // The card is gone and the board under it is live: a second click or tap of the same press (a double
           // click) must not drop the piece just brought back, as after a set (see SET_GRACE_MS).
-          this.setAt = performance.now();
+          this.setAt = this.now();
           this.snapshot();
           done();
           break;
@@ -1914,7 +1924,7 @@
       this.lines -= res.lines;
       this.failedShown = false;
       this.hideCard();
-      this.setAt = performance.now(); // a second click of the press that took it back does not set the piece (SET_GRACE_MS)
+      this.setAt = this.now(); // a second click of the press that took it back does not set the piece (SET_GRACE_MS)
       this.updateHint();
       this.renderGoal();
       this.renderActions();
