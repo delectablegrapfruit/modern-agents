@@ -465,6 +465,24 @@ module.exports = async function touchTests({ browser, check, PAGE, OUT }) {
   await shot('75-phone-reduced');
   await ev(() => { Lull.app.settings.motion = 'full'; Lull.app.applySettings(); });
 
+  // A quick sideways swipe off the board changes game tab; on a board, slow, or with a dialog up it does not.
+  const swipe = (sel, dx, ms) => ev(([sel, dx, ms]) => new Promise((r) => {
+    while (Lull.UI.modalOpen()) Lull.UI.closeTopModal();
+    const el = document.querySelector(sel), b = el.getBoundingClientRect(), x = b.left + b.width / 2, y = b.top + Math.min(b.height / 2, 40);
+    const T = (X) => new Touch({ identifier: 9, target: el, clientX: X, clientY: y });
+    el.dispatchEvent(new TouchEvent('touchstart', { touches: [T(x)], changedTouches: [T(x)], bubbles: true }));
+    setTimeout(() => { el.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [T(x + dx)], bubbles: true })); r(Lull.app.tab); }, ms);
+  }), [sel, dx, ms]);
+  await ev(() => Lull.app.setTab('factory'));
+  const sw = { next: await swipe('#view-factory', -120, 120) };
+  sw.back = await swipe('#view-classic .status, #view-classic', 120, 120);
+  await ev(() => Lull.app.setTab('factory'));
+  sw.slow = await swipe('#view-factory', -120, 600);
+  await ev(() => Lull.app.setTab('play'));
+  sw.board = await swipe('#cv-play', -120, 120);
+  check('a quick sideways swipe changes game tab (left: next, right: back); not on a board, not slow',
+    sw.next === 'classic' && sw.back === 'factory' && sw.slow === 'factory' && sw.board === 'play', JSON.stringify(sw));
+
   check('no page errors on the phone', errors.length === 0, errors.slice(0, 5).join('\n'));
   await P.ctx.close();
 };
