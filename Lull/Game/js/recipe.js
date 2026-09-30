@@ -1,10 +1,10 @@
 // Lull — the board recipe: what a Relaxed board is made of, beyond its size. Its shapes, its modifiers (Jelly, Mirror)
-// and its mode (Plain, Protect, Battle), chosen in the New board window and fixed for the board's life. Pure data and
+// and its mode (Plain, Protect, Classic, Battle), chosen in the New board window and fixed for the board's life. Pure data and
 // rules, no DOM; the parts that give each option its behaviour register here (Recipe.part) and are always run in
 // ascending `order`, never in script load order.
 //
 //   recipe = { v: 1, shapes: { preset: 'normal' }, mods: { jelly: false, mirror: false }, mode: 'plain',
-//              protect?: { level }, battle?: { level, size: { w, rows } } }
+//              protect?: { level }, classic?: { type, level, … } (js/classic.js), battle?: { level, size: { w, rows } } }
 //
 // The default recipe is today's board exactly: the seven in a 7-bag, no modifier, plain play. A part:
 //   { key, order, owns: [paths it writes], mod?: 'jelly' (a modifier it brings), mode?: 'protect' (a mode it brings),
@@ -15,7 +15,7 @@
 //     are listed in js/engine.js), controller(play, game) -> ctl | null (Free Play's; every part's is composed over
 //     the plain one: Recipe.compose), summary(saved, g), stats? (store.js merges it under state.stats) }
 // Achievements a part adds go through Achievements.group / Achievements.add (js/achievements.js).
-// Orders: core 0, shapes 10, mirror 20, jelly 30, protect 40, battle 50.
+// Orders: core 0, shapes 10, mirror 20, jelly 30, protect 40, classic 45, battle 50.
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
@@ -189,7 +189,7 @@
         const v = getPath(cur, o.path);
         if (!bad[idOf(o.path, v)]) continue;
         const d = getPath(DEFAULT, o.path);
-        const to = [d].concat(o.values).find((x) => !bad[idOf(o.path, x)]);
+        const to = [d].concat(o.values).find((x) => x !== undefined && !bad[idOf(o.path, x)]);
         if (to === undefined || to === v) continue;
         if (!(o.path in memo)) memo[o.path] = v;
         const next = clone(cur);
@@ -354,8 +354,55 @@
     return out;
   }
 
+  // ---- editing a board's rules ----------------------------------------------------------------------------------------
+
+  /** What an edit of a board's rules costs, in lines, for each section of the New board window that changed. */
+  const EDIT_PRICE = 20;
+  const SECTIONS = ['size', 'shapes', 'mods', 'mode'];
+  /**
+   * The sections an edit from recipe a at size sa to recipe b at size sb changes, and its price: EDIT_PRICE for each
+   * (Size, Shapes, Modifiers, Mode; a mode's own settings are its section), nothing when nothing changed. A path a part
+   * lists in freeEdit (Classic's music) changes for nothing. { sections: [...], cost }.
+   */
+  function editPrice(a, b, sa, sb) {
+    a = normalize(a); b = normalize(b);
+    const out = [];
+    if (sa && sb && (sa.w !== sb.w || sa.h !== sb.h)) out.push('size');
+    if (canon(a.shapes) !== canon(b.shapes)) out.push('shapes');
+    if (canon(a.mods) !== canon(b.mods)) out.push('mods');
+    const rest = (r) => { const o = clone(r); delete o.shapes; delete o.mods; return o; };
+    const ra = rest(a), rb = rest(b);
+    for (const p of PARTS) for (const path of p.freeEdit || []) {
+      const va = getPath(ra, path);
+      if (va !== undefined && getPath(rb, path) !== undefined) setPath(rb, path, clone(va));
+    }
+    if (canon(ra) !== canon(rb)) out.push('mode');
+    return { sections: SECTIONS.filter((k) => out.includes(k)), cost: out.length * EDIT_PRICE };
+  }
+  /**
+   * The options an edit of a board made as `from` may not choose, beyond the recipe's own conflicts: a mode a part
+   * keeps for the board's life (editFixed: Protect) is neither entered nor left, nor are its settings changed.
+   * { 'path=value': reason }.
+   */
+  function editConflicts(from, r) {
+    from = normalize(from); r = normalize(r);
+    const out = {};
+    for (const p of PARTS) {
+      if (!p.editFixed || !p.mode) continue;
+      const name = p.name || p.mode.charAt(0).toUpperCase() + p.mode.slice(1);
+      if (from.mode === p.mode) {
+        for (const m of modes()) if (m !== p.mode) out[idOf('mode', m)] = 'A ' + name + ' board stays ' + name;
+        for (const [path, values] of Object.entries(p.options || {})) {
+          const keep = getPath(from, path);
+          for (const v of values) if (canon(v) !== canon(keep)) out[idOf(path, v)] = 'Set when the board was made';
+        }
+      } else out[idOf('mode', p.mode)] = name + ' starts on a new board';
+    }
+    return out;
+  }
+
   const Recipe = {
-    DEFAULT: null, MODS, BASE,
+    DEFAULT: null, MODS, BASE, EDIT_PRICE, editPrice, editConflicts,
     part, unpart, viewPart, uiPart, parts, get, views: () => VIEWS.slice(), uis: () => UIS.slice(),
     normalize, equal, key, isDefault, label, thin, limits, clampSize, sizeOk, conflicts, options, resolve, rules, valid,
     engine, controller, controllers, compose, stats, summary, canon, getPath, setPath,

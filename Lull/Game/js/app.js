@@ -10,12 +10,12 @@
 
   // The title bar's tabs, left to right: the places to play in one track, then the places to look by the wallet. The
   // Shop has no tab of its own: it is the wallet. ⌘1–⌘7 run in that order (the wallet last). A tab's tooltip is its
-  // name and key, nothing more: what each place is, you find by going there.
+  // name and key, nothing more: what each place is, you find by going there. Classic is a board mode now (the New board
+  // window's Mode tab: js/classic.js), played on the Play tab like any board.
   const TABS = [
     { id: 'play', label: 'Play', icon: 'play', group: 'modes' },
     { id: 'puzzle', label: 'Puzzles', icon: 'puzzle', group: 'modes' },
     { id: 'factory', label: 'Factory', icon: 'factory', group: 'modes' },
-    { id: 'classic', label: 'Classic', icon: 'classic', group: 'modes' },
     { id: 'stats', label: 'Stats', icon: 'stats', group: 'meta' },
     { id: 'achievements', label: 'Achievements', icon: 'trophy', group: 'meta' },
   ];
@@ -43,7 +43,6 @@
       UI.initTooltips();
       this.keys = new Keys(() => this.settings);
       this.modes.play = new Modes.PlayMode(this);
-      this.modes.classic = new Modes.ClassicMode(this);
       this.modes.puzzle = new Modes.PuzzleMode(this);
       this.modes.factory = new Modes.FactoryMode(this);
       this.modes.factory.catchUp(true);
@@ -128,7 +127,7 @@
 
     applyLook() {
       this.sound.pack = this.state.equipped.sound || 'soft';
-      for (const k of ['play', 'classic', 'puzzle']) if (this.modes[k]) { this.modes[k].view.setLook(this.look()); this.modes[k].view.dirty = true; }
+      for (const k of ['play', 'puzzle']) if (this.modes[k]) { this.modes[k].view.setLook(this.look()); this.modes[k].view.dirty = true; }
       if (this.tab === 'shop') UI.renderShop(this, this.shopSub);
     },
 
@@ -163,12 +162,12 @@
     },
 
     /**
-     * A quick left or right swipe by touch changes tab: left goes to the next game tab (Play, Puzzles, Factory, Classic), right to the one before. Swipes on a
+     * A quick left or right swipe by touch changes tab: left goes to the next game tab (Play, Puzzles, Factory: TABS), right to the one before. Swipes on a
      * board (they steer the piece), in a dialog, on a slider or in anything that scrolls sideways are left alone, and so
      * is a slow drag or one that is more up and down than across.
      */
     bindTabSwipe() {
-      const BOARDS = '#cv-play, #cv-classic, #cv-puzzle, .modal, #modal-root, input, textarea, select';
+      const BOARDS = '#cv-play, #cv-puzzle, .modal, #modal-root, input, textarea, select';
       let s = null;
       const sideScroll = (el) => { for (; el && el !== document.body; el = el.parentElement) if (el.scrollWidth > el.clientWidth + 1 && /auto|scroll/.test(getComputedStyle(el).overflowX)) return true; return false; };
       document.addEventListener('touchstart', (e) => {
@@ -192,7 +191,6 @@
       if (L.Collapse.on) L.Collapse.set(false);
       const prev = this.tab;
       if (prev === 'factory' && id !== 'factory') this.modes.factory.hide();
-      if (prev === 'classic' && id !== 'classic') { this.modes.classic.togglePause(true); L.Music.stop(); }
       if (prev === 'play' && id !== 'play') this.pausePlay('tab');
       if (prev === 'achievements' && id !== 'achievements') this.achMenu = false;
       this.tab = id;
@@ -203,13 +201,13 @@
       wallet.classList.toggle('active', id === 'shop');
       if (id === 'shop') wallet.setAttribute('aria-current', 'page'); else wallet.removeAttribute('aria-current');
       for (const v of document.querySelectorAll('.view')) v.classList.toggle('active', v.dataset.tab === id);
-      this.keys && this.keys.setTarget(id === 'play' ? this.modes.play : id === 'classic' ? this.modes.classic : id === 'puzzle' ? this.modes.puzzle : null);
+      this.keys && this.keys.setTarget(id === 'play' ? this.modes.play : id === 'puzzle' ? this.modes.puzzle : null);
       if (id === 'puzzle') this.modes.puzzle.show();
       if (id === 'factory') { this.modes.factory.show(); }
       if (id === 'shop') UI.renderShop(this, this.shopSub);
       if (id === 'stats') UI.renderStats(this, this.statsSub);
       if (id === 'achievements') UI.renderAchievements(this);
-      if (id === 'play' || id === 'puzzle' || id === 'classic') { const m = this.modes[id]; m.view.resize(); m.view.dirty = true; }
+      if (id === 'play' || id === 'puzzle') { const m = this.modes[id]; m.view.resize(); m.view.dirty = true; }
       this.store.touch();
       this.postDragRegions();
     },
@@ -264,13 +262,13 @@
         const b = e.target && e.target.closest && e.target.closest('button');
         if (b && !b.closest('.modal')) setTimeout(() => b.blur(), 0);
       });
-      document.addEventListener('visibilitychange', () => { if (document.hidden) { if (this.modes.classic) this.modes.classic.finishPile({ quiet: true }); this.pausePlay('hidden'); this.saveNow(); L.Music.stop(); } else { this.modes.factory.catchUp(true); setTimeout(() => this.announceUnheard(), 400); } });
+      document.addEventListener('visibilitychange', () => { if (document.hidden) { this.pausePlay('hidden'); this.saveNow(); L.Music.stop(); } else { this.modes.factory.catchUp(true); setTimeout(() => this.announceUnheard(), 400); } });
       root.addEventListener('pagehide', () => this.saveNow());
       root.addEventListener('beforeunload', () => this.saveNow());
       root.addEventListener('resize', () => { this.onResize(); });
       if (root.ResizeObserver) {
         const ro = new ResizeObserver(() => this.onResize());
-        for (const id of ['cv-play', 'cv-classic', 'cv-puzzle', 'cv-floor']) ro.observe(document.getElementById(id).parentElement);
+        for (const id of ['cv-play', 'cv-puzzle', 'cv-floor']) ro.observe(document.getElementById(id).parentElement);
       }
       // A trackpad or a keyboard attached or taken away: the background follows (Settings follows on its own).
       L.bus.on('input', () => this.applySettings());
@@ -281,7 +279,7 @@
       }
       // Messages from the native panel.
       // The pointer away from Lull: it dims (and, in a browser, fades; the panel fades itself natively).
-      // Classic pauses too (Settings ▸ Controls ▸ Pause Classic when the pointer leaves); P or Resume carries on.
+      // A Classic board pauses too (Settings ▸ Controls ▸ Pause Classic when the pointer leaves); P or Resume carries on.
       document.documentElement.addEventListener('mouseleave', () => this.pointerLeft());
       if (!native.available) {
         document.documentElement.addEventListener('mouseleave', () => { if (this.settings.fadeAway !== false && !this.touchNow()) document.body.classList.add('away'); });
@@ -300,7 +298,7 @@
 
     activity() { this.lastActivity = performance.now(); },
 
-    /** The pointer has left Lull's window: a running Classic game pauses, as P would (and a timed board, the same way). */
+    /** The pointer has left Lull's window: a running Classic board pauses, as P would. */
     pointerLeft() {
       if (this.touchNow()) return; // a finger lifting is not a pointer leaving (Classic pauses when the page is hidden)
       this.onAway('pointer');
@@ -308,15 +306,11 @@
 
     /**
      * Lull is no longer in front: the window lost focus ('blur'), or the pointer left it ('pointer', only with Settings
-     * ▸ Controls ▸ Pause Classic when the pointer leaves). A running Classic game pauses, and so does the Free Play
-     * board's controller (ctl.pause: a timed board stops its clock; the plain one has none).
+     * ▸ Controls ▸ Pause Classic when the pointer leaves). The Free Play board's controller is told (ctl.pause: a
+     * Classic board pauses at its card; the plain one does nothing).
      */
     onAway(why) {
-      const c = this.modes.classic;
-      if (why === 'blur' || this.settings.pauseAway !== false) {
-        if (c && c.running()) c.togglePause(true);
-        this.pausePlay(why);
-      }
+      if (why === 'blur' || this.settings.pauseAway !== false) this.pausePlay(why);
     },
 
     /** The Free Play board's controller is told to pause (a window, the tab, the page hidden, away, rolled up). */
@@ -367,7 +361,7 @@
     },
 
     onResize() {
-      for (const k of ['play', 'classic', 'puzzle']) { const v = this.modes[k] && this.modes[k].view; if (v) { v.resize(); v.dirty = true; } }
+      for (const k of ['play', 'puzzle']) { const v = this.modes[k] && this.modes[k].view; if (v) { v.resize(); v.dirty = true; } }
       if (this.modes.factory) this.modes.factory.relayout();
       clearTimeout(this.dragTimer);
       this.dragTimer = setTimeout(() => this.postDragRegions(), 120);
@@ -392,7 +386,6 @@
       if (L.Collapse.on !== !!this.rolled) { this.rolled = !!L.Collapse.on; if (this.rolled) this.pausePlay('collapse'); }
       if (L.Collapse.on) { /* resting */ }
       else if (this.tab === 'play') this.modes.play.frame(t, dt);
-      else if (this.tab === 'classic') this.modes.classic.frame(t, dt);
       else if (this.tab === 'puzzle') this.modes.puzzle.frame(t, dt);
       else if (this.tab === 'factory') {
         // Every frame in front (a smooth belt); 12 fps behind other windows.
@@ -412,12 +405,11 @@
         S.total += 1000;
         // (A retired board in full view is not play: the board in play's time waits.)
         if (this.tab === 'play' && !this.modes.play.fullView) {
-          S.play += 1000;
-          // The board's own Played time, while its controller says this second counts (a paused timed board does not).
-          const pm = this.modes.play, bs = pm.game.s;
+          // A Classic board's time is Classic's (its controller's timeKey), the rest Free Play's.
+          const pm = this.modes.play, bs = pm.game.s, tk = pm.ctl && pm.ctl.timeKey;
+          S[tk || 'play'] = (S[tk || 'play'] || 0) + 1000;
           if (!pm.ctl || pm.ctl.counts()) bs.playMs = (bs.playMs || 0) + 1000;
         }
-        else if (this.tab === 'classic') S.classic = (S.classic || 0) + 1000;
         else if (this.tab === 'puzzle') S.puzzle += 1000;
         else if (this.tab === 'factory') S.factory += 1000;
         this.store.day().ms += 1000;

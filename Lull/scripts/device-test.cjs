@@ -175,7 +175,8 @@ module.exports = async function deviceTests({ browser, check, PAGE, OUT }) {
       check('phone with a keyboard: once a key is pressed, Keys (Touch and Keyboard) and Repeat delay are back; no mouse lines, no ⌘J',
         k.only && !k.keyless && K.nav.join() === 'Look,Controls,Sound,Keys,Data' && (keys.cards || []).join() === 'Touch,Keyboard' && keys.kbd.includes('Space') && !keys.kbd.includes('⌘J') && !keys.kbd.some((x) => /click|Wheel|Mouse/.test(x))
         && (K.sections.Controls.rowsByCard.Keyboard || []).join() === 'Repeat delay,Repeat rate,Lower repeat' && !K.sections.Controls.rows.includes('Mouse control') && K.navFits, JSON.stringify({ k, nav: K.nav, keys: keys.kbd, controls: K.sections.Controls.rowsByCard }));
-      const caps = await ev(() => { Lull.app.setTab('classic'); const kb = document.querySelector('#classic-overlay kbd'); return kb ? getComputedStyle(kb).display : 'missing'; });
+      // A Classic board's Start card (the board in play put back after).
+      const caps = await ev(() => { Lull.app.setTab('play'); const pm = Lull.app.modes.play, keep = pm.game.toJSON(); pm.setGame(new Lull.Game({ w: 10, h: 20, recipe: { mode: 'classic' } })); const kb = document.querySelector('#play-overlay kbd'); const d = kb ? getComputedStyle(kb).display : 'missing'; pm.setGame(new Lull.Game({ saved: keep, previewCount: Lull.app.settings.preview })); return d; });
       check('phone with a keyboard: key caps are back on the buttons', caps !== 'none' && caps !== 'missing', caps);
       await ev(() => Lull.app.setTab('play'));
     }

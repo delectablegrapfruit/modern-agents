@@ -300,16 +300,11 @@
       this.d.unknownKey(this.now());
     }
 
-    boardMode() { const app = this.app, tab = app.tab; return tab === 'play' || tab === 'classic' || tab === 'puzzle' ? app.modes[tab] : null; }
+    boardMode() { const app = this.app, tab = app.tab; return tab === 'play' || tab === 'puzzle' ? app.modes[tab] : null; }
 
-    /** No hint over a card, a window or a busy Classic stack: only when paused, before it starts, or low and slow. */
+    /** No hint over a card or a window (a Classic board has none at all: its rules turn them off). */
     calm(mode) {
       if (L.UI.modalOpen() || document.hidden) return false;
-      if (mode === this.app.modes.classic) {
-        if (mode.over) return false;
-        if (mode.paused || !mode.started) return true;
-        return mode.level <= 4 && mode.game.board.stackHeight() <= 5;
-      }
       return !mode.cardOpen;
     }
 
@@ -320,7 +315,7 @@
       const app = this.app, g = mode.game;
       // Board time, while played (the same two minutes of grace as Stats' time with Lull).
       if (!document.hidden && now - (app.lastActivity || 0) < 120000) this.d.time(dt * 1000);
-      const relaxed = mode !== app.modes.classic;
+      const relaxed = true;
       if (relaxed && g && g.piece && !g.over && !mode.cardOpen && !L.UI.modalOpen() && !document.hidden && document.hasFocus()) {
         const p = g.piece;
         this.d.idle({ relaxed, piece: p, floating: g.fitsAt(p, p.rot, p.x, p.y - 1), mouse: mode.lastInput === 'mouse', touch: mode.lastInput === 'touch' }, now);

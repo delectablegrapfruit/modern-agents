@@ -23,7 +23,7 @@ module.exports = async function undoTests({ browser, check, PAGE, OUT }) {
     const ev = (fn, arg) => page.evaluate(fn, arg);
     await ev((t) => {
       while (Lull.UI.modalOpen()) Lull.UI.closeTopModal();
-      for (const k of ['play', 'puzzle', 'classic']) Lull.app.modes[k].setGrace = 0;
+      for (const k of ['play', 'puzzle']) Lull.app.modes[k].setGrace = 0;
       Lull.app.store.state.settings.hints = false; Lull.app.hints.sync();
       Lull.app.settings.theme = t; Lull.app.applySettings();
     }, theme);

@@ -631,8 +631,8 @@
       if (!keep) app.state.collapsed = on;
       if (!first && !keep) app.store.touch();
       if (on) {
-        // Like switching away from the tab: Classic pauses, the music stops, the factory runs on unseen.
-        if (app.tab === 'classic') { app.modes.classic.togglePause(true); L.Music.stop(); }
+        // Like switching away from the tab: a Classic board pauses (app.frame: pausePlay('collapse')), the factory runs on unseen.
+        if (L.Music && L.Music.playing) L.Music.stop();
         if (app.tab === 'factory') app.modes.factory.hide();
         app.keys && app.keys.releaseAll();
         const tip = document.querySelector('#app > .tip');

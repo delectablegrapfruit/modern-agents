@@ -1,0 +1,195 @@
+// Lull — Classic, a board mode (js/recipe.js): pieces fall on their own, faster as the levels go by, with a lock
+// delay, the classic spawn flush with the ceiling and the classic top out; the score and the line bank at Classic's
+// rates. Its settings are the recipe's `classic` key, in the spirit of the NES and Game Boy Advance games:
+//
+//   classic = { type: 'a' | 'b', level: 1–15 (start), height: 0–5 (B's starting garbage), music: 'korobeiniki' | 'off',
+//               drop: hard drop, hold, ghost (booleans), next: 0–5 (Next previews), rand: 'bag' | 'nes', lock: 'modern' | 'nes' }
+//
+// Pure rules and the engine's extension (no DOM); the controller, the New board window's panel and the library's tags
+// are js/classicview.js.
+(function (root) {
+  'use strict';
+  const L = (root.Lull = root.Lull || {});
+  const { Recipe, CELL, Pieces, RNG } = L;
+  if (!Recipe) return;
+
+  const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+  const clone = (v) => JSON.parse(JSON.stringify(v));
+
+  const DEFAULTS = Object.freeze({ type: 'a', level: 1, height: 0, music: 'korobeiniki', drop: true, hold: true, ghost: true, next: 3, rand: 'bag', lock: 'modern' });
+  const LEVELS = [1, 15];
+  const HEIGHTS = 5;
+  const NEXT = 5;
+  /** B type: the lines to clear. */
+  const B_LINES = 25;
+  /** B type's starting garbage, in rows of a 20-row well, by height (the NES heights); scaled to the board's height. */
+  const B_ROWS = [0, 3, 5, 8, 10, 12];
+  /** The music there is: one Classic track (Korobeiniki), or none. */
+  const MUSIC = ['korobeiniki', 'off'];
+  const MUSIC_NAMES = { korobeiniki: 'Korobeiniki', off: 'Off' };
+  /** The modern lock delay: half a second, renewed by a move or a turn up to 15 times. */
+  const LOCK = { delay: 0.5, resets: 15 };
+
+  const on = (r) => !!r && r.mode === 'classic';
+
+  /** Seconds a row at a level (the guideline curve, as Classic has always fallen). */
+  function gravity(level) {
+    const l = Math.max(1, Math.min(level, 20));
+    return Math.max(0.012, Math.pow(0.8 - (l - 1) * 0.007, l - 1));
+  }
+  /** The garbage rows B type starts with, on a board hh tall. */
+  function garbageRows(height, hh) { return Math.round((B_ROWS[height] || 0) * hh / 20); }
+
+  /**
+   * The level after `lines` cleared (since the board became Classic): A type goes up every ten lines from the start
+   * level (never below it); B type stays at its start level.
+   */
+  function levelOf(k, lines) { return k.type === 'b' ? k.level : Math.max(k.level, 1 + Math.floor(lines / 10)); }
+  /**
+   * The level the achievements and the records count: the level reached by lines alone (as from level 1), never more
+   * than the level played, so a high start level does not reach Level Twenty by itself.
+   */
+  function featLevel(k, lines) { return Math.min(levelOf(k, lines), 1 + Math.floor(lines / 10)); }
+
+  function normalizeK(raw) {
+    const o = isObj(raw) ? raw : {}, d = DEFAULTS;
+    const int = (v, lo, hi, def) => (Number.isInteger(v) && v >= lo && v <= hi ? v : def);
+    return {
+      type: o.type === 'b' ? 'b' : 'a',
+      level: int(o.level, LEVELS[0], LEVELS[1], d.level),
+      height: int(o.height, 0, HEIGHTS, d.height),
+      music: MUSIC.includes(o.music) ? o.music : d.music,
+      drop: o.drop !== false,
+      hold: o.hold !== false,
+      ghost: o.ghost !== false,
+      next: int(o.next, 0, NEXT, d.next),
+      rand: o.rand === 'nes' ? 'nes' : 'bag',
+      lock: o.lock === 'nes' ? 'nes' : 'modern',
+    };
+  }
+
+  // ---- where the pieces come from: the NES-style random --------------------------------------------------------------
+
+  /**
+   * The NES randomizer: a roll of eight (the seventh piece and one more), and a repeat of the last piece or the eighth
+   * face rolls once more, of seven; so a repeat comes about one time in 28 (a 7-bag never repeats more than twice).
+   * Drawn on the game's own stream; the last piece is kept with the board (x.classic.last).
+   */
+  function nesDealer(C) {
+    const T = Pieces.TETROMINOES;
+    return {
+      next(game) {
+        let i = game.rng.int(8);
+        if (i === 7 || T[i] === C.last) i = game.rng.int(7);
+        C.last = T[i];
+        return T[i];
+      },
+      reroll(game, exclude) { const opts = T.filter((t) => t !== exclude); return opts[Math.floor(Math.random() * opts.length)]; },
+      candidates() { return T.slice(); },
+    };
+  }
+
+  // ---- the engine's extension ----------------------------------------------------------------------------------------
+
+  /** B type's garbage on a new board: each row about three in five full, never a full row, on the board's own seed. */
+  function placeGarbage(game, k) {
+    const n = garbageRows(k.height, game.h);
+    if (!n) return;
+    const rng = new RNG('classic:garbage:' + game.seed), b = game.board;
+    for (let y = 0; y < n; y++) {
+      let filled = 0;
+      for (let x = 0; x < game.w; x++) if (rng.next() < 0.6) { b.set(x, y, CELL.FOREIGN | 8); filled++; }
+      if (filled === game.w) b.set(rng.int(game.w), y, 0);
+      if (!filled) b.set(rng.int(game.w), y, CELL.FOREIGN | 8);
+    }
+  }
+
+  const fresh = () => ({ v: 1, from: null, lines: 0, ms: 0, tetrises: 0, counted: false, started: false, last: null, bestLevel: 0 });
+  function validState(x) {
+    return isObj(x) && x.v === 1 && Number.isFinite(x.lines) && x.lines >= 0 && Number.isFinite(x.ms) && x.ms >= 0 && Number.isFinite(x.tetrises);
+  }
+
+  /** A Classic board's hooks (see Game hooks in js/engine.js); its state is this.C (Classic.of(game)). */
+  function extension(game, saved, o) {
+    const k = game.recipe.classic;
+    const C = validState(saved) ? Object.assign(fresh(), clone(saved)) : fresh();
+    // Classic's engine rules: the spawn flush with the ceiling and the classic top out, hold once a piece (or none).
+    game.ceiling = true;
+    game.freeHold = false;
+    game.findRoom = false;
+    game.mods.noHold = !k.hold;
+    // Next shows the recipe's count, whatever Settings ▸ Next says.
+    Object.defineProperty(game, 'previewCount', { get: () => k.next, set() {}, configurable: true });
+    if (!o.saved && k.type === 'b') placeGarbage(game, k);
+    const ext = {
+      C,
+      step(g, res) {
+        if (C.from == null) C.from = g.s.lines - (res.lines || 0);
+        const before = levelOf(k, C.lines);
+        C.lines += res.lines || 0;
+        const level = levelOf(k, C.lines);
+        // The Classic score: a clear's points times the level it was made at, two a row of a hard drop (soft drop's
+        // one a row is added as it happens).
+        const add = (res.score || 0) * (before - 1) + (res.dropDist ? res.dropDist * 2 : 0);
+        g.s.score += add;
+        if ((res.lines || 0) >= 4) C.tetrises++;
+        C.bestLevel = Math.max(C.bestLevel || 0, featLevel(k, C.lines));
+        res.classic = { before, level, score: g.s.score, lines: C.lines };
+        if (k.type === 'b' && C.lines >= B_LINES) { res.classic.cleared = true; g.end('cleared'); }
+      },
+      save() { return clone(C); },
+      summary() { return { level: levelOf(k, C.lines), lines: C.lines, tetrises: C.tetrises, ms: C.ms, type: k.type }; },
+    };
+    if (k.rand === 'nes') ext.dealer = nesDealer(C);
+    return ext;
+  }
+
+  /** The Classic state of a game (null on a board that is not Classic). */
+  function of(game) {
+    const e = game && Array.isArray(game.ext) ? game.ext.find((x) => x.key === 'classic') : null;
+    return e ? e.C : null;
+  }
+
+  const TYPE_NAMES = { a: 'A', b: 'B' };
+
+  const PART = {
+    key: 'classic', order: 45, mode: 'classic', owns: ['classic'],
+    options: { 'classic.rand': ['bag', 'nes'] },
+    // Edits that change only these cost nothing (Recipe.editPrice): the music is not a rule.
+    freeEdit: ['classic.music'],
+    normalize(raw, out) {
+      if (out.mode !== 'classic') return;
+      out.classic = normalizeK(raw.classic);
+    },
+    label: (r, short) => {
+      if (!on(r)) return '';
+      const k = r.classic;
+      return 'Classic ' + TYPE_NAMES[k.type] + (short ? '' : ' · Level ' + k.level + (k.type === 'b' && k.height ? ' · Height ' + k.height : ''));
+    },
+    rules(r, R) {
+      if (!on(r)) return;
+      // No power-ups (Classic is played as it falls: nothing stops the clock or takes a piece back), no Undo, no hints.
+      for (const id of Object.keys(L.ITEMS || {})) R.refuse[id] = 'Not in Classic';
+      R.undo = false;
+      R.hints = false;
+      R.classic = true;
+    },
+    conflicts(r, out) {
+      if (!on(r)) return;
+      // The NES roll draws the seven; other shapes come from their own dealer.
+      const preset = isObj(r.shapes) ? r.shapes.preset : 'normal';
+      if (preset !== 'normal') out['classic.rand=nes'] = 'NES random needs Normal shapes';
+    },
+    valid(g, r) {
+      if (!on(r)) return true;
+      const x = isObj(g.x) ? g.x.classic : undefined;
+      return x === undefined || validState(x);
+    },
+    engine(game, saved, o) { return on(game.recipe) ? extension(game, saved, o) : null; },
+    controller(play, game) { return game && on(game.recipe) && L.ClassicView ? L.ClassicView.controller(play, game) : null; },
+    summary(x, g) { return validState(x) && g && isObj(g.recipe) && on(Recipe.normalize(g.recipe)) ? { level: levelOf(Recipe.normalize(g.recipe).classic, x.lines), lines: x.lines, tetrises: x.tetrises, ms: x.ms } : null; },
+  };
+  Recipe.part(PART);
+
+  L.Classic = { DEFAULTS, LEVELS, HEIGHTS, NEXT, B_LINES, B_ROWS, MUSIC, MUSIC_NAMES, LOCK, on, gravity, garbageRows, levelOf, featLevel, normalize: normalizeK, nesDealer, of, PART };
+})(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -29,6 +29,8 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   if (process.env.CHROMIUM_PATH) launchOpts.executablePath = process.env.CHROMIUM_PATH;
   const browser = await chromium.launch(launchOpts);
   const ctx = await browser.newContext({ viewport: { width: 520, height: 760 }, deviceScaleFactor: 2 });
+  // Classic is a board mode now: its checks read the Classic board in play through CM (scripts/classic-shim.cjs).
+  await ctx.addInitScript(require('./classic-shim.cjs'));
   const page = await ctx.newPage();
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
@@ -42,7 +44,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await page.keyboard.press('Enter');
   check('welcome dismissed with Enter', !(await page.isVisible('.modal')));
   // Scripted play sets pieces faster than any hand: the grace after a set is off here and tested on its own below.
-  await ev(() => { for (const k of ['play', 'puzzle', 'classic']) Lull.app.modes[k].setGrace = 0; });
+  await ev(() => { for (const k of ['play', 'puzzle']) Lull.app.modes[k].setGrace = 0; });
   // Scripted play also turns at machine speed (the puzzle solver's three quick turns look like the long way round), so
   // control hints are off until their own section below, which turns them back on; the switch must keep every one away.
   await ev(() => { Lull.app.store.state.settings.hints = false; Lull.app.hints.sync(); });
@@ -453,7 +455,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await ev(() => Lull.app.saveNow());
   await page.reload();
   await page.waitForTimeout(400);
-  await ev(() => { for (const k of ['play', 'puzzle', 'classic']) Lull.app.modes[k].setGrace = 0; });
+  await ev(() => { for (const k of ['play', 'puzzle']) Lull.app.modes[k].setGrace = 0; });
   const reloaded = await ev(() => ({ ready: !!document.querySelector('#gift-btn.ready'), inv: Object.values(Lull.app.store.state.inventory).reduce((a, b) => a + b, 0), again: Lull.app.store.openGift(Date.now()) }));
   check('nor by reopening Lull', !reloaded.ready && reloaded.inv === inv0 + gift.gain && reloaded.again === null, JSON.stringify(reloaded));
   await page.click('#wallet');
@@ -655,18 +657,58 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   const barFits = await ev(() => { const bar = document.getElementById('itembar'); const r = bar.getBoundingClientRect(); return Array.from(bar.children).every((b) => { const q = b.getBoundingClientRect(); return q.right <= r.right + 0.5 && q.top - r.top < 12; }); });
   check('the item types fit on one row', barFits);
 
-  // ---- classic ------------------------------------------------------------------------------------------------------
+  // ---- classic: a board mode (the New board window's Mode tab), played on the Play tab ---------------------------------
   console.log('classic');
   await page.mouse.move(5, 300);
-  await page.click('.tabs button[data-tab="classic"]');
-  check('Classic is its own tab, the last of the places to play, and lit while open', await ev(() => Lull.app.tab === 'classic' && document.querySelector('.tabs button[aria-selected="true"]').dataset.tab === 'classic'
-    && Array.from(document.querySelectorAll('#tabs button')).pop().dataset.tab === 'classic' && !document.querySelector('.corner-btn')));
+  check('no Classic tab and no Classic view: Classic is a board mode', await ev(() => !document.querySelector('.tabs button[data-tab="classic"]') && !document.getElementById('view-classic') && !Lull.app.modes['clas' + 'sic']
+    && Lull.Recipe.options().find((o) => o.path === 'mode').values.includes('classic')));
+  // The board in play (a plain one) and the window's last choice, to come back to at the end.
+  const keepB = await ev(() => { const B = Lull.app.store.state.boards; return { id: B.cur, recipe: JSON.parse(JSON.stringify(B.recipe)), size: Object.assign({}, B.size), lines: Lull.app.store.state.lines }; });
+  await ev(() => Lull.app.modes.play.openNewBoard());
+  await page.click('.nb-tab[data-tab="mode"]');
+  await page.click('.nb-mode[data-value="classic"]');
+  const clPanel = await ev(() => ({ set: !!document.querySelector('.modal .cl-set'), rows: [...document.querySelectorAll('.modal .cl-row .cl-nm')].map((x) => x.textContent).join(), sws: [...document.querySelectorAll('.modal .cl-sws .nm')].map((x) => x.textContent).join(), tab: document.querySelector('.nb-tab[data-tab="mode"] .vl').textContent }));
+  check('New board ▸ Mode ▸ Classic shows its settings: type, start level, next, randomizer, lock delay, music; hard drop, hold, ghost', clPanel.set && clPanel.rows === 'Start level,Next,Randomizer,Lock delay,Music' && clPanel.sws === 'Hard drop,Hold,Ghost' && clPanel.tab === 'Classic', JSON.stringify(clPanel));
+  await page.click('.nb-level[data-path="classic.type"][data-value="b"]');
+  await page.click('[data-path="classic.height"][data-value="2"]');
+  await page.click('[data-focus="classic.level+"]');
+  await page.click('[data-focus="classic.level+"]');
+  await page.click('[data-path="classic.next"][data-value="1"]');
+  await page.click('[data-path="classic.hold"]');
+  await page.click('[data-path="classic.lock"][data-value="nes"]');
+  await page.waitForTimeout(100);
+  await shot('13a-newboard-classic');
+  const nbRecipe = await ev(() => Lull.app.modes.play.lastNB.nb.recipe.classic);
+  check('its settings are the recipe: B type, height 2, start level 3, Next 1, hold off, NES lock', nbRecipe.type === 'b' && nbRecipe.height === 2 && nbRecipe.level === 3 && nbRecipe.next === 1 && nbRecipe.hold === false && nbRecipe.lock === 'nes' && nbRecipe.drop && nbRecipe.ghost && nbRecipe.rand === 'bag', JSON.stringify(nbRecipe));
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.waitForTimeout(200);
+  const clNarrow = await ev(() => { const m = document.querySelector('.modal'), p = document.querySelector('.nb-panel'); return { fits: m.scrollWidth <= m.clientWidth + 1 && p.scrollWidth <= p.clientWidth + 1 && document.documentElement.scrollWidth <= window.innerWidth + 1, scrolls: p.scrollHeight > p.clientHeight }; });
+  await shot('13b-newboard-classic-320');
+  check('at 320 × 568 the Classic settings fit across (the panel scrolls, the footer stays)', clNarrow.fits, JSON.stringify(clNarrow));
+  await page.setViewportSize({ width: 520, height: 760 });
+  await page.click('.modal footer .btn.primary');
   await page.waitForTimeout(150);
-  check('classic waits for a start', await ev(() => !Lull.app.modes.classic.started && Lull.app.modes.classic.cardOpen));
+  const made = await ev((keep) => { const pm = Lull.app.modes.play, g = pm.game, B = Lull.app.store.state.boards; return { mode: g.recipe.mode, ceiling: g.ceiling, garbage: g.board.count(), next: g.previewCount, noHold: g.mods.noHold, card: pm.cardOpen, text: document.getElementById('play-overlay').textContent, newRec: B.cur !== keep.id, shelved: !!B.list.find((r) => r.id === keep.id), items: document.getElementById('itembar').textContent }; }, keepB);
+  check('Create makes a Classic board in the library (the plain one shelved) with its garbage, Next and hold, waiting at its Start card', made.mode === 'classic' && made.ceiling && made.garbage > 10 && made.next === 1 && made.noHold && made.card && /Start/.test(made.text) && /Edit rules/.test(made.text) && made.newRec && made.shelved && /Resume/.test(made.items), JSON.stringify(made));
   await page.keyboard.press('Space');
-  const y0 = await ev(() => Lull.app.modes.classic.game.piece.y);
+  const gy0 = await ev(() => CM.game.piece.y);
+  await page.waitForTimeout(1800);
+  const gy1 = await ev(() => ({ y: CM.game.piece.y, pieces: CM.game.s.pieces, started: CM.started, status: document.getElementById('play-status').textContent }));
+  check('Space starts it and the pieces fall on their own; the status bar has Score, Level 3, Left 25, Bank, Best', gy1.started && (gy1.y < gy0 || gy1.pieces > 0) && /Level\s*3/.test(gy1.status) && /Left\s*25/.test(gy1.status) && /Bank/.test(gy1.status) && /Best/.test(gy1.status), JSON.stringify([gy0, gy1]));
+  await shot('13c-classic-board');
+  const refused = await ev(() => { const pm = Lull.app.modes.play; const n = Lull.app.store.state.inventory; return { hold: pm.action('hold'), items: Object.keys(Lull.ITEMS).every((id) => pm.game.allow(id) === 'Not in Classic'), undo: pm.game.maxHistory }; });
+  check('hold off refuses; every power-up is refused (Not in Classic); no Undo', !refused.hold && refused.items && refused.undo === 0, JSON.stringify(refused));
+  // The library row says what it is; a standard Classic board for the checks that follow (CM).
+  await ev(() => Lull.app.modes.play.openLibrary());
+  const row = await ev(() => { const r = document.querySelector('.lib-row.current'); return r ? r.textContent : ''; });
+  check('its library row: Playing, its size and Classic B', /Playing/.test(row) && /Classic B/.test(row), row);
+  await ev(() => { while (Lull.UI.modalOpen()) Lull.UI.closeTopModal(); CM.newGame(false); });
+  await page.waitForTimeout(150);
+  check('classic waits for a start', await ev(() => !CM.started && CM.cardOpen));
+  await page.keyboard.press('Space');
+  const y0 = await ev(() => CM.game.piece.y);
   await page.waitForTimeout(2200);
-  const fell = await ev(() => ({ y: Lull.app.modes.classic.game.piece.y, pieces: Lull.app.modes.classic.game.s.pieces, music: Lull.Music.playing }));
+  const fell = await ev(() => ({ y: CM.game.piece.y, pieces: CM.game.s.pieces, music: Lull.Music.playing }));
   check('pieces fall on their own', fell.y < y0 || fell.pieces > 0, JSON.stringify([y0, fell]));
   check('music plays during a game', fell.music);
   check('the music keeps its voices bounded', await ev(() => Lull.Music.live > 0 && Lull.Music.live < 400), String(await ev(() => Lull.Music.live)));
@@ -701,25 +743,25 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   check('no sound effect waits for the beat: every voice is played at once', keyed.concat(keyedB).every((x) => x.when === 0), JSON.stringify([...new Set(keyed.concat(keyedB).map((x) => x.n + ' ' + x.when))]));
   // A double Space: the second press 100 ms after the first on the set grace's clock (BoardMode.clock, held for the two
   // presses), however slowly a busy machine delivers them.
-  await ev(() => { const m = Lull.app.modes.classic; m.setGrace = Lull.Modes.SET_GRACE_MS; window.__graceT = performance.now(); m.clock = () => window.__graceT; });
-  const cp0 = await ev(() => Lull.app.modes.classic.game.s.pieces);
+  await ev(() => { const m = CM; m.setGrace = Lull.Modes.SET_GRACE_MS; window.__graceT = performance.now(); m.clock = () => window.__graceT; });
+  const cp0 = await ev(() => CM.game.s.pieces);
   await page.keyboard.press('Space');
   await ev(() => { window.__graceT += 100; });
   await page.keyboard.press('Space');
-  const { cp1, cy1, ms1 } = await ev(() => { const m = Lull.app.modes.classic, g = m.game; delete m.clock; return { cp1: g.s.pieces, cy1: g.piece.y, ms1: m.ms }; });
+  const { cp1, cy1, ms1 } = await ev(() => { const m = CM, g = m.game; delete m.clock; return { cp1: g.s.pieces, cy1: g.piece.y, ms1: m.ms }; });
   // Gravity carries on: 1.2 s on Classic's own clock (running time, the clock its gravity counts), however slowly frames come.
-  await page.waitForFunction((ms) => Lull.app.modes.classic.ms - ms >= 1200, ms1, { timeout: 30000 });
-  check('Classic: a double Space hard drops one piece; gravity carries on', cp1 === cp0 + 1 && (await ev((y) => { const g = Lull.app.modes.classic.game; return g.s.pieces > 0 && (!g.piece || g.piece.y < y || g.s.pieces > 1); }, cy1)), JSON.stringify([cp0, cp1]));
-  await ev(() => { Lull.app.modes.classic.setGrace = 0; });
-  check('hard drop scores', await ev(() => Lull.app.modes.classic.score > 0));
-  const clock = await ev(() => Lull.app.modes.classic.ms);
+  await page.waitForFunction((ms) => CM.ms - ms >= 1200, ms1, { timeout: 30000 });
+  check('Classic: a double Space hard drops one piece; gravity carries on', cp1 === cp0 + 1 && (await ev((y) => { const g = CM.game; return g.s.pieces > 0 && (!g.piece || g.piece.y < y || g.s.pieces > 1); }, cy1)), JSON.stringify([cp0, cp1]));
+  await ev(() => { CM.setGrace = 0; });
+  check('hard drop scores', await ev(() => CM.score > 0));
+  const clock = await ev(() => CM.ms);
   check('Classic keeps its own clock (for the sprints)', clock > 1500 && clock < 6000, String(clock));
   // Restarting while the music plays starts the suite again from the top (it used to go silent, throwing every tick).
   const games0 = await ev(() => Lull.app.store.state.stats.classic.games);
-  for (let i = 0; i < 5; i++) await page.keyboard.press('KeyR');
+  for (let i = 0; i < 5; i++) await ev(() => CM.restart());
   await page.waitForTimeout(900);
   const rw = await ev(() => ({ playing: Lull.Music.playing, pos: Lull.Music.pos && { bar: Lull.Music.pos.bar, ahead: +(Lull.Music.pos.at - Lull.Sound.ctx.currentTime).toFixed(2) }, games: Lull.app.store.state.stats.classic.games }));
-  check('R during the music starts it again from the top, still scheduling, no errors', rw.playing && rw.pos && rw.pos.ahead > 0 && rw.pos.bar <= 2 && errors.length === 0, JSON.stringify(rw) + ' ' + errors.slice(0, 1).join(''));
+  check('a new game during the music starts it again from the top, still scheduling, no errors', rw.playing && rw.pos && rw.pos.ahead > 0 && rw.pos.bar <= 2 && errors.length === 0, JSON.stringify(rw) + ' ' + errors.slice(0, 1).join(''));
   check('quick restarts are not Classic games played (a minute or ten lines is)', rw.games === games0, JSON.stringify([games0, rw.games]));
   // A Volume of 0 stays 0 when the music starts.
   const vol0 = await ev(async () => {
@@ -731,23 +773,23 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     return out;
   });
   check('with Volume at 0 the music starts silent', vol0.playing && vol0.master === 0, JSON.stringify(vol0));
-  await ev(() => { const m = Lull.app.modes.classic; m.lines = 9; const g = m.game; for (let x = 1; x < 10; x++) g.board.set(x, 0, 8); g.replacePiece({ id: 'I' }); g.rotate(1); while (g.move(-1)); });
+  await ev(() => { const m = CM; m.lines = 9; const g = m.game; for (let x = 1; x < 10; x++) g.board.set(x, 0, 8); g.replacePiece({ id: 'I' }); g.rotate(1); while (g.move(-1)); });
   await page.keyboard.press('Space');
-  check('ten lines: level 2', await ev(() => Lull.app.modes.classic.level === 2));
+  check('ten lines: level 2', await ev(() => CM.level === 2));
   // Back-to-back tetrises multiply the lines Classic banks (0.7 a line, ×0.05 a link, ×1.5 at most), never its score.
   const bank = await ev(() => {
-    const m = Lull.app.modes.classic, g = m.game;
+    const m = CM, g = m.game;
     g.s.b2b = 5; // six before: this makes seven, ×1.3
     for (let y = 0; y < 4; y++) for (let x = 1; x < 10; x++) g.board.set(x, y, 8);
     g.replacePiece({ id: 'I' }); g.rotate(1); while (g.move(-1));
     const s0 = m.score, lvl = m.level;
     let r = null; g.on('lock', (x) => { r = r || x; });
     g.drop();
-    const C = Lull.Chain, out = { banked: r.banked, mult: m.mult, points: m.score - s0, want: r.score * lvl + r.dropDist * 2, status: document.getElementById('classic-status').textContent,
-      wantMult: C.mult(7, 'classic'), wantBank: Lull.Library.bank(4 * C.CLASSIC.rate * C.mult(7, 'classic')), tip: (document.querySelector('#classic-status .chain, #classic-status [data-tip]') || {}).dataset };
+    const C = Lull.Chain, out = { banked: r.banked, mult: m.mult, points: m.score - s0, want: r.score * lvl + r.dropDist * 2, status: document.getElementById('play-status').textContent,
+      wantMult: C.mult(7, 'classic'), wantBank: Lull.Library.bank(4 * C.CLASSIC.rate * C.mult(7, 'classic')), tip: (document.querySelector('#play-status .chain, #play-status [data-tip]') || {}).dataset };
     // Back as it was, so the checks further on see the game they expect.
     m.score = s0; m.lines -= 4; m.level = lvl; g.s.b2b = -1; m.mult = 1; m.renderStatus();
-    out.line = Lull.LINE; out.tip1 = [...document.querySelectorAll('#classic-status .stat')].map((x) => x.dataset.tip).find(Boolean);
+    out.line = Lull.LINE; out.tip1 = [...document.querySelectorAll('#play-status .stat')].map((x) => x.dataset.tip).find(Boolean);
     return out;
   });
   check('Classic: seven tetrises in a row bank ×1.3 (3.64 lines: 4 × 0.7 × 1.3), the score untouched', bank.banked === bank.wantBank && bank.banked === 3.64 && bank.mult === bank.wantMult && bank.mult === 1.3 && bank.points === bank.want && /Bank ×1\.3/.test(bank.status), JSON.stringify(bank));
@@ -759,9 +801,9 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await page.waitForTimeout(700);
   const resumeBar = await ev(() => {
     const M = Lull.Music, now = Lull.Sound.ctx.currentTime, sounding = M.pos.sched.filter((b) => b.at <= now).pop();
-    Lull.app.modes.classic.togglePause(true); M.stop();
+    CM.togglePause(true); M.stop();
     const out = { sounding: sounding && sounding.bar, next: M.pos.bar };
-    Lull.app.modes.classic.togglePause(false);
+    CM.togglePause(false);
     return out;
   });
   check('a pause resumes the bar that was playing', resumeBar.sounding != null && resumeBar.next === resumeBar.sounding, JSON.stringify(resumeBar));
@@ -769,7 +811,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   // The pointer leaving the window pauses a running game (a browser's mouseleave, or the panel's pointer message);
   // coming back shows the paused card, and P carries on. Settings ▸ Controls turns it off.
   {
-    const st = () => ev(() => { const m = Lull.app.modes.classic; return { paused: m.paused, card: !!(m.cardOpen), running: m.running() }; });
+    const st = () => ev(() => { const m = CM; return { paused: m.paused, card: !!(m.cardOpen), running: m.running() }; });
     const leave = () => ev(() => document.documentElement.dispatchEvent(new MouseEvent('mouseleave')));
     const before = await st();
     await leave();
@@ -825,16 +867,16 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     check('the announcer sits clearly under the sound effects', Math.max(...v) < mean - 5 && Math.max(...v) < Math.min(...fx) - 3, JSON.stringify(voiceLevels));
   }
   check('the remix is a long suite', await ev(() => Lull.SONG.bars.length >= 48 && Lull.SONG.loopFrom === 4));
-    check('P pauses (and the music stops)', await ev(() => Lull.app.modes.classic.paused && !Lull.Music.playing));
+    check('P pauses (and the music stops)', await ev(() => CM.paused && !Lull.Music.playing));
   await shot('14-classic-paused');
-  const pausedMs = await ev(() => Lull.app.modes.classic.ms);
+  const pausedMs = await ev(() => CM.ms);
   await page.waitForTimeout(300);
-  check('its clock stops while paused', (await ev(() => Lull.app.modes.classic.ms)) === pausedMs);
+  check('its clock stops while paused', (await ev(() => CM.ms)) === pausedMs);
   await page.keyboard.press('KeyP');
-  await ev(() => { const g = Lull.app.modes.classic.game; for (let y = 0; y < 19; y++) for (let x = 0; x < 10; x++) if (x !== y % 10) g.board.set(x, y, 8); });
+  await ev(() => { const g = CM.game; for (let y = 0; y < 19; y++) for (let x = 0; x < 10; x++) if (x !== y % 10) g.board.set(x, y, 8); });
   await page.waitForTimeout(2500);
-  check('topping out ends the game', await ev(() => Lull.app.modes.classic.over && Lull.app.store.state.stats.classic.best > 0));
-  check('and the card comes after the top out, over the piled-up well', await ev(() => { const m = Lull.app.modes.classic; return m.cardOpen && m.pile && m.pile.done && m.view.pileup.length === 4; }));
+  check('topping out ends the game', await ev(() => CM.over && Lull.app.store.state.stats.classic.best > 0));
+  check('and the card comes after the top out, over the piled-up well', await ev(() => { const m = CM; return m.cardOpen && m.pile && m.pile.done && m.view.pileup.length === 4; }));
   await shot('15-classic-over');
 
   // The classic top out: the piece that cannot appear sets over the stack, and three more from the queue pile up on it
@@ -842,7 +884,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   {
     // A stack to row 17 (a hole a row), an O floating over it, gravity held; the O set makes the next T top out.
     const topout = (o) => ev((o) => {
-      const m = Lull.app.modes.classic, app = Lull.app;
+      const m = CM, app = Lull.app;
       app.settings.motion = o && o.reduced ? 'reduced' : 'full';
       m.newGame(true);
       const g = m.game;
@@ -858,8 +900,8 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
       return { t0, over: m.over, card: m.cardOpen, pile: m.view.pileup ? m.view.pileup.length : -1, score: m.score, lines: m.lines, level: m.level, best: S.best, stats: JSON.stringify(S), cells: g.board.count(), queue: JSON.stringify(g.queue), ach: Object.keys(app.store.state.achievements).sort().join(), piece: g.piece && g.piece.type.id, snd: snd.length };
     }, o);
     const after = () => ev(() => {
-      const m = Lull.app.modes.classic, g = m.game, S = Lull.app.store.state.stats.classic;
-      return { over: m.over, card: m.cardOpen, h2: m.cardOpen ? document.querySelector('#classic-overlay h2').textContent : null, pile: m.view.pileup ? m.view.pileup.length : -1, done: !!(m.pile && m.pile.done), started: m.started, score: m.score, lines: m.lines, level: m.level, best: S.best, stats: JSON.stringify(S), cells: g.board.count(), queue: JSON.stringify(g.queue), ach: Object.keys(Lull.app.store.state.achievements).sort().join(), skip: m.view.queueSkip };
+      const m = CM, g = m.game, S = Lull.app.store.state.stats.classic;
+      return { over: m.over, card: m.cardOpen, h2: m.cardOpen ? document.querySelector('#play-overlay h2').textContent : null, pile: m.view.pileup ? m.view.pileup.length : -1, done: !!(m.pile && m.pile.done), started: m.started, score: m.score, lines: m.lines, level: m.level, best: S.best, stats: JSON.stringify(S), cells: g.board.count(), queue: JSON.stringify(g.queue), ach: Object.keys(Lull.app.store.state.achievements).sort().join(), skip: m.view.queueSkip };
     });
     const same = (a, b) => ['score', 'lines', 'level', 'best', 'stats', 'cells', 'queue', 'ach'].every((k) => a[k] === b[k]);
 
@@ -881,7 +923,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     check('each with a soft set sound; the game over sound comes last, once', locks.length === 4 && fail.length === 1 && fail[0][1] >= Math.max(...locks.map(([, t]) => t)), JSON.stringify(snd));
     check('score, lines, level, best, stats, the board and the queue are as they were at the top out', same(at, fin) && fin.best >= at.score && /New best|Game over/.test(fin.h2), JSON.stringify([at, fin]));
     check('the Next tray gives up the pieces that piled up', fin.skip === 3);
-    const cells = await ev(() => Lull.app.modes.classic.view.pileup.map((p) => p.cells.map((c) => c.join(',')).sort().join(' ')));
+    const cells = await ev(() => CM.view.pileup.map((p) => p.cells.map((c) => c.join(',')).sort().join(' ')));
     check('they pile up where each would appear, over one another', cells.length === 4 && cells.every((c) => /,19/.test(c)) && cells[0] === '3,18 4,18 4,19 5,18' && cells[1] === '3,19 4,19 5,19 6,19', JSON.stringify(cells));
     // Frames of it (see also the frame sequences made by hand in the Classic notes).
     await shot('15b-classic-pileup-card');
@@ -891,7 +933,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     const themeWas = await ev(() => Lull.app.settings.theme);
     for (const theme of ['light', 'dark']) {
       const drawn = await ev((theme) => {
-        const app = Lull.app, v = app.modes.classic.view;
+        const app = Lull.app, v = CM.view;
         app.settings.theme = theme; app.applySettings(); v.render(performance.now());
         const c = document.createElement('canvas'); c.width = 1200; c.height = 1800;
         const real = c.getContext('2d'), ops = [];
@@ -943,7 +985,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     const sk = await after();
     check('Space during the pile-up skips to the card, the whole pile shown; no new game', sk.card && sk.done && sk.pile === 4 && sk.over && same(at2, sk), JSON.stringify([at2, sk]));
     await page.keyboard.press('Space');
-    check('and the next Space plays again', await ev(() => { const m = Lull.app.modes.classic; return m.started && !m.over && !m.cardOpen && !m.view.pileup; }));
+    check('and the next Space plays again', await ev(() => { const m = CM; return m.started && !m.over && !m.cardOpen && !m.view.pileup; }));
 
     // Reduced motion: the whole pile at once, then the card.
     const rm = await topout({ reduced: true });
@@ -957,23 +999,24 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     await page.waitForTimeout(200);
     await page.keyboard.press('KeyP');
     const pz1 = await after();
-    check('P during the pile-up ends it at the card (not paused, not resumed)', pz1.card && pz1.done && pz1.over && !(await ev(() => Lull.app.modes.classic.paused)) && same(pz, pz1) && /New best|Game over/.test(pz1.h2), JSON.stringify(pz1));
+    check('P during the pile-up ends it at the card (not paused, not resumed)', pz1.card && pz1.done && pz1.over && !(await ev(() => CM.paused)) && same(pz, pz1) && /New best|Game over/.test(pz1.h2), JSON.stringify(pz1));
     const tb = await topout();
     await page.waitForTimeout(200);
-    await ev(() => Lull.app.setTab('play'));
+    await ev(() => Lull.app.setTab('puzzle'));
     await page.waitForTimeout(150);
-    await ev(() => Lull.app.setTab('classic'));
+    await ev(() => Lull.app.setTab('play'));
     await page.waitForTimeout(100);
     const tb1 = await after();
-    check('leaving the tab during the pile-up: back, it is the game over card', tb1.card && tb1.done && tb1.over && same(tb, tb1) && !(await ev(() => Lull.app.modes.classic.paused)), JSON.stringify(tb1));
+    check('leaving the tab during the pile-up: back, it is the game over card', tb1.card && tb1.done && tb1.over && same(tb, tb1) && !(await ev(() => CM.paused)), JSON.stringify(tb1));
     const rs = await topout();
     await page.waitForTimeout(200);
-    await ev(() => Lull.app.modes.classic.restart());
-    check('Restart during the pile-up starts a clean game', await ev(() => { const m = Lull.app.modes.classic; return m.started && !m.over && !m.pile && !m.view.pileup && !m.view.queueSkip && m.game.board.count() === 0; }) && rs.over);
-    check('Relaxed and Puzzles keep their own spawn and never pile up', await ev(() => !Lull.app.modes.play.game.ceiling && !(Lull.app.modes.puzzle.game && Lull.app.modes.puzzle.game.ceiling) && !Lull.app.modes.play.view.pileup && !Lull.app.modes.puzzle.view.pileup && Lull.app.modes.classic.game.ceiling));
+    await ev(() => CM.restart());
+    check('Restart during the pile-up starts a clean game', await ev(() => { const m = CM; return m.started && !m.over && !m.pile && !m.view.pileup && !m.view.queueSkip && m.game.board.count() === 0; }) && rs.over);
+    check('Relaxed boards and Puzzles keep their own spawn and never pile up', await ev(() => !new Lull.Game({ w: 10, h: 20, recipe: {} }).ceiling && !(Lull.app.modes.puzzle.game && Lull.app.modes.puzzle.game.ceiling) && !Lull.app.modes.puzzle.view.pileup && CM.game.ceiling));
 
     // A reload during the pile-up: the top out was already saved; Classic comes back to its start card with that best.
     const rctx = await browser.newContext({ viewport: { width: 520, height: 760 } });
+    await rctx.addInitScript(require('./classic-shim.cjs'));
     const rp = await rctx.newPage();
     rp.on('pageerror', (e) => errors.push(e.message + '\n' + e.stack));
     const rev = (fn, a) => rp.evaluate(fn, a);
@@ -982,9 +1025,9 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     const booted = () => rp.waitForFunction(() => window.Lull && Lull.app && Lull.app.lastTime > 0 && (Lull.app.store.loadedFrom !== 'new' || Lull.UI.modalOpen()), null, { timeout: 30000 });
     await rp.goto(PAGE);
     await booted();
-    await rev(() => { while (Lull.UI.modalOpen()) Lull.UI.closeTopModal(); Lull.app.store.state.settings.hints = false; Lull.app.hints.sync(); Lull.app.setTab('classic'); });
+    await rev(() => { while (Lull.UI.modalOpen()) Lull.UI.closeTopModal(); Lull.app.store.state.settings.hints = false; Lull.app.hints.sync(); Lull.app.setTab('play'); });
     const rl = await rev(() => {
-      const m = Lull.app.modes.classic; m.newGame(true);
+      const m = CM; m.newGame(true);
       const g = m.game; m.score = 987654;
       for (let y = 0; y < 19; y++) for (let x = 0; x < 10; x++) if (x !== y % 10) g.board.set(x, y, 8);
       m.frame(performance.now(), 0.016);
@@ -992,13 +1035,58 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     });
     await rp.reload();
     await booted();
-    const rl1 = await rev(() => { const m = Lull.app.modes.classic; Lull.app.setTab('classic'); return { best: Lull.app.store.state.stats.classic.best, started: m.started, over: m.over, card: m.cardOpen, text: document.getElementById('classic-overlay').textContent }; });
-    check('reload during the pile-up: the game over is kept (the best saved at the top out), Classic waits at its start card', rl.over && !rl.card && rl.pile === 1 && rl.stored === 987654 && rl1.best === 987654 && !rl1.started && rl1.card && /987,654/.test(rl1.text), JSON.stringify([rl, rl1]));
+    const rl1 = await rev(() => { const m = CM; Lull.app.setTab('play'); return { best: Lull.app.store.state.stats.classic.best, over: m.over, card: m.cardOpen, text: document.getElementById('play-overlay').textContent }; });
+    check('reload during the pile-up: the game over is kept (the best saved at the top out); the board comes back at its Game over card', rl.over && !rl.card && rl.pile === 1 && rl.stored === 987654 && rl1.best === 987654 && rl1.over && rl1.card && /987,654/.test(rl1.text) && /Play again/.test(rl1.text), JSON.stringify([rl, rl1]));
     await rctx.close();
-    await ev(() => Lull.app.setTab('classic'));
+    await ev(() => Lull.app.setTab('play'));
   }
+  await page.click('.tabs button[data-tab="puzzle"]');
+  check('leaving the Play tab stops the Classic music', await ev(() => !Lull.Music.playing));
   await page.click('.tabs button[data-tab="play"]');
-  check('leaving Classic stops the music', await ev(() => !Lull.Music.playing));
+  // Hard drop off: Space and a click do nothing but the piece still falls and sets on its own.
+  const noDrop = await ev(() => { window.makeClassic({ drop: false }); const pm = Lull.app.modes.play; pm.ctl.go(); const n = pm.game.s.pieces; const a = pm.action('drop'); return { a, same: pm.game.s.pieces === n }; });
+  check('hard drop off: a drop is refused', noDrop.a === false && noDrop.same, JSON.stringify(noDrop));
+
+  // ---- editing a board's rules, for a price ----
+  {
+    const pmId = await ev((keep) => { const pm = Lull.app.modes.play, cid = Lull.app.store.state.boards.cur; pm.switchTo(keep.id); pm.deleteBoard(cid); const g = pm.game; g.board.set(0, 12, 5); Lull.app.store.state.lines = 100; Lull.app.refreshWallet(); return { id: keep.id, count: g.board.count(), w: g.w, h: g.h, recipe: JSON.parse(JSON.stringify(g.recipe)) }; }, keepB);
+    await ev(() => Lull.app.modes.play.openLibrary());
+    await page.click('.lib-row.current [aria-label="Edit rules"]');
+    await page.waitForTimeout(100);
+    const e0 = await ev(() => ({ title: document.querySelector('.modal-edit header .ttl').textContent, apply: document.querySelector('.modal-edit footer .btn.primary').textContent }));
+    check('Edit rules opens the New board window on the board\'s rules, Apply free while nothing changed', e0.title === 'Edit rules' && e0.apply === 'Apply', JSON.stringify(e0));
+    await page.focus('.modal-edit .nb-val[data-k="h"]');
+    await page.keyboard.press('Home');
+    const cut = await ev(() => ({ why: document.querySelector('.modal-edit .nb-why').textContent, off: document.querySelector('.modal-edit footer .btn.primary').getAttribute('aria-disabled') }));
+    await ev(() => document.querySelector('.modal-edit footer .btn.primary').click()); // quiet (aria-disabled): a press says why
+    const cut1 = await ev(() => ({ open: !!document.querySelector('.modal-edit'), lines: Lull.app.store.state.lines }));
+    check('a height that would cut the stack is refused, with the reason; Apply changes nothing', cut.why === 'Blocks stand in the rows it would lose' && cut.off === 'true' && cut1.open && cut1.lines === 100, JSON.stringify([cut, cut1]));
+    await page.focus('.modal-edit .nb-val[data-k="h"]');
+    await page.keyboard.press('End');
+    const p1 = await ev(() => document.querySelector('.modal-edit footer .btn.primary').textContent);
+    await page.click('.modal-edit .nb-tab[data-tab="mode"]');
+    await page.click('.modal-edit .nb-mode[data-value="classic"]');
+    const p2 = await ev(() => ({ text: document.querySelector('.modal-edit footer .btn.primary').textContent, protect: document.querySelector('.modal-edit .nb-mode[data-value="protect"]').getAttribute('aria-disabled') }));
+    await shot('16-edit-rules');
+    check('the price is on Apply: 20 lines for the size, 40 with the mode too; Protect is off (it starts on a new board)', /20$/.test(p1) && /40$/.test(p2.text) && p2.protect === 'true', JSON.stringify([p1, p2]));
+    await page.click('.modal-edit footer .btn.primary');
+    await page.waitForTimeout(150);
+    const ap = await ev(() => { const g = Lull.app.modes.play.game; return { open: !!document.querySelector('.modal-edit'), lines: Lull.app.store.state.lines, mode: g.recipe.mode, h: g.h, count: g.board.count(), hist: g.history.length, piece: !!g.piece, card: Lull.app.modes.play.cardOpen }; });
+    check('Apply spends 40 lines and changes the board where it is: Classic, 40 tall, the stack kept, no Undo history', !ap.open && ap.lines === 60 && ap.mode === 'classic' && ap.h === 40 && ap.count === pmId.count && ap.hist === 0 && ap.piece && ap.card, JSON.stringify([ap, pmId]));
+    await shot('16b-edited-board');
+    // Back as it was (by the same path), for the checks that follow.
+    const back = await ev((k) => {
+      const pm = Lull.app.modes.play, st = Lull.app.store;
+      while (Lull.UI.modalOpen()) Lull.UI.closeTopModal();
+      let why = null;
+      const ok = pm.applyEdit({ id: st.state.boards.cur, recipe: pm.game.recipe, size: { w: pm.game.w, h: pm.game.h }, json: pm.boardJSON() }, k.recipe, { w: k.w, h: k.h }, null, (t) => { why = t; });
+      const out = { ok, why, lines: st.state.lines, mode: pm.game.recipe.mode, h: pm.game.h };
+      pm.game.board.set(0, 12, 0);
+      return out;
+    }, pmId);
+    check('and edited back (40 lines more)', back.ok && back.lines === 20 && back.mode === 'plain' && back.h === pmId.h, JSON.stringify(back));
+    await ev((keep) => { const st = Lull.app.store, B = st.state.boards; st.state.lines = keep.lines; B.recipe = keep.recipe; B.size = keep.size; Lull.app.refreshWallet(); Lull.app.modes.play.persist(); }, keepB);
+  }
   // Rendered offline (as scripts/audio-render.cjs does, at length): no clipping, nothing silent, movement barely there,
   // and the music a steady bed with no holes.
   const audio = await ev(async () => {
@@ -1577,7 +1665,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     await ev(() => Lull.app.saveNow());
     await page.reload();
     await page.waitForTimeout(500);
-    await ev(() => { for (const k of ['play', 'puzzle', 'classic']) Lull.app.modes[k].setGrace = 0; Lull.app.store.state.settings.hints = false; Lull.app.hints.sync(); if (Lull.app.tab !== 'puzzle') Lull.app.setTab('puzzle'); });
+    await ev(() => { for (const k of ['play', 'puzzle']) Lull.app.modes[k].setGrace = 0; Lull.app.store.state.settings.hints = false; Lull.app.hints.sync(); if (Lull.app.tab !== 'puzzle') Lull.app.setTab('puzzle'); });
     await page.waitForTimeout(150);
     const t6 = await readPay();
     check('a reload keeps the try, its Undos and the pay', t5.undos === 1 && t6.seed === pick.seed && t6.attempts === t5.attempts && t6.undos === 1 && t6.live && t6.now === t5.now && t6.text === t5.text && t6.tries === t5.tries && t6.tries === JSON.stringify({ n: 2, hint: false, undos: 1 }), JSON.stringify({ t5, t6 }));
@@ -2746,7 +2834,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   console.log('sizes');
   for (const [w, hgt] of [[300, 440], [900, 560], [420, 900], [400, 700], [520, 760]]) {
     await page.setViewportSize({ width: w, height: hgt });
-    for (const tab of ['play', 'classic', 'puzzle', 'factory']) {
+    for (const tab of ['play', 'puzzle', 'factory']) {
       await ev((t) => Lull.app.setTab(t), tab);
       await page.waitForTimeout(150);
       const overflow = await ev(() => document.documentElement.scrollWidth > window.innerWidth + 1);
@@ -3112,7 +3200,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     return out;
   });
   check('a broken library in the save is cleaned when opened; both tabs still list', broken.saved && broken.list && broken.retired, JSON.stringify(broken));
-  await ev(() => { for (const k of ['play', 'puzzle', 'classic']) Lull.app.modes[k].setGrace = 0; Lull.app.store.state.settings.hints = false; Lull.app.hints.sync(); });
+  await ev(() => { for (const k of ['play', 'puzzle']) Lull.app.modes[k].setGrace = 0; Lull.app.store.state.settings.hints = false; Lull.app.hints.sync(); });
   }
 
   // ---- save and reload ----------------------------------------------------------------------------------------------
@@ -3270,15 +3358,15 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     const kids = Array.from(document.getElementById('titlebar').children).map((e) => e.id || e.className);
     return { wallet: document.getElementById('wallet').dataset.tipFoot, modes: ids('#tabs button'), meta: ids('#tabs-meta button'), feet: all.map((b) => b.dataset.tipFoot).join(), ltr: xs.every((x, i) => !i || x > xs[i - 1]), tips: all.every((b) => b.dataset.tip === b.getAttribute('aria-label') && !b.dataset.tipTitle && !b.title), kids: kids.join() };
   });
-  check('title bar: Play, Puzzles, Factory, Classic together; Stats, Achievements by the wallet (the Shop); ⌘1–⌘7 left to right, each in its tooltip',
-    bar.modes === 'play,puzzle,factory,classic' && bar.meta === 'stats,achievements' && bar.ltr && bar.tips && bar.feet === '⌘1,⌘2,⌘3,⌘4,⌘5,⌘6' && bar.wallet === '⌘7'
+  check('title bar: Play, Puzzles, Factory together (no Classic: it is a board mode); Stats, Achievements by the wallet (the Shop); ⌘1–⌘6 left to right, each in its tooltip',
+    bar.modes === 'play,puzzle,factory' && bar.meta === 'stats,achievements' && bar.ltr && bar.tips && bar.feet === '⌘1,⌘2,⌘3,⌘4,⌘5' && bar.wallet === '⌘6'
     && /^brand,bar-idle,tabs,spacer,tabs-meta,wallet,tb-sep,btn-mute,btn-settings,tb-sep win,winbtns$/.test(bar.kids), JSON.stringify(bar));
   const shortcut = [];
-  for (let n = 1; n <= 7; n++) { await page.keyboard.press('Control+Digit' + n); shortcut.push(await ev(() => { const on = document.querySelector('#titlebar .tabs button[aria-selected="true"], #wallet.active'); return Lull.app.tab + ':' + (on && (on.dataset.tab || on.id)); })); }
-  check('⌘1–⌘7 open the tabs (and the Shop, by the wallet) in the order they sit, and light them', shortcut.join() === 'play:play,puzzle:puzzle,factory:factory,classic:classic,stats:stats,achievements:achievements,shop:wallet', shortcut.join());
+  for (let n = 1; n <= 6; n++) { await page.keyboard.press('Control+Digit' + n); shortcut.push(await ev(() => { const on = document.querySelector('#titlebar .tabs button[aria-selected="true"], #wallet.active'); return Lull.app.tab + ':' + (on && (on.dataset.tab || on.id)); })); }
+  check('⌘1–⌘6 open the tabs (and the Shop, by the wallet) in the order they sit, and light them', shortcut.join() === 'play:play,puzzle:puzzle,factory:factory,stats:stats,achievements:achievements,shop:wallet', shortcut.join());
   // Labels: every play tab named when wide; only the tab you are on when narrower; icons alone when narrow; the bar keeps room to drag.
   const labels = [];
-  for (const [w, nat, want] of [[1100, false, 'Play,Puzzles,Factory,Classic|Stats,Achievements'], [900, false, 'Play,Puzzles,Factory,Classic|'], [900, true, 'Play,Puzzles,Factory,Classic|'], [560, false, 'Puzzles|'], [520, true, '|'], [460, false, '|'], [400, true, '|']]) {
+  for (const [w, nat, want] of [[1100, false, 'Play,Puzzles,Factory|Stats,Achievements'], [900, false, 'Play,Puzzles,Factory|'], [900, true, 'Play,Puzzles,Factory|'], [560, false, 'Puzzles|'], [520, true, '|'], [460, false, '|'], [400, true, '|']]) {
     await page.setViewportSize({ width: w, height: 760 });
     await ev(() => Lull.app.setTab('puzzle'));
     const got = await ev((nat) => {
@@ -3694,20 +3782,21 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     const k1 = (await col()).on;
     await page.keyboard.press('Control+KeyJ');
     check('⌘J collapses and expands, and says so in its tooltip', k1 && !(await col()).on && await ev(() => document.getElementById('btn-collapse').dataset.tipFoot === '⌘J'));
-    // Classic pauses (like leaving its tab) and its music stops; expanding leaves it paused where it was.
-    await ev(() => Lull.app.setTab('classic'));
+    // A Classic board pauses (like leaving its tab) and its music stops; expanding leaves it paused where it was.
+    await ev(() => { Lull.app.setTab('play'); window.__keepPlain = Lull.app.modes.play.game.toJSON(); window.makeClassic(); });
     await page.keyboard.press('Space');
     await page.waitForTimeout(400);
-    const cl0 = await ev(() => ({ run: Lull.app.modes.classic.running(), music: Lull.Music.playing }));
+    const cl0 = await ev(() => ({ run: CM.running(), music: Lull.Music.playing }));
     await page.keyboard.press('Control+KeyJ');
     await page.waitForTimeout(300);
-    const cl1 = await ev(() => ({ paused: Lull.app.modes.classic.paused, music: Lull.Music.playing, y: Lull.app.modes.classic.game.piece.y }));
+    const cl1 = await ev(() => ({ paused: CM.paused, music: Lull.Music.playing, y: CM.game.piece.y }));
     await page.waitForTimeout(600);
-    const y2 = await ev(() => Lull.app.modes.classic.game.piece.y);
+    const y2 = await ev(() => CM.game.piece.y);
     await page.keyboard.press('Control+KeyJ');
     await page.waitForTimeout(100);
-    const cl2 = await ev(() => ({ tab: Lull.app.tab, paused: Lull.app.modes.classic.paused, view: document.getElementById('view-classic').classList.contains('active') }));
-    check('collapsing pauses Classic and stops its music; expanding returns to it, still paused', cl0.run && cl1.paused && !cl1.music && y2 === cl1.y && cl2.tab === 'classic' && cl2.paused && cl2.view, JSON.stringify([cl0, cl1, y2, cl2]));
+    const cl2 = await ev(() => ({ tab: Lull.app.tab, paused: CM.paused, view: document.getElementById('view-play').classList.contains('active') }));
+    check('collapsing pauses a Classic board and stops its music; expanding returns to it, still paused', cl0.run && cl1.paused && !cl1.music && y2 === cl1.y && cl2.tab === 'play' && cl2.paused && cl2.view, JSON.stringify([cl0, cl1, y2, cl2]));
+    await ev(() => { const pm = Lull.app.modes.play; pm.setGame(new Lull.Game({ saved: window.__keepPlain, previewCount: Lull.app.settings.preview })); });
     // The factory runs on unseen, and its floor comes back.
     await ev(() => Lull.app.setTab('factory'));
     await page.keyboard.press('Control+KeyJ');
@@ -4036,7 +4125,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
       const unlin = (v) => { v = Math.max(0, Math.min(1, v)); return 255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055); };
       const sim = (c, k) => { const l = c.slice(0, 3).map(lin); return M[k].map((row) => unlin(row[0] * l[0] + row[1] * l[1] + row[2] * l[2])); };
       const dcvd = (a, b) => Math.min(d(a, b), ...['deut', 'prot'].map((k) => d(sim(a, k), sim(b, k))));
-      const places = ['play', 'classic', 'puzzle', 'factory'], min = (ks, f) => Math.min(...places.flatMap((a) => ks.map((k) => f(tok('--area-' + a), tok(k)))));
+      const places = ['play', 'puzzle', 'factory'], min = (ks, f) => Math.min(...places.flatMap((a) => ks.map((k) => f(tok('--area-' + a), tok(k)))));
       out.apart = min(['--accent', '--gold', '--good', '--bad'], d);
       out.apartCvd = min(['--accent', '--gold'], dcvd);
       out.apartCvdGB = min(['--good', '--bad'], dcvd);

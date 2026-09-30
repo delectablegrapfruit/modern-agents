@@ -314,5 +314,66 @@
     return (cur ? [cur] : []).concat(B.list.filter((r) => r !== cur).sort((a, b) => (b.touched || 0) - (a.touched || 0)));
   }
 
-  L.Library = { STANDARD, LIMITS, scale, worth, bank, validSize, clampSize, sizeLabel, playable, MAX_ACTIVE, MAX_RETIRED, NAME_MAX, NEXT_KEPT, ADJ, NOUN, blank, ensure, find, findRetired, current, full, cleanName, uniqueName, makeName, add, shelve, take, startNew, open, rename, summarize, encodeCells, decodeCells, retire, remove, removeRetired, newCurrent, taper, ordered };
+  /**
+   * A saved board (Game.toJSON) at another size, for an edit of its rules: columns are added or taken away on the
+   * right, rows at the top, and nothing that is there may be cut. { json } (a copy), or { why } in plain words.
+   */
+  function reshape(json, w, h) {
+    if (!json || !Array.isArray(json.cells)) return { why: 'This board cannot be changed' };
+    if (!validSize(w, h)) return { why: 'No board is ' + sizeLabel(w, h) };
+    const W = json.w, H = json.h, C = L.CELL;
+    let cols = false, rows = false;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (json.cells[y * W + x] && (x >= w || y >= h)) { if (x >= w) cols = true; if (y >= h) rows = true; }
+    if (cols) return { why: 'Blocks stand in the columns it would lose' };
+    if (rows) return { why: 'Blocks stand in the rows it would lose' };
+    const cells = new Array(w * h).fill(0);
+    for (let y = 0; y < Math.min(h, H); y++) for (let x = 0; x < Math.min(w, W); x++) {
+      let v = json.cells[y * W + x];
+      // A join across an edge that is now a wall is let go.
+      if (v && C && x === w - 1 && w < W) v &= ~C.JOIN_R;
+      if (v && C && y === h - 1 && h < H) v &= ~C.JOIN_U;
+      cells[y * w + x] = v;
+    }
+    return { json: Object.assign(JSON.parse(JSON.stringify(json)), { w, h, cells }) };
+  }
+
+  /**
+   * A saved board with its rules edited (the New board window's Edit rules): the recipe `recipe` at `size`. The stack
+   * stays as it is (reshape: nothing cut), the piece in play goes back to the front of the queue and appears again
+   * as the new rules place it, and every part's own state carries over (the mode's it left is dropped); the Undo
+   * history does not (a new game has none). A board that ended keeps its rules. { json, game } or { why }.
+   */
+  function rebuild(json, recipe, size) {
+    const R = L.Recipe;
+    if (!isObj(json) || !R || !L.Game) return { why: 'This board cannot be changed' };
+    if (json.over || json.ended) return { why: 'A board that ended keeps its rules' };
+    let j = JSON.parse(JSON.stringify(json));
+    if (size && (size.w !== j.w || size.h !== j.h)) { const r = reshape(j, size.w, size.h); if (r.why) return r; j = r.json; }
+    const from = R.normalize(j.recipe), to = R.normalize(recipe);
+    if (!R.sizeOk(j.w, j.h, to)) { const lim = R.limits(to); return { why: 'Smallest here is ' + sizeLabel(lim.w[0], lim.h[0]) }; }
+    // What the board keeps for life (Recipe.editConflicts: Protect) is refused here too, whatever the window allowed.
+    const fixed = R.editConflicts(from, to);
+    for (const [id, why] of Object.entries(fixed)) {
+      const at = id.indexOf('='), path = id.slice(0, at), v = R.getPath(to, path);
+      if (v !== undefined && (typeof v === 'string' ? v : JSON.stringify(v)) === id.slice(at + 1)) return { why };
+    }
+    j.recipe = to;
+    if (isObj(j.x) && from.mode !== to.mode) delete j.x[from.mode];
+    // Another dealer (other shapes, another randomizer) starts its own bag; the queue already dealt stays.
+    const deal = (r) => R.canon([r.shapes, r.classic ? r.classic.rand : null]);
+    if (deal(from) !== deal(to)) j.bag = [];
+    if (j.piece && isObj(j.piece.entry)) j.queue.unshift(Object.assign({}, j.piece.entry));
+    j.piece = null;
+    j.holdLocked = false;
+    delete j.over;
+    let g = null;
+    try { g = new L.Game({ saved: j }); } catch (e) { g = null; }
+    if (!g) return { why: 'These rules do not fit this board as it stands' };
+    if (g.over || !g.piece) return { why: 'No room for the piece in play' };
+    const out = g.toJSON();
+    if (!playable(out)) return { why: 'These rules do not fit this board as it stands' };
+    return { json: out, game: g };
+  }
+
+  L.Library = { STANDARD, LIMITS, scale, worth, bank, validSize, clampSize, sizeLabel, playable, MAX_ACTIVE, MAX_RETIRED, NAME_MAX, NEXT_KEPT, ADJ, NOUN, blank, ensure, find, findRetired, current, full, cleanName, uniqueName, makeName, add, shelve, take, startNew, open, rename, summarize, encodeCells, decodeCells, retire, remove, removeRetired, newCurrent, taper, ordered, reshape, rebuild };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

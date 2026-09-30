@@ -53,6 +53,8 @@ const FILES = [
   "css/protect.css",
   "js/guard.js",
   "js/guardview.js",
+  "js/classic.js",
+  "js/classicview.js",
   // part:battle
   "js/app.js",
   "js/webapp.js",

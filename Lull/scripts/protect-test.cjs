@@ -65,7 +65,7 @@ module.exports = async function protectTests({ browser, check, PAGE, OUT }) {
       Lull.app.settings.theme = t; Lull.app.applySettings();
       while (Lull.UI.modalOpen()) Lull.UI.closeTopModal();
       Lull.app.store.state.settings.hints = false; Lull.app.hints.sync();
-      for (const k of ['play', 'puzzle', 'classic']) Lull.app.modes[k].setGrace = 0;
+      for (const k of ['play', 'puzzle']) Lull.app.modes[k].setGrace = 0;
       Lull.app.setTab('play');
     }, theme || 'light');
     await page.evaluate(() => document.fonts && document.fonts.ready);
@@ -183,7 +183,7 @@ module.exports = async function protectTests({ browser, check, PAGE, OUT }) {
   check('a reload resumes the guard exactly (its wave plan, moles and leaves)', resumed.G === saved && resumed.leaves === '1', resumed.G.slice(0, 120));
 
   // ---- a wilted board retired: its record, and the full view says Wilted ------------------------------------------------
-  await ev(() => { for (const k of ['play', 'puzzle', 'classic']) Lull.app.modes[k].setGrace = 0; Lull.app.store.state.settings.hints = false; Lull.app.hints.sync(); });
+  await ev(() => { for (const k of ['play', 'puzzle']) Lull.app.modes[k].setGrace = 0; Lull.app.store.state.settings.hints = false; Lull.app.hints.sync(); });
   await ev(() => { const m = Lull.app.modes.play, G = Lull.Guard.of(m.game); G.plan = [{ at: G.seq + 1, kind: 'stone', x: G.ax, sw: 1, sh: 1 }]; m.game.replacePiece({ id: 'O' }); for (let i = 0; i < 3; i++) m.action('left'); m.action('drop'); });
   await page.waitForTimeout(150);
   await ev(() => { [...Lull.app.modes.play.overlay.querySelectorAll('.btn')].find((b) => b.textContent.trim() === 'Retire').click(); });
