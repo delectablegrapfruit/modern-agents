@@ -379,11 +379,11 @@ module.exports = function mirrorUnit({ L, test }) {
       assert(m.every((b) => b.quads >= 12), w + ' wide: the bot plays for quads there too (' + m.map((b) => b.quads) + ')');
       // Per action, against Standard at every width.
       assert(mean(m, 'perAct') <= stdAct, w + ' wide: ' + fmt(mean(m, 'perAct')) + ' an action vs Standard ' + fmt(stdAct));
-      // Per piece: against Standard, and never above a plain board of its own width (20 wide: what a plain board 20
-      // wide pays is the ceiling a size sets, js/library.js; Mirror only ever takes away from it).
+      // Per piece: against Standard at every width (20 included), and never above a plain board of its own width
+      // (Mirror only ever takes away from what a size pays, js/library.js).
       const plain = w === 10 ? base : w === 20 ? run(w, {}) : null;
       if (plain) assert(mean(m, 'perPiece') <= mean(plain, 'perPiece'), w + ' wide: ' + fmt(mean(m, 'perPiece')) + ' a piece vs a plain board as wide ' + fmt(mean(plain, 'perPiece')));
-      if (w < 20) assert(mean(m, 'perPiece') <= stdPiece, w + ' wide: ' + fmt(mean(m, 'perPiece')) + ' a piece vs Standard ' + fmt(stdPiece));
+      assert(mean(m, 'perPiece') <= stdPiece, w + ' wide: ' + fmt(mean(m, 'perPiece')) + ' a piece vs Standard ' + fmt(stdPiece));
     }
   });
 
@@ -406,6 +406,19 @@ module.exports = function mirrorUnit({ L, test }) {
     const gi = mk(20);
     gi.noteItem(false);
     assert(!clear(gi).includes('butterfly'));
+  });
+
+  test('mirror: the Free Play note says how lines and feats count on a Mirror board', () => {
+    const note = L.Achievements.GROUPS.find((x) => x.id === 'play').note;
+    const r = (w) => L.Recipe.rules(MIRROR, w);
+    // A Mirror board counts half as wide: a line 20 wide is one Standard line, 10 wide half of one.
+    assert.strictEqual(r(20).lk, 1);
+    assert.strictEqual(r(10).lk, 0.5);
+    assert(/on a Mirror board half that/.test(note), note);
+    // Feats: not on a Mirror board 10 wide, yes on one 20 wide; the note says so.
+    assert(!r(10).feats && r(20).feats && !r(19).feats);
+    assert(/10 wide or more \(a Mirror board 20 wide\)/.test(note), note);
+    assert(!/[\u{1F300}-\u{1FAFF}]/u.test(note));
   });
 
   test('mirror: the Turnabout power-up (id mirror) keeps its id; Mirror World keeps its name', () => {
