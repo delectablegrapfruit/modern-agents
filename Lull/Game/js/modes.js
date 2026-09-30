@@ -46,12 +46,16 @@
   // A small wrapped box, drawn (never an emoji).
   const GIFT_ICON = L.Icons.icon('gift');
 
+  /**
+   * The sound of a lock. r.heardLater: plain rows the board plays out after the lock and are heard then, not now (a
+   * recipe's controller sets it: Jelly's cascade, wave by wave); unset, every row is heard at the lock.
+   */
   function playLockSound(snd, r) {
-    const own = r.lines - (r.plain || 0);
-    if (r.special === 'blackhole' || r.special === 'bomb') { snd.play('boom'); if (r.lines) setTimeout(() => snd.play('clear', r.lines), 150); }
-    else if (r.special === 'drill' || r.special === 'laser') { snd.play('drill'); if (r.lines) setTimeout(() => snd.play('quad'), 150); }
-    else if (r.special === 'settle' && r.lines) snd.play('quad');
-    else if (r.lines && !own) snd.play('clear', r.lines);
+    const own = r.lines - (r.plain || 0), lines = r.lines - (r.heardLater || 0);
+    if (r.special === 'blackhole' || r.special === 'bomb') { snd.play('boom'); if (lines) setTimeout(() => snd.play('clear', lines), 150); }
+    else if (r.special === 'drill' || r.special === 'laser') { snd.play('drill'); if (lines) setTimeout(() => snd.play('quad'), 150); }
+    else if (r.special === 'settle' && lines) snd.play('quad');
+    else if (lines && !own) snd.play('clear', lines);
     else if (r.perfect) snd.play('perfect');
     else if (r.tspin) snd.play('tspin');
     else if (own >= 4) snd.play('quad');
@@ -711,7 +715,8 @@
    *   counts() -> bool              this second counts as played on the board (s.playMs, the Played tile)
    *   pay(r) -> banked              what a lock's rows pay (plain: Pay.clear with gold, a boost, Double or Nothing)
    *   onLock(r)                     a piece (or Settle) was set: the plain one pays, keeps the records, finds combos,
-   *                                 plays the sound and checks achievements
+   *                                 plays the sound and checks achievements (r.heardLater, set before it: rows the
+   *                                 part plays out and sounds itself later, left out of the lock's sound)
    *   onEnd(kind, silent)           the board ended ('topout'): kind is 'full', or the part's own that ended it (its
    *                                 engine calls game.end('wilted') in its step: game.endKind, kept in the save); its card
    *   cards: { kind(play, kind) -> content }   a card by kind (full: the Board full card)
