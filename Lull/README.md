@@ -409,7 +409,7 @@ The catalogue is short on purpose, every item distinct:
 | Kind | Items (price ⦵) |
 |---|---|
 | Palettes | Classic (free), Mist 400, Sunset 600, Aurora 850, Ink 1,100, Handheld 1,400, Gold Leaf 2,800, Prism 5,000 (its hues glide round the wheel, a turn in 45 s), Assembly Line (factory) |
-| Mino skins | Flat (free), Bevel 350, Pixel 550, Bubble 750, Glass 1,000, Jelly 1,250, Neon Tube 1,600, Gem 2,100, Lantern 2,800, Steel (factory) |
+| Mino skins | Flat (free), Bevel 350, Pixel 550, Bubble 750, Glass 1,000, Gummy 1,250, Neon Tube 1,600, Gem 2,100, Lantern 2,800, Steel (factory) |
 | Frames | Hairline (free: the well's own rim), Inlay 300, Glow 650, Brass 1,200, Rainbow 2,500 (a slow ring of spectrum, a turn in 12 s), Hazard Tape (factory) |
 | Backdrops | Plain and Grid (free), Blueprint 350, Dusk 700, Aurora 1,200 (three veils of light drifting on long periods), Starfield 1,700 (the bright stars twinkle), Conveyor (factory; its treads slide) |
 | Line clears | Fade (free), Sparkle 450, Ripple 850, Bloom 1,300, Welding Sparks (factory) |
@@ -447,7 +447,7 @@ Under the plate, and as wide as it, the status bar shows the board's figures as 
 the item bar is one recessed track with a segment per power-up type. Text everywhere is plain labels: what a thing is
 and its number, no prose.
 
-**Achievements** — 106 quiet milestones that pay ⦵ lines, in their own tab: a small toast when one is earned, nothing
+**Achievements** — 107 quiet milestones that pay ⦵ lines, in their own tab: a small toast when one is earned, nothing
 more (one earned in the background, by the factory or the once-a-minute check, or while rolled up, is told when you
 come back, not chimed from a hidden window). The toast is a button: a click (or Enter once it has focus) opens the tab on
 that achievement — the filter set to show it, its group open, the row scrolled into the middle of the list and lit for
@@ -664,7 +664,35 @@ so the copy lands under the pointer; a touch that starts on the copy's side turn
 so the copy follows the finger. Taps are unchanged.
 
 ### Jelly
-<!-- part:jelly -->
+A modifier (Modifiers ▸ Jelly; the rules in `js/jelly.js`, the look in `js/jellyview.js`): every piece sets as one soft
+lump, and a lump that nothing holds up falls as a whole. At a lock the piece's blocks are joined to each other (the
+links live in the cells, `CELL.JOIN_R` and `CELL.JOIN_U`, so Undo, the save and a resumed board keep them). A clear cuts
+the lumps it runs through, and every lump left hanging over a hole falls until it rests, which can fill rows that clear
+in turn: a *cascade*, wave after wave until nothing falls. A lump keeps its shape (pieces never ooze into holes); the
+parts of a shape joined only at a corner are lumps of their own, and one left hanging falls at once. A block the player
+never placed is a lump of one; the sprout never falls, and holds up what rests on it.
+
+Rows a piece clears itself count as always (a quad, a T-spin, the back-to-back streak). Rows a cascade clears are plain:
+they count as lines and belong to the same lock (one step of the combo), neither add to the streak nor end it, and pay
+half a row each (the plan had them paid whole; half is what keeps Jelly fair). Cascades forgive holes, and at half a
+Jelly board never pays more per piece than Standard, nor more per action than a Normal board of its own width (a narrow
+Normal board already pays more a key than Standard: that is its size, not Jelly). Tested with bots that seek cascades,
+save keys or play greedily, widths 4 to 20, each pooled over seeds, with no allowance (`scripts/jelly-test.cjs`). Each
+wave that clears scores 100 points times its number. The feats and skill combos do not count on Jelly; Knock-On (three
+cascades from one piece) does. A Bomb, a Black Hole, a Drill or a Laser brings down what it leaves hanging; Settle and
+Trapdoor are refused when something would come down into the piece; Mirror World turns the links with the board; Tornado
+is refused (it would tear every lump apart). Best Fit counts the cascades of the spots that clear rows (200 at most a
+piece).
+
+Every block is drawn as jelly, whatever the skin: the stack, the piece, its ghost and the trays, each lump one rounded
+body with no seams. It gives a little when it lands, moves, turns or lowers (springs of about 6 Hz, still again within
+half a second, at most 60 blocks at a time). A cascade is shown wave by wave over the board that is already final: the
+lumps fall, land with a squash, and their rows clear with the look's own effect and "CASCADE ×n", while the next piece
+and its ghost already use the final board (the ghost is hidden under the blocks the replay still draws); a lower, a
+drop, the piece reaching a block still drawn, or its ghost a lump still in the air, ends it at once. The lock is heard
+for the piece's own rows; each wave's rows are heard as the replay reaches them (those an early end skips, then).
+Reduced motion: no give, and each wave is a short crossfade. A Jelly board's summary has a Cascades tile, and Stats ▸
+Free Play a Jelly section once there has been one.
 
 ### Protect
 <!-- part:protect -->

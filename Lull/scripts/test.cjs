@@ -10,7 +10,7 @@ const L = load([
   // The board options' pure parts (js/recipe.js): each branch replaces its own line.
   'polytable.js', 'minsize.js', 'shapes.js',
   'mirror.js',
-  // part:jelly
+  'jelly.js',
   // part:protect
   // part:battle
 ]);
@@ -3414,7 +3414,7 @@ console.log('board recipe');
   test('recipe: the default is today’s board, and anything unknown or invalid falls back to it', () => bare(() => {
     assert.deepStrictEqual(clone(Recipe.DEFAULT), { v: 1, shapes: { preset: 'normal' }, mods: { jelly: false, mirror: false }, mode: 'plain' });
     assert(Object.isFrozen(Recipe.DEFAULT) && Object.isFrozen(Recipe.DEFAULT.mods));
-    for (const junk of [null, undefined, 5, 'x', [], { mode: 'battle' }, { mode: 'protect', protect: { level: 'easy' } }, { mods: { jelly: true, mirror: 1 } }, { shapes: { preset: 'frantic' }, extra: 1 }, { v: 9 }]) {
+    for (const junk of [null, undefined, 5, 'x', [], { mode: 'battle' }, { mode: 'protect', protect: { level: 'easy' } }, { mods: { jelly: 'yes', mirror: 1 } }, { shapes: { preset: 'frantic' }, extra: 1 }, { v: 9 }]) {
       assert.deepStrictEqual(clone(Recipe.normalize(junk)), clone(Recipe.DEFAULT), JSON.stringify(junk));
       assert(Recipe.equal(junk, Recipe.DEFAULT) && Recipe.isDefault(junk));
     }
@@ -4786,6 +4786,10 @@ require('./mirror-unit.cjs')({ L, test });
 
 // Shapes, the board recipe's shape sets (scripts/shapes-test.cjs).
 require('./shapes-test.cjs')(test, L);
+
+// Jelly, a board modifier (scripts/jelly-test.cjs).
+console.log('jelly');
+require('./jelly-test.cjs')(test);
 
 // The Home Screen web app: the offline copy, the manifest and icons, the deployed build (scripts/web-test.cjs).
 require('./web-test.cjs')(test).then(() => {

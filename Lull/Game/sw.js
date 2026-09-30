@@ -48,7 +48,8 @@ const FILES = [
   "js/shapepicker.js",
   "js/mirror.js",
   "js/mirrorview.js",
-  // part:jelly
+  "js/jelly.js",
+  "js/jellyview.js",
   // part:protect
   // part:battle
   "js/app.js",

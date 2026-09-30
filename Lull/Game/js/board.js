@@ -104,11 +104,19 @@
       return rows;
     }
 
-    /** Removes rows (ascending y) and lets everything above come down; returns the removed rows' cells. */
+    /**
+     * Removes rows (ascending y) and lets everything above come down; returns the removed rows' cells. A Jelly link up
+     * into a removed row (JOIN_U on the row under it) goes with it.
+     */
     clearRows(rows) {
       if (!rows.length) return [];
       const removed = rows.map((y) => Array.from(this.cells.subarray(y * this.w, (y + 1) * this.w)));
       const drop = new Set(rows);
+      for (const y of rows) {
+        if (y < 1 || drop.has(y - 1)) continue;
+        const o = (y - 1) * this.w;
+        for (let x = 0; x < this.w; x++) if (this.cells[o + x] & CELL.JOIN_U) this.cells[o + x] &= ~CELL.JOIN_U;
+      }
       let dst = 0;
       for (let y = 0; y < this.h; y++) {
         if (drop.has(y)) continue;
@@ -121,19 +129,65 @@
 
     /**
      * Every column's blocks fall to the floor, closing all holes. fixed(v), if given, marks cells that never move: they
-     * stay where they are, and what is above them falls onto them.
+     * stay where they are, and what is above them falls onto them. Jelly links: a run of blocks in a column comes down
+     * together, so a link up stays only while the two still touch; a link across stays only when both blocks end in the
+     * same row.
      */
     compact(fixed) {
-      for (let x = 0; x < this.w; x++) {
+      const w = this.w, h = this.h, c = this.cells;
+      let links = false;
+      for (let i = 0; i < c.length; i++) if (c[i] & (CELL.JOIN_R | CELL.JOIN_U)) { links = true; break; }
+      // Where each block lands (its row), for the links; only on a board that has any.
+      const to = links ? new Int16Array(c.length).fill(-1) : null;
+      if (links) {
+        for (let x = 0; x < w; x++) {
+          let dst = 0;
+          for (let y = 0; y < h; y++) {
+            const v = c[y * w + x];
+            if (!v) continue;
+            if (fixed && fixed(v)) { to[y * w + x] = y; dst = y + 1; continue; }
+            to[y * w + x] = dst++;
+          }
+        }
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+          const i = y * w + x, v = c[i];
+          if (!(v & (CELL.JOIN_R | CELL.JOIN_U))) continue;
+          let nv = v;
+          if (v & CELL.JOIN_R && (x + 1 >= w || to[i + 1] !== to[i])) nv &= ~CELL.JOIN_R;
+          if (v & CELL.JOIN_U && (y + 1 >= h || to[i + w] !== to[i] + 1)) nv &= ~CELL.JOIN_U;
+          c[i] = nv;
+        }
+      }
+      for (let x = 0; x < w; x++) {
         let dst = 0;
-        for (let y = 0; y < this.h; y++) {
-          const v = this.cells[y * this.w + x];
+        for (let y = 0; y < h; y++) {
+          const v = c[y * w + x];
           if (!v) continue;
           if (fixed && fixed(v)) { dst = y + 1; continue; }
-          if (dst !== y) { this.cells[dst * this.w + x] = v; this.cells[y * this.w + x] = 0; }
+          if (dst !== y) { c[dst * w + x] = v; c[y * w + x] = 0; }
           dst++;
         }
       }
+    }
+
+    /**
+     * Jelly: drops every link that no longer joins two blocks (one to an empty cell, past an edge, to or from a cell
+     * the player never placed, or the sprout). Returns how many were dropped.
+     */
+    fixJoins() {
+      const w = this.w, h = this.h, c = this.cells, solo = CELL.FOREIGN | CELL.ASSET;
+      let n = 0;
+      for (let i = 0; i < c.length; i++) {
+        const v = c[i];
+        if (!(v & (CELL.JOIN_R | CELL.JOIN_U))) continue;
+        const x = i % w, y = (i - x) / w;
+        let nv = v;
+        if (v & solo) nv &= ~(CELL.JOIN_R | CELL.JOIN_U);
+        if (nv & CELL.JOIN_R && (x + 1 >= w || !c[i + 1] || c[i + 1] & solo)) nv &= ~CELL.JOIN_R;
+        if (nv & CELL.JOIN_U && (y + 1 >= h || !c[i + w] || c[i + w] & solo)) nv &= ~CELL.JOIN_U;
+        if (nv !== v) { c[i] = nv; n++; }
+      }
+      return n;
     }
 
     count(pred) {

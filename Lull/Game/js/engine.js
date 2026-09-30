@@ -808,6 +808,11 @@
       if (cascade) result.plain = (result.plain || 0) + cascade;
       const n = result.lines, c = result.plain || 0, all = n + c;
       result.n = n; result.c = c; result.ownCells = ownCells; result.own = ownCells / this.w;
+      // Rows a recipe's cascade cleared and nothing else (a piece whose own lock cleared none: Jelly's hanging part):
+      // they count and keep the combo, but leave every streak as it was, neither adding to it nor ending it, and a
+      // T-spin with no rows of its own is not made one by them. Never on a board without cascades.
+      const still = !n && cascade > 0 && c === cascade && !result.special;
+      if (still) { result.tspin = false; result.mini = false; }
       // An unrated board (shapes other than the seven: R.rated false) has no difficult clears: no quad, no streak, no
       // bonus (its T-spins still score their points).
       const rated = R.rated !== false;
@@ -826,6 +831,7 @@
         s.combo++;
         const difficult = rated && (result.quad || result.tspin || result.mini);
         if (difficult) { s.b2b++; if (s.b2b > 0) { pts = Math.round(pts * 1.5); result.b2b = true; } }
+        else if (still) { /* the streak is left as it was */ }
         else if (s.b2b >= 0 && s.net > 0) { s.net--; result.netSaved = s.b2b + 1; }
         else s.b2b = -1;
         if (s.combo > 0) pts += 50 * s.combo;
@@ -833,7 +839,7 @@
         if (this.isClean()) { result.perfect = true; s.perfect++; pts += 3000; }
         // Quads in a row: set by a piece (an item's lines are plain); any other clear ends it.
         if (result.quad) s.quadRun = (s.quadRun || 0) + 1;
-        else s.quadRun = 0;
+        else if (!still) s.quadRun = 0;
       } else {
         s.combo = -1;
       }
@@ -844,8 +850,8 @@
       if (!hand) { s.hb2b = -1; s.hcombo = -1; s.hquads = 0; }
       else if (all) {
         s.hcombo++;
-        if (rated && (result.quad || result.tspin || result.mini)) s.hb2b++; else s.hb2b = -1;
-        s.hquads = result.quad ? (s.hquads || 0) + 1 : 0;
+        if (rated && (result.quad || result.tspin || result.mini)) s.hb2b++; else if (!still) s.hb2b = -1;
+        s.hquads = result.quad ? (s.hquads || 0) + 1 : still ? s.hquads || 0 : 0;
         if (result.tspin) { s.htspins = (s.htspins || 0) + 1; if (n >= 3) s.htst = (s.htst || 0) + 1; }
         if (result.perfect) s.hperfect = (s.hperfect || 0) + 1;
       } else s.hcombo = -1;
