@@ -264,7 +264,7 @@ module.exports = async function sizesTests({ browser, check, PAGE, OUT }) {
     out.whole = Number.isInteger(+out.shown.replace(/,/g, ''));
     return out;
   });
-  check('a quad pays by width: 5 wide 2.5, Standard 5, 20 wide 9 (its bonus one Standard line; the wallet and lifetime lines too); the board counts its own 4', pay[5].banked === 2.5 && pay[10].banked === 5 && pay[20].banked === 9 && pay[5].wallet >= 2.5 && pay[5].F === 2 && pay[20].F === 8 && pay[5].lines === 4 && /Lines 4/.test(pay[5].status) && pay.whole, JSON.stringify(pay));
+  check('a quad pays by width: 5 wide 2.5, Standard 5, 20 wide 8.25 (its bonus a quarter of a Standard line, (10/w)²; the wallet and lifetime lines too); the board counts its own 4', pay[5].banked === 2.5 && pay[10].banked === 5 && pay[20].banked === 8.25 && pay[5].wallet >= 2.5 && pay[5].F === 2 && pay[20].F === 8 && pay[5].lines === 4 && /Lines 4/.test(pay[5].status) && pay.whole, JSON.stringify(pay));
 
   // ---- every item at the extreme sizes: nothing throws, nothing out of the board ------------------------------------------
   const items = await ev(() => {
