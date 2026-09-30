@@ -171,7 +171,7 @@ module.exports = function shapesTests(test, L) {
     }
     // A mix is as small as its largest source; Protect keeps two rows more; sizes clamp and a board too small is not resumed.
     assert.deepStrictEqual(R.limits({ shapes: custom({ groups: [{ n: 2 }, { n: 7 }] }) }), { w: [L.ShapeMins.g7[0], 20], h: [L.ShapeMins.g7[1], 40] });
-    assert.deepStrictEqual(R.limits({ shapes: { preset: 'tiny' }, mode: 'protect' }).h[0], R.limits({ shapes: { preset: 'tiny' } }).h[0] + (R.options().some((o) => o.path === 'mode' && o.values.includes('protect')) ? 2 : 0));
+    assert.deepStrictEqual(R.limits({ shapes: { preset: 'tiny' }, mode: 'protect' }).h[0], (R.options().some((o) => o.path === 'mode' && o.values.includes('protect')) ? Math.max(12, R.limits({ shapes: { preset: 'tiny' } }).h[0] + 2) : R.limits({ shapes: { preset: 'tiny' } }).h[0]));
     const big = { shapes: { preset: 'big' } };
     assert.deepStrictEqual(Library.clampSize({ w: 4, h: 8 }, big), { w: L.ShapeMins.big[0], h: L.ShapeMins.big[1] });
     const small = game({ preset: 'big' }, 8, 16, 1).toJSON();

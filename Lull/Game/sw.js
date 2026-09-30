@@ -50,7 +50,9 @@ const FILES = [
   "js/mirrorview.js",
   "js/jelly.js",
   "js/jellyview.js",
-  // part:protect
+  "css/protect.css",
+  "js/guard.js",
+  "js/guardview.js",
   // part:battle
   "js/app.js",
   "js/webapp.js",

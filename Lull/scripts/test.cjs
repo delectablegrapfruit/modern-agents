@@ -11,7 +11,7 @@ const L = load([
   'polytable.js', 'minsize.js', 'shapes.js',
   'mirror.js',
   'jelly.js',
-  // part:protect
+  'guard.js',
   // part:battle
 ]);
 const { Pieces, Board, Game, Puzzles, Factory, RNG } = L;
@@ -3414,7 +3414,7 @@ console.log('board recipe');
   test('recipe: the default is today’s board, and anything unknown or invalid falls back to it', () => bare(() => {
     assert.deepStrictEqual(clone(Recipe.DEFAULT), { v: 1, shapes: { preset: 'normal' }, mods: { jelly: false, mirror: false }, mode: 'plain' });
     assert(Object.isFrozen(Recipe.DEFAULT) && Object.isFrozen(Recipe.DEFAULT.mods));
-    for (const junk of [null, undefined, 5, 'x', [], { mode: 'battle' }, { mode: 'protect', protect: { level: 'easy' } }, { mods: { jelly: 'yes', mirror: 1 } }, { shapes: { preset: 'frantic' }, extra: 1 }, { v: 9 }]) {
+    for (const junk of [null, undefined, 5, 'x', [], { mode: 'battle' }, { mode: 'protect', protect: { level: 'easy' } }].filter((j) => !(j && Recipe.parts().some((p) => p.mode && p.mode === j.mode))).concat([{ mods: { jelly: 'yes', mirror: 1 } }, { shapes: { preset: 'frantic' }, extra: 1 }, { v: 9 }])) {
       assert.deepStrictEqual(clone(Recipe.normalize(junk)), clone(Recipe.DEFAULT), JSON.stringify(junk));
       assert(Recipe.equal(junk, Recipe.DEFAULT) && Recipe.isDefault(junk));
     }
@@ -3509,7 +3509,8 @@ console.log('board recipe');
         label: (r) => (r.mode === 'protect' ? 'Protect ' + r.protect.level[0].toUpperCase() + r.protect.level.slice(1) : '') },
       { key: 'tbattle', order: 50, mode: 'battle', label: (r) => (r.mode === 'battle' ? 'Battle' : ''), conflicts: (r, out) => { if (r.mode === 'battle') out['mods.mirror=true'] = 'Not in Battle'; } },
     ];
-    withParts(MODS, () => {
+    // (A mode a real part loaded with the game brings, Protect's, is that part's: no stand-in for it.)
+    withParts(MODS.filter((m) => !(m.mode && Recipe.parts().some((p) => p.mode === m.mode))), () => {
       assert.deepStrictEqual(clone(Recipe.DEFAULT), { v: 1, shapes: { preset: 'normal' }, mods: { jelly: false, mirror: false }, mode: 'plain' });
       assert.strictEqual(Recipe.label({ mods: { mirror: true, jelly: true } }), 'Jelly, Mirror');
       assert.strictEqual(Recipe.label({ mods: { jelly: true }, mode: 'protect', protect: { level: 'hard' } }, true), 'Jelly · Protect Hard');
@@ -4103,7 +4104,9 @@ console.log('board recipe');
         { id: 't_any', name: 'Anywhere', desc: 'x', pay: 1, on: 'play', counts: (r, g) => g.w === 4, test: () => true },
         { id: 't_feat', name: 'Feat', desc: 'x', pay: 1, on: 'play', test: () => true },
       ] });
-      assert.strictEqual(A.GROUPS[A.GROUPS.findIndex((x) => x.id === 'play') + 1].id, 'tgrp', 'after Free Play');
+      // After Free Play, and after the groups the board options loaded with the game have put there (Protect's).
+      const at = A.GROUPS.findIndex((x) => x.id === 'tgrp'), play = A.GROUPS.findIndex((x) => x.id === 'play');
+      assert(at > play && A.GROUPS.slice(play + 1, at).every((x) => x.part), 'after Free Play');
       assert.deepStrictEqual(A.check(L.defaultState(), on(new Game({ w: 4, h: 8, seed: 1, recipe: {} }), { quad: false, lines: 0 })).map((a) => a.id), ['t_any'], 'its own rule, not the feats’');
       assert.deepStrictEqual(A.check(L.defaultState(), on(new Game({ w: 10, h: 20, seed: 1, recipe: {} }), { quad: false, lines: 0 })).map((a) => a.id), ['t_feat']);
       assert.strictEqual(A.groupOf(A.LIST.find((a) => a.id === 't_any')).id, 'tgrp');
@@ -4790,6 +4793,9 @@ require('./shapes-test.cjs')(test, L);
 // Jelly, a board modifier (scripts/jelly-test.cjs).
 console.log('jelly');
 require('./jelly-test.cjs')(test);
+
+// Protect's rules (scripts/protect-unit.cjs).
+require('./protect-unit.cjs')({ L, test });
 
 // The Home Screen web app: the offline copy, the manifest and icons, the deployed build (scripts/web-test.cjs).
 require('./web-test.cjs')(test).then(() => {

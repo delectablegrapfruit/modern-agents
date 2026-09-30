@@ -275,7 +275,7 @@
   // Knock-On: counts on any Jelly board (the feats' rule does not hide it).
   if (L.Achievements) {
     L.Achievements.add({
-      id: 'knock_on', group: 'play', name: 'Knock-On', desc: 'Three cascades that clear lines, from one piece. On a Jelly board.', pay: 60, on: 'play',
+      id: 'knock_on', group: 'play', name: 'Knock-On', desc: 'Three cascades that clear lines, from one piece. On a Jelly board.', pay: 30, on: 'play',
       counts: (r) => isOn(r),
       test: (s, e) => !!e.r && e.r.special !== 'settle' && (e.r.waves || cleared(e.r)) >= 3,
     });

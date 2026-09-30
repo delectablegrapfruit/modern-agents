@@ -330,7 +330,7 @@ module.exports = function jellyTests(test) {
 
   test('jelly: Knock-On: three cascades from one piece, on a Jelly board (never elsewhere)', () => {
     const a = Achievements.LIST.find((x) => x.id === 'knock_on');
-    assert(a && a.name === 'Knock-On' && a.pay === 60 && a.group === 'play');
+    assert(a && a.name === 'Knock-On' && a.pay === 30 && a.group === 'play');
     const g = jelly();
     fill(g, [
       '.bb.cc.dd.',

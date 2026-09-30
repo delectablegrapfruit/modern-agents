@@ -2696,9 +2696,10 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await page.click('.tabs button[data-tab="achievements"]');
   await page.waitForTimeout(80);
   await shot('51-achievements');
-  const ach = await ev(() => ({ legends: document.querySelectorAll('.ach.legend').length, got: document.querySelectorAll('.ach.got').length, all: document.querySelectorAll('.ach').length, groups: document.querySelectorAll('.ach-group').length, open: document.querySelectorAll('.ach-group[open]').length, quad: !!Lull.app.store.state.achievements.quad, paid: Lull.app.store.state.stats.lines.achievements }));
+  const ach = await ev(() => ({ legends: document.querySelectorAll('.ach.legend').length, got: document.querySelectorAll('.ach.got').length, all: document.querySelectorAll('.ach').length, groups: document.querySelectorAll('.ach-group').length, partGroups: Lull.Achievements.GROUPS.filter((g) => g.part).length, open: document.querySelectorAll('.ach-group[open]').length, quad: !!Lull.app.store.state.achievements.quad, paid: Lull.app.store.state.stats.lines.achievements }));
   check('achievements: earned in play, listed in their own tab (legendary ones too), and paid', ach.quad && ach.got >= 1 && ach.all >= 85 && ach.legends >= 28 && ach.paid >= 15, JSON.stringify(ach));
-  check('achievements: five groups, folded away at first', ach.groups === 5 && ach.open === 0, JSON.stringify(ach));
+  // (Five places, and a group for each board option loaded that has one: Protect's.)
+  check('achievements: five groups (and the board options’), folded away at first', ach.groups === 5 + ach.partGroups && ach.open === 0, JSON.stringify(ach));
   await page.click('.ach-group[data-group="play"] > summary');
   await page.waitForTimeout(60);
   await shot('51b-achievements-open');
@@ -4181,6 +4182,8 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await require('./recipe-test.cjs')({ browser, check, PAGE, OUT });
   // ---- the Mirror modifier: made, drawn, the mouse and a touch on the copy's side, screenshots (mirror-test.cjs) --------
   await require('./mirror-test.cjs')({ browser, check, PAGE, OUT });
+  // ---- Protect: made, played, wilted and undone, reloaded, retired; the window at 320 × 568; screenshots (protect-test.cjs)
+  await require('./protect-test.cjs')({ browser, check, PAGE, OUT });
   // ---- touch: an emulated phone, played with gestures (scripts/touch-test.cjs) -----------------------------------------
   await require('./touch-test.cjs')({ browser, check, PAGE, OUT });
   // ---- what the device can do: a phone, a desktop browser, the app, a tablet with a trackpad (device-test.cjs) -------

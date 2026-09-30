@@ -40,9 +40,15 @@
 
   /** "Sep 27", with the year when it was another year. */
   const day = (t) => { const d = new Date(t); return d.toLocaleDateString([], { month: 'short', day: 'numeric', year: d.getFullYear() === new Date().getFullYear() ? undefined : 'numeric' }); };
-  const why = (e) => (e.reason === 'full' ? 'Full' : 'Retired by hand');
+  /** How a board ended, in a word: Full, or a board option's own end (a uiPart's endName(reason): Protect's Wilted). */
+  const ended = (e) => {
+    if (e.reason === 'full') return 'Full';
+    for (const u of L.Recipe ? L.Recipe.uis() : []) { const t = typeof u.endName === 'function' ? u.endName(e.reason) : null; if (t) return String(t); }
+    return null;
+  };
+  const why = (e) => ended(e) || 'Retired by hand';
   /** When it was retired and why: "Full · retired Sep 27", "Retired by hand · Sep 27". */
-  const when = (e) => (e.reason === 'full' ? 'Full \u00b7 retired ' : 'Retired by hand \u00b7 ') + day(e.at);
+  const when = (e) => (ended(e) ? ended(e) + ' \u00b7 retired ' : 'Retired by hand \u00b7 ') + day(e.at);
 
   class RetiredView {
     /** mode: the PlayMode; id: the record to show first; back: where focus goes when it closes. */
