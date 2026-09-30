@@ -668,7 +668,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await page.click('.nb-tab[data-tab="mode"]');
   await page.click('.nb-mode[data-value="classic"]');
   const clPanel = await ev(() => ({ set: !!document.querySelector('.modal .cl-set'), rows: [...document.querySelectorAll('.modal .cl-row .cl-nm')].map((x) => x.textContent).join(), sws: [...document.querySelectorAll('.modal .cl-sws .nm')].map((x) => x.textContent).join(), tab: document.querySelector('.nb-tab[data-tab="mode"] .vl').textContent }));
-  check('New board ▸ Mode ▸ Classic shows its settings: type, start level, next, randomizer, lock delay, music; hard drop, hold, ghost', clPanel.set && clPanel.rows === 'Start level,Next,Randomizer,Lock delay,Music' && clPanel.sws === 'Hard drop,Hold,Ghost' && clPanel.tab === 'Classic', JSON.stringify(clPanel));
+  check('New board ▸ Mode ▸ Classic shows its settings: type, start level, next, randomizer, lock delay, music; hard drop, hold, ghost, level lock', clPanel.set && clPanel.rows === 'Start level,Next,Randomizer,Lock delay,Music' && clPanel.sws === 'Hard drop,Hold,Ghost,Level lock' && clPanel.tab === 'Classic', JSON.stringify(clPanel));
   await page.click('.nb-level[data-path="classic.type"][data-value="b"]');
   await page.click('[data-path="classic.height"][data-value="2"]');
   await page.click('[data-focus="classic.level+"]');
@@ -676,10 +676,11 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await page.click('[data-path="classic.next"][data-value="1"]');
   await page.click('[data-path="classic.hold"]');
   await page.click('[data-path="classic.lock"][data-value="nes"]');
+  await page.click('[data-path="classic.levelLock"]');
   await page.waitForTimeout(100);
   await shot('13a-newboard-classic');
   const nbRecipe = await ev(() => Lull.app.modes.play.lastNB.nb.recipe.classic);
-  check('its settings are the recipe: B type, height 2, start level 3, Next 1, hold off, NES lock', nbRecipe.type === 'b' && nbRecipe.height === 2 && nbRecipe.level === 3 && nbRecipe.next === 1 && nbRecipe.hold === false && nbRecipe.lock === 'nes' && nbRecipe.drop && nbRecipe.ghost && nbRecipe.rand === 'bag', JSON.stringify(nbRecipe));
+  check('its settings are the recipe: B type, height 2, start level 3, Next 1, hold off, NES lock, level lock on', nbRecipe.type === 'b' && nbRecipe.height === 2 && nbRecipe.level === 3 && nbRecipe.next === 1 && nbRecipe.hold === false && nbRecipe.lock === 'nes' && nbRecipe.levelLock === true && nbRecipe.drop && nbRecipe.ghost && nbRecipe.rand === 'bag', JSON.stringify(nbRecipe));
   await page.setViewportSize({ width: 320, height: 568 });
   await page.waitForTimeout(200);
   const clNarrow = await ev(() => { const m = document.querySelector('.modal'), p = document.querySelector('.nb-panel'); return { fits: m.scrollWidth <= m.clientWidth + 1 && p.scrollWidth <= p.clientWidth + 1 && document.documentElement.scrollWidth <= window.innerWidth + 1, scrolls: p.scrollHeight > p.clientHeight }; });
@@ -694,7 +695,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   const gy0 = await ev(() => CM.game.piece.y);
   await page.waitForTimeout(1800);
   const gy1 = await ev(() => ({ y: CM.game.piece.y, pieces: CM.game.s.pieces, started: CM.started, status: document.getElementById('play-status').textContent }));
-  check('Space starts it and the pieces fall on their own; the status bar has Score, Level 3, Left 25, Bank, Best', gy1.started && (gy1.y < gy0 || gy1.pieces > 0) && /Level\s*3/.test(gy1.status) && /Left\s*25/.test(gy1.status) && /Bank/.test(gy1.status) && /Best/.test(gy1.status), JSON.stringify([gy0, gy1]));
+  check('Space starts it and the pieces fall on their own; the status bar has Score, Level 3 (locked), Left 25, Bank, Best', gy1.started && (gy1.y < gy0 || gy1.pieces > 0) && /Level\s*3 \(locked\)/.test(gy1.status) && /Left\s*25/.test(gy1.status) && /Bank/.test(gy1.status) && /Best/.test(gy1.status), JSON.stringify([gy0, gy1]));
   await shot('13c-classic-board');
   const refused = await ev(() => { const pm = Lull.app.modes.play; const n = Lull.app.store.state.inventory; return { hold: pm.action('hold'), items: Object.keys(Lull.ITEMS).every((id) => pm.game.allow(id) === 'Not in Classic'), undo: pm.game.maxHistory }; });
   check('hold off refuses; every power-up is refused (Not in Classic); no Undo', !refused.hold && refused.items && refused.undo === 0, JSON.stringify(refused));
