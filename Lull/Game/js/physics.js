@@ -78,11 +78,13 @@
     VMAX: 45, // no particle moves faster
     CONTACT_DAMP: 0.5, // of the speed two bodies still pressed together part at, lost a substep
     UP_MAX: 9, // no body as a whole rises faster than this (cells a second)
+    REST_V: 1.2, REST_DAMP: 5, // a body in contact slower than REST_V (cells a second) loses REST_DAMP of its speed a second
     PULL_MAX: 8, // shape matching never moves a particle faster than this (cells a second)
     SHOCK: 0.25, // in a contact, the lower body moves this much of what the upper one does
     PUSH_MAX: 6, // nor does a contact push one out faster than this, beyond undoing what closed it that substep
     BOUNCE_V: 4, // a contact closing slower than this does not bounce (resting contact never does)
-    SLEEP_D: 0.04, SLEEP_T: 0.4, // a body whose particles all stay within SLEEP_D of where they were for SLEEP_T sleeps
+    SLEEP_D: 0.04, SLEEP_T: 0.4, // a body whose particles stay within SLEEP_D (on average) of where they were for SLEEP_T sleeps
+    SLEEP_ONE: 0.12, // ... and none of them further than this
     WAKE_V: 3, // a sleeping body struck faster than this wakes (a resting stack jitters at about 1)
     COVER: 0.9, // a band clears when its minos cover this much of it (by area: their own outlines)
     COVER_SLACK: 0.03, // ... less a hair (a squashed jelly mino keeps its area, not its exact square)
@@ -339,7 +341,7 @@
    * as a whole keeps moving (a fall, a slide, a tumble).
    */
   function dampWobble(W, h, M) {
-    const kd = 1 - Math.pow(1 - M.wobble, h * 240), upMax = P.UP_MAX * h;
+    const kd = 1 - Math.pow(1 - M.wobble, h * 240), upMax = P.UP_MAX * h, restV2 = (P.REST_V * h) ** 2, restK = Math.max(0, 1 - P.REST_DAMP * h);
     for (const b of W.bodies) {
       if (!b.awake) continue;
       const X = b.x, Y = b.y, PX = b.px, PY = b.py, n = b.n;
@@ -353,10 +355,13 @@
       // of springs that would launch its top; jelly bounces, it does not fly.
       const lift = uy > upMax ? uy - upMax : 0;
       b.ux = ux; b.uy = uy - lift;
+      // Resting on something and slower than REST_V as a whole: a slow slide or roll is damped away (REST_DAMP a
+      // second), so jelly that has landed settles in a moment instead of creeping on; a knock or a fall is not touched.
+      const rest = (b.nt > 0 || b.y0 < 0.05 || b.onKin) && ux * ux + uy * uy < restV2 ? restK : 1;
       for (let i = 0; i < n; i++) {
         const rx = X[i] - cx, ry = Y[i] - cy, vx = X[i] - PX[i], vy = Y[i] - PY[i];
-        PX[i] = X[i] - (vx + kd * (ux - om * ry - vx));
-        PY[i] = Y[i] - (vy + kd * (uy + om * rx - vy) - lift);
+        PX[i] = X[i] - (vx + kd * (ux - om * ry - vx)) * rest;
+        PY[i] = Y[i] - (vy + kd * (uy + om * rx - vy) - lift) * rest;
       }
     }
   }
@@ -762,12 +767,15 @@
    * up to that; a slide or a creep does), everything it touched still or asleep, sleeps.
    */
   function settleBodies(W, dt) {
-    const d2 = P.SLEEP_D * P.SLEEP_D;
+    const one2 = P.SLEEP_ONE * P.SLEEP_ONE;
     for (const b of W.bodies) {
       if (!b.awake) continue;
-      let moved = false;
+      // Moved: its particles on average further than SLEEP_D (a slide, a roll, a sag), or any one of them further
+      // than SLEEP_ONE (a part swinging); a corner caught flickering in a contact does not keep a still body awake.
+      let moved = false, sum = 0;
       const X = b.x, Y = b.y, OX = b.ox, OY = b.oy;
-      for (let i = 0; i < b.n; i++) { const dx = X[i] - OX[i], dy = Y[i] - OY[i]; if (dx * dx + dy * dy > d2) { moved = true; break; } }
+      for (let i = 0; i < b.n; i++) { const dx = X[i] - OX[i], dy = Y[i] - OY[i], e2 = dx * dx + dy * dy; if (e2 > one2) { moved = true; break; } sum += Math.sqrt(e2); }
+      if (sum > P.SLEEP_D * b.n) moved = true;
       // A new window every half SLEEP_T: a creep slower than SLEEP_D a window (a stack's slow sag) is still.
       if (moved) { b.still = 0; b.win = 0; OX.set(X); OY.set(Y); }
       else { b.still += dt; b.win += dt; if (b.win >= P.SLEEP_T / 2) { b.win = 0; OX.set(X); OY.set(Y); } }

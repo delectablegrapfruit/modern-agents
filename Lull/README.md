@@ -716,14 +716,17 @@ different bodies is tested by separating axes and parted along its least overlap
 no speed made, the closing stopped): two squares turned on each other, a mino sheared across another or one wedged into
 another body's notch come apart, and nothing of one piece stays inside another; a split impulse in positions, mild
 shock propagation for tall stacks, contact damping, low friction (0.18), a bounce off the floor and walls (0.25 of a
-landing faster than 4 cells/s), and a spatial hash grid (one bucket a cell) for every lookup. A body still for 0.4 s,
-all it touches still or asleep (or resting on the piece in play), sleeps and costs nothing; a strike faster than
+landing faster than 4 cells/s), and a spatial hash grid (one bucket a cell) for every lookup. A body in contact and
+slower than 1.2 cells/s as a whole loses 5 of its speed a second (a slow slide or roll settles in a moment; a knock is
+untouched). A body still for 0.4 s (its particles on average within 0.04 of where they were, none past 0.12: a corner
+flickering in a contact does not count), all it touches still or asleep (or resting on the piece in play), sleeps and
+costs nothing; a strike faster than
 3 cells/s wakes it and everything resting on it; a clear wakes everything at or above it. Nothing as a whole rises
 faster than 9 cells/s.
 
-Measured (`PHYSICS_TABLE=1 node scripts/test.cjs`): a stack 15 rows tall settles 0.87 of a row lower and sleeps; a pile of
-26 random hard drops (104 minos) stands 13 to 14 rows tall with at most 0.02 of a cell of area of one piece inside
-another; a six-long bar across a gap of four sags 0.47 and keeps the bend; a hard drop squishes its minos visibly (their
+Measured (`PHYSICS_TABLE=1 node scripts/test.cjs`): a stack 15 rows tall settles 0.76 of a row lower and sleeps; a pile of
+26 random hard drops (104 minos) stands 13 to 15 rows tall with at most 0.02 of a cell of area of one piece inside
+another; a six-long bar across a gap of four sags 0.42 and keeps the bend; a hard drop squishes its minos visibly (their
 diagonals up to 0.31 apart). A full 20 × 40 board with every one of its ~650 minos awake costs about 3.4 to 4 ms a frame
 in Chromium (the Node test holds it under 8); at rest nothing runs.
 
@@ -740,9 +743,9 @@ in the frames after. What a clear removes pays at once.
 quads, T-spins, back-to-back, combos, perfect clears or streak multiplier; a band scores 100 × bands² + 10 a mino.
 Fairness (`scripts/physics-test.cjs`): a bot that picks the lowest landing from the bodies' picture and sets each piece
 down gently never earns more per piece or per action than a Standard board played by a greedy or key-sparing bot
-(measured: 0.006 to 0.014 a piece at widths 6, 10 and 16 against Standard's 0.38; 0.0015 to 0.0024 an action against
-0.091). Hard-drop spam (random columns and turns, a drop every quarter second, 10 × 20) tops out after about 36 pieces
-with 0.005 lines a piece, against Standard's 27 pieces and 0.007 (before the piece was the player's and clears were
+(measured: 0 to 0.014 a piece at widths 6, 10 and 16 against Standard's 0.38; 0 to 0.004 an action against 0.091).
+Hard-drop spam (random columns and turns, a drop every quarter second, 10 × 20) tops out after about 33 pieces with
+almost no lines (0 to 0.01 a piece), against Standard's 27 pieces and 0.007 (before the piece was the player's and clears were
 measured by area it ran past 600 pieces, clearing 0.41 lines a piece).
 
 *Rewind 5 s* takes Undo's place on a Physics board: the Undo power-up reads "Rewind 5 s" (tray, tooltip, Buy & use, the
