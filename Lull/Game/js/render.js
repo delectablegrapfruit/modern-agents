@@ -80,13 +80,31 @@
    * each step's cells come from the sprite cache instead of being painted again.
    */
   const prismCache = new Map();
+  /**
+   * The mirrored pentominoes' own colours, slots 16-21 (Fm Pm Nm Ym Z5m L5m): its base's lightness and saturation (so
+   * it sits in the palette) at a hue of its own, in the gaps the seven and the pentominoes leave (magenta, indigo,
+   * lime, chartreuse, sea green, sky), a little deeper so it stands apart from its neighbours.
+   */
+  const MIRROR_SLOTS = [[9, 300], [10, 238], [10, 105], [9, 66], [12, 160], [13, 200]];
+  const turned = new Map();
+  function withMirrors(colors) {
+    let out = turned.get(colors);
+    if (out) return out;
+    out = colors.slice(0, 16).concat(MIRROR_SLOTS.map(([slot, hue]) => {
+      const [r, g, b] = rgb(colors[slot]).map((v) => v / 255), mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
+      const sat = mx === mn ? 0 : (mx - mn) / (l > 0.5 ? 2 - mx - mn : mx + mn);
+      return hsl(hue, Math.max(sat * 100, 45), Math.max(30, l * 100 - 8));
+    }));
+    turned.set(colors, out);
+    return out;
+  }
   function paletteColors(id, t) {
     const p = PALETTES[id] || PALETTES.classic;
-    if (!p.animated) return p.colors;
+    if (!p.animated) return withMirrors(p.colors);
     const step = Math.floor(((t || 0) / 1000) * 8 / 2) % 180;
     let cols = prismCache.get(step);
     if (!cols) {
-      cols = PRISM_HUES.map((h, i) => (i === 8 ? '#5b6170' : i === 15 ? '#c3c8d2' : hsl(h + step * 2, 72, 64)));
+      cols = withMirrors(PRISM_HUES.map((h, i) => (i === 8 ? '#5b6170' : i === 15 ? '#c3c8d2' : hsl(h + step * 2, 72, 64))));
       prismCache.set(step, cols);
     }
     return cols;

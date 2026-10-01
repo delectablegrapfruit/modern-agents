@@ -585,7 +585,7 @@ tab, each with a sample: **Normal** (the seven in a 7-bag: today's code path exa
 **Tiny** (a round of 14: the monomino twice, the domino four times, each tromino four times), **Frantic** (a round of
 21: the seven once each, seven pentominoes from a bag of all 18 kept between rounds, two of each tromino, two dominoes,
 one monomino: 3.8 blocks a piece), **Pentominoes** (the 18 one-sided ones in an 18-bag: the twelve and the mirror images
-of the six that have one, `Fm Pm Nm Ym Z5m L5m`, each its base's colour), **Big** (the seven doubled, TGM's big mode)
+of the six that have one, `Fm Pm Nm Ym Z5m L5m`, each with its own colour: its base's turned round the hue wheel), **Big** (the seven doubled, TGM's big mode)
 and **Custom**, whose line under the chips says what it deals ("4 and 5 blocks", Custom first chosen) beside Edit.
 
 *The Custom shapes window* (over New board; Done keeps it, Cancel does not): a row for each group of 1 to 12 blocks

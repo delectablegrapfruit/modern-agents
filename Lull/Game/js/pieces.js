@@ -141,11 +141,13 @@
   // The mirror images of the six chiral ones (the board recipe's shapes deal all eighteen one-sided pentominoes, as J and
   // L are both dealt): each its base's colour, and a pair for mirrorOf. PENTOMINOES stays the twelve; PENTO18
   // (below) is all eighteen, which the Relaxed shapes and the puzzles' Odd Shapes deal.
+  // Each mirror has its own colour (slots 16-21, made from its base's: js/render.js MIRROR_SLOTS), so it reads as a
+  // piece of its own.
   const CHIRAL5 = ['F', 'P', 'N', 'Y', 'Z5', 'L5'];
-  for (const id of CHIRAL5) {
+  CHIRAL5.forEach((id, j) => {
     const base = TYPES[id];
-    add(id + 'm', base.rots[0].map(([x, y]) => [base.n - 1 - x, y]), { n: base.n, color: base.color, family: 'pentomino', name: base.name + ' (mirror)' });
-  }
+    add(id + 'm', base.rots[0].map(([x, y]) => [base.n - 1 - x, y]), { n: base.n, color: 16 + j, family: 'pentomino', name: base.name + ' (mirror)' });
+  });
   /** The eighteen one-sided pentominoes: the twelve and the six mirror images. */
   const PENTO18 = PENTOMINOES.concat(CHIRAL5.map((id) => id + 'm'));
 
