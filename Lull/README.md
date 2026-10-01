@@ -189,12 +189,11 @@ gives up counts as a shortcut. A gem seed that runs out of tries settles for a l
 Solving pays lines the first time a seed is solved: Easy 3, Medium 7, Hard 18, falling ×0.8 for each try that set a
 piece (rounded, never under 1, 3 or 6). A clean solve (the first try, no Undo, no hint) pays ×1.5: 5, 11, 27. The Daily
 doubles it, once a date for each difficulty: the clockwise and the both-ways Daily of a date are two puzzles but one
-Daily, so solving the second pays without the ×2 (its Pays tooltip says so). A hint halves it (rounded up) and costs
+Daily, so solving the second pays without the ×2. A hint halves it (rounded up) and costs
 half of the puzzle's pay for that try before the first-try and Daily bonuses (Hard try 1: 9), so a hinted solve nets
 nothing except on a Daily; on a puzzle already solved, which pays nothing, a hint is free (and never takes the gift's
-free hint). Undo and Retry say what they cost in pay before you press them: on a clean first try the Undo's tooltip
-gives the drop ("Ends the first-try ×1.5: Pays ⦵27 → ⦵18"), and once a piece is set Retry's gives the next try's pay; a
-short note says it again when one of them lowers it. Tries, a hint and Undos stay with the seed when you leave or reload
+free hint). The puzzle explains none of this: it shows only what solving pays now, and the solved card only what it
+paid. Tries, a hint and Undos stay with the seed when you leave or reload
 (`puzzle.tries` in the save, until it is solved). A reload or relaunch goes on with the attempt in play exactly as it
 stood — the board, the piece in play, the queue and hold, the lines toward the goal (`puzzle.current.board`, kept after
 every piece and on every save; the Undo history stays behind) — so it is still the same try; an attempt that cannot come
@@ -230,8 +229,7 @@ that single button alone cannot solve it. Wildcards:
 
 The tab reads top to bottom: a slim bar (difficulty; Daily, pressed while today's is in play and ticked once it is
 solved; Seed; History — icons alone in a narrow window), then the puzzle's card — its name (a small tick once solved), where it
-comes from (number, Daily date or seed), piece count and what solving pays now (Pays ⦵14; its tooltip says why, one
-fact a line; whole parts give way when the line is short, never a character of a date: the piece count first (always
+comes from (number, Daily date or seed), piece count and what solving pays now (Pays ⦵14, with no tooltip; whole parts give way when the line is short, never a character of a date: the piece count first (always
 under 440 px), then the weekday, then the difficulty, then a Daily's date), the seed (click to copy) and the star; the goal with how far along
 it is (lines, gems or blocks left, and a thin meter); a chip per wildcard, each with its own icon (hover, or click for a
 note that stays; Both Ways is tinted and names Z and A) — then the board, and a bar of Undo (with how many Undos you hold, or its price), Retry, Hint (with its price, or *free*

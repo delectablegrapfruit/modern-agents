@@ -943,20 +943,6 @@
   /** A hint's price on try t: half of what the puzzle pays there (rounded up), so a hinted solve nets nothing (a Daily aside). */
   function hintCost(d, t) { return Math.ceil(pay(d, { try: t, hint: false }).byTries / 2); }
 
-  /**
-   * How a pay was made (pay's steps), only those that apply, for the solved card: "Hard 18 · try 2 → 14 · Daily ×2 →
-   * 28". A first try that is not clean says why when nothing else does ("Undo: no ×1.5"); a hint has its own step.
-   */
-  function paySteps(d, r) {
-    const out = [DIFFS[d].name + ' ' + r.base];
-    if (r.try > 1) out.push('try ' + r.try + ' → ' + r.byTries + (r.floor ? ' (floor)' : ''));
-    if (r.clean) out.push('clean ×' + PAY.CLEAN + ' → ' + r.afterClean);
-    else if (r.try === 1 && r.undos && !r.hint) out.push('Undo: no ×' + PAY.CLEAN);
-    if (r.daily) out.push('Daily ×' + PAY.DAILY + ' → ' + r.afterDaily);
-    if (r.hint) out.push('hint ½ → ' + r.pay);
-    return out.join(' · ');
-  }
-
   // The Daily's ×2 is paid once per date and difficulty, whichever turn setting it was solved with (the clockwise seed
   // and the both-ways one of a date are two puzzles, one Daily). ps.dailyPaid: { '2026-09-29': 'EH' }, the newest kept.
   const DAILY_PAID_MAX = 400;
@@ -969,5 +955,5 @@
     if (!(P[key] || '').includes(d)) P[key] = (P[key] || '') + d;
   }
 
-  L.Puzzles = { DIFFS, PAY, pay, hintCost, paySteps, dailyDue, noteDaily, MODS, GOALS, generate, firstMods, modDesc, verify, reach, goalStates, goalMet, parseSeed, numberedSeed, dailySeed, dailyDateOf, randomSeed, goalText, GEN_VERSION, SEEDS_PER_DIFF, restingStates, solvableInOrder, winsEarly, primaryTurn };
+  L.Puzzles = { DIFFS, PAY, pay, hintCost, dailyDue, noteDaily, MODS, GOALS, generate, firstMods, modDesc, verify, reach, goalStates, goalMet, parseSeed, numberedSeed, dailySeed, dailyDateOf, randomSeed, goalText, GEN_VERSION, SEEDS_PER_DIFF, restingStates, solvableInOrder, winsEarly, primaryTurn };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

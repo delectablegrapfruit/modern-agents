@@ -1616,7 +1616,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
       out.steps = (document.querySelector('#puz-overlay .pz-pay-steps') || {}).textContent;
       return out;
     });
-    check('the free hint is used before lines: Show · free, nothing spent, and the pay is still halved', hAsk === 'Show · free' && h1.lines === 50 && h1.held === 0 && h1.on && h1.used >= 1 && h1.paid === h1.want && h1.want < h1.full && new RegExp('hint ½ → ' + h1.want + '$').test(h1.steps) && /Lines/.test(h1.label), JSON.stringify({ hAsk, h1 }));
+    check('the free hint is used before lines: Show · free, nothing spent, and the pay is still halved', hAsk === 'Show · free' && h1.lines === 50 && h1.held === 0 && h1.on && h1.used >= 1 && h1.paid === h1.want && h1.want < h1.full && !h1.steps && /Lines/.test(h1.label), JSON.stringify({ hAsk, h1 }));
     const h2 = await ev(() => { const m = Lull.app.modes.puzzle; m.next(); const b = document.getElementById('puz-hint'), c = m.ps.current; return { gem: b.querySelector('.gem') && b.querySelector('.gem').textContent, cost: Lull.Puzzles.hintCost(m.puzzle.diff, c.attempts + (c.live ? 0 : 1)) }; });
     check('with none left, Hint shows its price again (half what the puzzle pays at this try)', h2.gem === '⦵' + h2.cost, JSON.stringify(h2));
 
@@ -1647,19 +1647,18 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     const t0 = await readPay();
     for (let i = 0; i < 3; i++) await page.click('#puz-retry');
     const t1 = await readPay(), clean = await payAt({ try: 1 });
-    check('Pays: a fresh Hard puzzle pays the clean first try; Retry three times with no piece set costs nothing', t0.now === clean && clean === 27 && t1.now === clean && t1.attempts === 0 && new RegExp('Pays ⦵' + clean + '$').test(t1.text) && t1.aria === 'Pays ' + clean + ' lines' && /First try, no Undo or hint: ×1\.5/.test(t1.tip), JSON.stringify({ t0, t1 }));
+    check('Pays: a fresh Hard puzzle pays the clean first try; Retry three times with no piece set costs nothing', t0.now === clean && clean === 27 && t1.now === clean && t1.attempts === 0 && new RegExp('Pays ⦵' + clean + '$').test(t1.text) && t1.aria === 'Pays ' + clean + ' lines' && !t1.tip, JSON.stringify({ t0, t1 }));
     await setOne();
     const t2 = await readPay();
-    // Undo and Retry say what they cost in pay before they are pressed: on a clean first try, the Undo ends the ×1.5;
-    // once a piece is set, Retry makes the next one the next try.
-    check('a clean first try: the Undo\'s tooltip gives the drop (27 → 18), Retry\'s the next try\'s pay (14)', /\nEnds the first-try ×1\.5: Pays ⦵27 → ⦵18$/.test(t2.undoTip) && t2.retryTip === 'The next try pays ⦵14 (now ⦵27)', JSON.stringify({ u: t2.undoTip, r: t2.retryTip }));
+    // Puzzles explain no pay: Undo and Retry say only what they are.
+    check('a clean first try: neither Undo\'s nor Retry\'s tooltip explains pay', !/Pays|×1\.5/.test(t2.undoTip) && t2.retryTip === 'Retry', JSON.stringify({ u: t2.undoTip, r: t2.retryTip }));
     await ev(() => document.querySelectorAll('.toast').forEach((t) => t.remove()));
     await page.click('#puz-retry');
     const t3 = await readPay();
-    check('  Retry that lowers the pay says so in a note; before a piece is set it costs nothing and says only Retry', /Try 2 · Pays ⦵14/.test(t3.toast) && t3.retryTip === 'Retry' && !/Ends/.test(t3.undoTip || ''), JSON.stringify({ toast: t3.toast, r: t3.retryTip, u: t3.undoTip }));
+    check('  Retry that lowers the pay shows no note; Retry says only Retry', !/Pays/.test(t3.toast) && t3.retryTip === 'Retry' && !/Ends/.test(t3.undoTip || ''), JSON.stringify({ toast: t3.toast, r: t3.retryTip, u: t3.undoTip }));
     await setOne();
     const t4 = await readPay(), try2 = await payAt({ try: 2 });
-    check('a piece set counts the try; Retry, a piece set: Pays shows the second try\'s pay', t2.attempts === 1 && t2.live && t3.attempts === 1 && !t3.live && t3.now === try2 && t4.attempts === 2 && t4.live && t4.now === try2 && try2 === 14 && /Try 2: 14/.test(t4.tip) && !/×1\.5/.test(t4.tip) && t4.tries === JSON.stringify({ n: 2, hint: false, undos: 0 }), JSON.stringify({ t2, t3, t4 }));
+    check('a piece set counts the try; Retry, a piece set: Pays shows the second try\'s pay', t2.attempts === 1 && t2.live && t3.attempts === 1 && !t3.live && t3.now === try2 && t4.attempts === 2 && t4.live && t4.now === try2 && try2 === 14 && !t4.tip && t4.tries === JSON.stringify({ n: 2, hint: false, undos: 0 }), JSON.stringify({ t2, t3, t4 }));
     await shot('29-pays');
     // An Undo (bought at 5) is kept with the seed too.
     await page.click('#puz-undo');
@@ -1690,15 +1689,15 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     await page.waitForTimeout(150);
     const t7 = await readPay(), try3 = await payAt({ try: 3 });
     check('away and back through History: the tries, the Undos and a hint stay with the seed; Pays is the next try\'s', t7.seed === pick.seed && t7.tries === t6.tries && t7.attempts === 2 && t7.undos === 1 && !t7.live && t7.now === try3, JSON.stringify({ t6, t7 }));
-    // A hint: its price is half of what it pays now, and the question says both pays.
+    // A hint: its price is half of what it pays now; the question says nothing about pay.
     await page.click('#puz-hint');
     const hq = await ev(() => ({ body: document.querySelector('.modal .modal-body, .modal p') && document.querySelector('.modal').textContent, btn: document.querySelector('.modal footer .btn.primary').textContent }));
     const hcost = await ev(() => Lull.Puzzles.hintCost('H', 3)), withHint = await payAt({ try: 3, hint: true });
-    check('the hint asks with both pays, and costs half of what the puzzle pays at this try', new RegExp('Pays ⦵' + try3 + ' now, ⦵' + withHint + ' with a hint\\.').test(hq.body) && hq.btn === 'Show · ' + hcost + ' ⦵' && hcost === withHint, JSON.stringify({ hq, hcost, withHint }));
+    check('the hint asks without explaining pay, and costs half of what the puzzle pays at this try', !/Pays/.test(hq.body) && hq.btn === 'Show · ' + hcost + ' ⦵' && hcost === withHint, JSON.stringify({ hq, hcost, withHint }));
     const w0 = (await readPay()).lines;
     await page.click('.modal footer .btn.primary');
     const t8 = await readPay();
-    check('bought: charged at the moment, the hint kept with the seed, Pays halved', t8.lines === w0 - hcost && t8.hint && t8.tries === JSON.stringify({ n: 2, hint: true, undos: 1 }) && t8.now === withHint && /Hint: half/.test(t8.tip), JSON.stringify(t8));
+    check('bought: charged at the moment, the hint kept with the seed, Pays halved', t8.lines === w0 - hcost && t8.hint && t8.tries === JSON.stringify({ n: 2, hint: true, undos: 1 }) && t8.now === withHint && !t8.tip, JSON.stringify(t8));
     // Solved (on the third try): the card says how the pay was made, and the wallet rises by it.
     const sol = await ev(async () => {
       const m = Lull.app.modes.puzzle, S = Lull.app.store.state, w = S.lines;
@@ -1710,7 +1709,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
         hint: { text: hb.textContent, on: hb.classList.contains('on'), pressed: hb.getAttribute('aria-pressed'), disabled: hb.disabled, gem: !!hb.querySelector('.gem') } };
     });
     const r3 = await ev(() => Lull.Puzzles.pay('H', { try: 3, undos: 1, hint: true }));
-    check('solved on the third try with a hint: +' + r3.pay + ', and the steps (' + sol.steps + ')', sol.done && sol.gained === r3.pay && sol.steps === 'Hard 18 · try 3 → 12 · hint ½ → 6' && /^\+6 ⦵Lines$/.test(sol.pay) && sol.tries === null && sol.pays === true, JSON.stringify({ sol, r3 }));
+    check('solved on the third try with a hint: +' + r3.pay + ', with no steps explaining it', sol.done && sol.gained === r3.pay && !sol.steps && /^\+6 ⦵Lines$/.test(sol.pay) && sol.tries === null && sol.pays === true, JSON.stringify({ sol, r3 }));
     check('  solved with a hint: the Hint button, off, still says Hints on and shows no price', sol.hint.disabled && sol.hint.on && sol.hint.pressed === 'true' && /Hints on/.test(sol.hint.text) && !sol.hint.gem, JSON.stringify(sol.hint));
     await shot('29-solved-steps');
     // Replaying it: a solved seed pays nothing, so its hint is free (no price, no question, the gift's hint kept).
@@ -1810,7 +1809,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     out.d = d;
     return out;
   });
-  check('the Daily with the other turn setting: another puzzle, paid without a second ×2 (its Pays tooltip says why)', dTwice.daily && dTwice.seed !== dTwice.first && dTwice.rec.includes(dTwice.d) && !dTwice.nowDaily && dTwice.now === dTwice.plain && dTwice.paid === dTwice.plain && !/Daily/.test(dTwice.steps) && /Daily ×2 already paid for this date/.test(dTwice.tip), JSON.stringify(dTwice));
+  check('the Daily with the other turn setting: another puzzle, paid without a second ×2 (and no tooltip explaining it)', dTwice.daily && dTwice.seed !== dTwice.first && dTwice.rec.includes(dTwice.d) && !dTwice.nowDaily && dTwice.now === dTwice.plain && dTwice.paid === dTwice.plain && !dTwice.steps && !dTwice.tip, JSON.stringify(dTwice));
   // The info line gives way a whole part at a time, never a character of a date or a number: a Daily down to 320 px.
   {
     const fitAt = [];

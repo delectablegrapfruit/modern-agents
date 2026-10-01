@@ -2552,17 +2552,7 @@ console.log('economy');
     assert.deepStrictEqual(DS.map((d) => Puzzles.pay(d, { try: 1 }).pay), [5, 11, 27]);
     assert.deepStrictEqual(DS.map((d) => Puzzles.pay(d, { try: 1, daily: true }).pay), [10, 22, 54], 'three clean Dailies: 86 a day');
     const r = Puzzles.pay('H', { try: 2, hint: true, daily: true });
-    assert.deepStrictEqual([r.base, r.byTries, r.afterClean, r.afterDaily, r.pay], [18, 14, 14, 28, 14], 'every step kept for the card');
-    // The solved card's line: only the steps that apply, and a first try that is not clean says why.
-    const steps = (d, o) => Puzzles.paySteps(d, Puzzles.pay(d, o));
-    assert.strictEqual(steps('H', { try: 2, hint: true, daily: true }), 'Hard 18 · try 2 → 14 · Daily ×2 → 28 · hint ½ → 14');
-    assert.strictEqual(steps('H', { try: 1 }), 'Hard 18 · clean ×1.5 → 27');
-    assert.strictEqual(steps('M', { try: 1, undos: 1 }), 'Medium 7 · Undo: no ×1.5');
-    assert.strictEqual(steps('M', { try: 1, undos: 2, daily: true }), 'Medium 7 · Undo: no ×1.5 · Daily ×2 → 14');
-    assert.strictEqual(steps('E', { try: 1, undos: 1, hint: true }), 'Easy 3 · hint ½ → 2', 'a hint says it itself');
-    for (const d of DS) for (let t = 1; t <= 4; t++) for (const undos of [0, 1]) for (const hint of [false, true]) {
-      assert(/ · /.test(steps(d, { try: t, undos, hint })), d + ' try ' + t + ': the line says more than the tile');
-    }
+    assert.deepStrictEqual([r.base, r.byTries, r.afterClean, r.afterDaily, r.pay], [18, 14, 14, 28, 14], 'every step kept');
   });
   test('the Daily\'s ×2: once a date for each difficulty, whichever turn setting it was solved with', () => {
     const ps = {}, key = '2026-09-29';

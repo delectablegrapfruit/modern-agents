@@ -2154,7 +2154,6 @@
           tile(String(cur.attempts), cur.attempts === 1 ? 'Try' : 'Tries'),
           reward ? tile(h('span', null, '+' + reward, ' ', h('span', { class: 'gem' }, LINE)), 'Lines', 'pay')
             : tile('—', 'Solved before')),
-        paid ? h('p', { class: 'pz-pay-steps' }, Puzzles.paySteps(p.diff, paid)) : null,
         h('div', { class: 'row' },
           h('button', { class: 'btn', onclick: () => this.retry() }, 'Replay'),
           h('button', { class: 'btn primary', onclick: () => this.next() }, 'Next puzzle'))));
@@ -2187,38 +2186,14 @@
         prog.text ? h('p', null, prog.text) : null,
         h('div', { class: 'row' },
           this.undoBtn({ class: 'btn', id: 'puz-card-undo' }, 'Undo'),
-          h('button', Object.assign({ class: 'btn primary', onclick: () => this.retry() }, this.retryTip()), icon('retry'), 'Retry'))));
+          h('button', { class: 'btn primary', onclick: () => this.retry() }, icon('retry'), 'Retry'))));
     }
 
     retry() {
       if (this.app.hints && !this.done && this.game && this.game.s.pieces >= 2) this.app.hints.attemptEnded(this);
-      const before = this.payNow();
       this.hideCard();
       this.start();
       this.renderHead();
-      this.notePayDrop(before, 'Try ' + ((this.ps.current && this.ps.current.attempts) + 1));
-    }
-
-    /** A quiet note when an Undo or a Retry lowered what solving pays (the Pays line says it too; this reaches the keys). */
-    notePayDrop(before, why) {
-      const now = this.payNow();
-      if (before && now && now.pay < before.pay) toast(why + ' · Pays ' + LINE + now.pay, null, 1800);
-    }
-
-    /** The next try's pay, for Retry's tooltip, while this try has set a piece (so Retry costs one). */
-    retryTip() {
-      const now = this.payNow(), cur = this.ps.current;
-      if (!now || this.done || !cur || !cur.live) return { 'data-tip': 'Retry' };
-      const next = Puzzles.pay(this.puzzle.diff, { try: now.try + 1, undos: cur.undos || 0, hint: !!cur.hint, daily: now.daily });
-      return { 'data-tip-title': 'Retry', 'data-tip': 'The next try pays ' + LINE + next.pay + (next.pay < now.pay ? ' (now ' + LINE + now.pay + ')' : '') };
-    }
-
-    /** What one more Undo costs in pay (the first-try ×1.5 on a clean try), for its tooltip; null when nothing. */
-    undoNote() {
-      const now = this.payNow(), cur = this.ps.current;
-      if (!now || this.done || !cur || !this.game || !this.game.history.length) return null;
-      const after = Puzzles.pay(this.puzzle.diff, { try: now.try, undos: (cur.undos || 0) + 1, hint: !!cur.hint, daily: now.daily });
-      return after.pay < now.pay ? 'Ends the first-try ×' + Puzzles.PAY.CLEAN + ': Pays ' + LINE + now.pay + ' → ' + LINE + after.pay : null;
     }
 
     /**
@@ -2230,7 +2205,6 @@
       if (this.done || !this.game || !this.game.history.length) return false;
       const st = this.app.store, it = ITEMS.rewind;
       if (!(st.state.inventory.rewind > 0) && st.state.lines < it.price) { toast('Not enough lines', 'bad'); this.app.sound.play('error'); return false; }
-      const before = this.payNow();
       const res = this.game.undo();
       if (!res) return false;
       if (st.useOrBuy('rewind') === 'bought') this.app.refreshWallet();
@@ -2238,7 +2212,6 @@
       if (this.ps.current) { this.ps.current.undos = (this.ps.current.undos || 0) + 1; this.keepTries(); }
       this.lines -= res.lines;
       this.keepBoard();
-      this.notePayDrop(before, 'No first-try ×' + Puzzles.PAY.CLEAN);
       this.failedShown = false;
       this.hideCard();
       this.setAt = this.now(); // a second click of the press that took it back does not set the piece (SET_GRACE_MS)
@@ -2351,10 +2324,8 @@
       // A puzzle already solved pays nothing, so its hint is free (never the gift's free hint): shown at once.
       if (this.ps.solved[this.puzzle.seed]) { this.ps.current.hint = true; this.updateHint(true); this.renderActions(); return; }
       const free = () => (st.state.freebies && st.state.freebies.hint) > 0;
-      const now = this.payNow(), cost = this.hintCost();
-      const after = now ? Puzzles.pay(this.puzzle.diff, { try: now.try, undos: this.ps.current.undos || 0, hint: true, daily: now.daily }).pay : 0;
-      const body = now ? 'Pays ' + LINE + now.pay + ' now, ' + LINE + after + ' with a hint.' : 'Solved before: it pays nothing either way.';
-      UI.confirm('Hint?', body, free() ? 'Show · free' : 'Show · ' + cost + ' ' + LINE, () => {
+      const cost = this.hintCost();
+      UI.confirm('Hint?', '', free() ? 'Show · free' : 'Show · ' + cost + ' ' + LINE, () => {
         if (!this.ps.current || this.ps.current.hint || this.done) return;
         const price = this.hintCost();
         if (!(free() ? st.useFreebie('hint') : st.spend(price))) { toast('Not enough lines', 'bad'); return; }
@@ -2557,24 +2528,18 @@
      * (as Hint shows its price). Its tooltip and label say the same in words.
      */
     undoBtn(attrs, label) {
-      return undoButton(this.app.store, Object.assign({ onclick: () => this.undo() }, attrs), icon('undo'), label, '⌫', this.undoNote());
+      return undoButton(this.app.store, Object.assign({ onclick: () => this.undo() }, attrs), icon('undo'), label, '⌫');
     }
 
-    /** "Pays ⦵14" at the end of the card's info line, with a tooltip saying why: nothing once the seed is solved. */
+    /** "Pays ⦵14" at the end of the card's info line: nothing once the seed is solved. */
     renderPay() {
       const el = this.payEl;
       if (!el || !this.puzzle) return;
       const r = this.payNow();
       if (!r) { el.replaceChildren(); el.removeAttribute('data-tip'); el.removeAttribute('aria-label'); el.hidden = true; this.fitId(); return; }
       el.hidden = false;
-      const D = Puzzles.DIFFS[this.puzzle.diff];
       el.replaceChildren(' · Pays ', h('span', { class: 'gem' }, LINE + r.pay));
       el.setAttribute('aria-label', 'Pays ' + r.pay + (r.pay === 1 ? ' line' : ' lines'));
-      el.dataset.tip = [D.name + ' pays ' + D.reward + ', less each try that sets a piece (never under ' + D.min + ')',
-        r.try > 1 ? 'Try ' + r.try + ': ' + r.byTries : null,
-        r.clean ? 'First try, no Undo or hint: ×' + Puzzles.PAY.CLEAN : null,
-        r.daily ? 'Daily: ×' + Puzzles.PAY.DAILY : this.meta.daily ? 'Daily ×' + Puzzles.PAY.DAILY + ' already paid for this date' : null,
-        r.hint ? 'Hint: half' : null].filter(Boolean).join('\n');
       this.fitId();
     }
 
@@ -2587,7 +2552,7 @@
       this.el.actions.replaceChildren(
         h('div', { class: 'grp' },
           this.undoBtn({ class: 'btn', id: 'puz-undo', disabled: !this.game || !this.game.history.length || this.done }, 'Undo'),
-          h('button', Object.assign({ class: 'btn', id: 'puz-retry', 'aria-label': 'Retry', 'data-tip-foot': 'R', onclick: () => this.retry() }, this.retryTip()), icon('retry'), h('span', { class: 'lbl' }, 'Retry'))),
+          h('button', Object.assign({ class: 'btn', id: 'puz-retry', 'aria-label': 'Retry', 'data-tip': 'Retry', 'data-tip-foot': 'R', onclick: () => this.retry() }), icon('retry'), h('span', { class: 'lbl' }, 'Retry'))),
         h('div', { class: 'grp' },
           h('button', { class: 'btn' + (hinted ? ' on' : ''), id: 'puz-hint', disabled: this.done, 'aria-label': hinted ? 'Hints on' : unpriced ? 'Hint' : freeHints ? (freeHints > 1 ? 'Hint, ' + freeHints + ' free' : 'Hint, free') : 'Hint, costs ' + cost + ' lines', 'aria-pressed': String(!!hinted), 'data-tip': hinted ? 'Hints on' : !this.done && !cost ? 'Hint · free on a puzzle solved before' : freeHints ? 'Hint · ' + (freeHints > 1 ? freeHints + ' free' : 'free') : 'Hint', 'data-tip-foot': 'H', onclick: () => this.buyHint() },
             icon('hint'), h('span', { class: 'lbl' }, hinted ? 'Hints on' : 'Hint'), hinted || unpriced ? null : freeHints ? h('span', { class: 'cnt free' }, freeHints > 1 ? freeHints + ' free' : 'free') : h('span', { class: 'gem' }, LINE + cost)),

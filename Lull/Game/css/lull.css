@@ -621,7 +621,6 @@ kbd {
 .puz-result .btn .gem { font-weight: 600; font-size: var(--fs-xs); }
 .puz-result .bs .l { white-space: normal; }
 /* How the pay was made: "Hard 18 · try 2 → 14 · Daily ×2 → 28", only the steps that apply. */
-#puz-overlay .puz-result .pz-pay-steps { margin: 6px 0 0; color: var(--muted); font-size: var(--fs-2xs); line-height: 1.35; text-align: center; font-variant-numeric: tabular-nums; max-width: 300px; margin-left: auto; margin-right: auto; }
 
 /* A wide window keeps the tab a calm column: the bars and the card line up with the board instead of the edges. */
 @media (min-width: 720px) {
@@ -652,7 +651,6 @@ kbd {
   .puz-result .ring svg { width: 16px; height: 16px; }
   .puz-result.solved .ring { display: none; }
   .puz-result .board-sum { margin-top: 4px; }
-  #puz-overlay .puz-result .pz-pay-steps { margin: 2px auto 0; line-height: 1.2; }
 }
 @media (max-height: 520px) {
   .puz-bar { height: 38px; }
