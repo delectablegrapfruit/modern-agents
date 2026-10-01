@@ -685,33 +685,49 @@ appear. Cells the player never placed (a stone, Classic's garbage, Protect's spr
 blocks; after a clear they come down a row per band under them (the sprout never moves).
 
 *The simulation* is rigid bodies of unit-square minos solved by sequential impulses (the method of Box2D Lite: box
-contacts clipped to two points, warm-started accumulated impulses, Coulomb friction 0.6, split-impulse push-out of
-overlaps past 0.01), gravity 40 cells/s², 120 fixed steps a second, 8 passes. Bodies touching one another sleep
-together once all have moved slower than 0.12 cells/s for 0.25 s; a sleeping body costs nothing and is fixed to what
-touches it until something strikes it faster than 1.2 cells/s. Something left asleep with nothing under it (a clear or
-an item took its support) falls straight down from rest under gravity to where it lands, lowest first; one that lands
-off its balance (its centre of mass outside what it rests on) tips over in the simulation. A body at rest within 0.35 of
-a column and 0.2 (sine) of a quarter turn eases into line when there is room, so bands can fill and the grid tells the
-truth. A lock runs all of this to rest at once, headless (at most 6 s of simulation a phase, then everything sleeps
-where it is) and records it; the view plays the record back while the next piece is already in play.
+contacts clipped to two points, warm-started accumulated impulses, split-impulse push-out of overlaps past 0.01),
+gravity 40 cells/s², 120 fixed steps a second, 8 passes, tuned to feel like jelly. *Bouncy*: a contact closing faster
+than 1.6 cells/s springs back at 0.45 of that speed, so a landing bounces and each bounce is lower. *Slippery*: friction
+0.22, times the square of how much the contact faces up (full on a flat top, half on a 45° slope, none on a side), so
+pieces slide off slopes and off each other, and a face within about 6° of upright holds nothing up at all (its push is
+level): nothing is ever held up by being squeezed between neighbours or against a wall. *Squishy* is the look's (below).
+Bodies touching one another sleep together once all have moved slower than 0.12 cells/s for 0.25 s; a sleeping body
+costs nothing and is fixed to what touches it until something strikes it faster than 1.2 cells/s. A body at rest within
+0.35 of a column and 0.2 (sine) of a quarter turn eases into line when there is room, so bands can fill and the grid
+tells the truth; one eased that then tips or slides off is not eased again in that lock (the ease never fights the
+slide). A lock runs all of this to rest at once, headless (at most 6 s of simulation a phase), and records it; the view
+plays the record back while the next piece is already in play.
 
-*Hard and soft drops.* A hard drop sets the piece down at 3.6 × √(rows fallen) cells/s (at most 16) and, for 0.25 s, as
-heavy as 1 + rows/4 (at most 3) times itself: it strikes what it lands on, wakes it and knocks it (jostles, shifts, can
-topple it). A soft drop or a gravity landing sets the piece down at rest: nothing it lands on wakes.
+*Gravity holds.* After every lock every body is *held*: it touches the floor, or a fixed cell or a held body through a
+face that faces up (more than about 6° above level); the tests check it after every lock (`Jelly.unsupported`, random
+play hard and soft at four widths, the 300-piece run and every item). A body that is not (its support cleared or
+taken by an item, or left asleep on something that slid away) is woken and falls in the simulation at once, starting
+at 3 cells/s; something left asleep with nothing under it after the 6 s cap falls straight down to where it lands.
+(Before this rule a body could stay up wedged between a neighbour and a wall by friction and the overlap the solver
+allows, and the fall that follows a clear treated such side overlaps as support.)
 
-*Clears (whole minos).* A band, one grid row tall, clears when the minos centred in it (and fixed cells) cover at least
+*Hard and soft drops.* A hard drop sets the piece down at 4 × √(rows fallen) cells/s (at most 18) and, for 0.25 s, as
+heavy as 1 + rows/4 (at most 3) times itself: it bounces, and what it strikes wakes and is sent off with (1 + 0.45) of
+the striker's share of the blow (at most 3 cells/s): it jostles, shifts, can topple. A soft drop or a gravity landing
+sets the piece down at rest: no bounce, nothing it lands on wakes.
+
+*Clears (whole minos), at once.* A band, one grid row tall, clears when the minos centred in it (and fixed cells) cover at least
 max(0.9 × w, w − 0.8) of its width, each mino a unit span about its centre: 92% of a board 10 wide, 96% of one 20
 wide, 90% below 8 wide; a band short of a whole mino never clears, the slack is for bodies resting a little apart.
 Exactly the minos centred in the band go (never part of a mino, whatever the body's tilt); what is left of each body it
-crossed splits into its connected parts (edge or corner), each a body of its own, the only way a piece splits. What the
-band held comes down, and further bands may clear (chains). Every Jelly clear is plain and pays only the minos it took,
+crossed splits into its connected parts (edge or corner), each a body of its own, the only way a piece splits. The
+band clears the step it is full and every body in it has landed (asleep, or resting on something and slower than 12
+cells/s: never one passing through), while everything else is still moving: it never waits for the board to stop
+bouncing. What it held starts down at once (3 cells/s, in the simulation, from the next frame), and further bands may
+clear (chains). In what the player sees the band goes within a frame of being seen full and what it held is moving
+the frame after (the browser test holds it to two). Every Jelly clear is plain and pays only the minos it took,
 at 0.75 of a cell of a row (`Jelly.WORTH`): no quads, T-spins or back-to-back on Jelly (a clear that is only bands leaves
 the streak as it was; the combo counts the lock). Each wave after the first is a *cascade* and scores 100 points times
 its number; a board counts its cascades (the Cascades tile; Stats ▸ Free Play). The feats and skill combos do not count
 on Jelly; Knock-On (three cascades from one piece) does. Fairness, measured with bots that hard drop, set down gently or
 spare keys, widths 4 to 20, pooled over seeds (`scripts/jelly-test.cjs`): a Jelly board never pays more per piece than
-Standard, nor more per action than a Normal board of its width (at 0.75 the closest is 4 wide, hard dropped: 93% of
-Normal per action). Best Fit and the bots weigh placements on the grid (a copy clears full rows as a plain board does).
+Standard, nor more per action than a Normal board of its width (at 0.75 the closest is 4 wide, sparing keys: 90%
+of Normal per action). Best Fit and the bots weigh placements on the grid (a copy clears full rows as a plain board does).
 
 *Items.* A Bomb, a Black Hole and a Drill take the minos whose cells they take (whole minos), a Laser the minos centred in
 its rows; what they held comes down. Mirror World turns every body left to right with the board. Settle, Trapdoor and
@@ -722,19 +738,23 @@ Mirror + Jelly, Shapes + Jelly, Classic + Jelly and Protect + Jelly play.
 (bodies by id, contacts bottom up), and every body at rest on a 1/4096 lattice (its turn on 1/2²⁰). The bodies
 themselves are kept, as integers, in the save (`x.jelly`) and in each Undo step, so a resumed board and Undo have the
 exact state and the same lock settles the same way again. The only randomness, a hard drop's hair of sideways nudge,
-is seeded from the board's seed (kept with the bodies) and its piece count. Cost: about 5 ms a lock set down and 10–25 ms
-a lock hard dropped on a desktop (bounded in the
-tests on a board 20 × 40: under 60 000 mino-steps a lock, under 60 ms on average); at rest nothing runs.
+is seeded from the board's seed (kept with the bodies) and its piece count. Cost, measured on a board 20 × 40 (Node, a
+desktop): about 10 ms a lock set down and 20 ms hard dropped on average (at most about 43 000 mino-steps a lock); the
+tests bound it at under 60 000 mino-steps a lock and 60 ms on average; at rest nothing runs.
 
 *The look.* Every settled piece is one rounded blob following its shape wherever the physics put it, a hair inset from
 its neighbours, in the palette's colours whatever the skin: a darker rim, light along the top, a gloss. The piece in
-play, its ghost and the trays are lumps on the grid (a move, a turn or a lower gives the piece a little wobble). The
-record is played back frame by frame (eased between frames): a body lands with a squash that grows with the fall and is
-knocked with a shear (render-only springs about 6 Hz on the rigid bodies, still again within half a second, 80 bodies
-at most); bands burst with the look's own effect and "CASCADE" from the second wave, and are heard as the playback
-reaches them. A lower, a drop, a lock, or the next piece reaching a body still on its way ends the playback at once
-(its clears still seen and heard). Reduced motion: no squash or wobble, the playback three times as fast, the same
-outcome.
+play, its ghost and the trays are lumps on the grid (a move, a turn or a lower gives the piece a wobble). The record
+is played back frame by frame (eased between frames), and over the rigid bodies lies a render-only skin that makes them
+jelly: each blob's outline is bent point by point (every half cell). A body squashes as it lands or bounces (wide and
+low, growing with the speed; a hard drop the most), and what it lands on squashes too under the blow; a knock shears
+it; it ripples across its minos after an impact (each mino lagging the next); it stretches while it falls fast; and at
+rest its foot bulges under the weight stacked on it (0.007 of a cell a mino above, at most 0.08). Springs of 5 Hz
+(squash, shear) and 9 Hz (ripple), lightly damped: a few jiggles, still within a second, 120 bodies at most. Bands burst
+with the look's own effect and "CASCADE" from the second wave, and are heard as the playback reaches them. A lower, a
+drop, a lock, or the next piece reaching a body still on its way ends the playback at once (its clears still seen and
+heard). Reduced motion: a quarter of the squash and shear, no ripple or stretch, the playback three times as fast; the
+same outcome.
 
 ### Protect
 A mode: shield a sprout from falling stones and burrowing moles (`js/guard.js`). The sprout sits on the floor in the

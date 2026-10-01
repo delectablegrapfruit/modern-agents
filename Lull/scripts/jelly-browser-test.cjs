@@ -2,9 +2,11 @@
 // Jelly in the page (js/jelly.js, js/jellyview.js): a Jelly board made from the New board window, Tornado, Settle and
 // Trapdoor refused; every settled piece drawn as one soft blob (the piece, its ghost and the trays as lumps); at rest
 // nothing asks for frames; a hard drop's knock and a soft drop played back; a band clearing whole minos and what it
-// held coming down, heard and seen; reduced motion (no squash, played back fast, the same outcome); no console errors;
-// and the screenshots (520 × 760, light and dark): a stack at rest, a hard drop knocking a stack frame by frame, a soft
-// drop, a band clearing and splitting the pieces it crosses, and a 20 × 40 board.
+// held coming down, heard and seen, with no lag (the band goes within two frames of being seen full; what it held is
+// seen falling within two frames of that); reduced motion (less squash, no ripple, played back fast, the same outcome);
+// no console errors; and the screenshots (520 × 760, light and dark): a stack at rest, a hard drop bouncing and
+// knocking a stack frame by frame, a soft drop, a piece sliding off another, a band clearing and splitting the pieces
+// it crosses, and a 20 × 40 board.
 // Run by browser-test.cjs: require('./jelly-browser-test.cjs')({ browser, check, PAGE, OUT }); or on its own:
 //   node Lull/scripts/jelly-browser-test.cjs [screenshot-dir]
 'use strict';
@@ -113,7 +115,7 @@ module.exports = async function jellyTests({ browser, check, PAGE, OUT }) {
   }
 
   // ---- the look: blobs, at rest nothing runs; a hard drop's knock, a soft drop, a band clearing ----
-  let outcome = null;
+  let outcome = null, squash = 0;
   for (const theme of ['light', 'dark']) {
     const { ctx, page, ev, shot } = await open({ colorScheme: theme });
     for (const [w, h, n] of [[10, 20, 16], [20, 40, 50]]) {
@@ -149,7 +151,7 @@ module.exports = async function jellyTests({ browser, check, PAGE, OUT }) {
     for (const dt of [30, 100, 200, 400]) {
       await freeze(ev, hd.t0 + dt);
       const sq = await ev(() => { window.__render(); const J = Lull.JellyView.stateOf(Lull.app.modes.play.view); let a = 0; for (const s of J.skins.values()) a = Math.max(a, Math.abs(s.a)); return +a.toFixed(3); });
-      if (dt === 30) check(theme + ': the landing squashes (the skin)', sq > 0.03, String(sq));
+      if (dt === 30) { check(theme + ': the landing squashes (the skin)', sq > 0.08, String(sq)); if (theme === 'light') squash = sq; }
       await shot('jelly-harddrop-' + (++k) + '-' + theme);
       await release(ev);
     }
@@ -172,6 +174,26 @@ module.exports = async function jellyTests({ browser, check, PAGE, OUT }) {
     await release(ev);
     await page.waitForTimeout(800);
 
+    // A slide: an O hard dropped half onto a T's nub slips off it (slippery jelly), squashing and wobbling as it lands.
+    const sl = await ev(() => {
+      window.__jelly(10, 20, 4);
+      window.__put('T', 3, 0);
+      const W = Lull.Jelly.of(Lull.app.modes.play.game);
+      window.__render();
+      const r = window.__put('O', 4, 0, true);
+      const O = W.bodies[W.bodies.length - 1];
+      return { t0: Lull.JellyView.stateOf(Lull.app.modes.play.view).replay.t0, x: O.x, y: O.y, time: r.jelly.time };
+    });
+    check(theme + ': an O set half on a T\u2019s nub slides off it to the floor', sl.y < 1.1 && sl.x > 5.4, JSON.stringify(sl));
+    k = 0;
+    for (const dt of [60, 160, 300, 600]) {
+      await freeze(ev, sl.t0 + dt);
+      await ev(() => window.__render());
+      await shot('jelly-slide-' + (++k) + '-' + theme);
+      await release(ev);
+    }
+    await page.waitForTimeout(1200);
+
     // A band clearing: row 0 filled by a flat I, an I on end, two O's and last an I on end hard dropped: the minos in
     // row 0 go (whole minos: the upright I's bottom ones, the O's lower halves, the flat I), the rest come down.
     const bc = await ev(() => {
@@ -187,9 +209,53 @@ module.exports = async function jellyTests({ browser, check, PAGE, OUT }) {
       const r = window.__put('I', 9, 1, true);
       const rp = Lull.JellyView.stateOf(m.view).replay;
       const W = Lull.Jelly.of(g);
-      return { rows: (r.cascade || []).map((w) => w.rows), removed: (r.cascade || []).map((w) => w.removed.map((x) => x.length)), before, after: W.bodies.length, t: (r.cascade || [0]).map((w) => w.t), t0: rp ? rp.t0 : 0, heardNow: sounds.slice(), lines: r.lines, own: r.own, sizes: W.bodies.map((b) => b.m).sort().join('') };
+      // What the player sees, frame by frame (the record the view plays): band 0's cover, the clear, how far down the
+      // bodies above it have come since.
+      const shown = new Map(), lag = [];
+      for (const d of r.jelly.start) shown.set(d.id, { d, pose: d.pose.slice() });
+      let atClear = null;
+      r.jelly.frames.forEach((f, i) => {
+        for (const id of f.del) shown.delete(id);
+        for (const d of f.add) shown.set(d.id, { d, pose: d.pose.slice() });
+        for (const [id, x, y, c, s] of f.set) { const e = shown.get(id); if (e) e.pose = [x, y, c, s]; }
+        const spans = [];
+        for (const e of shown.values()) { const [x, y, c, s] = e.pose; for (let k = 0; k < e.d.m; k++) if (Math.floor(y + s * e.d.lx[k] + c * e.d.ly[k]) === 0) spans.push(x + c * e.d.lx[k] - s * e.d.ly[k] - 0.5); }
+        spans.sort((a, b) => a - b);
+        let cover = 0, end = -1e9;
+        for (const x0 of spans) { const a = Math.max(0, x0, end), b = Math.min(10, x0 + 1); if (b > a) cover += b - a; end = Math.max(end, x0 + 1); }
+        if (f.clear) atClear = new Map([...shown].map(([id, e]) => [id, e.pose[1]]));
+        let fell = 0;
+        if (atClear) for (const [id, e] of shown) if (atClear.has(id)) fell = Math.max(fell, atClear.get(id) - e.pose[1]);
+        lag.push([+(cover / 10).toFixed(3), f.clear ? 1 : 0, +fell.toFixed(3)]);
+      });
+      return { rows: (r.cascade || []).map((w) => w.rows), removed: (r.cascade || []).map((w) => w.removed.map((x) => x.length)), before, after: W.bodies.length, t: (r.cascade || [0]).map((w) => w.t), t0: rp ? rp.t0 : 0, heardNow: sounds.slice(), lines: r.lines, own: r.own, sizes: W.bodies.map((b) => b.m).sort().join(''), lag: lag.slice(0, 12) };
     });
+    {
+      // The band goes within two frames of the frame it is first seen full (and stays full), and what it held is seen
+      // moving down within two frames of its going (no hold before the fall).
+      const L = bc.lag, ci = L.findIndex((x) => x[1]);
+      let full = ci - 1;
+      while (full > 0 && L[full - 1][0] >= 0.92) full--;
+      const moving = L.findIndex((x, i) => i >= ci && x[2] > 0.03);
+      check(theme + ': the band goes within two frames of being seen full', ci >= 0 && L[ci - 1] && L[ci - 1][0] >= 0.92 && ci - full <= 2, JSON.stringify(L));
+      check(theme + ': what it held is seen falling within two frames of its going', moving >= 0 && moving - ci <= 2, JSON.stringify(L));
+    }
     check(theme + ': a band clears whole minos, splits what it crossed (two I\u2019s of three, two O halves), and the rest comes down', bc.rows.length === 1 && bc.rows[0][0] === 0 && bc.removed[0][0] === 10 && bc.sizes === '2233' && bc.heardNow.length === 0, JSON.stringify(bc));
+    // In the view: a frame (and a hair) after the clear, nothing is drawn in the band; a frame later what it held has come down.
+    const vw = [];
+    for (const dt of [17, 50]) {
+      await freeze(ev, bc.t0 + bc.t[0] * 1000 + dt);
+      vw.push(await ev(() => {
+        window.__render();
+        const rp = Lull.JellyView.stateOf(Lull.app.modes.play.view).replay;
+        if (!rp) return null;
+        let inBand = 0, top = 0;
+        for (const e of rp.shown.values()) { const [x, y, c, s] = e.pose; for (let k = 0; k < e.def.m; k++) { const cy = y + s * e.def.lx[k] + c * e.def.ly[k]; if (Math.floor(cy) === 0) inBand++; top += cy; } }
+        return { inBand, top: +top.toFixed(3) };
+      }));
+      await release(ev);
+    }
+    check(theme + ': in the view the band is gone a frame after it clears, and what it held is already coming down', vw[0] && vw[1] && vw[0].inBand === 0 && vw[1].top < vw[0].top - 0.05, JSON.stringify(vw));
     k = 0;
     const tc = (bc.t[0] || 0) * 1000;
     for (const dt of [tc - 60, tc + 20, tc + 120, tc + 450]) {
@@ -213,12 +279,17 @@ module.exports = async function jellyTests({ browser, check, PAGE, OUT }) {
       window.__put('I', 0, 0); window.__put('I', 4, 1); window.__put('O', 5, 0); window.__put('O', 7, 0);
       window.__put('I', 9, 1, true);
       const J = Lull.JellyView.stateOf(m.view);
-      return { reduced: m.view.reducedMotion, speed: J.replay ? J.replay.speed : 0, pack: JSON.stringify(Lull.Jelly.pack(Lull.Jelly.of(g))) };
+      return { reduced: m.view.reducedMotion, speed: J.replay ? J.replay.speed : 0, t0: J.replay ? J.replay.t0 : 0, pack: JSON.stringify(Lull.Jelly.pack(Lull.Jelly.of(g))) };
     });
-    await page.waitForTimeout(250);
-    const sk = await ev(() => { const v = Lull.app.modes.play.view; Lull.JellyView.view.busy(v); return Lull.JellyView.stateOf(v).skins.size; });
-    check('reduced motion: played back three times as fast, no squash', rm.reduced && rm.speed === 3 && sk === 0, JSON.stringify([rm.speed, sk]));
+    // The same hard drop as the light theme's squash: a quarter of the jiggle, no ripple.
+    await stack(ev, 10, 20, 12, 11);
+    const hd = await ev(() => { window.__put('O', 4, 0, true); return Lull.JellyView.stateOf(Lull.app.modes.play.view).replay.t0; });
+    await freeze(ev, hd + 30);
+    const sk = await ev(() => { window.__render(); const J = Lull.JellyView.stateOf(Lull.app.modes.play.view); let a = 0, c = 0; for (const s of J.skins.values()) { a = Math.max(a, Math.abs(s.a)); c = Math.max(c, Math.abs(s.c)); } return [+a.toFixed(3), +c.toFixed(3)]; });
+    await release(ev);
+    check('reduced motion: played back three times as fast, less squash, no ripple', rm.reduced && rm.speed === 3 && sk[0] > 0 && sk[0] < squash * 0.5 && sk[1] === 0, JSON.stringify([rm.speed, sk, squash]));
     check('reduced motion: the same outcome', rm.pack === outcome);
+    void page;
     await page.waitForTimeout(1200);
     const done = await ev(() => { const v = Lull.app.modes.play.view; return { replay: !!Lull.JellyView.stateOf(v).replay, busy: Lull.JellyView.view.busy(v) }; });
     check('reduced motion: over soon, then still', !done.replay && !done.busy, JSON.stringify(done));

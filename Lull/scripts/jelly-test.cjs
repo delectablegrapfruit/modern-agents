@@ -106,9 +106,32 @@ module.exports = function jellyTests(test) {
         assert.strictEqual(minos(g).length, placed - cleared, 'no mino lost or made (piece ' + i + ')');
         intact(g);
         assert(!W(g).awake.length);
+        assert.deepStrictEqual(Jelly.unsupported(W(g)), [], 'nothing left up with nothing holding it (piece ' + i + ')');
       }
       assert(placed > 60, 'placed ' + placed);
     }
+  });
+
+  test('jelly: gravity: after every lock no body is left up with nothing holding it (random play, hard and soft, several widths)', () => {
+    // Random turns and columns, hard dropped or set down at random: every body at rest is held (the floor, a fixed
+    // cell, or a body that is held, under it), never wedged up between neighbours or left asleep on what went.
+    const bad = [];
+    for (let seed = 1; seed <= 24; seed++) {
+      const w = [6, 8, 10, 13][seed % 4], g = jelly({ w, h: 20, seed });
+      let r0 = seed * 7919;
+      const rnd = () => { r0 = (r0 * 1103515245 + 12345) & 0x7fffffff; return r0 / 0x7fffffff; };
+      for (let i = 0; i < 80 && !g.over && g.piece; i++) {
+        const t = g.piece.type, rot = Math.floor(rnd() * 4), b = t.rotBounds[rot];
+        g.piece.rot = rot; g.piece.x = -b.minX + Math.floor(rnd() * (w - b.w + 1));
+        if (!g.fitsAt(g.piece, rot, g.piece.x, g.piece.y)) break;
+        const r = rnd() < 0.5 ? g.drop() : ((g.piece.y = g.ghostY(g.piece)), g.lock());
+        if (!r) break;
+        const f = Jelly.unsupported(W(g));
+        if (f.length) { bad.push('seed ' + seed + ' piece ' + i + ': ' + f.join(',')); break; }
+        assert(!W(g).awake.length);
+      }
+    }
+    assert.deepStrictEqual(bad, [], 'bodies left up with nothing holding them');
   });
 
   test('jelly: a band clears at the threshold: whole minos centred in it; short of a mino never', () => {
@@ -264,7 +287,7 @@ module.exports = function jellyTests(test) {
 
   test('jelly: items: Bomb, Black Hole, Drill and Laser take whole minos and what they held comes down; Mirror World turns the bodies', () => {
     const base = () => { const g = jelly({ seed: 2 }); setAt(g, 'I', 0, 0); setAt(g, 'I', 4, 0); setAt(g, 'O', 1); setAt(g, 'O', 5); setAt(g, 'I', 2, 0); return g; };
-    const check = (g, what) => { intact(g); assert(!W(g).awake.length, what + ': at rest'); for (const m of minos(g)) assert(g.board.get(Math.floor(m.x), Math.floor(m.y)), what + ': the grid shows every mino'); };
+    const check = (g, what) => { intact(g); assert(!W(g).awake.length, what + ': at rest'); assert.deepStrictEqual(Jelly.unsupported(W(g)), [], what + ': all held'); for (const m of minos(g)) assert(g.board.get(Math.floor(m.x), Math.floor(m.y)), what + ': the grid shows every mino'); };
     let g = base(), n0 = minos(g).length;
     g.replacePiece({ id: 'M1', special: 'bomb' }); g.piece.x = 2; g.piece.y = 10;
     let r = g.drop();
