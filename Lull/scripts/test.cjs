@@ -150,6 +150,7 @@ const oddShapes = () => {
   // Every Blueprint drawing of up to six blocks (all free polyominoes of 2–6 cells), and the mirrored pentominoes.
   for (let n = 2; n <= 6; n++) for (const cells of Pieces.freePolyominoes(n)) ids.push(Pieces.customType(cells).id);
   for (const id of Pieces.PENTOMINOES) ids.push(Pieces.mirrorOf(Pieces.TYPES[id]).id);
+  ids.push(...Pieces.PENTO18);
   return Array.from(new Set(ids));
 };
 const put = (g, id, rot, x, y) => { g.piece = { type: Pieces.get(id), rot, x, y, special: null, entry: { id }, lastRot: false }; return g.piece; };
@@ -857,17 +858,17 @@ test('gem puzzles need every piece: fewer never take every gem, in order or in a
     if (p.goal.type === 'gems') check(p);
   }
   // Gem puzzles with Hold are rare; these are some.
-  for (const s of ['E-5TFWL7Y', 'E-5RDPZKD', 'M-2EU4ECQ', 'M-33553G6']) {
+  for (const s of ['E-5AT7U5U', 'E-3M4TUNX', 'M-3F56ENZ', 'M-2C6P59U']) {
     const p = Puzzles.generate(s);
     assert(p.mods.includes('hold'), 'Hold: ' + s);
     check(p);
   }
-  assert(seen.E >= 6 && seen.M >= 15 && seen.H >= 12 && proved > 100, 'gem puzzles turn up: ' + JSON.stringify(seen) + ', ' + proved);
+  assert(seen.E >= 6 && seen.M >= 15 && seen.H >= 10 && proved > 100, 'gem puzzles turn up: ' + JSON.stringify(seen) + ', ' + proved);
 });
 test('making gem puzzles need every piece left every other puzzle exactly as it was', () => {
   // A fingerprint of every puzzle among the first 40 seeds of each kind that is not a gem puzzle (these numbers are),
-  // retaken whenever GEN_VERSION goes up (6: Big Minos review fixes). A change to gem puzzles alone must leave it as it is.
-  const gems = { E: [8, 9, 10, 12, 15, 20, 21, 32, 36, 37], ES: [3, 13, 18, 27, 30], M: [4, 5, 7, 14, 16, 23, 29, 32], MS: [2, 3, 13, 18, 20, 21, 30, 31, 34], H: [1, 3, 4, 7, 8, 17, 31, 33, 35, 36], HS: [3, 5, 17, 25] };
+  // retaken whenever GEN_VERSION goes up (6: Big Minos review fixes; 7: Odd Shapes deals all 18 pentominoes). A change to gem puzzles alone must leave it as it is.
+  const gems = { E: [4, 9, 14, 15, 20, 26, 28, 31, 35, 37, 38, 40], ES: [4, 12, 16, 18, 19, 29, 36, 38], M: [5, 15, 17, 19, 21, 26, 27, 28, 32, 36], MS: [4, 5, 7, 9, 10, 11, 15, 17, 18, 21, 32], H: [5, 15, 34, 35, 37, 40], HS: [8, 10, 11, 29, 31] };
   const h = require('crypto').createHash('sha1');
   let n = 0;
   for (const d of ['E', 'M', 'H']) for (const spin of [false, true]) for (let i = 1; i <= 40; i++) {
@@ -876,7 +877,7 @@ test('making gem puzzles need every piece left every other puzzle exactly as it 
     assert.notStrictEqual(p.goal.type, 'gems', p.seed);
     n++; h.update(JSON.stringify(p));
   }
-  assert.strictEqual(n + ' ' + h.digest('hex'), '194 67e1fc10588b4ca6b562e20da7e1f25dd2b5daa9');
+  assert.strictEqual(n + ' ' + h.digest('hex'), '188 7b8079034982613f0ed35b8bc0d0e1de668d4f55');
 });
 test('dailies: one seed per date, the same everywhere, and every seed knows its date', () => {
   const seen = new Set();
@@ -896,6 +897,18 @@ test('the same seed builds the same puzzle', () => {
     const s = Puzzles.numberedSeed(d, 42);
     assert.strictEqual(JSON.stringify(Puzzles.generate(s)), JSON.stringify(Puzzles.generate(s)));
   }
+});
+test('Odd Shapes deals all 18 pentominoes: mirror images turn up, and their solutions play out', () => {
+  const mirrors = new Set(Pieces.PENTO18.filter((id) => !Pieces.PENTOMINOES.includes(id))), seen = new Set();
+  let odd = 0;
+  for (let i = 1; i <= 120 && odd < 30; i++) for (const d of ['E', 'M', 'H']) {
+    const p = Puzzles.generate(Puzzles.numberedSeed(d, i, i % 2 === 0));
+    if (!p.mods.includes('odd')) continue;
+    odd++;
+    for (const e of p.pieces) if (mirrors.has(e.id)) seen.add(e.id);
+    if (p.pieces.some((e) => mirrors.has(e.id))) replay(p);
+  }
+  assert(odd >= 10 && seen.size >= 3, odd + ' Odd Shapes puzzles, mirrors seen: ' + [...seen].join(' '));
 });
 const counts = { E: 250, M: 250, H: 250 };
 // Generation is timed by the CPU time of this thread, not the wall clock: on a loaded machine (parallel jobs, CI

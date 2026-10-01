@@ -7,7 +7,7 @@
   const L = (root.Lull = root.Lull || {});
   const { Board, CELL, Pieces, RNG, hash32, codeFromInt, intFromCode, spawnPos } = L;
 
-  const GEN_VERSION = 6;
+  const GEN_VERSION = 7;
   const GEM_GLANCE = 300, GEM_SEARCH = 2000; // positions the needs-every-piece search tries on a layout: a first look, then a long one
   // Gem puzzles must need every piece (needsEveryPiece). Once one is turned down, generate may go on to GEM_ATTEMPTS
   // attempts; after GEM_BOARDS gem boards or GEM_BUDGET search positions in all, it settles for a lines puzzle.
@@ -526,7 +526,7 @@
     spec.fill = { E: [0.55, 0.75], M: [0.45, 0.65], H: [0.4, 0.6] }[diff];
     spec.cap = 6;
     let gw = { E: { clear: 5, lines: 3.5, gems: 1.5 }, M: { clear: 3.5, lines: 3.5, gems: 3 }, H: { clear: 4, lines: 3, gems: 3 } }[diff];
-    spec.pool = has('odd') ? Pieces.PENTOMINOES.concat(['I3', 'V3', 'I3', 'V3']).concat(Pieces.TETROMINOES) : Pieces.TETROMINOES.slice();
+    spec.pool = has('odd') ? Pieces.PENTO18.concat(['I3', 'V3', 'I3', 'V3']).concat(Pieces.TETROMINOES) : Pieces.TETROMINOES.slice();
     if (has('big')) {
       spec.mix = mix || rng.weighted(Object.keys(BIG_SHARE), (m) => BIG_SHARE[m]);
       const M = BIG_MIX[spec.mix][diff];

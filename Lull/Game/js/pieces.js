@@ -139,7 +139,8 @@
   const PENTOMINOES = Object.keys(PENTO);
   PENTOMINOES.forEach((id, i) => add(id, PENTO[id], { color: 9 + (i % 6), family: 'pentomino', name: id.replace(/\d/, '') + '-pento' }));
   // The mirror images of the six chiral ones (the board recipe's shapes deal all eighteen one-sided pentominoes, as J and
-  // L are both dealt): each its base's colour, and a pair for mirrorOf. PENTOMINOES stays the twelve (puzzles use it).
+  // L are both dealt): each its base's colour, and a pair for mirrorOf. PENTOMINOES stays the twelve; PENTO18
+  // (below) is all eighteen, which the Relaxed shapes and the puzzles' Odd Shapes deal.
   const CHIRAL5 = ['F', 'P', 'N', 'Y', 'Z5', 'L5'];
   for (const id of CHIRAL5) {
     const base = TYPES[id];

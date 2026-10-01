@@ -1419,7 +1419,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   const spinInv = await ev(() => {
     const m = Lull.app.modes.puzzle, keep = Lull.app.settings.ccwPuzzles;
     Lull.app.settings.ccwPuzzles = true;
-    m.load('MS-2FTS5NX', {});
+    m.load('MS-23MDS22', {});
     const foot = document.querySelector('#puz-mods .mod-spin').dataset.tipFoot, g = m.game, r0 = g.piece.rot;
     m.action('ccw');
     const turned = (g.piece.rot - r0 + 4) % 4;
@@ -1429,7 +1429,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   check('Both Ways + Inverted: the chip says Z turns clockwise, and it does', /invert/.test(spinInv.mods) && /Z turns clockwise/.test(spinInv.foot) && spinInv.turned === 1, JSON.stringify(spinInv));
   await ev(() => Lull.app.modes.puzzle.loadNumbered('H', 3));
   // Big Minos: a puzzle per difficulty and mix, big pieces and tetrominoes side by side in the queue (light theme).
-  const bigSeeds = { 'E-sparse': 'E-56SQ6JX', 'E-half': 'E-574TJDJ', 'E-all': 'E-54PCEP7', 'M-sparse': 'M-2T6HF4X', 'M-half': 'M-24M44U4', 'M-all': 'M-52CC38R', 'H-sparse': 'H-3G2EMLJ', 'H-half': 'H-2V9645B', 'H-all': 'H-2UQW5HD' };
+  const bigSeeds = { 'E-sparse': 'E-3DHK822', 'E-half': 'E-5NHAQ22', 'E-all': 'E-4CN8C22', 'M-sparse': 'M-3ZGV822', 'M-half': 'M-3GB2RA2', 'M-all': 'M-4WUW342', 'H-sparse': 'H-4AWWJW2', 'H-half': 'H-5WX4E22', 'H-all': 'H-3MXTG22' };
   const bigTheme0 = await ev(() => Lull.app.settings.theme);
   await ev(() => { Lull.app.settings.theme = 'light'; Lull.app.applySettings(); });
   let bigQueues = 0;

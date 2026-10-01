@@ -215,7 +215,7 @@ that single button alone cannot solve it. Wildcards:
 | Wildcard | |
 |---|---|
 | Big Minos | some pieces are twice the size, each block 2×2 cells, moving one cell at a time: usually one or two among ordinary tetrominoes, sometimes about half, now and then all or nearly all (on Hard a tetromino still comes first); the chip says whether some or every piece is big. A big piece usually comes late in the queue, so the pieces before it have to keep its space open; the queue draws them to the same scale as the tetrominoes, so they look twice the size. No gems on Hard |
-| Odd Shapes | trominoes and all twelve pentominoes |
+| Odd Shapes | trominoes and all 18 pentominoes (the twelve and the mirror images of the six that have one) |
 | Wraparound | the side walls are portals (they glow, with ⇆) |
 | Rigid | no turning; each piece arrives already facing its way |
 | Heavy | no lowering, hard drops only |
