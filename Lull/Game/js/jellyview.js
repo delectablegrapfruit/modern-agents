@@ -1,11 +1,13 @@
 // Lull — Jelly's look and window (js/jelly.js has its rules). On a Jelly board every block is drawn as soft jelly: the
 // settled pieces are bodies (js/jelly.js), each drawn as one rounded blob following its shape wherever the physics put
 // it (tilted, toppled), the piece in play, its ghost and the trays as lumps on the grid. A lock is played back from its
-// record: the piece set down and what it struck jostling, bands clearing (whole minos going, with the look's own
-// effect) and what they held coming down, each body squashing as it lands and wobbling back (a render-only skin on the
-// rigid bodies: springs of about 6 Hz, still again within half a second). Reduced motion: no squash, no wobble, the
-// playback three times as fast; the outcome is the same. Also the New board window's switch, the Cascades tile and the
-// Stats rows.
+// record: the piece set down (a hard drop bouncing) and what it struck jostling, bands clearing the moment they fill
+// (whole minos going, with the look's own effect) and what they held coming down at once. Over the rigid bodies, a
+// render-only skin: each body squashes as it lands (and so does what it lands on), shears when knocked, ripples across
+// its minos, stretches while it falls fast, and bulges at its foot under the weight stacked on it (springs of 5 and 9
+// Hz, lightly damped: a few jiggles, still within a second). Reduced motion: a quarter of the jiggle, no ripple or
+// stretch, the playback three times as fast; the outcome is the same. Also the New board window's switch, the Cascades
+// tile and the Stats rows.
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
@@ -183,13 +185,17 @@
 
   // ---- a view's state ---------------------------------------------------------------------------------------------
 
-  // The skin's springs: about 6 Hz, damping 0.35; still under 0.003. The piece in play's too.
-  const OMEGA = 2 * Math.PI * 6, ZETA = 0.35, K = OMEGA * OMEGA, C = 2 * ZETA * OMEGA, REST = 0.003;
+  // The skin's springs: a squash and a shear of about 5 Hz, lightly damped (it jiggles: a few swings, still within a
+  // second), and a ripple of about 9 Hz (each mino of it lagging the next: the wobble across a body). Still under 0.003.
+  const OMEGA = 2 * Math.PI * 5, ZETA = 0.16, K = OMEGA * OMEGA, C = 2 * ZETA * OMEGA, REST = 0.003;
+  const OMEGA2 = 2 * Math.PI * 9, K2 = OMEGA2 * OMEGA2, C2 = 2 * 0.14 * OMEGA2;
+  // Reduced motion: every kick this much (less jiggle; the same outcome).
+  const QUIET = 0.25;
 
   /** The Jelly state kept on a board view: the piece's spring, the lock being played back, each body's skin. */
   function stateOf(view) {
     let J = view.jelly;
-    if (!J || J.game !== view.game) J = view.jelly = { game: view.game, piece: null, replay: null, last: 0, skins: new Map() };
+    if (!J || J.game !== view.game) J = view.jelly = { game: view.game, piece: null, replay: null, last: 0, skins: new Map(), load: null };
     return J;
   }
   const quiet = (view) => !!view.reducedMotion;
@@ -198,8 +204,9 @@
   function springStep(sp, h) {
     sp.va += (-K * sp.a - C * sp.va) * h; sp.a += sp.va * h;
     sp.vb += (-K * sp.b - C * sp.vb) * h; sp.b += sp.vb * h;
+    sp.vc += (-K2 * sp.c - C2 * sp.vc) * h; sp.c += sp.vc * h;
   }
-  const atRest = (sp) => Math.abs(sp.a) < REST && Math.abs(sp.b) < REST && Math.abs(sp.va) < 0.05 && Math.abs(sp.vb) < 0.05;
+  const atRest = (sp) => Math.abs(sp.a) < REST && Math.abs(sp.b) < REST && Math.abs(sp.c) < REST && Math.abs(sp.va) < 0.05 && Math.abs(sp.vb) < 0.05 && Math.abs(sp.vc) < 0.08;
   /** Steps the springs (the piece's, the bodies' skins) to now; drops those at rest. */
   function stepSprings(J, now) {
     const dt = J.last ? Math.min(0.05, Math.max(0, (now - J.last) / 1000)) : 0;
@@ -213,18 +220,22 @@
     for (const [id, sp] of J.skins) if (atRest(sp)) J.skins.delete(id);
     if (J.piece && atRest(J.piece)) J.piece = null;
   }
+  const spring = () => ({ a: 0, va: 0, b: 0, vb: 0, c: 0, vc: 0 });
   function pieceKick(view, da, db) {
-    if (quiet(view)) return;
-    const J = stateOf(view);
-    if (!J.piece) J.piece = { a: 0, va: 0, b: 0, vb: 0 };
-    J.piece.a = Math.max(-0.2, Math.min(0.2, J.piece.a + da));
-    J.piece.b = Math.max(-0.2, Math.min(0.2, J.piece.b + db));
+    const J = stateOf(view), q = quiet(view) ? QUIET : 1;
+    if (!J.piece) J.piece = spring();
+    J.piece.a = Math.max(-0.25, Math.min(0.25, J.piece.a + da * q));
+    J.piece.b = Math.max(-0.25, Math.min(0.25, J.piece.b + db * q));
   }
-  /** A body's skin kicked: a squashes it (landing), b shears it (a knock sideways). At most 80 at once. */
-  function skinKick(J, id, da, db) {
+  /**
+   * A body's skin kicked (speeds): a squashes it (a landing, a weight put on it), b shears it (a knock sideways), c
+   * sets it rippling. At most 120 at once.
+   */
+  function skinKick(J, id, da, db, dc, q) {
     let sp = J.skins.get(id);
-    if (!sp) { if (J.skins.size >= 80) return; sp = { a: 0, va: 0, b: 0, vb: 0 }; J.skins.set(id, sp); }
-    sp.va += da; sp.vb += db;
+    if (!sp) { if (J.skins.size >= 120) return; sp = spring(); J.skins.set(id, sp); }
+    q = q || 1;
+    sp.va += da * q; sp.vb += db * q; sp.vc += (dc || 0) * q * (q < 1 ? 0 : 1);
   }
 
   /**
@@ -263,10 +274,11 @@
   function pt(view, x, y) { const s = view.lay.s, p = view.toScreen(x - 0.5, y - 0.5); return [p[0] + s / 2, p[1] + s / 2]; }
 
   /**
-   * One body as a blob: its outline (rounded, a hair inset) where its pose puts it, squashed and sheared by its skin
-   * (about its lowest point, along gravity), a darker rim inside the edge, light along the top, a gloss.
+   * One body as a blob: its outline (rounded, a hair inset) where its pose puts it, then the skin: squashed and sheared
+   * about its lowest point (along gravity), rippling across its minos, stretched while it falls fast, its foot bulging
+   * under the weight on it (fx: { sag, vy }); a darker rim inside the edge, light along the top, a gloss.
    */
-  function drawBody(ctx, view, def, pose, skin, alpha) {
+  function drawBody(ctx, view, def, pose, skin, alpha, fx) {
     const s = view.lay.s, light = lightOf(ctx);
     const [x, y, c, sn] = pose;
     // Colour groups (a body is nearly always one colour: one piece).
@@ -279,24 +291,30 @@
       groups.get(key).push(def.cells[2 * k], def.cells[2 * k + 1]);
     }
     if (!groups.size) return;
-    // The squash's anchor: the body's lowest point (board y), its middle.
-    let yLow = Infinity, xMid = 0;
-    const R = 0.72 * Math.sqrt(def.m);
+    // The skin's frame: the body's lowest point (board y), its middle, its height and width.
+    let yLow = Infinity, yTop = -Infinity, xLo = Infinity, xHi = -Infinity, xMid = 0;
     for (let k = 0; k < def.m; k++) {
-      const wy = y + sn * def.lx[k] + c * def.ly[k] - 0.5;
-      if (wy < yLow) yLow = wy;
-      xMid += x + c * def.lx[k] - sn * def.ly[k];
+      const wy = y + sn * def.lx[k] + c * def.ly[k], wx = x + c * def.lx[k] - sn * def.ly[k];
+      yLow = Math.min(yLow, wy - 0.5); yTop = Math.max(yTop, wy + 0.5); xLo = Math.min(xLo, wx - 0.5); xHi = Math.max(xHi, wx + 0.5);
+      xMid += wx;
     }
     xMid /= def.m;
-    const sa = skin ? skin.a : 0, sb = skin ? skin.b : 0;
-    void R;
+    const H = Math.max(1, yTop - yLow), HW = Math.max(0.5, (xHi - xLo) / 2);
+    const vy = fx && fx.vy < 0 ? fx.vy : 0, stretch = Math.min(0.16, -vy * 0.01);
+    const sa = Math.max(-0.35, Math.min(0.38, (skin ? skin.a : 0) - stretch)), sb = skin ? Math.max(-0.35, Math.min(0.35, skin.b)) : 0, sc = skin ? skin.c : 0, sag = (fx && fx.sag) || 0;
+    const bent = !!(sa || sb || sc || sag);
     const toScr = (bx, by) => {
-      // Body frame (cells about its centre of mass) → board → the skin's squash → screen.
+      // Body frame (cells about its centre of mass) → board → the skin → screen.
       let wx = x + c * bx - sn * by, wy = y + sn * bx + c * by;
-      if (sa || sb) { const hgt = wy - yLow; wx = xMid + (wx - xMid) * (1 + 0.5 * sa) + sb * hgt; wy = yLow + hgt * (1 - sa); }
+      if (bent) {
+        const hgt = wy - yLow, u = Math.max(0, Math.min(1, hgt / H)), v = (wx - xMid) / HW;
+        const nx = xMid + (wx - xMid) * (1 + 0.7 * sa) + sb * hgt + sag * v * (1 - u) * (1 - u) + sc * 0.1 * Math.cos(2.7 * hgt + 0.4);
+        const ny = yLow + hgt * (1 - sa) + sc * 0.45 * u * Math.sin(3.1 * (wx - xLo) + 1.3);
+        wx = nx; wy = ny;
+      }
       return pt(view, wx, wy);
     };
-    const r = s * 0.3, g = 0.045;
+    const g = 0.045;
     if (alpha < 1) { ctx.save(); ctx.globalAlpha *= alpha; }
     for (const [colorKey, cells] of groups) {
       const color = view.colorOf(colorKey);
@@ -306,13 +324,18 @@
       ctx.beginPath();
       let top = Infinity, bot = -Infinity, left = Infinity;
       for (const loop of o.loops) {
+        // Each edge in pieces of at most half a cell (the skin bends them), then rounded through the middles: every
+        // corner a curve.
         const n = loop.length / 2, P = [];
-        for (let i = 0; i < n; i++) { const q = toScr(loop[2 * i] + dx, loop[2 * i + 1] + dy); P.push(q); top = Math.min(top, q[1]); bot = Math.max(bot, q[1]); left = Math.min(left, q[0]); }
-        // Rounded corners: from the middle of the last edge, arcTo each corner.
-        const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-        const m0 = mid(P[n - 1], P[0]);
+        for (let i = 0; i < n; i++) {
+          const ax = loop[2 * i] + dx, ay = loop[2 * i + 1] + dy, bx = loop[2 * ((i + 1) % n)] + dx, by = loop[2 * ((i + 1) % n) + 1] + dy;
+          const cut = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / 0.5));
+          for (let j = 0; j < cut; j++) { const q = toScr(ax + ((bx - ax) * j) / cut, ay + ((by - ay) * j) / cut); P.push(q); top = Math.min(top, q[1]); bot = Math.max(bot, q[1]); left = Math.min(left, q[0]); }
+        }
+        const N = P.length, mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+        const m0 = mid(P[N - 1], P[0]);
         ctx.moveTo(m0[0], m0[1]);
-        for (let i = 0; i < n; i++) { const a = P[i], b = P[(i + 1) % n], len = Math.min(Math.hypot(b[0] - a[0], b[1] - a[1]), Math.hypot(a[0] - P[(i + n - 1) % n][0], a[1] - P[(i + n - 1) % n][1])); ctx.arcTo(a[0], a[1], b[0], b[1], Math.min(r, len / 2)); }
+        for (let i = 0; i < N; i++) { const a = P[i], m = mid(a, P[(i + 1) % N]); ctx.quadraticCurveTo(a[0], a[1], m[0], m[1]); }
         ctx.closePath();
       }
       ctx.fillStyle = color;
@@ -372,9 +395,38 @@
     const g = view.game, reduced = quiet(view);
     const shown = new Map();
     for (const d of rec.start) shown.set(d.id, { def: centred(Object.assign({}, d)), pose: d.pose.slice(), vy: 0, vx: 0 });
-    // A hard drop lands with a squash that grows with the fall.
-    if (!reduced && r.dropDist > 0) for (const d of rec.frames[0].add) skinKick(stateOf(view), d.id, Math.min(6, 1.3 * Math.sqrt(r.dropDist)), 0);
-    return { rec, shown, i: 0, at: 0, t0: performance.now(), speed: reduced ? 3 : 1, reduced, pieces: g.s.pieces, final: g.board.cells.slice(), fired: 0, n: 0, onWave: null };
+    const rp = { rec, shown, i: 0, at: 0, t0: performance.now(), speed: reduced ? 3 : 1, reduced, pieces: g.s.pieces, final: g.board.cells.slice(), fired: 0, n: 0, onWave: null };
+    // A hard drop lands with a squash (and a wobble) that grows with the fall, and its weight squashes what it lands on.
+    const J = stateOf(view), q = reduced ? QUIET : 1;
+    if (r.dropDist > 0) for (const d of rec.frames[0].add) {
+      const k = Math.min(14, 3 * Math.sqrt(r.dropDist));
+      skinKick(J, d.id, k, 0, k * 1.2, q);
+      rp.shown.set(d.id, { def: centred(Object.assign({}, d)), pose: d.pose.slice(), vy: 0, vx: 0 });
+      kickBelow(J, rp, d.id, k * 0.45, q);
+      rp.shown.delete(d.id);
+    }
+    return rp;
+  }
+  /** The board box of a shown body: [x0, y0, x1, y1]. */
+  function boxShown(e) {
+    const [x, y, c, s] = e.pose, d = e.def, h = 0.5 * (Math.abs(c) + Math.abs(s));
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (let k = 0; k < d.m; k++) {
+      const cx = x + c * d.lx[k] - s * d.ly[k], cy = y + s * d.lx[k] + c * d.ly[k];
+      x0 = Math.min(x0, cx - h); x1 = Math.max(x1, cx + h); y0 = Math.min(y0, cy - h); y1 = Math.max(y1, cy + h);
+    }
+    return [x0, y0, x1, y1];
+  }
+  /** Something landed on what is under body id: those squash too (its weight), a little less. */
+  function kickBelow(J, rp, id, da, q) {
+    const me = rp.shown.get(id);
+    if (!me || da < 0.3) return;
+    const [ax0, ay0, ax1] = boxShown(me);
+    for (const [oid, e] of rp.shown) {
+      if (oid === id) continue;
+      const [bx0, , bx1, by1] = boxShown(e);
+      if (bx1 > ax0 + 0.1 && bx0 < ax1 - 0.1 && by1 <= ay0 + 0.25 && by1 > ay0 - 0.35) skinKick(J, oid, da, 0, da * 0.6, q);
+    }
   }
   /** Applies frame i: its adds, removals, clear (fired) and poses; landing kicks the skins. */
   function applyFrame(view, J, rp, f) {
@@ -382,18 +434,19 @@
     for (const d of f.add) rp.shown.set(d.id, { def: centred(Object.assign({}, d)), pose: d.pose.slice(), vy: 0, vx: 0 });
     if (f.clear) fireClear(view, rp, f.clear);
     const dt = Math.max(1e-4, f.t);
+    const q = rp.reduced ? QUIET : 1, landed = [];
     for (const [id, x, y, c, s] of f.set) {
       const e = rp.shown.get(id);
       if (!e) continue;
       const vy = (y - e.pose[1]) / dt, vx = (x - e.pose[0]) / dt;
-      // A landing: falling fast, now stopped. A knock: a sudden change sideways.
-      if (!rp.reduced) {
-        if (e.vy < -2 && vy > e.vy * 0.4) skinKick(J, id, Math.min(3.2, -e.vy * 0.28), 0);
-        if (Math.abs(vx - e.vx) > 1.5) skinKick(J, id, 0, Math.max(-2, Math.min(2, (vx - e.vx) * 0.2)));
-      }
+      // A landing (or a bounce): falling fast, now stopped or going up: a squash and a wobble. A knock: a sudden
+      // change sideways: a shear.
+      if (e.vy < -2 && vy > e.vy * 0.4) { const k = Math.min(12, -e.vy); skinKick(J, id, k, 0, k * 1.2, q); landed.push([id, k]); }
+      if (Math.abs(vx - e.vx) > 1.2) skinKick(J, id, 0, Math.max(-3, Math.min(3, (vx - e.vx) * 0.35)), 0, q);
       e.vy = vy; e.vx = vx;
       e.pose[0] = x; e.pose[1] = y; e.pose[2] = c; e.pose[3] = s;
     }
+    for (const [id, k] of landed) kickBelow(J, rp, id, k * 0.4, q);
   }
   /** A band clearing: its minos burst with the look's effect, "CASCADE ×n" from the second, a little shake, its sound. */
   function fireClear(view, rp, cl) {
@@ -460,8 +513,34 @@
         c /= l; s /= l;
         pose = [pose[0] + (n[1] - pose[0]) * k, pose[1] + (n[2] - pose[1]) * k, c, s];
       }
-      drawBody(ctx, view, e.def, pose, J.skins.get(id), 1);
+      drawBody(ctx, view, e.def, pose, J.skins.get(id), 1, { sag: sagOf(view, J, id), vy: rp.reduced ? 0 : e.vy });
     }
+  }
+  /**
+   * The weight on each body (the minos stacked right above it, column by column, of the board at rest): its foot
+   * bulges by SAG a mino of it (at most SAG_MAX a side). Worked out once a board state.
+   */
+  const SAG = 0.007, SAG_MAX = 0.08;
+  function sagOf(view, J, id) {
+    const W = worldOf(view);
+    if (!W) return 0;
+    const key = view.game.s.pieces + ':' + W.bodies.length + ':' + W.next;
+    if (!J.load || J.load.key !== key) {
+      const w = W.w, h = W.h, at = new Int32Array(w * h).fill(-1), sag = new Map();
+      W.bodies.forEach((b, i) => { for (let k = 0; k < b.m; k++) { const x = Math.floor(b.cx(k)), y = Math.floor(b.cy(k)); if (x >= 0 && x < w && y >= 0 && y < h && at[y * w + x] < 0) at[y * w + x] = i; } });
+      W.bodies.forEach((b, i) => {
+        let load = 0;
+        for (let x = 0; x < w; x++) {
+          let top = -1;
+          for (let y = 0; y < h; y++) if (at[y * w + x] === i) top = y;
+          if (top < 0) continue;
+          for (let y = top + 1; y < h && at[y * w + x] >= 0 && at[y * w + x] !== i; y++) load++;
+        }
+        if (load) sag.set(b.id, Math.min(SAG_MAX, SAG * load));
+      });
+      J.load = { key, sag };
+    }
+    return J.load.sag.get(id) || 0;
   }
 
   // ---- the painter ----------------------------------------------------------------------------------------------------
@@ -483,7 +562,7 @@
       const cells = at.cells || [[at.x, at.y]];
       const img = lumpSprite(color, maskOfShape(cells, at.x, at.y, (dx, dy) => view.screenDir(dx, dy)), P, lightOf(ctx), 'body');
       const sp = J.piece;
-      if (sp && !quiet(view)) withSpring(ctx, view, sp, boxOf(view, cells), () => blit(ctx, img, sx, sy, s, P));
+      if (sp) withSpring(ctx, view, sp, boxOf(view, cells), () => blit(ctx, img, sx, sy, s, P));
       else blit(ctx, img, sx, sy, s, P);
       return true;
     }
@@ -507,7 +586,7 @@
   function drawRest(ctx, view, J) {
     const W = worldOf(view);
     if (!W) return;
-    for (const b of W.bodies) drawBody(ctx, view, defOfBody(b), [b.x, b.y, b.c, b.s], J.skins.get(b.id), 1);
+    for (const b of W.bodies) drawBody(ctx, view, defOfBody(b), [b.x, b.y, b.c, b.s], J.skins.get(b.id), 1, { sag: sagOf(view, J, b.id), vy: 0 });
   }
 
   // ---- the view part ----------------------------------------------------------------------------------------------
@@ -545,12 +624,12 @@
       void reduced;
     },
     // A move leaves the top behind for a moment (a shear against the move), a turn and a lower squash it a little.
-    onMove(view, act) { pieceKick(view, 0, 0.08 * (act === 'moveL' ? -1 : 1)); },
-    onRotate(view) { pieceKick(view, 0.06, 0); },
+    onMove(view, act) { pieceKick(view, 0, 0.13 * (act === 'moveL' ? -1 : 1)); },
+    onRotate(view) { pieceKick(view, 0.1, 0); },
     onLower(view) {
       const J = stateOf(view);
       if (J.replay) endReplay(view, J, true);
-      pieceKick(view, 0.03, 0);
+      pieceKick(view, 0.05, 0);
     },
   };
   Recipe.viewPart(viewPart);

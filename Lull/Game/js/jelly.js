@@ -9,9 +9,12 @@
 //
 // The simulation: rigid bodies, each a set of unit-square minos, solved by sequential impulses at a fixed step (P.HZ,
 // P.ITER passes; the method of Box2D Lite: box contacts clipped to at most two points, accumulated and warm-started
-// impulses, Coulomb friction, a small positional bias). The walls, the floor and the cells that stay on the grid
+// impulses, Coulomb friction, a small positional bias), tuned for jelly: landings bounce (REST), friction is low and
+// fades to none on upright faces (pieces slide off slopes and each other; nothing is held up by being squeezed between
+// neighbours or against a wall); the squash is the look's. The walls, the floor and the cells that stay on the grid
 // (STATIC: a stone, garbage, the sprout) never move. A body at rest sleeps (no work at all) until something wakes it: a
-// clear or an item under it, or a body striking it faster than WAKE_V. A lock runs the simulation to rest at once
+// clear or an item under it, or a body striking it faster than WAKE_V; one nothing holds up (unsupported) is woken. A
+// band clears the step it fills (its bodies landed), not once all is still. A lock runs the simulation to rest at once
 // (headless, bounded) and records it for the view to play back; the board's grid is final before the next piece
 // appears. A body's turn is kept as its cosine and sine (no trigonometry: + − × ÷ and √ only, the same on every
 // engine), every body sleeps at the end of a lock on a fine lattice (Q), and the bodies themselves are kept, as
@@ -33,8 +36,13 @@
     HZ: 120, // simulation steps a second (fixed)
     ITER: 8, // solver passes a step
     FRAME: 2, // steps a recorded frame (60 a second)
-    MU: 0.6, // friction between bodies
-    MU_WALL: 0.6, // friction on the floor, the walls and fixed cells
+    // Friction (slippery: jelly on jelly), times the square of how much the contact faces up: full on a flat top, half
+    // on a 45° slope, none on a side (nothing is ever held up by being squeezed between neighbours or a wall).
+    MU: 0.22, // between bodies
+    MU_WALL: 0.22, // on the floor and fixed cells (the walls: none, they are sides)
+    // Restitution (bouncy): a contact closing faster than REST_V (cells a second) springs back at REST of that speed;
+    // each bounce is lower, and one under REST_V stays down.
+    REST: 0.45, REST_V: 1.6,
     SLOP: 0.01, // penetration left alone (a resting contact)
     BIAS: 0.2, // of the penetration past SLOP taken out a step
     MAX_BIAS_V: 2, // the fastest a body is pushed out of another (cells a second)
@@ -46,9 +54,14 @@
     WAKE_V: 1.2, // a sleeping body struck faster than this wakes (a soft landing never wakes what it lands on)
     SNAP: 0.35, SNAP_TURN: 0.2, // a body at rest this near a column (cells) and a quarter turn (its sine) eases into line
     PHASE_T: 6, // at most this long settling between clears (seconds of simulation), then everything sleeps
+    // A band clears the moment it is full and every body in it has landed (asleep, or resting on something and slower
+    // than CALM_V at its farthest point: never one passing through): it never waits for anything to stop bouncing.
+    // What it held starts down at DROP_V (cells a second) at once, in the simulation.
+    CALM_V: 12, DROP_V: 3,
     // A hard drop: the piece lands at IMPACT_K × √(rows fallen) cells a second (at most IMPACT_MAX) and for IMPACT_T
     // seconds weighs 1 + rows / IMPACT_ROWS (at most IMPACT_HEAVY) times itself. A soft drop or a gravity landing: set down.
-    IMPACT_K: 3.6, IMPACT_MAX: 16, IMPACT_T: 0.25, IMPACT_ROWS: 4, IMPACT_HEAVY: 3,
+    IMPACT_K: 4, IMPACT_MAX: 18, IMPACT_T: 0.25, IMPACT_ROWS: 4, IMPACT_HEAVY: 3,
+    KNOCK_MAX: 3, // the fastest a hard drop sends what it strikes off (cells a second)
   };
   const Q = 4096; // a sleeping body's position is on this lattice (exact in the save and in Undo)
   const QR = 1048576; // and its turn's cosine and sine on this one
@@ -99,6 +112,7 @@
     this.heavy = 1; this.heavyT = 0;
     this.setMass();
     this.awake = false; this.still = 0;
+    this.held = 0; this.isl = 0; this.ai = 0; this.landed = 0; // (the solver's scratch: kept on every body, one shape)
     this.r = 0; // the farthest mino corner from the centre
     for (let k = 0; k < m; k++) this.r = Math.max(this.r, Math.sqrt(this.lx[k] * this.lx[k] + this.ly[k] * this.ly[k]) + 0.7072);
     this.x0 = 0; this.y0 = 0; this.x1 = 0; this.y1 = 0;
@@ -342,7 +356,7 @@
    * each with its accumulated normal and friction impulse.
    */
   function Arbiter(a, b, mu) { this.a = a; this.b = b; this.mu = mu; this.n = 0; this.pts = [pt(), pt()]; this.seen = 0; }
-  function pt() { return { x: 0, y: 0, nx: 0, ny: 0, sep: 0, f: 0, pn: 0, pt: 0, pb: 0, r1x: 0, r1y: 0, r2x: 0, r2y: 0, mn: 0, mt: 0, bias: 0, push: 0 }; }
+  function pt() { return { x: 0, y: 0, nx: 0, ny: 0, sep: 0, f: 0, pn: 0, pt: 0, pb: 0, r1x: 0, r1y: 0, r2x: 0, r2y: 0, mn: 0, mt: 0, mu: 0, bias: 0, push: 0 }; }
   /** New contact points into the arbiter; a point with the same feature as one it had keeps its impulses. */
   Arbiter.prototype.update = function (out, n, stamp) {
     const old = this.pts, on = this.n, np = [pt(), pt()];
@@ -360,6 +374,8 @@
   function contacts(W, stamp) {
     const w = W.w, h = W.h, arb = W.arb, bs = W.bodies;
     const touch = (key, a, ka, b, kb, mu, n) => {
+      // A face within about 6° of upright holds nothing up (jelly squeezes down past it): its push is level.
+      for (let i = 0; i < n; i++) { const o = OUT[i]; if (o.ny < 0.1 && o.ny > -0.1) { o.nx = o.nx > 0 ? 1 : -1; o.ny = 0; } }
       let A = arb.get(key);
       if (!A) { A = new Arbiter(a, b, mu); A.ka = ka; A.kb = kb; arb.set(key, A); }
       A.update(OUT, n, stamp);
@@ -425,11 +441,16 @@
 
   const cross = (ax, ay, bx, by) => ax * by - ay * bx;
 
-  /** Before the passes: each point's lever arms, masses along the normal and the tangent, its bias; warm start. */
+  /**
+   * Before the passes: each point's lever arms, masses along the normal and the tangent, its target speed (a bounce,
+   * or closing a gap) and friction; then warm start (after every point has read the speeds it came in with).
+   */
   function preStep(W, inv) {
     for (const A of W.list) {
       const a = A.a, b = A.b;
-      // A sleeping body in it: fixed this step; struck fast, it wakes (and takes part from the next step).
+      // A sleeping body in it: fixed this step; struck fast, it wakes (and takes part from the next step); struck by a
+      // hard drop (heavy), it moves off as the blow sends it (as in a collision that bounces: (1 + REST) of the
+      // striker's share), so the piece that bounces off still knocks it.
       const ima = a.awake ? a.im : 0, iIa = a.awake ? a.iI : 0, imb = b.awake ? b.im : 0, iIb = b.awake ? b.iI : 0;
       A.ima = ima; A.iIa = iIa; A.imb = imb; A.iIb = iIb;
       for (let i = 0; i < A.n; i++) {
@@ -441,15 +462,31 @@
         const rt1 = cross(p.r1x, p.r1y, tx, ty), rt2 = cross(p.r2x, p.r2y, tx, ty);
         const kt = ima + imb + iIa * rt1 * rt1 + iIb * rt2 * rt2;
         p.mn = kn > 0 ? 1 / kn : 0; p.mt = kt > 0 ? 1 / kt : 0;
-        // Speed: a gap may close this step (speculative), no more. Overlap past SLOP: pushed out apart from the speed.
+        p.mu = A.mu * p.ny * p.ny;
+        const dvx = b.vx - b.w * p.r2y - a.vx + a.w * p.r1y, dvy = b.vy + b.w * p.r2x - a.vy - a.w * p.r1x;
+        const vn = dvx * p.nx + dvy * p.ny;
+        // Speed: a gap may close this step (speculative), no more; one that closes this step fast springs back (a
+        // bounce). Overlap past SLOP: pushed out apart from the speed.
         p.bias = p.sep > 0 ? -p.sep * inv : 0;
+        if (vn < -P.REST_V && vn < p.bias) p.bias = -P.REST * vn;
         p.push = Math.min(P.MAX_BIAS_V, -P.BIAS * inv * Math.min(0, p.sep + P.SLOP));
         p.pb = 0;
-        if (a.awake !== b.awake && !a.fixed) {
-          const dvx = b.vx - b.w * p.r2y - a.vx + a.w * p.r1y, dvy = b.vy + b.w * p.r2x - a.vy - a.w * p.r1x;
-          const vn = dvx * p.nx + dvy * p.ny;
-          if (vn < -P.WAKE_V) wake(W, a.awake ? b : a);
+        if (a.awake !== b.awake && !a.fixed && vn < -P.WAKE_V) {
+          const hit = a.awake ? b : a, by = a.awake ? a : b, ms = 1 / by.im, mh = hit.mass;
+          wake(W, hit);
+          if (by.heavy > 1) {
+            const k = Math.min(P.KNOCK_MAX, Math.min(1, ((1 + P.REST) * ms) / (ms + mh)) * -vn) * (hit === b ? 1 : -1);
+            hit.vx += k * p.nx; hit.vy += k * p.ny;
+          }
         }
+        // Something resting on this: it is held (a band it is in may clear while it still jiggles).
+        if (p.ny > 0.5) b.held = STAMP; else if (p.ny < -0.5 && !a.fixed) a.held = STAMP;
+      }
+    }
+    for (const A of W.list) {
+      const a = A.a, b = A.b, ima = A.ima, iIa = A.iIa, imb = A.imb, iIb = A.iIb;
+      for (let i = 0; i < A.n; i++) {
+        const p = A.pts[i], tx = p.ny, ty = -p.nx;
         // Warm start.
         const Px = p.pn * p.nx + p.pt * tx, Py = p.pn * p.ny + p.pt * ty;
         a.vx -= ima * Px; a.vy -= ima * Py; a.w -= iIa * cross(p.r1x, p.r1y, Px, Py);
@@ -476,7 +513,7 @@
         dvx = b.vx - b.w * p.r2y - a.vx + a.w * p.r1y; dvy = b.vy + b.w * p.r2x - a.vy - a.w * p.r1x;
         const tx = p.ny, ty = -p.nx, vt = dvx * tx + dvy * ty;
         let dPt = -p.mt * vt;
-        const max = A.mu * p.pn, pt0 = p.pt;
+        const max = p.mu * p.pn, pt0 = p.pt;
         p.pt = Math.max(-max, Math.min(max, pt0 + dPt));
         dPt = p.pt - pt0;
         Px = dPt * tx; Py = dPt * ty;
@@ -544,11 +581,11 @@
     // Bodies sleep together: those touching each other (awake) are an island, and it sleeps when all of it has been
     // still long enough (a body never sleeps on, or under, one still moving).
     const aw = W.awake;
-    for (let i = 0; i < aw.length; i++) aw[i].isl = i;
+    for (let i = 0; i < aw.length; i++) { aw[i].isl = i; aw[i].ai = i; }
     const find = (i) => { while (aw[i].isl !== i) i = aw[i].isl = aw[aw[i].isl].isl; return i; };
     for (const A of W.list) {
       if (!A.a.awake || !A.b.awake || A.a.fixed) continue;
-      const x = find(aw.indexOf(A.a)), y = find(aw.indexOf(A.b));
+      const x = find(A.a.ai), y = find(A.b.ai);
       if (x !== y) aw[Math.max(x, y)].isl = Math.min(x, y);
     }
     const ready = new Map();
@@ -584,8 +621,15 @@
       if (y - e < -DEEP) { const cr = b.corners(k, CR); for (let j = 0; j < 4; j++) if (cr[2 * j + 1] - d < -DEEP) return true; }
       for (const o of near) {
         if (Math.abs(o.x - x) > 1.42 || Math.abs(o.y - y) > 1.42) continue;
-        const n = collideBoxes(OUT, o.x, o.y, o.c, o.s, x, y, b.c, b.s);
-        for (let i = 0; i < n; i++) if (OUT[i].sep < -DEEP) return true;
+        let n = collideBoxes(OUT, o.x, o.y, o.c, o.s, x, y, b.c, b.s), sd = Infinity;
+        for (let i = 0; i < n; i++) if (OUT[i].sep < sd) sd = OUT[i].sep;
+        if (!(sd < -DEEP)) continue;
+        // Only an overlap that moving down makes deeper holds it up: one beside it (a neighbour or a wall it is
+        // squeezed against) never does.
+        n = collideBoxes(OUT, o.x, o.y, o.c, o.s, x, y + d, b.c, b.s);
+        let s0 = Infinity;
+        for (let i = 0; i < n; i++) if (OUT[i].sep < s0) s0 = OUT[i].sep;
+        if (d <= 0 || sd < s0 - 1e-4) return true;
       }
     }
     return false;
@@ -625,6 +669,43 @@
     fill(W);
     return moved.map((m) => m.b);
   }
+  const TOUCH = 0.012; // a contact this near (or overlapping) is touching
+  /**
+   * The bodies nothing holds up (the invariant the tests keep after every settle): a body is held when it touches the
+   * floor, or touches a fixed cell or a held body through a face that faces up at all (its normal more than about 6°
+   * above level: a face nearer upright holds nothing up, the solver's rule too). Awake bodies (still moving) are left
+   * out and count as holding. Returns their ids.
+   */
+  function unsupported(W) {
+    fill(W);
+    const w = W.w, held = new Set(), order = W.bodies.filter((b) => !b.awake).sort((p, q) => p.y0 - q.y0 || p.id - q.id);
+    const holds = (b) => {
+      if (b.y0 < TOUCH) for (let k = 0; k < b.m; k++) { const cr = b.corners(k, CR); for (let j = 0; j < 4; j++) if (cr[2 * j + 1] < TOUCH) return true; }
+      for (let k = 0; k < b.m; k++) {
+        const x = b.cx(k), y = b.cy(k);
+        for (let yy = Math.max(0, Math.floor(y - 1.5)); yy <= Math.floor(y + 0.5); yy++) for (let xx = Math.max(0, Math.floor(x - 1.5)); xx <= Math.min(w - 1, Math.floor(x + 1.5)); xx++) {
+          if (yy < W.h && W.fixed[yy * w + xx]) {
+            const n = collideBoxes(OUT, xx + 0.5, yy + 0.5, 1, 0, x, y, b.c, b.s);
+            for (let i = 0; i < n; i++) if (OUT[i].sep < TOUCH && OUT[i].ny >= 0.1) return true;
+          }
+          if (yy >= W.BH) continue;
+          for (let e = W.head[yy * w + xx]; e >= 0; e = W.nxt[e]) {
+            const r = W.ref[e], o = W.bodies[r >> 8], ko = r & 255;
+            if (o === b || !(o.awake || held.has(o))) continue;
+            const n = collideBoxes(OUT, o.cx(ko), o.cy(ko), o.c, o.s, x, y, b.c, b.s);
+            for (let i = 0; i < n; i++) if (OUT[i].sep < TOUCH && OUT[i].ny >= 0.1) return true;
+          }
+        }
+      }
+      return false;
+    };
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const b of order) if (!held.has(b) && holds(b)) { held.add(b); grew = true; }
+    }
+    return order.filter((b) => !held.has(b)).map((b) => b.id);
+  }
   /** Would body b fit at pose (x, y, c, s): no overlap deeper than DEEP with the floor, a wall or anything in near? */
   function fitsAt(W, b, x, y, c, s, near) {
     const X = b.x, Y = b.y, C0 = b.c, S0 = b.s;
@@ -640,11 +721,12 @@
    * the bands can fill and what the grid shows is where things are. Lowest first; recorded as a short slide.
    * Returns the bodies that moved.
    */
-  function snap(W, rec) {
+  function snap(W, rec, skip) {
     if (!(P.SNAP > 0)) return [];
     fill(W);
     const order = W.bodies.filter((b) => !b.awake).sort((p, q) => p.y0 - q.y0 || p.id - q.id), moved = [];
     for (const b of order) {
+      if (skip && skip.has(b)) continue;
       // The nearest quarter turn.
       let c, s;
       if (Math.abs(b.c) >= Math.abs(b.s)) { c = b.c > 0 ? 1 : -1; s = 0; } else { c = 0; s = b.s > 0 ? 1 : -1; }
@@ -698,42 +780,59 @@
     return b.x >= lo - 0.02 && b.x <= hi + 0.02;
   }
 
-  /** The simulation, until every awake body sleeps (at most PHASE_T seconds: then they sleep where they are). */
-  function simulate(W, rec) {
+  /**
+   * The simulation, until every awake body sleeps (at most PHASE_T seconds: then they sleep where they are). stop: asked
+   * after every step; true ends it there, the bodies still moving (a band to clear now). Returns whether it was stopped.
+   */
+  function simulate(W, rec, stop) {
     const cap = Math.round(P.PHASE_T * P.HZ), dt = P.FRAME / P.HZ;
     let n = 0;
     while (W.awake.length && n < cap) {
       step(W);
       n++;
       if (rec && n % P.FRAME === 0) rec.frame(W, dt);
+      if (stop && stop()) { if (rec && n % P.FRAME) rec.frame(W, (n % P.FRAME) / P.HZ); return true; }
     }
     for (const b of W.awake) sleep(W, b);
     W.awake = [];
     if (rec && (n % P.FRAME || W.moved.size)) rec.frame(W, (n % P.FRAME) / P.HZ);
     W.arb.clear();
-    return n;
+    return false;
+  }
+
+  /** Wakes the bodies nothing holds up (unsupported), already moving down at speed v: they fall now, in the simulation. */
+  function release(W, v) {
+    const ids = unsupported(W);
+    for (const id of ids) { const b = W.byId(id); wake(W, b); if (v) b.vy = Math.min(b.vy, -v); }
+    return ids.length;
   }
 
   /**
-   * Everything to rest: the bodies awake (a piece just set, what a hard drop struck) are simulated; then whatever
-   * sleeps with nothing under it falls, and a body that lands unsteady tips over in the simulation; again, until all
-   * rest (a few rounds at most).
+   * Everything to rest: the bodies awake (a piece just set, what a hard drop struck, what a clear let go) are
+   * simulated; then whatever sleeps with nothing under it falls, and a body that lands unsteady tips over in the
+   * simulation; a body nothing holds up (wedged, or left on what went) is woken; again, until all rest (a few rounds at
+   * most). stop (simulate's): returns true when it stopped for a band, the bodies still moving.
    */
-  function settle(W, rec) {
+  function settle(W, rec, stop) {
+    // A body eased into line that then would not stay there (it tips, or slides off) is not eased again: the snap never
+    // fights the slide.
+    const snapped = new Set();
     for (let round = 0; round < 8; round++) {
-      if (W.awake.length) simulate(W, rec);
-      const moved = fall(W, rec);
-      for (const b of snap(W, rec)) if (!moved.includes(b)) moved.push(b);
+      if (W.awake.length && simulate(W, rec, stop)) return true;
+      const moved = fall(W, rec), eased = snap(W, rec, snapped);
+      for (const b of eased) if (!moved.includes(b)) moved.push(b);
       for (const b of fall(W, rec)) if (!moved.includes(b)) moved.push(b);
       for (const b of W.fresh) if (!b.awake && W.bodies.includes(b) && !moved.includes(b)) moved.push(b);
       W.fresh.clear();
-      for (const b of moved) if (!steady(W, b)) wake(W, b);
+      for (const b of moved) if (!steady(W, b)) { wake(W, b); if (eased.includes(b)) snapped.add(b); }
+      if (round < 7) for (const id of unsupported(W)) { const b = W.byId(id); wake(W, b); snapped.add(b); }
       if (!W.awake.length) break;
     }
     for (const b of W.awake) sleep(W, b);
     W.awake = [];
     W.arb.clear();
     W.moved.clear();
+    return false;
   }
 
   /** Puts a new body in, in id order. */
@@ -802,17 +901,18 @@
   /** How much of band y's width its minos and fixed cells cover (0–1). */
   const coverOf = (W, y) => coverOfSpans(spansOf(W, y), W.w) / W.w;
 
-  /** The bands that clear now (coverNeed), lowest first. */
-  function bands(W) {
+  /** The bands that clear now (coverNeed), lowest first; only: just these rows (a Set) are looked at. */
+  function bands(W, only) {
     const w = W.w, h = W.h, spans = [];
-    for (let y = 0; y < h; y++) spans.push([]);
+    for (let y = 0; y < h; y++) spans.push(only && !only.has(y) ? null : []);
     for (const b of W.bodies) for (let k = 0; k < b.m; k++) {
       const y = Math.floor(b.cy(k));
-      if (y >= 0 && y < h) spans[y].push(b.cx(k) - 0.5);
+      if (y >= 0 && y < h && spans[y]) spans[y].push(b.cx(k) - 0.5);
     }
     const out = [], need = coverNeed(w) - 1e-9;
     for (let y = 0; y < h; y++) {
       const s = spans[y];
+      if (!s) continue;
       for (let x = 0; x < w; x++) if (W.fixed[y * w + x]) s.push(x);
       if (s.length >= need && coverOfSpans(s, w) >= need) out.push(y);
     }
@@ -988,14 +1088,29 @@
     const rec = record === false ? null : new Recorder(W, new Set(add.map((b) => b.id)));
     if (rec) for (const b of add) rec.add(b);
     const waves = [];
+    // The bands that clear now: full (coverNeed), and let through by the other parts (Protect's bed).
+    const full = (only) => {
+      let rows = bands(W, only);
+      if (rows.length && g && g.hooks && g.hooks.rows) for (const e of g.hooks.rows) if (e.key !== 'jelly') { const r = e.rows(g, g.board, rows.slice()); if (Array.isArray(r)) rows = r; }
+      return rows;
+    };
+    // While the simulation runs: a full band whose bodies are all calm clears at once.
+    let rows = [];
+    const stop = () => {
+      // Only a row a body that has just landed is in can have filled (the rest were looked at before).
+      let only = null;
+      for (const b of W.awake) if (b.held === STAMP) for (let k = 0; k < b.m; k++) (only = only || new Set()).add(Math.floor(b.cy(k)));
+      if (!only) return false;
+      rows = full(only);
+      return rows.length > 0 && calm(W, rows);
+    };
+    // What an item took the support of starts down now.
+    release(W, P.DROP_V);
     let t = 0;
     for (let n = 0; n < MAX_WAVES; n++) {
       const f0 = rec ? rec.frames.length : 0;
-      settle(W, rec);
+      if (!settle(W, rec, stop)) rows = full();
       if (rec) for (let i = f0; i < rec.frames.length; i++) t += rec.frames[i].t;
-      let rows = bands(W);
-      // Other parts may keep rows from clearing (Protect's bed).
-      if (g && g.hooks && g.hooks.rows) for (const e of g.hooks.rows) if (e.key !== 'jelly') { const r = e.rows(g, g.board, rows.slice()); if (Array.isArray(r)) rows = r; }
       if (!rows.length) break;
       const before = new Set(W.bodies.map((b) => b.id));
       const { removed, cells } = clearBands(W, rows);
@@ -1006,16 +1121,30 @@
         for (const b of W.bodies) if (!before.has(b.id)) rec.add(b);
         rec.pend.clear = { rows, cells, n: waves.length };
       }
-      // What the bands held comes down: the bodies fall, then the cells that stay on the grid come down a row for each
-      // band under them (as rows always have), the sprout aside.
-      fall(W, rec);
+      // What the bands held comes down at once (in the simulation, from the next frame), then the cells that stay on
+      // the grid come down a row for each band under them (as rows always have), the sprout aside.
       shiftFixed(W, rows);
+      release(W, P.DROP_V);
+      rows = [];
     }
     // Every body at rest on the lattice the save keeps (a resumed board, or Undo, has exactly this).
     for (const b of W.bodies) quantize(b);
     raster(W);
     if (rec) rec.end(W);
     return { waves, rec };
+  }
+  /** Has every body with a mino in rows landed: asleep, or resting on something (this step) and slower than CALM_V? */
+  function calm(W, rows) {
+    const set = new Set(rows);
+    for (const b of W.bodies) {
+      if (!b.awake) continue;
+      let inIt = false;
+      for (let k = 0; k < b.m && !inIt; k++) if (set.has(Math.floor(b.cy(k)))) inIt = true;
+      if (!inIt) continue;
+      if (b.held !== STAMP) return false;
+      if (Math.sqrt(b.vx * b.vx + b.vy * b.vy) + Math.abs(b.w) * b.r > P.CALM_V) return false;
+    }
+    return true;
   }
 
   /** How a piece is set down: after a hard drop of `dist` rows, fast (down, a seeded hair sideways) and heavy; else gently. */
@@ -1191,5 +1320,5 @@
     });
   }
 
-  L.Jelly = { P, Q, WORTH, coverNeed, World, Body, fromCells, groups, split, insert, place, settle, simulate, fall, steady, step, run, raster, bands, coverOf, clearBands, carve, sync, pack, unpack, launch, hash, collideBoxes, of, isOn, part, cleared, cascadeRows, STATIC };
+  L.Jelly = { P, Q, WORTH, coverNeed, World, Body, fromCells, groups, split, insert, place, settle, simulate, fall, steady, step, run, raster, bands, coverOf, clearBands, carve, sync, pack, unpack, launch, hash, collideBoxes, unsupported, calm, of, isOn, part, cleared, cascadeRows, STATIC };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
