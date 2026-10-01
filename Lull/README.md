@@ -860,7 +860,8 @@ by the board's worth like every board, times the back-to-back streak to ×1.5; a
 never earns faster than Standard. No power-ups (each says Not in Classic; its bar under the board is Music and
 Pause), no Undo, no control hints. Its best score, stats (Stats ▸ Classic, and its time) and the Classic achievements
 count on a board where the feats count (Normal shapes, 10 wide or more); a level feat counts the levels reached by
-lines, as from level 1, so a high start level is no shortcut.
+lines, as from level 1, so a high start level is no shortcut. The Best shown (start card, status bar, New best) is the board's own, kept with it and carried on to
+the board Play again makes; Stats ▸ Classic keeps the best of all boards.
 
 *Its settings* — the Mode tab, under Plain, Protect and Classic, once Classic is chosen, in the spirit of the NES and
 Game Boy Advance games:

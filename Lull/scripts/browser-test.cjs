@@ -879,6 +879,19 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   check('topping out ends the game', await ev(() => CM.over && Lull.app.store.state.stats.classic.best > 0));
   check('and the card comes after the top out, over the piled-up well', await ev(() => { const m = CM; return m.cardOpen && m.pile && m.pile.done && m.view.pileup.length === 4; }));
   await shot('15-classic-over');
+  // The best is the board's own: kept with it (C.best), another Classic board starts at none, and Play again carries it on.
+  const perBoard = await ev(() => {
+    const pm = Lull.app.modes.play, mine = Lull.Classic.of(pm.game).best, score = pm.game.s.score;
+    const keep = pm.game;
+    window.makeClassic();
+    const other = Lull.Classic.of(pm.game).best, otherStat = [...document.querySelectorAll('#play-status .stat')].map((x) => x.textContent).find((t) => /Best/.test(t));
+    pm.setGame(keep);
+    pm.classicBest = mine; pm.ctl.attach(window.makeClassic());
+    const carried = Lull.Classic.of(pm.game).best;
+    pm.setGame(keep);
+    return { mine, score, other, otherStat, carried };
+  });
+  check('Classic\'s best is per board: this board\'s is its score, a new board\'s is 0, and Play again carries it on', perBoard.mine === perBoard.score && perBoard.mine > 0 && perBoard.other === 0 && perBoard.carried === perBoard.mine, JSON.stringify(perBoard));
 
   // The classic top out: the piece that cannot appear sets over the stack, and three more from the queue pile up on it
   // one after another before the card. Everything counted is as it was at the top out.

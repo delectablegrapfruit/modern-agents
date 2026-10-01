@@ -36,6 +36,8 @@
         Object.assign(this, { paused: true, pile: null, acc: 0, lockT: 0, resets: 0, newBest: false });
         play.view.noGhost = !K().ghost;
         play.view.pileup = null; play.view.queueSkip = 0;
+        // The board's best: carried on to the board Play again makes (the same rules).
+        if (play.classicBest != null) { const c = C(); if (c) c.best = Math.max(c.best || 0, play.classicBest); play.classicBest = null; }
         if (game.over) return;
         // Play again (the end card's button, or Space there): the next board starts at once.
         if (play.playAgain) { play.playAgain = false; this.go(); } else this.showWait();
@@ -64,7 +66,7 @@
         play.showCard([
           h('h2', null, first ? 'Classic' : 'Paused'),
           h('p', { class: 'cl-sub' }, lbl.replace(/^Classic · /, '').replace(/^Classic /, 'Game ')),
-          first && cs().best ? h('p', null, 'Best ', h('span', { class: 'big' }, fmtInt(cs().best))) : null,
+          first && c.best ? h('p', null, 'Best ', h('span', { class: 'big' }, fmtInt(c.best))) : null,
           k.type === 'b' ? h('p', null, 'Clear ' + Classic.B_LINES + ' lines') : null,
           h('div', { class: 'row' },
             h('button', { class: 'btn', onclick: () => play.openEditRules(app.store.state.boards.cur) }, ico('settings'), 'Edit rules'),
@@ -73,6 +75,7 @@
       },
       /** Play again: this board is retired (as Retire does) and the next, of the same rules, starts at once. */
       again(kind) {
+        play.classicBest = (C() && C().best) || 0;
         play.playAgain = true;
         play.newBoard(kind);
         play.playAgain = false;
@@ -233,8 +236,10 @@
       onEnd(kind, silent) {
         const S = cs(), G = g();
         if (!silent) {
-          this.newBest = G.rules.feats && G.s.score > S.best;
-          if (G.rules.feats) S.best = Math.max(S.best, G.s.score);
+          // The best is the board's own (C.best, kept with it and carried on by Play again); the Stats' best is all boards'.
+          const c = C();
+          this.newBest = G.rules.feats && G.s.score > (c.best || 0);
+          if (G.rules.feats) { c.best = Math.max(c.best || 0, G.s.score); S.best = Math.max(S.best, G.s.score); }
           app.store.touch();
           if (app.saveNow) app.saveNow();
         }
@@ -320,7 +325,7 @@
           stat('Level', String(level()) + (k.levelLock ? ' (locked)' : ''), null, k.levelLock ? 'Level lock: it stays at level ' + k.level + ' all game' : null),
           k.type === 'b' ? stat('Left', String(Math.max(0, Classic.B_LINES - c.lines))) : stat('Lines', fmtInt(c.lines)),
           stat('Bank', Chain.fmt(m), m > 1 ? 'chain opt' : 'slot-off', this.bankTip(m)),
-          stat('Best', fmtInt(Math.max(S.best, G.rules.feats ? G.s.score : 0)), 'opt'),
+          stat('Best', fmtInt(Math.max(c.best || 0, G.rules.feats ? G.s.score : 0)), 'opt'),
         ];
       },
       bankTip(m) {

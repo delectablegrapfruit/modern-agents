@@ -106,7 +106,7 @@
     }
   }
 
-  const fresh = () => ({ v: 1, from: null, lines: 0, ms: 0, tetrises: 0, counted: false, started: false, last: null, bestLevel: 0 });
+  const fresh = () => ({ v: 1, from: null, lines: 0, ms: 0, tetrises: 0, counted: false, started: false, last: null, bestLevel: 0, best: 0 });
   function validState(x) {
     return isObj(x) && x.v === 1 && Number.isFinite(x.lines) && x.lines >= 0 && Number.isFinite(x.ms) && x.ms >= 0 && Number.isFinite(x.tetrises);
   }
