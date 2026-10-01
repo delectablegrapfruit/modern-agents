@@ -27,6 +27,11 @@
     const C = () => Classic.of(play.game);
     const cs = () => app.store.state.stats.classic;
     const level = () => Classic.levelOf(K(), C().lines);
+    // The best on the same rules: the recipe and the size, exactly. A board shows the higher of its own best and the
+    // best any board of the same rules has scored (stats.classic.bests).
+    const rulesKey = () => Recipe.key(g().recipe) + '|' + g().w + 'x' + g().h;
+    const bests = () => cs().bests || (cs().bests = {});
+    const best = () => Math.max((C() && C().best) || 0, bests()[rulesKey()] || 0);
 
     return {
       id: 'classic', timeKey: 'classic',
@@ -66,7 +71,7 @@
         play.showCard([
           h('h2', null, first ? 'Classic' : 'Paused'),
           h('p', { class: 'cl-sub' }, lbl.replace(/^Classic · /, '').replace(/^Classic /, 'Game ')),
-          first && c.best ? h('p', null, 'Best ', h('span', { class: 'big' }, fmtInt(c.best))) : null,
+          first && best() ? h('p', null, 'Best ', h('span', { class: 'big' }, fmtInt(best()))) : null,
           k.type === 'b' ? h('p', null, 'Clear ' + Classic.B_LINES + ' lines') : null,
           h('div', { class: 'row' },
             h('button', { class: 'btn', onclick: () => play.openEditRules(app.store.state.boards.cur) }, ico('settings'), 'Edit rules'),
@@ -236,10 +241,14 @@
       onEnd(kind, silent) {
         const S = cs(), G = g();
         if (!silent) {
-          // The best is the board's own (C.best, kept with it and carried on by Play again); the Stats' best is all boards'.
+          // The best: the board's own (C.best, carried on by Play again) and its rules' (bests); the Stats' best is all boards'.
           const c = C();
-          this.newBest = G.rules.feats && G.s.score > (c.best || 0);
-          if (G.rules.feats) { c.best = Math.max(c.best || 0, G.s.score); S.best = Math.max(S.best, G.s.score); }
+          this.newBest = G.rules.feats && G.s.score > best();
+          if (G.rules.feats) {
+            c.best = Math.max(c.best || 0, G.s.score);
+            bests()[rulesKey()] = Math.max(bests()[rulesKey()] || 0, G.s.score);
+            S.best = Math.max(S.best, G.s.score);
+          }
           app.store.touch();
           if (app.saveNow) app.saveNow();
         }
@@ -325,7 +334,7 @@
           stat('Level', String(level()) + (k.levelLock ? ' (locked)' : ''), null, k.levelLock ? 'Level lock: it stays at level ' + k.level + ' all game' : null),
           k.type === 'b' ? stat('Left', String(Math.max(0, Classic.B_LINES - c.lines))) : stat('Lines', fmtInt(c.lines)),
           stat('Bank', Chain.fmt(m), m > 1 ? 'chain opt' : 'slot-off', this.bankTip(m)),
-          stat('Best', fmtInt(Math.max(c.best || 0, G.rules.feats ? G.s.score : 0)), 'opt'),
+          stat('Best', fmtInt(Math.max(best(), G.rules.feats ? G.s.score : 0)), 'opt'),
         ];
       },
       bankTip(m) {

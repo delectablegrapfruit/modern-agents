@@ -198,7 +198,7 @@
       factory: Factory.create(),
       stats: {
         sessions: 0, days: 0, timeMs: { play: 0, classic: 0, puzzle: 0, factory: 0, total: 0 },
-        classic: { games: 0, best: 0, bestLevel: 0, bestLines: 0, lines: 0, pieces: 0 },
+        classic: { games: 0, best: 0, bestLevel: 0, bestLines: 0, lines: 0, pieces: 0, bests: {} },
         lines: { earned: 0, spent: 0, play: 0, puzzles: 0, factory: 0, achievements: 0, rewound: 0, combos: 0 },
         free: { boardLog: [], boards: 1, pieces: 0, lines: 0, score: 0, bestScore: 0, bestLines: 0, clears: [0, 0, 0, 0, 0, 0], tspins: 0, tspinLines: 0, perfect: 0, maxCombo: 0, maxB2B: 0, holds: 0, rotations: 0, moves: 0, lowers: 0, drops: 0, byType: {}, topouts: 0 },
         // firstRun: first-try solves in a row; dailyRun: Dailies solved on consecutive dates (runDay is the last one).

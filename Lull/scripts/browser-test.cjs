@@ -879,19 +879,25 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   check('topping out ends the game', await ev(() => CM.over && Lull.app.store.state.stats.classic.best > 0));
   check('and the card comes after the top out, over the piled-up well', await ev(() => { const m = CM; return m.cardOpen && m.pile && m.pile.done && m.view.pileup.length === 4; }));
   await shot('15-classic-over');
-  // The best is the board's own: kept with it (C.best), another Classic board starts at none, and Play again carries it on.
+  // The best is the board's own (C.best, carried on by Play again), and a board of exactly the same rules (recipe and
+  // size) shows the best scored on them; other rules show their own.
   const perBoard = await ev(() => {
-    const pm = Lull.app.modes.play, mine = Lull.Classic.of(pm.game).best, score = pm.game.s.score;
-    const keep = pm.game;
-    window.makeClassic();
-    const other = Lull.Classic.of(pm.game).best, otherStat = [...document.querySelectorAll('#play-status .stat')].map((x) => x.textContent).find((t) => /Best/.test(t));
+    const pm = Lull.app.modes.play, mine = Lull.Classic.of(pm.game).best, score = pm.game.s.score, keep = pm.game;
+    const shown = () => [...document.querySelectorAll('#play-status .stat')].map((x) => x.textContent).find((t) => /Best/.test(t));
+    window.makeClassic(); pm.renderStatus && pm.renderStatus();
+    const same = { own: Lull.Classic.of(pm.game).best, shown: shown() };
+    window.makeClassic({ level: 5 }); pm.renderStatus && pm.renderStatus();
+    const other = { shown: shown() };
+    window.makeClassic(null, 12, 20); pm.renderStatus && pm.renderStatus();
+    const wider = { shown: shown() };
     pm.setGame(keep);
-    pm.classicBest = mine; pm.ctl.attach(window.makeClassic());
+    pm.classicBest = mine; window.makeClassic({ level: 5 });
     const carried = Lull.Classic.of(pm.game).best;
     pm.setGame(keep);
-    return { mine, score, other, otherStat, carried };
+    return { mine, score, same, other, wider, carried };
   });
-  check('Classic\'s best is per board: this board\'s is its score, a new board\'s is 0, and Play again carries it on', perBoard.mine === perBoard.score && perBoard.mine > 0 && perBoard.other === 0 && perBoard.carried === perBoard.mine, JSON.stringify(perBoard));
+  const bestIs = (t, n) => new RegExp('Best\\s*' + n.toLocaleString('en-US') + '$').test(t || '');
+  check('Classic\'s best: a new board of the same rules shows the best on them; other rules (start level, width) show 0; Play again carries the board\'s own on', perBoard.mine === perBoard.score && perBoard.mine > 0 && perBoard.same.own === 0 && bestIs(perBoard.same.shown, perBoard.mine) && bestIs(perBoard.other.shown, 0) && bestIs(perBoard.wider.shown, 0) && perBoard.carried === perBoard.mine, JSON.stringify(perBoard));
 
   // The classic top out: the piece that cannot appear sets over the stack, and three more from the queue pile up on it
   // one after another before the card. Everything counted is as it was at the top out.
