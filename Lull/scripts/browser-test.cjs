@@ -899,6 +899,39 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   const bestIs = (t, n) => new RegExp('Best\\s*' + n.toLocaleString('en-US') + '$').test(t || '');
   check('Classic\'s best: a new board of the same rules shows the best on them; other rules (start level, width) show 0; Play again carries the board\'s own on', perBoard.mine === perBoard.score && perBoard.mine > 0 && perBoard.same.own === 0 && bestIs(perBoard.same.shown, perBoard.mine) && bestIs(perBoard.other.shown, 0) && bestIs(perBoard.wider.shown, 0) && perBoard.carried === perBoard.mine, JSON.stringify(perBoard));
 
+  // Lock delay. NES: the NES's own frames a row, and no lock timer: the gravity tick that cannot move the piece down
+  // sets it; moving or turning buys nothing; a held soft drop sets it. Modern: half a second of rest, renewed by a move.
+  const lockT = await ev(() => {
+    const pm = Lull.app.modes.play, keep = pm.game, out = {};
+    let ctl;
+    const rest = (k) => {
+      window.makeClassic(k); ctl = pm.ctl; delete ctl.gravityFor; ctl.go();
+      const g = pm.game, p = g.piece;
+      while (g.fitsAt(p, p.rot, p.x, p.y - 1)) p.y--;
+      ctl.acc = 0; ctl.lockT = 0;
+      return { g, p, n: g.s.pieces };
+    };
+    const run = (secs) => { for (let t = 0; t < secs - 1e-9; t += 0.004) ctl.frame(performance.now(), Math.min(0.004, secs - t)); };
+    // NES, level 1: 48 frames a row (0.799 s).
+    let r = rest({ lock: 'nes' });
+    out.iv = Lull.Classic.gravity(1, true);
+    run(out.iv * 0.9); out.nesBefore = r.g.s.pieces === r.n;
+    pm.action('moveL'); pm.action('moveR'); pm.action('cw');
+    run(out.iv * 0.15); out.nesAt = r.g.s.pieces === r.n + 1;
+    // A held soft drop on the stack sets it at once (NES); never on modern.
+    r = rest({ lock: 'nes' }); out.nesHeld = ctl.softDrop(true) && r.g.s.pieces === r.n + 1;
+    r = rest({ lock: 'modern' }); out.modHeld = !ctl.softDrop(true) && r.g.s.pieces === r.n;
+    // Modern: 0.4 s, a move renews, 0.4 s more, still there; 0.15 s more, set.
+    r = rest({ lock: 'modern' });
+    run(0.4); out.moved = [pm.action('moveL'), ctl.resets, ctl.lockT]; run(0.4); out.modRenewed = r.g.s.pieces === r.n;
+    run(0.15); out.modSet = r.g.s.pieces === r.n + 1;
+    out.l15 = Lull.Classic.gravity(15, true); out.l20 = Lull.Classic.gravity(20, true);
+    pm.setGame(keep);
+    return out;
+  });
+  check('NES lock: the NES frames a row (level 1: 48), no lock timer: the next gravity tick sets a resting piece, moves and turns buy nothing, a held soft drop sets it', Math.abs(lockT.iv - 48 / 60.0988) < 1e-9 && lockT.nesBefore && lockT.nesAt && lockT.nesHeld && Math.abs(lockT.l15 - 4 / 60.0988) < 1e-9 && Math.abs(lockT.l20 - 2 / 60.0988) < 1e-9, JSON.stringify(lockT));
+  check('Modern lock: half a second of rest, renewed by a move; a held soft drop never sets', lockT.modRenewed && lockT.modSet && lockT.modHeld, JSON.stringify(lockT));
+
   // The classic top out: the piece that cannot appear sets over the stack, and three more from the queue pile up on it
   // one after another before the card. Everything counted is as it was at the top out.
   {

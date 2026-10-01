@@ -33,8 +33,16 @@
 
   const on = (r) => !!r && r.mode === 'classic';
 
-  /** Seconds a row at a level (the guideline curve, as Classic has always fallen). */
-  function gravity(level) {
+  /**
+   * The NES's frames a row (NTSC, 60.0988 frames a second) by its level 0, 1, 2, ...: Lull's level 1 is the NES's 0.
+   * NES lock falls by this table, as the NES did: its lock is the gravity tick, so the two belong together.
+   */
+  const NES_FPS = 60.0988;
+  const NES_FRAMES = [48, 43, 38, 33, 28, 23, 18, 13, 8, 6, 5, 5, 5, 4, 4, 4, 3, 3, 3];
+  function nesFrames(level) { const n = Math.max(0, level - 1); return n < NES_FRAMES.length ? NES_FRAMES[n] : n < 29 ? 2 : 1; }
+  /** Seconds a row at a level: the guideline curve (as Classic has always fallen), or with NES lock the NES table. */
+  function gravity(level, nes) {
+    if (nes) return nesFrames(level) / NES_FPS;
     const l = Math.max(1, Math.min(level, 20));
     return Math.max(0.012, Math.pow(0.8 - (l - 1) * 0.007, l - 1));
   }
@@ -207,5 +215,5 @@
   };
   Recipe.part(PART);
 
-  L.Classic = { DEFAULTS, LEVELS, HEIGHTS, NEXT, B_LINES, B_ROWS, MUSIC, MUSIC_NAMES, LOCK, on, gravity, garbageRows, levelOf, featLevel, normalize: normalizeK, nesDealer, of, addLines, PART };
+  L.Classic = { DEFAULTS, LEVELS, HEIGHTS, NEXT, B_LINES, B_ROWS, MUSIC, MUSIC_NAMES, LOCK, on, gravity, nesFrames, NES_FPS, garbageRows, levelOf, featLevel, normalize: normalizeK, nesDealer, of, addLines, PART };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

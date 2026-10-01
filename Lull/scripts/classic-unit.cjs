@@ -83,6 +83,9 @@ module.exports = function classicUnit({ L, test }) {
     const kb = Recipe.normalize(CL({ type: 'b', level: 3 })).classic;
     assert.strictEqual(Classic.levelOf(kb, 24), 3, 'B type keeps its level');
     assert(Classic.gravity(1) > Classic.gravity(10) && Classic.gravity(20) === Classic.gravity(30), 'the guideline curve, level 20 at most');
+    // NES lock falls by the NES table (Lull's level 1 is the NES's level 0), NTSC frames.
+    assert.deepStrictEqual([1, 2, 9, 10, 11, 13, 14, 16, 17, 19, 20, 29, 30].map(Classic.nesFrames), [48, 43, 8, 6, 5, 5, 4, 4, 3, 3, 2, 2, 1]);
+    assert.strictEqual(Classic.gravity(1, true), 48 / 60.0988);
   });
 
   test('classic: level lock: the level stays at the start level all game (gravity with it), the score as ever, no level feat', () => {

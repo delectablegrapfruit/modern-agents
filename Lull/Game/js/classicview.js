@@ -139,15 +139,20 @@
           if (c.ms >= 60000) this.countGame();
           this.acc += dt;
           // (gravityFor: a test's own seconds a row.)
-          const iv = typeof this.gravityFor === 'function' ? this.gravityFor() : Classic.gravity(level());
+          const iv = typeof this.gravityFor === 'function' ? this.gravityFor() : Classic.gravity(level(), K().lock === 'nes');
+          // NES: no lock timer at all. Each gravity tick tries to move the piece down a row; the tick that cannot sets it,
+          // there and then (so a piece that comes to rest sets one gravity interval later, a slide off a ledge just falls
+          // on, and moving or turning buys nothing). Modern: half a second of rest, renewed by moving or turning.
+          const nes = K().lock === 'nes';
           while (this.acc >= iv) {
             this.acc -= iv;
-            if (G.fitsAt(p, p.rot, p.x, p.y - 1)) { p.y--; p.lastRot = false; if (K().lock !== 'nes') this.lockT = 0; play.view.dirty = true; } else { this.acc = 0; break; }
+            if (G.fitsAt(p, p.rot, p.x, p.y - 1)) { p.y--; p.lastRot = false; this.lockT = 0; play.view.dirty = true; }
+            else if (nes) { this.acc = 0; G.lock(); break; }
+            else { this.acc = 0; break; }
           }
-          if (G.piece === p && !G.fitsAt(p, p.rot, p.x, p.y - 1)) {
+          if (!nes && G.piece === p && !G.fitsAt(p, p.rot, p.x, p.y - 1)) {
             this.lockT += dt;
-            // Modern: half a second, renewed by moving or turning; NES: it sets on the next row's time.
-            if (this.lockT >= (K().lock === 'nes' ? iv : Classic.LOCK.delay)) { this.lockT = 0; G.lock(); }
+            if (this.lockT >= Classic.LOCK.delay) { this.lockT = 0; G.lock(); }
           }
         }
         this.syncMusic();
@@ -176,12 +181,15 @@
         if (!G.fitsAt(p, p.rot, p.x, p.y - 1) && this.resets < Classic.LOCK.resets) { this.lockT = 0; this.resets++; }
       },
 
-      /** Soft drop: a row a press (one point a row); ↓ on the stack sets the piece, a held ↓ never does. */
+      /**
+       * Soft drop: a row a press (one point a row); ↓ on the stack sets the piece. A held ↓ sets it too on NES lock (as
+       * the NES does: the soft drop's next step down that cannot, sets), never on modern lock.
+       */
       softDrop(rep) {
         const G = g(), p = G.piece;
         if (!p) return false;
         if (G.fitsAt(p, p.rot, p.x, p.y - 1)) { p.y--; p.lastRot = false; G.s.score += 1; this.acc = 0; play.renderStatus(); return true; }
-        if (rep) return false;
+        if (rep && K().lock !== 'nes') return false;
         G.lock();
         return true;
       },

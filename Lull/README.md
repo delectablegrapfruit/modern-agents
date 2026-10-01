@@ -874,7 +874,7 @@ Game Boy Advance games:
 | Garbage height (B) | 0–5 | the NES heights, 0, 3, 5, 8, 10 or 12 rows of 20, scaled to the board; each row about three in five full, never full, grey, never the player's (it pays nothing) |
 | Next | 0–5 (default 3) | whatever Settings ▸ Next says |
 | Randomizer | 7-bag, NES random | NES: a roll of eight, a repeat or the eighth rolled once more of seven (a repeat about one in 28); needs Normal shapes (other shapes bring their own dealer), so other shapes move it to the 7-bag and Normal brings it back |
-| Lock delay | Modern, NES | Modern: half a second, renewed by a move or a turn up to 15 times; NES: it sets on the next row's time |
+| Lock delay | Modern, NES | Modern: half a second, renewed by a move or a turn up to 15 times (a held ↓ never sets). NES: as the NES, no lock timer: pieces fall by the NES's frames a row (level 1 is its level 0: 48 frames, then 43, 38 … 2 at its level 19, 1 at 29), the gravity tick that cannot move the piece down sets it, moving or turning buys nothing, and ↓ held onto the stack sets it |
 | Music | Korobeiniki, Off | the one Classic track there is (the bar's Music button and Settings ▸ Sound ▸ Classic music still turn it off everywhere) |
 | Hard drop, Hold, Ghost | on or off | hard drop off: Space, a click and a flick down do nothing; hold off: no Hold; ghost off: none drawn |
 | Level lock | on or off (default off) | on: the level stays at the start level all game, so gravity never speeds up; the score as ever; the status bar and the board's label say `Level 5 (locked)`; no level feat or level record (it reaches no level by lines) |
