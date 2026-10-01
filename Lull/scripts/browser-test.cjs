@@ -1031,8 +1031,10 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
       const m = CM; m.newGame(true);
       const g = m.game; m.score = 987654;
       for (let y = 0; y < 19; y++) for (let x = 0; x < 10; x++) if (x !== y % 10) g.board.set(x, y, 8);
-      m.frame(performance.now(), 0.016);
-      return { over: m.over, card: m.cardOpen, pile: m.view.pileup && m.view.pileup.length, best: Lull.app.store.state.stats.classic.best, stored: JSON.parse(localStorage.getItem('lull.save.v1')).stats.classic.best };
+      // A busy machine can take more than one frame to set the piece and top out.
+      for (let i = 0; i < 120 && !m.over; i++) m.frame(performance.now(), 0.016);
+      const raw = localStorage.getItem('lull.save.v1');
+      return { over: m.over, card: m.cardOpen, pile: m.view.pileup && m.view.pileup.length, best: Lull.app.store.state.stats.classic.best, stored: raw ? JSON.parse(raw).stats.classic.best : null };
     });
     await rp.reload();
     await booted();
