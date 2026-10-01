@@ -4284,8 +4284,8 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await require('./retired-test.cjs')({ browser, check, PAGE, OUT });
   // ---- Shapes: the chips, Custom and its picker, a board of picks, the trays and the fit on a phone (shapes-browser-test.cjs)
   await require('./shapes-browser-test.cjs')({ browser, check, PAGE, OUT });
-  // ---- Jelly: the look, its wobble, a cascade replayed and counted, reduced motion (jelly-browser-test.cjs) ------------
-  await require('./jelly-browser-test.cjs')({ browser, check, PAGE, OUT });
+  // ---- Physics: the window, live bodies, knocks, a clear, Rewind 5 s, the full card, a phone (physics-browser-test.cjs)
+  await require('./physics-browser-test.cjs')({ browser, check, PAGE, OUT });
   // The Home Screen web app, served over http as it is deployed: offline, updates, full screen (web-browser-test.cjs).
   console.log('web app');
   await require('./web-browser-test.cjs')({ browser, check, OUT });

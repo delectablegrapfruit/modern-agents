@@ -1,13 +1,14 @@
-// Lull — the board recipe: what a Relaxed board is made of, beyond its size. Its shapes, its modifiers (Jelly, Mirror)
-// and its mode (Plain, Protect, Classic, Battle), chosen in the New board window and fixed for the board's life. Pure data and
+// Lull — the board recipe: what a Relaxed board is made of, beyond its size. Its shapes, its modifiers (Mirror)
+// and its mode (Plain, Physics, Protect, Classic, Battle), chosen in the New board window and fixed for the board's life. Pure data and
 // rules, no DOM; the parts that give each option its behaviour register here (Recipe.part) and are always run in
 // ascending `order`, never in script load order.
 //
-//   recipe = { v: 1, shapes: { preset: 'normal' }, mods: { jelly: false, mirror: false }, mode: 'plain',
-//              protect?: { level }, classic?: { type, level, … } (js/classic.js), battle?: { level, size: { w, rows } } }
+//   recipe = { v: 1, shapes: { preset: 'normal' }, mods: { mirror: false }, mode: 'plain', physics?: { material }
+//              (js/physics.js), protect?: { level }, classic?: { type, level, … } (js/classic.js), battle?: { level, size: { w, rows } } }
 //
 // The default recipe is today's board exactly: the seven in a 7-bag, no modifier, plain play. A part:
-//   { key, order, owns: [paths it writes], mod?: 'jelly' (a modifier it brings), mode?: 'protect' (a mode it brings),
+//   { key, order, owns: [paths it writes], mod?: 'mirror' (a modifier it brings: its switch, modName its name),
+//     mode?: 'protect' (a mode it brings),
 //     options?: { path: [values] } (what the New board window offers, for resolve),
 //     normalize(raw, out) (writes its own keys of the recipe from raw), label(r, short), thin(r), valid(g, r),
 //     rules(r, R, w), limits(r, lim), clampSize(size, r, lim, asked), conflicts(r, out),
@@ -15,7 +16,7 @@
 //     are listed in js/engine.js), controller(play, game) -> ctl | null (Free Play's; every part's is composed over
 //     the plain one: Recipe.compose), summary(saved, g), stats? (store.js merges it under state.stats) }
 // Achievements a part adds go through Achievements.group / Achievements.add (js/achievements.js).
-// Orders: core 0, shapes 10, mirror 20, jelly 30, protect 40, classic 45, battle 50.
+// Orders: core 0, shapes 10, mirror 20, physics 35, protect 40, classic 45, battle 50.
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
@@ -41,13 +42,12 @@
 
   const PARTS = [], VIEWS = [], UIS = [];
   const byOrder = (a, b) => (a.order || 0) - (b.order || 0) || String(a.key).localeCompare(String(b.key));
-  /** The modifiers, in the order a label names them. */
-  const MODS = ['jelly', 'mirror'];
-  const MOD_NAMES = { jelly: 'Jelly', mirror: 'Mirror' };
+  /** The modifiers the parts bring, in the order a label names them (by key), and their names. */
+  const MODS = [];
+  const modName = (k) => { const p = PARTS.find((x) => x.mod === k); return (p && p.modName) || k.charAt(0).toUpperCase() + k.slice(1); };
 
   /** The modes a recipe can have: Plain, and one for each part that brings one. */
   const modes = () => ['plain'].concat(PARTS.filter((p) => p.mode).map((p) => p.mode));
-  const hasMod = (k) => PARTS.some((p) => p.mod === k);
 
   // The core part: today's board. It writes every key of the recipe (so a recipe is always whole) and lets a feature
   // part own its keys only once that part is there: an option nothing implements falls back to the default.
@@ -58,11 +58,11 @@
       out.v = 1;
       out.shapes = { preset: 'normal' };
       out.mods = {};
-      for (const k of MODS) out.mods[k] = hasMod(k) && isObj(raw.mods) ? raw.mods[k] === true : false;
+      for (const k of MODS) out.mods[k] = isObj(raw.mods) ? raw.mods[k] === true : false;
       out.mode = modes().includes(raw.mode) ? raw.mode : 'plain';
     },
     label(r) {
-      const on = MODS.filter((k) => r.mods && r.mods[k]).map((k) => MOD_NAMES[k] || k);
+      const on = MODS.filter((k) => r.mods && r.mods[k]).map(modName);
       return on.join(', ');
     },
   };
@@ -70,8 +70,10 @@
   let DEFAULT = null;
   function refresh() {
     PARTS.sort(byOrder);
+    MODS.length = 0;
+    for (const k of PARTS.filter((p) => p.mod).map((p) => p.mod).sort()) if (!MODS.includes(k)) MODS.push(k);
     CORE.options = { mode: modes() };
-    for (const k of MODS) if (hasMod(k)) CORE.options['mods.' + k] = [false, true];
+    for (const k of MODS) CORE.options['mods.' + k] = [false, true];
     DEFAULT = freeze(normalize({}));
     Recipe.DEFAULT = DEFAULT;
   }
@@ -114,13 +116,13 @@
   function isDefault(r) { return equal(r, DEFAULT); }
 
   /**
-   * What a board is, in words: '' for the default. Each part adds its own ("Frantic", "Jelly, Mirror", "Protect Easy"),
+   * What a board is, in words: '' for the default. Each part adds its own ("Frantic", "Mirror", "Protect Easy"),
    * in order; short is the library row's form.
    */
   function label(r, short) {
     r = normalize(r);
     if (equal(r, DEFAULT)) return '';
-    // The modifiers ("Jelly, Mirror", the core's) read after the shapes: "Frantic · Jelly · Protect Easy".
+    // The modifiers ("Mirror", the core's) read after the shapes: "Frantic · Mirror · Protect Easy".
     const segs = PARTS.map((p) => ({ at: p === CORE ? 15 : p.order || 0, text: p.label ? p.label(r, !!short) : '' }));
     return segs.sort((a, b) => a.at - b.at).map((x) => x.text).filter(Boolean).join(' \u00b7 ');
   }
@@ -381,13 +383,21 @@
   }
   /**
    * The options an edit of a board made as `from` may not choose, beyond the recipe's own conflicts: a mode a part
-   * keeps for the board's life (editFixed: Protect) is neither entered nor left, nor are its settings changed.
+   * keeps for the board's life (editFixed: Protect) is neither entered nor left, nor are its settings changed; a
+   * modifier kept so (editFixed: Physics) is neither switched on nor off.
    * { 'path=value': reason }.
    */
   function editConflicts(from, r) {
     from = normalize(from); r = normalize(r);
     const out = {};
     for (const p of PARTS) {
+      // A modifier kept for the board's life (Physics): never switched on or off by an edit.
+      if (p.editFixed && p.mod) {
+        const name = p.modName || p.mod.charAt(0).toUpperCase() + p.mod.slice(1);
+        if (from.mods && from.mods[p.mod]) out[idOf('mods.' + p.mod, false)] = 'A ' + name + ' board stays ' + name;
+        else out[idOf('mods.' + p.mod, true)] = name + ' starts on a new board';
+        continue;
+      }
       if (!p.editFixed || !p.mode) continue;
       const name = p.name || p.mode.charAt(0).toUpperCase() + p.mode.slice(1);
       if (from.mode === p.mode) {

@@ -10,7 +10,7 @@ const L = load([
   // The board options' pure parts (js/recipe.js): each branch replaces its own line.
   'polytable.js', 'minsize.js', 'shapes.js',
   'mirror.js',
-  'jelly.js',
+  'physics.js',
   'guard.js',
   'classic.js',
   // part:battle
@@ -3454,7 +3454,8 @@ console.log('board recipe');
   const dropAt = (g, id, x, rot) => { g.piece = { type: Pieces.get(id), rot: rot || 0, x, y: g.h - 4, special: null, entry: { id, rot: 0 }, lastRot: false }; return g.drop(); };
 
   test('recipe: the default is today’s board, and anything unknown or invalid falls back to it', () => bare(() => {
-    assert.deepStrictEqual(clone(Recipe.DEFAULT), { v: 1, shapes: { preset: 'normal' }, mods: { jelly: false, mirror: false }, mode: 'plain' });
+    // (The modifiers are the parts': none in the foundation alone.)
+    assert.deepStrictEqual(clone(Recipe.DEFAULT), { v: 1, shapes: { preset: 'normal' }, mods: {}, mode: 'plain' });
     assert(Object.isFrozen(Recipe.DEFAULT) && Object.isFrozen(Recipe.DEFAULT.mods));
     for (const junk of [null, undefined, 5, 'x', [], { mode: 'battle' }, { mode: 'protect', protect: { level: 'easy' } }].filter((j) => !(j && Recipe.parts().some((p) => p.mode && p.mode === j.mode))).concat([{ mods: { jelly: 'yes', mirror: 1 } }, { shapes: { preset: 'frantic' }, extra: 1 }, { v: 9 }])) {
       assert.deepStrictEqual(clone(Recipe.normalize(junk)), clone(Recipe.DEFAULT), JSON.stringify(junk));
@@ -3479,7 +3480,7 @@ console.log('board recipe');
       assert.deepStrictEqual(Recipe.clampSize({ w: 4, h: 8 }, r), { w: 6, h: 12 });
       assert.deepStrictEqual(Library.clampSize({ w: 4, h: 8 }, r), { w: 6, h: 12 });
       assert(!Recipe.sizeOk(4, 8, r) && Recipe.sizeOk(6, 12, r) && Recipe.sizeOk(4, 8, Recipe.DEFAULT));
-      assert.deepStrictEqual(clone(Recipe.DEFAULT), { v: 1, shapes: { preset: 'normal' }, mods: { jelly: false, mirror: false }, mode: 'plain' }, 'a part that is off leaves the default alone');
+      assert.deepStrictEqual(clone(Recipe.DEFAULT), { v: 1, shapes: { preset: 'normal' }, mods: { mirror: false, physics: false }, mode: 'plain' }, 'a part that is off leaves the default alone');
     });
   });
 
@@ -3545,7 +3546,7 @@ console.log('board recipe');
     });
     const MODS = [
       { key: 'tmirror', order: 20, mod: 'mirror' },
-      { key: 'tjelly', order: 30, mod: 'jelly' },
+      { key: 'tphysics', order: 30, mod: 'physics' },
       { key: 'tprotect', order: 40, mode: 'protect', owns: ['protect'],
         normalize: (raw, out) => { if (out.mode === 'protect') out.protect = { level: ['easy', 'medium', 'hard'].includes(raw.protect && raw.protect.level) ? raw.protect.level : 'easy' }; },
         label: (r) => (r.mode === 'protect' ? 'Protect ' + r.protect.level[0].toUpperCase() + r.protect.level.slice(1) : '') },
@@ -3553,12 +3554,12 @@ console.log('board recipe');
     ];
     // (A mode a real part loaded with the game brings, Protect's, is that part's: no stand-in for it.)
     withParts(MODS.filter((m) => !(m.mode && Recipe.parts().some((p) => p.mode === m.mode))), () => {
-      assert.deepStrictEqual(clone(Recipe.DEFAULT), { v: 1, shapes: { preset: 'normal' }, mods: { jelly: false, mirror: false }, mode: 'plain' });
-      assert.strictEqual(Recipe.label({ mods: { mirror: true, jelly: true } }), 'Jelly, Mirror');
-      assert.strictEqual(Recipe.label({ mods: { jelly: true }, mode: 'protect', protect: { level: 'hard' } }, true), 'Jelly · Protect Hard');
+      assert.deepStrictEqual(clone(Recipe.DEFAULT), { v: 1, shapes: { preset: 'normal' }, mods: { mirror: false, physics: false }, mode: 'plain' });
+      assert.strictEqual(Recipe.label({ mods: { mirror: true, physics: true } }), 'Mirror, Physics');
+      assert.strictEqual(Recipe.label({ mods: { physics: true }, mode: 'protect', protect: { level: 'hard' } }, true), 'Physics · Protect Hard');
       assert.deepStrictEqual(Recipe.normalize({ mode: 'protect', protect: { level: 'nope' } }).protect, { level: 'easy' });
       withParts([{ key: 'tshapes', order: 10, label: () => 'Frantic' }], () => {
-        assert.strictEqual(Recipe.label({ mods: { jelly: true }, mode: 'protect', protect: { level: 'easy' } }, true), 'Frantic \u00b7 Jelly \u00b7 Protect Easy', 'shapes, then modifiers, then the mode');
+        assert.strictEqual(Recipe.label({ mods: { physics: true }, mode: 'protect', protect: { level: 'easy' } }, true), 'Frantic \u00b7 Physics \u00b7 Protect Easy', 'shapes, then modifiers, then the mode');
       });
       const memo = {};
       let res = Recipe.resolve({ mods: { mirror: true }, mode: 'battle' }, 'mode', memo);
@@ -3798,12 +3799,12 @@ console.log('board recipe');
     const protect = { key: 'protect', leaves: 3, onEnd(kind) { return kind === 'wilted' ? 'wilted ' + this.leaves : this.base.onEnd(kind); },
       onLock(r) { this.base.onLock(r); log.push('protect.lock'); this.leaves--; }, status(parts, o) { return o.prev.slice(0, 1).concat(['Leaves ' + this.leaves]); },
       tiles: () => [['3', 'Waves']], cards: { wilted: () => 'Wilted' }, onKey: (e) => e === 'w', frame() { log.push('protect.frame'); } };
-    const jelly = { id: 'jelly', tiles: () => [['2', 'Cascades']], input: (kind, v) => (kind === 'aim' ? v + 100 : v), key(e) { return e === 'j'; } };
-    const ctl = Recipe.compose(plain, [{ part: 'mirror', ctl: mirror }, protect, jelly]);
+    const physics = { id: 'physics', tiles: () => [['2', 'Cascades']], input: (kind, v) => (kind === 'aim' ? v + 100 : v), key(e) { return e === 'j'; } };
+    const ctl = Recipe.compose(plain, [{ part: 'mirror', ctl: mirror }, protect, physics]);
     assert.strictEqual(typeof ctl.onKey, 'function', 'a string key is a name, never the key hook');
-    assert.strictEqual(ctl.id, 'jelly');
+    assert.strictEqual(ctl.id, 'physics');
     assert.deepStrictEqual([ctl.onKey('w'), ctl.onKey('j'), ctl.onKey('x')], [true, true, false], 'asked in turn; a function key is onKey');
-    assert.strictEqual(ctl.input('aim', 2), 107, 'input chained in order: Mirror’s answer goes to Jelly');
+    assert.strictEqual(ctl.input('aim', 2), 107, 'input chained in order: Mirror’s answer goes to Physics');
     assert.strictEqual(ctl.input('tap', 'left'), null, 'a tap taken (null) ends it');
     assert.strictEqual(ctl.input('tap', 'right'), 'right');
     assert.deepStrictEqual(ctl.tiles(), [['3', 'Waves'], ['2', 'Cascades']], 'tiles joined');
@@ -3854,7 +3855,7 @@ console.log('board recipe');
     });
   });
 
-  test('recipe: a drill’s rows the recipe fills (Jelly’s cascades) clear and are scored as plain; a plain drill scores nothing', () => {
+  test('recipe: a drill’s rows the recipe fills (its cascades) clear and are scored as plain; a plain drill scores nothing', () => {
     const plain = new Game({ w: 10, h: 20, seed: 3, recipe: {} });
     fill(plain, ['XXXXX.XXXX', 'XXXXXXXXX.']);
     Object.assign(plain.s, { combo: 2 });
@@ -3863,7 +3864,7 @@ console.log('board recipe');
     const d = plain.drop();
     assert.deepStrictEqual([d.lines, d.rows, d.removed, d.score, plain.s.combo, plain.s.lines, d.bits], [0, [], [], 0, 2, 0, undefined], 'as before: nothing scored, the combo kept');
     const calls = [];
-    const jelly = { key: 'tjel', order: 30, engine: () => ({
+    const cascader = { key: 'tcas', order: 30, engine: () => ({
       afterClear(g, b, res) {
         calls.push('afterClear:' + res.special);
         // A lump the drill left hanging falls into the hole under it and fills row 0: one cascade wave.
@@ -3871,7 +3872,7 @@ console.log('board recipe');
       },
       afterChange(g, kind, what) { calls.push('afterChange:' + kind + ':' + (what && what.special)); },
     }) };
-    withParts([jelly], () => {
+    withParts([cascader], () => {
       const g = new Game({ w: 10, h: 20, seed: 3, recipe: {} });
       fill(g, ['......X...', '.X.X......', 'XXX.XXXXXX']);
       g.replacePiece({ id: 'M1', special: 'drill' });
@@ -4039,8 +4040,8 @@ console.log('board recipe');
   });
 
   test('cells: one table of bits; outside the board is a WALL that is never stored; flags never change colours, scores or saves', () => {
-    const bits = ['GEM', 'HIDDEN', 'FOREIGN', 'JOIN_R', 'JOIN_U', 'ASSET', 'MOLE', 'FILL', 'WALL'].map((k) => CELL[k]);
-    assert.strictEqual(bits.concat([CELL.MOLE_SLOT, CELL.COLOR]).reduce((a, b) => a + b, 0), 0xffff, 'all 16 bits, each once');
+    const bits = ['GEM', 'HIDDEN', 'FOREIGN', 'ASSET', 'MOLE', 'FILL', 'WALL'].map((k) => CELL[k]);
+    assert.strictEqual(bits.concat([CELL.MOLE_SLOT, CELL.COLOR, 256, 512]).reduce((a, b) => a + b, 0), 0xffff, 'all 16 bits, each once (256 and 512 free)');
     assert.strictEqual(CELL.MOLE_SLOT >> CELL.SLOT_SHIFT, 3);
     const b = new Board(6, 6);
     for (const [x, y] of [[-1, 0], [6, 0], [0, -1], [0, 6], [-5, 9]]) {
@@ -4054,7 +4055,7 @@ console.log('board recipe');
     wrap.set(5, 0, 3);
     assert.strictEqual(wrap.get(-1, 0), 3, 'a wraparound board has no side walls');
     // Every stored flag on a cell: the colour reads the same, the save encodes the same, the row clears as its own.
-    const flags = CELL.GEM | CELL.HIDDEN | CELL.JOIN_R | CELL.JOIN_U | CELL.ASSET | CELL.MOLE | CELL.MOLE_SLOT | CELL.FILL;
+    const flags = CELL.GEM | CELL.HIDDEN | CELL.ASSET | CELL.MOLE | CELL.MOLE_SLOT | CELL.FILL;
     const plain = [1, 2, 3, 4, 5, 6, 7, 8, 9, 15], flagged = plain.map((v) => v | flags);
     assert.strictEqual(Library.encodeCells(flagged), Library.encodeCells(plain));
     assert(flagged.every((v, i) => (v & CELL.COLOR) === plain[i]));
@@ -4063,7 +4064,7 @@ console.log('board recipe');
     for (let x = 0; x < 9; x++) g.board.set(x, 0, 3 | (flags & ~CELL.HIDDEN));
     const r = dropAt(g, 'I', 7, 1);
     assert.deepStrictEqual([r.n, r.c, r.own, r.score], [1, 0, 1, 100]);
-    assert.deepStrictEqual(L.Combos.detect({ lines: 1, n: 1, quad: false, removed: [Array(10).fill(3 | CELL.JOIN_R | CELL.GEM)] }, g), ['painted'], 'Painted Row reads colours');
+    assert.deepStrictEqual(L.Combos.detect({ lines: 1, n: 1, quad: false, removed: [Array(10).fill(3 | CELL.GEM)] }, g), ['painted'], 'Painted Row reads colours');
     // Nothing a game does stores a WALL.
     const p = new Game({ w: 6, h: 10, seed: 4, recipe: {} });
     for (let i = 0; i < 60 && !p.over; i++) { p.move(i % 3 - 1); p.drop(); }
@@ -4832,9 +4833,9 @@ require('./mirror-unit.cjs')({ L, test });
 // Shapes, the board recipe's shape sets (scripts/shapes-test.cjs).
 require('./shapes-test.cjs')(test, L);
 
-// Jelly, a board modifier (scripts/jelly-test.cjs).
-console.log('jelly');
-require('./jelly-test.cjs')(test);
+// Physics, a board modifier (scripts/physics-test.cjs).
+console.log('physics');
+require('./physics-test.cjs')(test, L);
 
 // Protect's rules (scripts/protect-unit.cjs).
 require('./protect-unit.cjs')({ L, test });

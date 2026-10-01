@@ -187,7 +187,7 @@ module.exports = function classicUnit({ L, test }) {
 
   test('edit rules: a size change keeps the stack (columns on the right, rows at the top) and never cuts a block', () => {
     const g = new Game({ w: 10, h: 20, seed: 2, recipe: {} });
-    g.board.set(0, 0, 5); g.board.set(7, 0, 5 | CELL.JOIN_R); g.board.set(8, 0, 5); g.board.set(2, 11, 5 | CELL.JOIN_U); g.board.set(2, 12, 5);
+    g.board.set(0, 0, 5); g.board.set(7, 0, 5); g.board.set(8, 0, 5); g.board.set(2, 11, 5); g.board.set(2, 12, 5);
     const j = g.toJSON();
     assert.strictEqual(Library.reshape(j, 8, 20).why, 'Blocks stand in the columns it would lose');
     assert.strictEqual(Library.reshape(j, 10, 12).why, 'Blocks stand in the rows it would lose');
@@ -197,7 +197,7 @@ module.exports = function classicUnit({ L, test }) {
     assert.strictEqual(big.cells[0], 5); assert.strictEqual(big.cells[8], 5); assert.strictEqual(big.cells[12 * 14 + 2], 5);
     g.board.set(8, 0, 0); g.board.set(2, 12, 0);
     const cut = Library.reshape(g.toJSON(), 8, 12).json;
-    assert.strictEqual(cut.cells[7], 5, 'a join across the new wall is let go');
+    assert.strictEqual(cut.cells[7], 5, 'a block against the new wall stays');
     assert.strictEqual(cut.cells[11 * 8 + 2], 5);
     assert.strictEqual(j.w, 10, 'the board it was made from is untouched');
   });

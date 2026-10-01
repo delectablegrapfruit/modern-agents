@@ -109,7 +109,7 @@ module.exports = function protectUnit({ L, test }) {
       assert.strictEqual(k.allow('settle'), null);
     }
     assert(!std().ext.some((e) => e.key === 'protect') && G(std()) === null, 'a default board has no guard');
-    assert.deepStrictEqual(Recipe.conflicts(P()), {}, 'Protect goes with every shape set and modifier');
+    assert.deepStrictEqual(Recipe.conflicts(P()), Recipe.get('physics') ? { 'mods.physics=true': 'Not in Protect' } : {}, 'Protect goes with every shape set and modifier but Physics');
     // The engine refuses them too, whatever asks (the power-up bar refuses first).
     assert.strictEqual(Recipe.rules({ mode: 'protect', mods: { mirror: true } }, 10).refuse.tornado, 'Not in Protect');
   });

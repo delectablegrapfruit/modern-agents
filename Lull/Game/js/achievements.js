@@ -14,7 +14,7 @@
     // "No power-ups on the board" (the skill ones) is said in each description; what it means exactly, once, here.
     // Board sizes (js/library.js): lines count by width, and a board narrower than Standard makes feats easy.
     { id: 'play', name: 'Free Play', icon: 'play', noteTitle: 'How these count',
-      note: 'No power-ups on the board: none used since the board was last empty. Luck power-ups, and one taken back before its piece is set, do not count. Lines count by width: a line on a board 5 wide is half of one, on 20 wide two, and on a Mirror board half that. Feats count on Normal shapes, 10 wide or more (a Mirror board 20 wide), not on Jelly boards.' },
+      note: 'No power-ups on the board: none used since the board was last empty. Luck power-ups, and one taken back before its piece is set, do not count. Lines count by width: a line on a board 5 wide is half of one, on 20 wide two, and on a Mirror board half that. Feats count on Normal shapes, 10 wide or more (a Mirror board 20 wide), not on Physics boards.' },
     { id: 'classic', name: 'Classic', icon: 'classic' },
     { id: 'puzzle', name: 'Puzzles', icon: 'puzzle' },
     { id: 'lull', name: 'Lifetime', icon: 'lifetime' },
@@ -177,7 +177,7 @@
   const quadOf = (r) => (r.quad !== undefined ? !!r.quad : (r.lines || 0) - (r.plain || 0) >= 4);
   /**
    * Where the Free Play feats do not count (!R.feats): a board narrower than Standard (quads, combos, perfect clears and
-   * points come in a few pieces there), shapes other than Normal, Jelly.
+   * points come in a few pieces there), shapes other than Normal, Physics.
    */
   const narrow = (g) => !!g && !rulesOf(g).feats;
   // Free Play ones that count on any board: counted in Standard lines (the line counts and pace), by width (Clean
@@ -188,7 +188,7 @@
   const pace = (g, ms) => { const p = L.paceOf ? L.paceOf(g.s, 100) : null; return !!p && p.ms <= ms && p.lines * scale(g) >= 36; };
   /**
    * The pace ones count at any width (a hundred pieces are forty Standard lines' worth anywhere), but only where a piece
-   * is a Normal piece: no Big, no Mirror copy, rated shapes, no Jelly.
+   * is a Normal piece: no Big, no Mirror copy, rated shapes, no Physics.
    */
   const paceCounts = (R) => !!R && !!R.rated && !R.noFeats && R.u === 1 && R.copies === 1;
   /** One power-up (a Tool piece or a Board item) took a board of 60 blocks or more to empty: six rows' worth on a board wider than Standard. */
@@ -272,7 +272,7 @@
 
   /**
    * Adds achievements (a board option's): each { id, group, name, desc, pay, on, test, counts? }. counts(recipe, g,
-   * R) says on which boards it counts (Knock-On: a Jelly board), in place of the feats' rule. An id already there is
+   * R) says on which boards it counts (a board of one recipe), in place of the feats' rule. An id already there is
    * replaced.
    */
   function add(...defs) {

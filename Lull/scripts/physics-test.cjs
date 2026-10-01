@@ -1,0 +1,443 @@
+// Physics (js/physics.js): the material's numbers; the recipe (a modifier: its Material, Mirror and Protect ruled out,
+// Classic's garbage too); bodies that never lose a mino but to a clear and never tear; a tall stack that hardly sinks;
+// sleep at rest (and no work then); clears that take whole minos and split what they cross; hard drops that knock and
+// soft ones that do not; Rewind 5 s; the top out both ways; the save; Physics + Classic; power-ups refused on Physics
+// boards only; fairness (a bot never earns more per piece or per action than a Standard board); and the cost of a full
+// 20 × 40 board in Node.
+// Run by test.cjs: require('./physics-test.cjs')(test, L).
+'use strict';
+const assert = require('assert');
+
+module.exports = function physicsTests(test, L) {
+  L = L || globalThis.Lull;
+  const { Game, Recipe, Pieces, Physics, Pay, Chain, ITEMS } = L;
+  const P = Physics.P;
+  const PHYS = Recipe.normalize({ mods: { physics: true } });
+  const phys = (o) => new Game(Object.assign({ w: 10, h: 20, seed: 1, recipe: PHYS }, o));
+  const X = (g) => Physics.of(g);
+  const minosOf = (W) => W.bodies.reduce((a, b) => a + b.m, 0);
+  /** Steps a game's clock by `secs` (frames of 1/60 s), collecting its events. */
+  const run = (g, secs, o) => { const ev = []; for (let i = 0; i < Math.round(secs * 60); i++) ev.push(...X(g).tick(g, 1 / 60, o || {})); return ev; };
+  /** The piece in play made `id`, turned rot, its box at column x (at the top). */
+  const aim = (g, id, x, rot) => { g.replacePiece({ id }); const p = g.piece; p.rot = rot || 0; p.x = x - p.type.rotBounds[p.rot].minX; X(g).off = 0; p.y = g.h - 1 - p.type.rotBounds[p.rot].maxY; };
+  /** A world with bodies made from cell lists (each [[x, y], …], at rest). */
+  const world = (w, h, shapes) => { const W = new Physics.World(w, h, 'jelly'); for (const cells of shapes) W.bodies.push(Physics.fromCells(W.next++, cells, cells.map(() => 3), 0, 0, 0)); return W; };
+  const settle = (W, secs) => { for (let i = 0; i < secs * 120; i++) Physics.stepWorld(W); };
+  /** Plays n pieces at random (columns, turns, hard or soft), returns the events. */
+  const randomPlay = (g, n, seed, hardShare) => {
+    let s = seed >>> 0;
+    const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+    const ev = [];
+    for (let i = 0; i < n && g.piece && !g.over; i++) {
+      const p = g.piece;
+      for (let k = Math.floor(rnd() * 4); k > 0; k--) g.rotate(1);
+      const dx = Math.floor(rnd() * g.w) - p.x;
+      for (let k = 0; k < Math.abs(dx); k++) g.move(Math.sign(dx));
+      if (rnd() < hardShare) { X(g).hardDrop(g); ev.push(...run(g, 0.35)); }
+      else { const before = g.s.pieces; for (let k = 0; k < 600 && g.s.pieces === before && !g.over; k++) ev.push(...X(g).tick(g, 1 / 60, { soft: true })); ev.push(...run(g, 0.2)); }
+    }
+    return ev;
+  };
+
+  // ---- the material and the recipe ------------------------------------------------------------------------------------
+
+  test('physics: the material is numbers (Jelly the only one); reduced motion is stiffer and calmer, the same game', () => {
+    assert.deepStrictEqual(Physics.MATERIAL_IDS, ['jelly']);
+    const m = Physics.material('jelly');
+    for (const k of ['stiffness', 'flow', 'yield', 'drift', 'area', 'wobble', 'restitution', 'friction', 'density', 'damping']) assert(typeof m[k] === 'number' && m[k] >= 0, k);
+    for (const k of ['stiffness', 'area', 'wobble', 'restitution', 'friction']) assert(m[k] <= 1, k + ' is a share');
+    assert(m.friction < 0.3, 'slippery');
+    assert(m.flow > 0 && m.drift > 0 && m.drift < 0.3, 'partly fluid, never far from its shape');
+    const still = Physics.material('jelly', true);
+    assert(still.stiffness > m.stiffness && still.wobble > m.wobble && still.restitution < m.restitution, 'reduced motion: stiffer, less wobble');
+    assert.strictEqual(Physics.material('nope'), m, 'an unknown material is Jelly');
+  });
+
+  test('physics: a modifier with a Material; Mirror and Protect ruled out both ways, Classic B garbage too; kept for the board\'s life', () => {
+    assert.deepStrictEqual(PHYS.physics, { material: 'jelly' });
+    assert.strictEqual(PHYS.mods.physics, true);
+    assert.strictEqual(PHYS.mode, 'plain', 'not a mode');
+    assert.deepStrictEqual(Recipe.normalize({ mods: { physics: true }, physics: { material: 'lava' } }).physics, { material: 'jelly' });
+    assert.strictEqual(Recipe.normalize({ physics: { material: 'jelly' } }).physics, undefined, 'its setting only with the modifier');
+    assert.strictEqual(Recipe.label(PHYS), 'Physics');
+    assert(Recipe.options().some((o) => o.path === 'mods.physics'));
+    assert(Recipe.options().some((o) => o.path === 'physics.material'));
+    const c = Recipe.conflicts(PHYS);
+    assert(c['mods.mirror=true'] && c['mode=protect']);
+    assert(Recipe.conflicts({ mods: { mirror: true } })['mods.physics=true']);
+    assert(Recipe.conflicts({ mode: 'protect' })['mods.physics=true']);
+    assert(!Recipe.conflicts(PHYS)['mode=classic'], 'Physics + Classic plays');
+    assert(Recipe.conflicts({ mods: { physics: true }, mode: 'classic' })['classic.height=3']);
+    const r = Recipe.resolve({ mods: { physics: true, mirror: true } }, 'mods.physics', {});
+    assert.strictEqual(r.recipe.mods.mirror, false, 'the last choice wins');
+    const e = Recipe.editConflicts(PHYS, PHYS);
+    assert(e['mods.physics=false'] && !e['mods.physics=true']);
+    assert(Recipe.editConflicts({}, {})['mods.physics=true']);
+  });
+
+  test('physics: refused power-ups are refused on Physics boards only, each with its reason; Undo is Rewind 5 s', () => {
+    const g = phys();
+    for (const [id, why] of Object.entries(Physics.REFUSE)) {
+      assert(ITEMS[id], id);
+      assert.strictEqual(g.allow(id), why, id);
+      for (const r of [{}, { mods: { mirror: true } }, { mode: 'protect' }, { shapes: { preset: 'tiny' } }]) {
+        const o = new Game({ w: 10, h: 20, seed: 1, recipe: r });
+        assert.notStrictEqual(o.allow(id), why, id + ' on ' + JSON.stringify(r));
+      }
+    }
+    for (const id of ['reroll', 'mirror', 'pebble', 'noodle', 'giant', 'blueprint', 'pick', 'order', 'rewind']) assert.strictEqual(g.allow(id), null, id + ' works on Physics');
+    assert.strictEqual(g.rules.undo, false, 'no exact Undo history');
+    assert.strictEqual(g.history.length, 0);
+    assert.strictEqual(g.rules.hints, false);
+    assert.strictEqual(g.rules.feats, false);
+  });
+
+  // ---- bodies --------------------------------------------------------------------------------------------------------
+
+  test('physics: a piece falls on its own, becomes a body when it touches, and the next appears at once; the grid stays empty', () => {
+    const g = phys({ seed: 2 });
+    const y0 = g.piece.y - X(g).off;
+    run(g, 0.5);
+    assert(g.piece.y - X(g).off < y0 - 0.5, 'it falls');
+    const first = g.piece;
+    for (let i = 0; i < 1200 && g.piece === first; i++) X(g).tick(g, 1 / 60, {});
+    assert.notStrictEqual(g.piece, first, 'the next piece came');
+    assert.strictEqual(g.s.pieces, 1);
+    assert.strictEqual(X(g).W.bodies.length, 1);
+    assert.strictEqual(minosOf(X(g).W), first.type.rots[0].length);
+    assert(g.board.cells.every((v) => !v), 'nothing on the grid');
+    // It touches the floor, flush (within a hair), not above it.
+    run(g, 1);
+    assert(X(g).W.bodies[0].y0 < 0.05 && X(g).W.bodies[0].y0 > -0.05);
+  });
+
+  test('physics: bodies never lose a mino but to a clear, never tear, and none floats (random play, hard and soft, three widths)', () => {
+    for (const [w, h, seed] of [[6, 14, 3], [10, 20, 5], [14, 24, 7]]) {
+      const g = phys({ w, h, seed });
+      let placed = 0, removed = 0;
+      g.on('lock', (r) => { placed += r.cells.length; });
+      const ev = randomPlay(g, 45, seed * 31, 0.6).concat(run(g, 4));
+      for (const e of ev) if (e.type === 'clear') removed += e.minos;
+      const W = X(g).W;
+      assert.strictEqual(minosOf(W), placed - removed, 'minos placed less minos cleared, w ' + w);
+      for (const b of W.bodies) {
+        // No tearing: every edge of every mino stays near a cell long, and every mino keeps most of its area.
+        for (let k = 0; k < b.m; k++) {
+          const q = b.q;
+          let area = 0;
+          for (let e = 0; e < 4; e++) {
+            const i = q[4 * k + e], j = q[4 * k + ((e + 1) & 3)];
+            const len = Math.hypot(b.x[j] - b.x[i], b.y[j] - b.y[i]);
+            assert(len > 0.5 && len < 1.6, 'an edge ' + len.toFixed(2) + ' long (w ' + w + ')');
+            area += b.x[i] * b.y[j] - b.x[j] * b.y[i];
+          }
+          assert(area / 2 > 0.6 && area / 2 < 1.4, 'a mino keeps its area: ' + (area / 2).toFixed(2));
+        }
+        // One piece: its minos joined through shared corners.
+        const keep = new Uint8Array(b.m).fill(1);
+        assert.strictEqual(Physics.split({ next: 1e6 }, b, keep).length, 1, 'body ' + b.id + ' is one piece');
+        // Nothing floats: on the floor or resting on another body (something within a hair under its lowest point).
+        const held = b.y0 < 0.06 || W.bodies.some((o) => o !== b && o.x1 > b.x0 - 0.05 && o.x0 < b.x1 + 0.05 && o.y1 > b.y0 - 0.12 && o.y0 < b.y0);
+        assert(held, 'body ' + b.id + ' at ' + b.y0.toFixed(2) + ' rests on something (w ' + w + ')');
+      }
+    }
+  });
+
+  test('physics: a stack 15 rows tall sinks under its own weight by less than three quarters of a row (5%), then sleeps', () => {
+    // Two I pieces a row against the walls (8 of 10 cells: no band clears), fifteen rows.
+    const shapes = [];
+    for (let y = 0; y < 15; y++) { shapes.push([[0, y], [1, y], [2, y], [3, y]]); shapes.push([[6, y], [7, y], [8, y], [9, y]]); }
+    const W = world(10, 24, shapes);
+    settle(W, 30);
+    const top = Math.max(...W.bodies.map((b) => b.y1));
+    if (process.env.PHYSICS_TABLE) console.log('       15 rows settle at ' + top.toFixed(3));
+    assert(top > 15 - 0.75 && top < 15.05, 'the top at ' + top.toFixed(3));
+    assert(W.bodies.every((b) => !b.awake), 'all asleep');
+    assert.strictEqual(Physics.clearBands(W), null);
+  });
+
+  test('physics: at rest everything sleeps and the world does no work; a strike wakes what it hits and what rests on it', () => {
+    const W = world(10, 20, [[[0, 0], [1, 0], [2, 0], [3, 0]], [[1, 1], [2, 1], [1, 2], [2, 2]], [[6, 0], [7, 0], [6, 1], [7, 1]]]);
+    settle(W, 3);
+    assert(W.bodies.every((b) => !b.awake));
+    const cost = W.cost;
+    assert.strictEqual(Physics.stepWorld(W), false, 'no work at rest');
+    assert.strictEqual(W.cost, cost);
+    // A hard hit on the I: it and the O on it wake; the far O does not.
+    W.bodies.push(Physics.fromCells(W.next++, [[0, 3], [0, 4]], [3, 3], 0.5, 0, -P.HARD_V));
+    for (let i = 0; i < 12; i++) Physics.stepWorld(W);
+    assert(W.bodies[0].awake && W.bodies[1].awake, 'struck and stacked on it: awake');
+    assert(!W.bodies[2].awake, 'the far one sleeps on');
+  });
+
+  test('physics: a hard drop lands hard and knocks what it hits; a soft drop sets down gently', () => {
+    const knock = (hard) => {
+      const g = phys({ seed: 4 });
+      aim(g, 'O', 4, 0);
+      X(g).hardDrop(g);
+      run(g, 2.5);
+      const W = X(g).W, base = W.bodies[0], at = [base.x0, base.y0];
+      aim(g, 'I', 3, 0);
+      let peak = 0;
+      if (hard) X(g).hardDrop(g);
+      else for (let k = 0; k < 900 && W.bodies.length < 2; k++) X(g).tick(g, 1 / 60, { soft: true });
+      const land = W.bodies[1];
+      let maxV = 0;
+      for (let i = 0; i < 60; i++) {
+        X(g).tick(g, 1 / 60, {});
+        let v = 0; for (let k = 0; k < base.n; k++) v = Math.max(v, Math.hypot(base.x[k] - base.px[k], base.y[k] - base.py[k]) * 240);
+        maxV = Math.max(maxV, v);
+        peak = Math.max(peak, land.y0);
+      }
+      return { maxV, moved: Math.hypot(base.x0 - at[0], base.y0 - at[1]) };
+    };
+    const hard = knock(true), soft = knock(false);
+    assert(hard.maxV > 3, 'the hard drop knocks the O: ' + hard.maxV.toFixed(2) + ' cells/s');
+    assert(soft.maxV < hard.maxV / 2, 'a soft drop is gentle: ' + soft.maxV.toFixed(2) + ' vs ' + hard.maxV.toFixed(2));
+  });
+
+  // ---- clears --------------------------------------------------------------------------------------------------------
+
+  test('physics: a band clears whole minos the moment it is covered (90%); what it crossed splits; what was above falls', () => {
+    // Row 0: two I pieces and a J standing in the last two columns (8, 9); the J goes on up column 9.
+    const W = world(10, 20, [[[0, 0], [1, 0], [2, 0], [3, 0]], [[4, 0], [5, 0], [6, 0], [7, 0]], [[8, 0], [9, 0], [9, 1], [9, 2]]]);
+    const before = minosOf(W);
+    const c = Physics.clearBands(W);
+    assert(c && c.bands === 1 && c.rows[0] === 0);
+    assert.strictEqual(c.removed.length, 10, 'ten whole minos');
+    assert.strictEqual(minosOf(W), before - 10);
+    assert.deepStrictEqual(W.bodies.map((b) => b.m), [2], 'the J\'s two left above are one body');
+    assert(W.bodies[0].awake, 'and it falls');
+    settle(W, 2);
+    assert(W.bodies[0].y0 < 0.06, 'down to the floor');
+    // 90%: nine of ten covered clears; eight does not.
+    const nine = world(10, 20, [[[0, 0], [1, 0], [2, 0], [3, 0]], [[4, 0], [5, 0], [6, 0], [7, 0]], [[8, 0]]]);
+    assert(Physics.clearBands(nine), 'nine of ten');
+    const eight = world(10, 20, [[[0, 0], [1, 0], [2, 0], [3, 0]], [[4, 0], [5, 0], [6, 0], [7, 0]]]);
+    assert.strictEqual(Physics.clearBands(eight), null, 'eight of ten');
+    // A body crossing the band splits into its connected parts: an I standing in column 9 through row 2.
+    const W2 = world(10, 20, [[[9, 0], [9, 1], [9, 2], [9, 3]], [[0, 2], [1, 2], [2, 2], [3, 2]], [[4, 2], [5, 2], [6, 2], [7, 2]], [[8, 2]]]);
+    const c2 = Physics.clearBands(W2);
+    assert(c2 && c2.rows[0] === 2 && c2.removed.length === 10);
+    assert.deepStrictEqual(W2.bodies.map((b) => b.m).sort(), [1, 2], 'the I splits below and above the band');
+    // Never a mino passing through: one moving fast is not counted.
+    const fast = world(10, 20, [[[0, 0], [1, 0], [2, 0], [3, 0]], [[4, 0], [5, 0], [6, 0], [7, 0]], [[8, 0], [9, 0]]]);
+    fast.bodies[2].py.forEach((v, i, a) => { a[i] = v + 0.1; });
+    assert.strictEqual(Physics.clearBands(fast), null);
+  });
+
+  test('physics: a clear in play is counted and paid at once, per mino, at the reduced rate, and nothing waits for the board to rest', () => {
+    const g = phys({ seed: 6 });
+    // Row 0 nearly full of bodies already; an I set into the gap fills it.
+    const W = X(g).W;
+    for (const cells of [[[0, 0], [1, 0], [2, 0]], [[7, 0], [8, 0], [9, 0]]]) W.bodies.push(Physics.fromCells(W.next++, cells, cells.map(() => 5), 0, 0, 0));
+    aim(g, 'I', 3, 0);
+    X(g).hardDrop(g);
+    const ev = run(g, 0.5);
+    const cl = ev.find((e) => e.type === 'clear');
+    assert(cl, 'the band clears');
+    assert.strictEqual(cl.minos, 10);
+    assert(Math.abs(cl.pay - (10 / 10) * g.rules.lk * Physics.WORTH) < 1e-9, 'WORTH of a row');
+    assert.strictEqual(g.s.lines, 1);
+    assert(Math.abs(g.s.own - 1) < 1e-9);
+    assert(ev.indexOf(cl) < 10, 'within a few steps of the landing');
+  });
+
+  // ---- time --------------------------------------------------------------------------------------------------------------
+
+  test('physics: Rewind 5 s brings back the bodies, the piece, the queue and the numbers of about five seconds ago', () => {
+    const g = phys({ seed: 8 });
+    randomPlay(g, 6, 99, 1);
+    run(g, 1);
+    const X0 = X(g), t0 = X0.t;
+    const state = () => ({ n: X0.W.bodies.length, m: minosOf(X0.W), pos: X0.W.bodies.map((b) => +b.x0.toFixed(3) + ',' + +b.y0.toFixed(3)).join(' '), piece: g.piece && [g.piece.type.id, g.piece.x, g.piece.y], queue: g.queue.map((e) => e.id).join(''), pieces: g.s.pieces, score: g.s.score });
+    // The snapshot just taken (one every quarter second): then on, past five seconds of it, then back.
+    while (!X0.snaps.length || X0.snaps[X0.snaps.length - 1].t < X0.t - 1e-9) X0.tick(g, P.STEP, {});
+    const snap = X0.snaps[X0.snaps.length - 1], at = state();
+    randomPlay(g, 8, 7, 1);
+    while (X0.t - snap.t < 5 + 1e-6) X0.tick(g, P.STEP, {});
+    assert.notDeepStrictEqual(state(), at);
+    assert(X0.rewindTarget().t === snap.t, 'the target is the newest snapshot at least five seconds old: ' + [X0.t, snap.t, X0.rewindTarget() && X0.rewindTarget().t, X0.snaps[0].t, g.over]);
+    const r = X0.rewind(g);
+    assert(r && Math.abs(r.back - 5) < 0.3, 'about five seconds: ' + (r && r.back));
+    assert.deepStrictEqual(state(), at);
+    assert(X0.t < t0 + 0.3);
+    assert(!g.over);
+    // With nothing in the buffer, nothing to rewind.
+    const fresh = phys();
+    assert.strictEqual(X(fresh).rewind(fresh), null);
+  });
+
+  test('physics: the board fills up when a new piece cannot appear, or when settled bodies stand above the top line for 1.5 s', () => {
+    const g = phys({ w: 6, h: 10, seed: 3 });
+    let ends = 0;
+    g.on('topout', () => ends++);
+    // Bodies piled where the pieces appear (no band full): the piece in play lands at once, the next has no room.
+    const Wg = X(g).W;
+    for (let y = 0; y < 10; y++) Wg.bodies.push(Physics.fromCells(Wg.next++, [[1, y], [2, y], [3, y], [4, y]], [3, 3, 3, 3], 0, 0, 0));
+    run(g, 0.5);
+    assert(g.over && ends === 1, 'full, once');
+    // Above the line: a tall stack against the wall reaching past the top (nothing in play).
+    const h = phys({ w: 10, h: 8, seed: 3 });
+    const W = X(h).W;
+    for (let y = 0; y < 12; y++) W.bodies.push(Physics.fromCells(W.next++, [[0, y], [1, y], [2, y], [3, y]], [3, 3, 3, 3], 0, 0, 0), Physics.fromCells(W.next++, [[4, y], [5, y], [6, y], [7, y]], [3, 3, 3, 3], 0, 0, 0));
+    h.piece = null;
+    let t = 0;
+    while (!h.over && t < 6) { run(h, 0.1); t += 0.1; }
+    assert(h.over, 'over');
+    assert(t > 1.4 && t < 4, 'after a second and a half above the line: ' + t.toFixed(1));
+  });
+
+  test('physics: the save keeps the bodies (and a picture of them for thumbnails); a resumed board goes on', () => {
+    const g = phys({ seed: 9 });
+    randomPlay(g, 12, 5, 0.5);
+    run(g, 2);
+    const j = JSON.parse(JSON.stringify(g.toJSON()));
+    assert(j.x.physics && j.x.physics.v === 1);
+    assert(j.cells.some((v) => v), 'the save\'s cells picture the bodies');
+    assert(Recipe.valid(j));
+    const r = new Game({ saved: j });
+    assert(r.board.cells.every((v) => !v), 'the grid is empty again in play');
+    const a = X(g).W, b = X(r).W;
+    assert.strictEqual(b.bodies.length, a.bodies.length);
+    assert.strictEqual(minosOf(b), minosOf(a));
+    for (let i = 0; i < a.bodies.length; i++) assert(Math.abs(a.bodies[i].x0 - b.bodies[i].x0) < 1e-3 && Math.abs(a.bodies[i].y0 - b.bodies[i].y0) < 1e-3);
+    run(r, 2);
+    assert(!r.over || r.s.pieces >= g.s.pieces);
+  });
+
+  test('physics + Classic: Classic moves the piece (its gravity and lock), Physics the bodies; bands count as Classic lines', () => {
+    const g = new Game({ w: 10, h: 20, seed: 2, recipe: Recipe.normalize({ mods: { physics: true }, mode: 'classic', classic: { type: 'b', height: 3 } }) });
+    assert.strictEqual(X(g).drive, false);
+    assert(g.board.cells.every((v) => !v), 'no garbage with Physics');
+    // Run as Classic's controller does: the piece down a row at a time, locked when it cannot go on.
+    const before = g.piece.y;
+    run(g, 1);
+    assert.strictEqual(g.piece.y, before, 'Physics does not move it');
+    while (g.fitsAt(g.piece, g.piece.rot, g.piece.x, g.piece.y - 1)) g.piece.y--;
+    g.lock();
+    run(g, 1);
+    assert.strictEqual(X(g).W.bodies.length, 1);
+    assert(X(g).W.bodies[0].y0 < 0.06, 'set flush where it rests');
+    const W = X(g).W;
+    for (const cells of [[[0, 3], [1, 3], [2, 3], [3, 3]], [[4, 3], [5, 3], [6, 3], [7, 3]], [[8, 3], [9, 3]]]) W.bodies.push(Physics.fromCells(W.next++, cells, cells.map(() => 3), 0, 0, 0));
+    W.bodies.slice(0, 1).forEach((b) => { b.awake = true; });
+    W.hashed = false;
+    run(g, 0.2);
+    assert.strictEqual(L.Classic.of(g).lines, 1, 'Classic counted the band');
+  });
+
+  // ---- pay ------------------------------------------------------------------------------------------------------------
+
+  /** A Standard board played by a greedy bot (the most rows, then the fewest holes, low and flat), paid as Free Play pays. */
+  function standard(seed, n, lean) {
+    const g = new Game({ w: 10, h: 20, seed, recipe: {}, previewCount: 1 });
+    const holes = (c) => { let k = 0; for (let x = 0; x < 10; x++) { let roof = false; for (let y = 19; y >= 0; y--) { if (c[y * 10 + x]) roof = true; else if (roof) k++; } } return k; };
+    const hts = (c) => { const o = []; for (let x = 0; x < 10; x++) { let t = 0; for (let y = 19; y >= 0; y--) if (c[y * 10 + x]) { t = y + 1; break; } o.push(t); } return o; };
+    let pay = 0, actions = 0, pieces = 0;
+    for (; pieces < n && g.piece && !g.over; pieces++) {
+      const t = g.piece.type;
+      let best = null;
+      for (let rot = 0; rot < 4; rot++) {
+        const b = t.rotBounds[rot];
+        for (let x = -b.minX; x <= 9 - b.maxX; x++) {
+          const s = g.simulate(t, rot, x, g.board);
+          if (!s) continue;
+          const hs = hts(s.board.cells);
+          let cost = -(s.n + s.c) * 1000 + holes(s.board.cells) * 60 + Math.max(...hs) * 4 + hs.reduce((a, v) => a + v, 0) * 0.5 + hs.slice(1).reduce((a, v, i) => a + Math.abs(v - hs[i]), 0);
+          if (lean) cost += (Math.min(rot, 4 - rot) + Math.abs(x - g.piece.x)) * 40;
+          if (!best || cost < best.cost) best = { cost, rot, x };
+        }
+      }
+      if (!best) break;
+      actions += Math.min(best.rot, 4 - best.rot) + Math.abs(best.x - g.piece.x) + 1;
+      g.piece.rot = best.rot; g.piece.x = best.x; g.piece.y = 19 - t.rotBounds[best.rot].maxY;
+      if (!g.fitsAt(g.piece, g.piece.rot, g.piece.x, g.piece.y)) break;
+      const r = g.drop();
+      if (!r) break;
+      g.s.mult = Pay.mult(g);
+      if (r.lines) pay += Pay.clear(g.s, r, g.rules).pay;
+    }
+    return { pay, actions, pieces };
+  }
+  /** A Physics board played by a bot: the column and turn that keep the surface lowest (the bodies' picture), hard dropped. */
+  function physicsBot(seed, n, w) {
+    const g = phys({ w, h: 20, seed });
+    let pay = 0, actions = 0, pieces = 0;
+    g.on('lock', () => { pieces++; });
+    for (let i = 0; i < n && g.piece && !g.over; i++) {
+      const cells = Physics.raster(X(g).W, g.w, g.h), t = g.piece.type;
+      const hs = []; for (let x = 0; x < g.w; x++) { let top = 0; for (let y = g.h - 1; y >= 0; y--) if (cells[y * g.w + x]) { top = y + 1; break; } hs.push(top); }
+      let best = null;
+      for (let rot = 0; rot < 4; rot++) {
+        const b = t.rotBounds[rot];
+        for (let x = -b.minX; x <= g.w - 1 - b.maxX; x++) {
+          let land = 0; for (const [cx, cy] of t.rots[rot]) land = Math.max(land, hs[x + cx] - cy);
+          let gaps = 0; for (const [cx, cy] of t.rots[rot]) gaps += land + cy - hs[x + cx];
+          const cost = land * 3 + gaps * 2 + (Math.min(rot, 4 - rot) + Math.abs(x - g.piece.x)) * 0.1;
+          if (!best || cost < best.cost) best = { cost, rot, x };
+        }
+      }
+      const p = g.piece;
+      actions += Math.min(best.rot, 4 - best.rot) + Math.abs(best.x - p.x) + 1;
+      for (let k = 0; k < best.rot; k++) g.rotate(1);
+      for (let k = 0; k < 12 && p.x !== best.x; k++) if (!g.move(Math.sign(best.x - p.x))) break;
+      X(g).hardDrop(g);
+      for (const e of run(g, 0.5)) if (e.type === 'clear') pay += e.pay;
+    }
+    return { pay, actions, pieces };
+  }
+
+  test('physics: fairness: a bot never earns more per piece or per action than on a Standard board; no quads, T-spins or streak', () => {
+    const T = process.env.PHYSICS_TABLE;
+    // Standard, as well as a simple bot plays it: the better of a greedy one and one that spares keys, each metric.
+    let stdPiece = 0, stdAction = 0;
+    for (const lean of [false, true]) {
+      const std = { pay: 0, actions: 0, pieces: 0 };
+      for (const seed of [1, 2, 3]) { const r = standard(seed, 300, lean); for (const k in std) std[k] += r[k]; }
+      stdPiece = Math.max(stdPiece, std.pay / std.pieces); stdAction = Math.max(stdAction, std.pay / std.actions);
+    }
+    for (const w of [6, 10, 16]) {
+      const ph = { pay: 0, actions: 0, pieces: 0 };
+      for (const seed of [1, 2]) { const r = physicsBot(seed, 90, w); for (const k in ph) ph[k] += r[k]; }
+      const perPiece = ph.pay / ph.pieces, perAction = ph.pay / ph.actions;
+      if (T) console.log('       w ' + w + ': per piece ' + perPiece.toFixed(4) + ' (Standard ' + stdPiece.toFixed(4) + '), per action ' + perAction.toFixed(4) + ' (Standard ' + stdAction.toFixed(4) + ')');
+      assert(ph.pay > 0, 'it clears, w ' + w);
+      assert(perPiece <= stdPiece, 'per piece, w ' + w + ': ' + perPiece + ' > ' + stdPiece);
+      assert(perAction <= stdAction, 'per action, w ' + w + ': ' + perAction + ' > ' + stdAction);
+      // The ceiling: every mino of every piece cleared, at WORTH: never above Standard's cells.
+      assert(ph.pay <= ph.pieces * 4 * Physics.WORTH * (w / 10) / w + 1e-9);
+    }
+    // No difficult clears: the multiplier stays ×1 and nothing is a quad.
+    const g = phys({ seed: 3 });
+    randomPlay(g, 30, 3, 1);
+    assert.strictEqual(g.s.quadRun || 0, 0);
+    assert(g.s.b2b < 0 && g.s.tspins === 0);
+  });
+
+  // ---- cost ------------------------------------------------------------------------------------------------------------
+
+  test('physics: a full 20 × 40 board costs little a frame, all of it awake (at rest: nothing, above)', () => {
+    const W = new Physics.World(20, 40, 'jelly');
+    // Every row 17 of 20 cells (no band full yet), in runs of up to four.
+    for (let y = 0; y < 38; y++) {
+      const gap = (y * 7) % 20, cells = [];
+      for (let c = 0; c < 20; c++) if (c < gap || c >= gap + 3) cells.push(c);
+      let runC = [];
+      const flush = () => { if (runC.length) W.bodies.push(Physics.fromCells(W.next++, runC.map((c) => [c, y]), runC.map(() => 3), 0, 0, 0)); runC = []; };
+      for (const c of cells) { if (runC.length && (c !== runC[runC.length - 1] + 1 || runC.length === 4)) flush(); runC.push(c); }
+      flush();
+    }
+    const minos = minosOf(W);
+    assert(minos > 600, minos + ' minos');
+    const frame = () => { Physics.stepWorld(W); Physics.stepWorld(W); Physics.clearBands(W); };
+    for (let i = 0; i < 90; i++) frame(); // warm up (the JIT), and let the first bands go
+    for (const b of W.bodies) { b.awake = true; b.still = 0; }
+    const F = 120, t = process.hrtime.bigint();
+    let worst = 0;
+    for (let i = 0; i < F; i++) { const t1 = process.hrtime.bigint(); frame(); worst = Math.max(worst, Number(process.hrtime.bigint() - t1) / 1e6); }
+    const ms = Number(process.hrtime.bigint() - t) / 1e6 / F;
+    if (process.env.PHYSICS_TABLE) console.log('       ' + minos + ' minos, all awake: ' + ms.toFixed(2) + ' ms a frame on average, ' + worst.toFixed(2) + ' at worst');
+    assert(ms < 8, ms.toFixed(2) + ' ms a frame (the budget in the page is 4; Node on a busy machine gets twice)');
+  });
+};

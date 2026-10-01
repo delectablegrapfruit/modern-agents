@@ -36,7 +36,9 @@ module.exports = function mirrorUnit({ L, test }) {
     assert.strictEqual(mk(10).allow('flip'), 'Not on a Mirror board');
     assert.strictEqual(mk(10).allow('tornado'), null);
     assert.strictEqual(std(10).allow('flip'), null, 'a plain board keeps Mirror World');
-    assert.deepStrictEqual(Recipe.conflicts({ mods: { mirror: true }, mode: 'battle' }), Recipe.get('battle') ? { 'mods.mirror=true': 'Not in Battle' } : {});
+    // (Physics, a modifier that does not go with Mirror, is ruled out beside it.)
+    const phys = Recipe.get('physics') ? { 'mods.physics=true': 'Not with Mirror' } : {};
+    assert.deepStrictEqual(Recipe.conflicts({ mods: { mirror: true }, mode: 'battle' }), Object.assign(Recipe.get('battle') ? { 'mods.mirror=true': 'Not in Battle' } : {}, phys));
     // Sizes: none of its own (a pair always fits inside w).
     assert.deepStrictEqual(Recipe.limits(MIRROR), Recipe.limits(Recipe.DEFAULT));
     // A default board has no Mirror extension at all.

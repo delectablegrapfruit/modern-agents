@@ -729,12 +729,12 @@
 
     /**
      * Clears rows (a lock's, Settle's) into a result: rows, removed and lines, with the recipe's beforeClear and
-     * afterClear around it (Jelly's cascades go on result.cascade). Rows holding a FOREIGN cell are plain.
+     * afterClear around it (a recipe's cascades go on result.cascade). Rows holding a FOREIGN cell are plain.
      */
     clearInto(board, rows, result) {
       this.hook('beforeClear', board, result);
       result.rows = rows;
-      // A part can take the rows away itself (clearRows: Jelly's bodies, where nothing comes down by itself).
+      // A part can take the rows away itself (clearRows: a recipe where nothing comes down by itself).
       const own = this.hooks.clearRows ? this.ask('clearRows', board, rows, result) : null;
       result.removed = own || board.clearRows(rows);
       result.lines = rows.length;
@@ -776,7 +776,7 @@
           result.drilled.push([bx, yy, old]); this.board.set(bx, yy, 0);
         }
       }
-      // Rows the recipe fills after a drill (Jelly's cascades, in afterClear) clear and are scored, as plain rows; a
+      // Rows the recipe fills after a drill (a recipe's cascades, in afterClear) clear and are scored, as plain rows; a
       // plain board's drill never fills one (nothing is scored, the combo is left as it was).
       if (this.ext.length) {
         this.clearInto(this.board, this.fullRows(), result);
@@ -801,7 +801,7 @@
     score(result) {
       const s = this.s, R = this.rules;
       if (result.special && result.lines) { result.plain = (result.plain || 0) + result.lines; result.lines = 0; result.tspin = false; result.mini = false; }
-      // n: rows the piece's own lock cleared with no FOREIGN cell; c: plain rows (an item's, a FOREIGN cell's, Jelly's
+      // n: rows the piece's own lock cleared with no FOREIGN cell; c: plain rows (an item's, a FOREIGN cell's, a recipe's
       // cascades), all in this one result. ownCells: removed cells that were not FOREIGN (a laser's empty ones too:
       // the row goes); own = ownCells / w, Standard-comparable rows: what pays and counts toward records.
       let ownCells = 0;
@@ -812,7 +812,7 @@
       if (cascade) result.plain = (result.plain || 0) + cascade;
       const n = result.lines, c = result.plain || 0, all = n + c;
       result.n = n; result.c = c; result.ownCells = ownCells; result.own = ownCells / this.w;
-      // Rows a recipe's cascade cleared and nothing else (a piece whose own lock cleared none: Jelly's hanging part):
+      // Rows a recipe's cascade cleared and nothing else (a piece whose own lock cleared none):
       // they count and keep the combo, but leave every streak as it was, neither adding to it nor ending it, and a
       // T-spin with no rows of its own is not made one by them. Never on a board without cascades.
       const still = !n && cascade > 0 && c === cascade && !result.special;
@@ -1017,7 +1017,7 @@
     roomAfter(change) {
       const p = this.piece, before = this.board.snapshot();
       change();
-      // Whatever the recipe does after such a change happens inside the test too (Jelly's cascades).
+      // Whatever the recipe does after such a change happens inside the test too (its cascades).
       this.hook('roomAfter', this.board);
       const ok = this.fitsAt(p, p.rot, p.x, p.y);
       this.board.restore(before);

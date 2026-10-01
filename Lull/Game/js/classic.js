@@ -122,7 +122,8 @@
     game.mods.noHold = !k.hold;
     // Next shows the recipe's count, whatever Settings ▸ Next says.
     Object.defineProperty(game, 'previewCount', { get: () => k.next, set() {}, configurable: true });
-    if (!o.saved && k.type === 'b') placeGarbage(game, k);
+    // (Physics: no garbage; it would be grid cells the bodies could not stand on.)
+    if (!o.saved && k.type === 'b' && !(game.recipe.mods && game.recipe.mods.physics)) placeGarbage(game, k);
     const ext = {
       C,
       step(g, res) {
@@ -144,6 +145,19 @@
     };
     if (k.rand === 'nes') ext.dealer = nesDealer(C);
     return ext;
+  }
+
+  /**
+   * Lines cleared between locks (Physics' bands, js/physics.js): counted toward the level and B type's 25, as a lock's
+   * are (Physics pays and scores them itself).
+   */
+  function addLines(game, n) {
+    const C = of(game);
+    if (!C || !(n > 0)) return;
+    const k = game.recipe.classic;
+    C.lines += n;
+    C.bestLevel = Math.max(C.bestLevel || 0, featLevel(k, C.lines));
+    if (k.type === 'b' && C.lines >= B_LINES && !game.over) game.end('cleared');
   }
 
   /** The Classic state of a game (null on a board that is not Classic). */
@@ -193,5 +207,5 @@
   };
   Recipe.part(PART);
 
-  L.Classic = { DEFAULTS, LEVELS, HEIGHTS, NEXT, B_LINES, B_ROWS, MUSIC, MUSIC_NAMES, LOCK, on, gravity, garbageRows, levelOf, featLevel, normalize: normalizeK, nesDealer, of, PART };
+  L.Classic = { DEFAULTS, LEVELS, HEIGHTS, NEXT, B_LINES, B_ROWS, MUSIC, MUSIC_NAMES, LOCK, on, gravity, garbageRows, levelOf, featLevel, normalize: normalizeK, nesDealer, of, addLines, PART };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

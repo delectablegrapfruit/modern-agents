@@ -321,18 +321,14 @@
   function reshape(json, w, h) {
     if (!json || !Array.isArray(json.cells)) return { why: 'This board cannot be changed' };
     if (!validSize(w, h)) return { why: 'No board is ' + sizeLabel(w, h) };
-    const W = json.w, H = json.h, C = L.CELL;
+    const W = json.w, H = json.h;
     let cols = false, rows = false;
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (json.cells[y * W + x] && (x >= w || y >= h)) { if (x >= w) cols = true; if (y >= h) rows = true; }
     if (cols) return { why: 'Blocks stand in the columns it would lose' };
     if (rows) return { why: 'Blocks stand in the rows it would lose' };
     const cells = new Array(w * h).fill(0);
     for (let y = 0; y < Math.min(h, H); y++) for (let x = 0; x < Math.min(w, W); x++) {
-      let v = json.cells[y * W + x];
-      // A join across an edge that is now a wall is let go.
-      if (v && C && x === w - 1 && w < W) v &= ~C.JOIN_R;
-      if (v && C && y === h - 1 && h < H) v &= ~C.JOIN_U;
-      cells[y * w + x] = v;
+      cells[y * w + x] = json.cells[y * W + x];
     }
     return { json: Object.assign(JSON.parse(JSON.stringify(json)), { w, h, cells }) };
   }

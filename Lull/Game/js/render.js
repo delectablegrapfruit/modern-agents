@@ -17,7 +17,7 @@
   // A part's view half draws what its option adds. Every hook is optional; hooks run in the parts' order:
   //   active(game) -> bool       is it on this board (default: the game has the part's engine extension)
   //   claims(v, view) -> bool    a stored cell it draws itself (Protect: the sprout, moles, stones; Battle: filler);
-  //                              claims: 'rest' draws the own cells no other painter claimed (Jelly)
+  //                              claims: 'rest' draws the own cells no other painter claimed (Physics)
   //   cell(ctx, v, x, y, s, kind, view, at) -> false to fall back   kind: 'stack', 'piece', 'ghost' or 'tray'; v is the
   //                              cell (stack) or the colour slot; at: { x, y } on the board, or { cells } of the piece
   //   overStack / overPiece / overRim (ctx, view, now)   drawn after the stack, after the piece, after the rim
@@ -1030,7 +1030,7 @@
       const tint = golden ? '#f2c14e' : color;
       // Phasing: translucent, and it shimmers (more faintly still while inside other blocks).
       const shimmer = p.special === 'phase' && !this.reducedMotion ? 0.12 * Math.sin(now / 170 + (cx + cy) * 0.9) : 0;
-      // A view part's painter draws a plain piece in its own look (Jelly); gold and the tools keep theirs.
+      // A view part's painter draws a plain piece in its own look (Physics); gold and the tools keep theirs.
       if (!this.rest || p.special || golden || !this.paintCell(ctx, p.type.color, sx, sy, s, 'piece', { x: cx, y: cy, cells: pieceCells })) drawCell(ctx, look.skin, tint, sx, sy, s, (p.special === 'phase' ? (overlapping ? 0.4 : 0.72) + shimmer : 1) * pa);
       if (pa !== 1) ctx.globalAlpha = pa;
       if (golden) {
@@ -1502,7 +1502,7 @@
         rr(ctx, b.x + 0.5, b.y + 0.5, b.w - 1, b.h - 1, r); ctx.stroke();
       };
       const pl = { skin: look.skin, color: (c) => (this.view.mono ? look.monoColor : look.colors[c]), t: now };
-      // A 'rest' painter (Jelly) draws the trays' blocks too.
+      // A 'rest' painter draws the trays' blocks too.
       if (this.rest) pl.paint = (c2, v, x, y, sz, at) => this.paintCell(c2, v, x, y, sz, 'tray', at);
       // A tray's piece as drawn: turned as a view part asks (trayEntry).
       const te = (e) => (this.parts.length ? this.trayEntry(e) : e);

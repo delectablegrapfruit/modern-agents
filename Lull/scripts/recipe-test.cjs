@@ -91,6 +91,8 @@ async function pixelsOf(browser, gameDir, query) {
 /** Registers stand-ins for the five parts (shapes, mirror, jelly, protect, battle), their UI and view halves. */
 const STAND_INS = () => {
   const R = Lull.Recipe, UI = Lull.UI, h = UI.h;
+  // The real Physics modifier is left out of this world of stand-ins (its own tests are physics-browser-test.cjs).
+  R.unpart('physics');
   const PRESETS = { normal: '', tiny: 'Tiny', frantic: 'Frantic', pentominoes: 'Pentominoes', big: 'Big', custom: 'Custom' };
   const isObj = (v) => !!v && typeof v === 'object';
   R.part({

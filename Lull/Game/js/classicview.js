@@ -239,7 +239,9 @@
           if (app.saveNow) app.saveNow();
         }
         play.renderItems();
-        if (kind === 'full' && !silent && G.piece) { this.startPile(); return; }
+        // The classic pile (the next pieces stacked where they appear) is drawn on the grid: not on a Physics board,
+        // whose stack is moving bodies.
+        if (kind === 'full' && !silent && G.piece && !G.rules.physics) { this.startPile(); return; }
         this.showEnd(kind);
       },
       showEnd(kind) {

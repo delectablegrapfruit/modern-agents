@@ -92,7 +92,7 @@
 
   /**
    * The combos a lock result makes (Free Play). Keeps one counter on the board's stats: was the last clear a TSD. The
-   * skill ones need a rated board with the feats on (no Jelly: R.noFeats); a quad is the board's (r.quad).
+   * skill ones need a rated board with the feats on (no Physics: R.noFeats); a quad is the board's (r.quad).
    */
   function detect(r, g) {
     const s = g.s, out = [];

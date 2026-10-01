@@ -45,7 +45,7 @@
 
   /**
    * The sound of a lock. r.heardLater: plain rows the board plays out after the lock and are heard then, not now (a
-   * recipe's controller sets it: Jelly's cascade, wave by wave); unset, every row is heard at the lock.
+   * recipe's controller sets it: a cascade, wave by wave); unset, every row is heard at the lock.
    */
   function playLockSound(snd, r) {
     const own = r.lines - (r.plain || 0), lines = r.lines - (r.heardLater || 0);
@@ -147,7 +147,7 @@
       if (ok && before && /^(moveL|moveR|rotate|rotateInv|cw|ccw|r180|lower)$/.test(a) && g.piece === prevPiece) {
         this.view.trail(before, beforeColor, this.reduced);
         if (a === 'lower' && !rep) snd.play('lower');
-        // The recipe's view parts animate a move or a turn their own way (Jelly's wobble).
+        // The recipe's view parts animate a move or a turn their own way (a wobble).
         if (this.view.parts.length) this.view.partsCall(/^move/.test(a) ? 'onMove' : a === 'lower' ? 'onLower' : 'onRotate', a, this.reduced);
       }
       this.view.dirty = true;
@@ -265,7 +265,7 @@
 
     aimAt(col) {
       const g = this.game;
-      // The recipe's view parts hear each step of a mouse slide as a move, as they do a key's (Jelly's wobble).
+      // The recipe's view parts hear each step of a mouse slide as a move, as they do a key's (a wobble).
       const parts = this.view.parts && this.view.parts.length ? this.view : null;
       this.quiet = true;
       for (let i = 0; i < g.w; i++) {
@@ -773,6 +773,7 @@
      * these, or the wallet would go below zero.
      */
     rewindRefund() {
+      if (typeof this.ctl.rewindRefund === 'function') return this.ctl.rewindRefund();
       const g = this.game, last = g && g.history[g.history.length - 1];
       return last ? Math.round(Math.max(0, (g.s.banked || 0) - (last.s.banked || 0)) * 100) / 100 : 0;
     }
@@ -792,12 +793,14 @@
       const nItems = items.reduce((a, [, n]) => a + n, 0);
       const ppm = m.playMs > 30000 ? (m.pieces / (m.playMs / 60000)).toFixed(1) : '—';
       const tile = (v, l) => h('div', { class: 'bs' }, h('div', { class: 'v' }, v), h('div', { class: 'l' }, l));
+      // A board with no difficult clears, combos or chains (Physics: R.physics) leaves their tiles out.
+      const skill = !(L.Recipe && recipe && L.Recipe.rules(recipe, sz.w).physics);
       return h('div', { class: 'board-sum' },
         tile(m.life ? fmtDuration(m.life) : '—', 'Lifetime'), tile(m.playMs ? fmtDuration(m.playMs) : '—', 'Played'), tile(fmtInt(m.pieces), 'Pieces'),
         tile(fmtInt(m.lines), 'Lines'), tile(fmtInt(m.score), 'Score'), tile(ppm, 'Pieces / min'),
-        tile(fmtInt(m.quads), 'Quads'), tile(fmtInt(m.tspins), 'T-spins'), tile(fmtInt(m.perfect), 'Perfect clears'),
-        tile(fmtInt(m.maxCombo), 'Best combo'), tile(fmtInt(m.maxB2B), 'Best back-to-back'), tile(fmtInt(m.chain), 'Best chain'),
-        tile(fmtInt(m.hchain), 'Best chain, no power-ups'), tile(fmtLines(m.banked) + ' ' + LINE, 'Lines banked'), tile(fmtInt(m.combos), 'Combos'),
+        skill ? [tile(fmtInt(m.quads), 'Quads'), tile(fmtInt(m.tspins), 'T-spins'), tile(fmtInt(m.perfect), 'Perfect clears'),
+          tile(fmtInt(m.maxCombo), 'Best combo'), tile(fmtInt(m.maxB2B), 'Best back-to-back'), tile(fmtInt(m.chain), 'Best chain'),
+          tile(fmtInt(m.hchain), 'Best chain, no power-ups')] : null, tile(fmtLines(m.banked) + ' ' + LINE, 'Lines banked'), skill ? tile(fmtInt(m.combos), 'Combos') : null,
         tile(Library.sizeLabel(sz.w, sz.h), 'Size'),
         h('div', { class: 'bs span2' }, h('div', { class: 'v' }, nItems ? fmtInt(nItems) + ' used' : 'none'), h('div', { class: 'l' }, 'Power-ups' + (items.length ? ': ' + items.slice(0, 6).map(([id, n]) => ITEMS[id].name + (n > 1 ? ' ×' + n : '')).join(', ') : ''))),
         label ? h('div', { class: 'bs span2 board-tile', title: label }, h('div', { class: 'v' }, label), h('div', { class: 'l' }, 'Board')) : null,
@@ -951,7 +954,7 @@
      *   chips: [{ value, name, piece | sample(ctx, px, look) }]   Shapes chips (path 'shapes.preset'); Normal is built in
      *   tab: 'shapes' | 'mods' | 'mode' | 'size', panel(r, api) -> element   more in that tab's panel, under its options
      *   value(r) -> text          the Shapes tab's short value ("Frantic", "Custom")
-     *   mod: 'jelly', name        Modifiers: its switch's name        mode: 'protect', name   Mode: its button's name
+     *   mod: 'physics', name        Modifiers: its switch's name        mode: 'protect', name   Mode: its button's name
      *   levels(r) -> { path, values: [[value, label]] } | null      the level row of its mode
      *   stepper(r, key) -> { label } | null   a stepper's name ('w', 'h': Battle's Height is Rows)
      *   presets(r) -> [[name, w, h]] | null   the Size tab's presets
@@ -1653,7 +1656,8 @@
       el.replaceChildren(
         h('div', { class: 'tray-head' }, h('b', null, ico('group-' + g.id), g.name), h('button', { class: 'icon-btn', title: 'Close', 'aria-label': 'Close', html: UI.ICONS.close, onclick: () => this.openTray(null) })),
         h('div', { class: 'tray-items' }, ids.map((id) => {
-          const it = ITEMS[id], n = inv[id] || 0, price = this.app.store.priceOf(id, this.game);
+          // A board can name a power-up its own way (Physics: Undo reads Rewind 5 s).
+          const it = Object.assign({}, ITEMS[id], typeof this.ctl.itemText === 'function' ? this.ctl.itemText(id) : null), n = inv[id] || 0, price = this.app.store.priceOf(id, this.game);
           const on = this.armed && this.armed.id === id && this.armed.piece === this.game.piece;
           // One this board refuses (its recipe's rules: R.refuse, or a part's allow) stays in its place, off, with why.
           const why = this.game.allow(id);
@@ -1675,8 +1679,9 @@
 
     /** Uses one you hold; with none, asks once (its name and a Buy & use button with the price), then buys and uses it. */
     useItem(id) {
-      const st = this.app.store, it = ITEMS[id];
-      if (!it) return;
+      const st = this.app.store;
+      if (!ITEMS[id]) return;
+      const it = Object.assign({}, ITEMS[id], typeof this.ctl.itemText === 'function' ? this.ctl.itemText(id) : null);
       if (this.cardOpen && id !== 'rewind') return;
       if (this.armed && this.armed.id === id && this.armed.piece === this.game.piece) { this.disarm(); return; }
       // Refused on this board (Game.allow: the recipe's rules and parts): nothing is spent or bought; the reason shows.
@@ -1793,6 +1798,8 @@
           done();
           break;
         case 'rewind': {
+          // A board that turns time back its own way (Physics: Rewind 5 s) does it; the Undo is used as ever.
+          if (typeof this.ctl.rewind === 'function') { if (this.ctl.rewind()) done(); break; }
           // What the placement banked goes back in full: a wallet that has spent it since cannot take the placement
           // back (an Undo would pay otherwise), and the Undo held is kept.
           const need = this.rewindRefund();
