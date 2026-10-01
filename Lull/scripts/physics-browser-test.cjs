@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 // Physics in the page (js/physics.js, js/physicsview.js): a Physics board made from the New board window (Modifiers ▸
 // Physics, its Material; Mirror off beside it), the power-ups it refuses shown off with the reason and Undo reading
-// Rewind 5 s; the simulation running in real time; a hard drop knocking a resting piece and a soft drop setting down
-// gently; a band clearing whole minos and paying at once; Rewind 5 s; the Board full card (Rewind 5 s, Boards, Retire);
-// reduced motion (the stiller material); a phone (390 × 844 and 320 × 568, touch); no console errors; screenshots
-// (light and dark).
+// Rewind 5 s; the simulation running in real time while the piece in play stays where it is; ↓ resting it and ↓ again
+// (or held, or a drag down) letting it go; a move shoving a body, refused when the body is pinned; a hard drop knocking
+// a resting piece and a soft drop setting down gently; a band clearing whole minos and paying at once; Rewind 5 s; the
+// Board full card (Rewind 5 s, Boards, Retire); reduced motion (the stiller material); a phone (390 × 844 and
+// 320 × 568, touch); the cost of a full 20 × 40 board all awake; no console errors; screenshots (light and dark: a hard
+// drop into a stack, a bar draped over a gap).
 // Run by browser-test.cjs: require('./physics-browser-test.cjs')({ browser, check, PAGE, OUT }); or on its own:
 //   node Lull/scripts/physics-browser-test.cjs [screenshot-dir]
 'use strict';
@@ -37,7 +39,7 @@ module.exports = async function physicsTests({ browser, check, PAGE, OUT }) {
         return m.game;
       };
       window.__body = (cells, color) => { const X = Lull.Physics.of(Lull.app.modes.play.game), W = X.W; const b = Lull.Physics.fromCells(W.next++, cells, cells.map(() => color || 3), 0, 0, 0); W.bodies.push(b); W.hashed = false; return b.id; };
-      window.__aim = (id, x) => { const g = Lull.app.modes.play.game, X = Lull.Physics.of(g); g.replacePiece({ id }); const p = g.piece; p.rot = 0; p.x = x - p.type.rotBounds[0].minX; X.off = 0; p.y = g.h - 1 - p.type.rotBounds[0].maxY; Lull.app.modes.play.view.dirty = true; };
+      window.__aim = (id, x, y) => { const g = Lull.app.modes.play.game, X = Lull.Physics.of(g); g.replacePiece({ id }); const p = g.piece; p.rot = 0; p.x = x - p.type.rotBounds[0].minX; X.off = 0; p.y = y != null ? y - p.type.rotBounds[0].minY : g.h - 1 - p.type.rotBounds[0].maxY; Lull.app.modes.play.view.dirty = true; };
       window.__state = () => { const m = Lull.app.modes.play, g = m.game, X = Lull.Physics.of(g); return { t: X.t, bodies: X.W.bodies.length, awake: X.W.bodies.filter((b) => b.awake).length, minos: X.W.bodies.reduce((a, b) => a + b.m, 0), pieces: g.s.pieces, lines: g.s.lines, over: g.over, card: m.cardOpen, y: g.piece ? g.piece.y - X.off : null }; };
     });
     return { ctx, page, ev, shot };
@@ -104,7 +106,46 @@ module.exports = async function physicsTests({ browser, check, PAGE, OUT }) {
     const a = await ev(() => window.__state());
     await page.waitForTimeout(600);
     const b = await ev(() => window.__state());
-    if (theme === 'light') check('the simulation runs in real time: the piece falls by itself', b.y < a.y - 0.4 && b.t > a.t + 0.4, JSON.stringify([a, b]));
+    if (theme === 'light') {
+      check('the simulation runs in real time, and the piece in play stays where it is (no fall by itself)', b.y === a.y && b.t > a.t + 0.4 && b.pieces === 0, JSON.stringify([a, b]));
+      // ↓ takes it down to rest on the floor, not set; ↓ again lets it go.
+      await ev(() => window.__aim('O', 4, 2));
+      await page.keyboard.down('ArrowDown'); await page.waitForTimeout(450); await page.keyboard.up('ArrowDown');
+      await page.waitForTimeout(700);
+      const rest = await ev(() => Object.assign(window.__state(), { resting: Lull.Physics.of(Lull.app.modes.play.game).resting(Lull.app.modes.play.game) }));
+      await page.keyboard.press('ArrowDown');
+      await page.waitForTimeout(120);
+      const set = await ev(() => window.__state());
+      check('↓ lowers the piece to rest on the floor without setting it; ↓ pressed again lets it go', rest.resting && rest.pieces === 0 && Math.abs(rest.y) < 0.05 && set.pieces === 1 && set.bodies === 1, JSON.stringify({ rest, set }));
+      // Held against what it rests on (or a drag down, as touch sends it), it is let go after a moment.
+      await ev(() => window.__aim('O', 0, 1));
+      await page.waitForTimeout(100);
+      const drag = await ev(async () => {
+        const m = Lull.app.modes.play, g = m.game, before = g.s.pieces;
+        for (let i = 0; i < 4; i++) { m.action('down', true); await new Promise((r) => setTimeout(r, 30)); }
+        const early = g.s.pieces;
+        for (let i = 0; i < 20 && g.s.pieces === early; i++) { m.action('down', true); await new Promise((r) => setTimeout(r, 40)); }
+        return { before, early, after: g.s.pieces };
+      });
+      check('a drag down (or ↓ held) brings it to rest, then lets it go after a moment against the stack', drag.early === drag.before && drag.after === drag.before + 1, JSON.stringify(drag));
+      // A move into a body shoves it; against the wall it is pinned and the move is refused.
+      await ev(() => window.__phys(10, 20, 5));
+      const box = await ev(() => window.__body([[5, 0], [6, 0], [5, 1], [6, 1]], 5));
+      await ev(() => window.__aim('O', 3, 0));
+      await page.waitForTimeout(300);
+      const x0 = await ev((id) => Lull.Physics.of(Lull.app.modes.play.game).W.bodies.find((b) => b.id === id).x0, box);
+      await page.keyboard.press('ArrowRight');
+      await page.waitForTimeout(60);
+      const shove = await ev((id) => { const b = Lull.Physics.of(Lull.app.modes.play.game).W.bodies.find((o) => o.id === id); return { x0: b.x0, awake: b.awake, px: Lull.app.modes.play.game.piece.x }; }, box);
+      check('moving the piece into a body shoves it along (it wakes and moves off)', shove.x0 > x0 + 0.9 && shove.awake, JSON.stringify({ x0, shove }));
+      await ev(() => { window.__phys(10, 20, 5); window.__body([[7, 0], [8, 0], [9, 0], [7, 1], [8, 1], [9, 1]], 2); window.__aim('O', 5, 0); });
+      await page.waitForTimeout(400);
+      const px0 = await ev(() => Lull.app.modes.play.game.piece.x);
+      await page.keyboard.press('ArrowRight');
+      await page.waitForTimeout(60);
+      const px1 = await ev(() => Lull.app.modes.play.game.piece.x);
+      check('a body pinned against the wall cannot be shoved: the move is refused', px1 === px0, JSON.stringify({ px0, px1 }));
+    }
 
     // A hard drop onto a resting O knocks it; a soft drop does not.
     const knock = async (hard) => {
@@ -113,16 +154,17 @@ module.exports = async function physicsTests({ browser, check, PAGE, OUT }) {
       await page.waitForTimeout(500);
       await ev(() => window.__aim('I', 3));
       if (hard) { const p = watch(ev, id, 700); await page.keyboard.press('Space'); return p; }
+      // (↓ held: down to the O, a moment against it, let go.)
       await page.keyboard.down('ArrowDown');
-      const p = watch(ev, id, 2200);
-      await page.waitForTimeout(2000);
+      const p = watch(ev, id, 2600);
+      await page.waitForTimeout(2400);
       await page.keyboard.up('ArrowDown');
       return p;
     };
     const hard = await knock(true);
     if (theme === 'light') await shot('physics-hard-drop-' + theme);
     const soft = await knock(false);
-    if (theme === 'light') check('a hard drop (Space) knocks the O it lands on; a soft drop (held ↓) sets down gently', hard > 2.5 && soft < hard / 2, JSON.stringify({ hard, soft }));
+    if (theme === 'light') check('a hard drop (Space) knocks the O it lands on; a soft drop (held ↓) sets down gently', hard > 1 && soft < hard / 4, JSON.stringify({ hard, soft }));
 
     // A band: row 0 five short of full; an I dropped into the gap makes it 9 of 10, which clears at once, and pays.
     await ev(() => { window.__phys(10, 20, 6); window.__body([[0, 0], [1, 0], [2, 0]], 2); window.__body([[8, 0], [9, 0]], 6); window.__body([[1, 1], [2, 1], [1, 2]], 4); window.__aim('I', 4); });
@@ -137,7 +179,7 @@ module.exports = async function physicsTests({ browser, check, PAGE, OUT }) {
     const wallet1 = await ev(() => Lull.app.store.state.lines);
     await page.waitForTimeout(120);
     await shot('physics-clear-' + theme);
-    if (theme === 'light') check('a band clears whole minos within a few frames of the landing and pays at once', lines.lines === 1 && lines.frames <= 20 && lines.minos === 3 + 2 + 3 + 4 - 9 && wallet1 > wallet0, JSON.stringify({ lines, wallet0, wallet1 }));
+    if (theme === 'light') check('a band clears whole minos within a few frames of the landing (once they are still) and pays at once', lines.lines === 1 && lines.frames <= 45 && lines.minos === 3 + 2 + 3 + 4 - 9 && wallet1 > wallet0, JSON.stringify({ lines, wallet0, wallet1 }));
 
     // A stack at rest; then Rewind 5 s from the tray (an Undo held).
     if (theme === 'light') {
@@ -155,13 +197,50 @@ module.exports = async function physicsTests({ browser, check, PAGE, OUT }) {
     // Full: bodies under where the pieces appear; the Board full card.
     await ev(() => window.__phys(8, 10, 9));
     await page.waitForTimeout(700);
-    await ev(() => { for (let y = 0; y < 10; y++) window.__body([[2, y], [3, y], [4, y], [5, y]], 1 + (y % 7)); });
+    // (The piece in play set down to one side first; then the stack, up to the top, where the next one appears.)
+    await ev(() => { window.__aim('O', 6, 0); for (let y = 0; y < 10; y++) window.__body([[2, y], [3, y], [4, y], [5, y]], 1 + (y % 7)); });
+    await page.waitForTimeout(300);
+    await ev(() => Lull.app.modes.play.action('drop'));
     await page.waitForTimeout(900);
     const card = await ev(() => ({ state: window.__state(), h: (document.querySelector('#play-overlay h2') || {}).textContent, btns: [...document.querySelectorAll('#play-overlay .row .btn')].map((b) => (b.querySelector('.lbl') || b).textContent.trim()), tiles: [...document.querySelectorAll('#play-overlay .bs .l')].map((l) => l.textContent) }));
     await shot('physics-full-' + theme);
     if (theme === 'light') {
       check('a board that cannot take its next piece is full: the Physics card has Rewind 5 s, Boards and Retire', card.state.over && card.h === 'Board full' && card.btns.join('|') === 'Rewind 5 s|Boards|Retire', JSON.stringify(card));
       check('its summary leaves out quads, T-spins, combos and chains, and counts the blocks cleared', !card.tiles.includes('Quads') && !card.tiles.includes('Best chain') && card.tiles.includes('Blocks cleared'), JSON.stringify(card.tiles));
+    }
+    await ctx.close();
+  }
+
+  // ---- the look of soft bodies: a hard drop into a stack, a bar over a gap ------------------------------------------
+  for (const theme of ['light', 'dark']) {
+    const { ctx, page, ev, shot } = await open({ colorScheme: theme });
+    await ev(() => { window.__phys(10, 20, 11); for (const x of [0, 2, 6]) window.__body([[x, 0], [x + 1, 0], [x, 1], [x + 1, 1]], 1 + x / 2); window.__body([[4, 0], [4, 1], [4, 2]], 3); window.__body([[8, 0], [8, 1], [8, 2]], 6); });
+    await page.waitForTimeout(700);
+    await ev(() => { window.__aim('I', 2); Lull.app.modes.play.action('drop'); });
+    await page.waitForTimeout(70);
+    await shot('physics-squish-' + theme);
+    await page.waitForTimeout(1500);
+    await shot('physics-stack-' + theme);
+    // A six-long bar over a gap of four.
+    await ev(() => { window.__phys(10, 20, 12); window.__body([[1, 0], [1, 1]], 2); window.__body([[6, 0], [6, 1]], 2); window.__body([[1, 2], [2, 2], [3, 2], [4, 2], [5, 2], [6, 2]], 1); window.__aim('O', 8); });
+    await page.waitForTimeout(2500);
+    await shot('physics-drape-' + theme);
+    if (theme === 'light') {
+      const sag = await ev(() => { const b = Lull.Physics.of(Lull.app.modes.play.game).W.bodies[2]; let mid = 9, end = 9; for (let i = 0; i < b.n; i++) if (b.ly[i] === 2) { if (b.lx[i] === 4) mid = b.y[i]; if (b.lx[i] === 1) end = b.y[i]; } return end - mid; });
+      check('a bar over a gap sags (the jelly is malleable)', sag > 0.2, String(sag));
+      // The cost of a full 20 × 40 board, every mino awake, in the page.
+      const ms = await ev(() => {
+        const P = Lull.Physics, W = new P.World(20, 40, 'jelly');
+        for (let y = 0; y < 38; y++) { const gap = (y * 7) % 20; let run = []; const flush = () => { if (run.length) W.bodies.push(P.fromCells(W.next++, run.map((c) => [c, y]), run.map(() => 3), 0, 0, 0)); run = []; }; for (let c = 0; c < 20; c++) { if (c >= gap && c < gap + 3) { flush(); continue; } if (run.length === 4) flush(); run.push(c); } flush(); }
+        const frame = () => { P.stepWorld(W); P.stepWorld(W); P.clearBands(W); };
+        for (let i = 0; i < 90; i++) frame();
+        for (const b of W.bodies) { b.awake = true; b.still = 0; }
+        const t = performance.now();
+        for (let i = 0; i < 200; i++) frame();
+        return (performance.now() - t) / 200;
+      });
+      console.log('    20 × 40, all awake: ' + ms.toFixed(2) + ' ms a frame in Chromium');
+      check('a full 20 × 40 board, all awake, costs under 6 ms a frame here (about 4 on a quiet machine)', ms < 6, ms.toFixed(2));
     }
     await ctx.close();
   }

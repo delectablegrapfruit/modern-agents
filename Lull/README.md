@@ -673,47 +673,77 @@ so the copy follows the finger. Taps are unchanged.
 
 ### Physics
 A modifier (Modifiers ▸ Physics, with its *Material* under the switch; the rules in `js/physics.js`, the look and Free
-Play's controller in `js/physicsview.js`). Tetris with physics: the piece in play moves column by column, turns, holds
-and falls on its own at a steady 1.6 rows a second (↓ hurries it to 10, Space throws it), until it touches a body or
-the floor. Then it *becomes* a soft body and keeps its momentum, and the next piece appears at once while the bodies
-go on moving. A hard drop arrives at 26 cells/s and knocks what it hits (it wakes, jostles, can tip); a soft landing
-keeps at most 2 cells/s and sets down gently. There is no ghost: where a piece lands depends on bodies still moving.
+Play's controller in `js/physicsview.js`). Tetris with physics.
 
-*Materials* are numbers (`Physics.MATERIALS`): stiffness, flow (plasticity) with its yield and drift bound, area,
-wobble, restitution, friction, density, damping. **Jelly** is the only one for now (bouncy, slippery, squishy, a little
-fluid); a new one is a new entry and its button appears under the switch. Reduced motion plays the same material
-stiffer and with less wobble (its `still` numbers).
+*The piece in play is yours until you let it go.* It is rigid and it never falls by itself (as everywhere in Relaxed
+play); touching a body or the floor never sets it. ← → move it a column, the turns turn it, hold holds it, and ↓ takes
+it down smoothly (10 cells/s) until it rests on what is below, where it stays. It moves through nothing: a move or a
+turn into bodies *shoves* them (they are moved out of its way, set moving at 4 cells/s at least, and woken), a few
+bodies deep, as long as they can go; a body pinned against a wall, the floor or bodies that cannot move (beyond 0.1 of
+overlap) refuses the move or turn. ↓ never presses bodies into the floor. A body that falls or slides onto the piece
+rests on it (the piece is a solid, kinematic body in the world, `W.kin`), and when the piece moves away it falls on.
+Letting go:
+- **Space** (a hard drop; a swipe toward the floor, a click): thrown straight down, landing at 26 cells/s, knocking what
+  it hits. Already resting on something, it is set down gently instead.
+- **↓ again while it rests** (a fresh press), or ↓ **held** against what it rests on for a quarter second (`REST_HOLD`;
+  a drag down on touch and the mouse wheel count as held): set down gently (at most 2 cells/s).
+- **Physics + Classic**: Classic's gravity moves it, row by row, rigid; it is set by Classic's lock delay while it rests
+  (not on first contact), or by ↓ on the stack and the hard drop as Classic has them.
+
+Let go, it *becomes* a soft body and the next piece appears at once while the bodies go on moving. There is no ghost:
+where a piece lands depends on bodies still moving.
+
+*Materials* are numbers (`Physics.MATERIALS`): the whole body's pull toward its shape (stiffness), each mino's pull
+toward its square (mino), each mino edge's pull toward its length (edge: squash), flow (plasticity) with its yield and
+drift bound, area, wobble, restitution, friction, density, damping. **Jelly** is the only one for now: soft and
+malleable (it bends over an edge, sags across a gap, squishes and wobbles when it lands, and keeps the dents and bends it
+took), slippery, bouncy. A new one is a new entry and its button appears under the switch. Reduced motion plays the same
+material firmer and with less wobble (its `still` numbers).
 
 *The simulation* runs live, every frame the board is in front, at a fixed step (120 a second, 2 substeps each; a frame
 takes as many steps as its time holds, at most a tenth of a second), never solved ahead at the lock. Position-based
 dynamics on particles, the way soft-body games do it: every mino is a quad of its four corners (minos of one body share
-the corners they meet at); Verlet-style integration with gravity (34 cells/s²); per-body shape matching (the
-springiness); plasticity (under load the rest shape drifts toward the deformed one, past a yield of 0.06 and never more
-than 0.18 from the grid shape: a stack sags and stays sagged); each mino keeps its area; the wobble about each body's own
-motion is damped (a few jiggles, then still); collisions of particles against other bodies' minos (pushed out through
-the outer edge they came in by, both sides moving), with a split impulse in positions (what closed this substep is
-stopped; an overlap already there comes apart without making speed), mild shock propagation for tall stacks (only for
-that position-only part, so momentum is kept), contact damping, low friction (0.18), a bounce off the floor and walls
-(0.25 of a landing faster than 4 cells/s; between bodies the bounce is their own springiness), and a spatial hash grid
-(one bucket a cell) for every lookup. A body still for 0.4 s (no particle 0.04 from where it was), all it touches still
-or asleep, sleeps and costs nothing; a strike faster than 3 cells/s wakes it and everything resting on it; a clear wakes
-everything at or above it. Nothing as a whole rises faster than 9 cells/s (a stack landing at once is a chain of
-springs: it bounces, it does not fly). Measured: a stack 15 rows tall settles 0.61 of a row lower and sleeps; a full
-20 × 40 board with every one of its ~650 minos awake costs about 3.5 ms a frame in Chromium (3.3–3.6 average, 5 at the
-95th percentile; the Node test holds it under 8), and real play on that board (a piece every 0.4 s, 300 pieces) about
-0.2 ms a frame; at rest nothing runs.
+the corners they meet at; bodies of different pieces never share anything); Verlet-style integration with gravity
+(34 cells/s²); shape matching, weak for the whole body and firmer for each mino (bodies bend and sag; each mino stays
+about a square); each mino edge holds its length firmly, never more than 12% off (`SQUASH`: squash is stiff, shear and
+bend soft, so a stack keeps its height), and no corner strays more than 0.12 from its mino's square (`STRAIN`);
+plasticity (under load the rest shape drifts toward the deformed one, past a yield of 0.015, never more than 0.45 from
+the grid shape, and the two corners of a mino edge never drift more than 0.15 apart, `BEND`, nor its rest edges more
+than 3% from a cell, `REST_SQUASH`: dents and bends are kept, a mino never flattens); each mino keeps its area; the
+wobble about each body's own motion is damped; collisions of particles against other bodies' minos (pushed out through
+the edge they came in by, else the one facing their own mino; both sides moving), and once a step every pair of minos of
+different bodies is tested by separating axes and parted along its least overlap if they overlap at all (whole minos,
+no speed made, the closing stopped): two squares turned on each other, a mino sheared across another or one wedged into
+another body's notch come apart, and nothing of one piece stays inside another; a split impulse in positions, mild
+shock propagation for tall stacks, contact damping, low friction (0.18), a bounce off the floor and walls (0.25 of a
+landing faster than 4 cells/s), and a spatial hash grid (one bucket a cell) for every lookup. A body still for 0.4 s,
+all it touches still or asleep (or resting on the piece in play), sleeps and costs nothing; a strike faster than
+3 cells/s wakes it and everything resting on it; a clear wakes everything at or above it. Nothing as a whole rises
+faster than 9 cells/s.
 
-*Clears* remove whole minos, never part of one. A band one mino tall (a grid row) clears the step its minos, those whose
-centres lie in it and each moving slower than 3 cells/s (never one passing through), cover 90% of the width (each its
-own span left to right, joined; a hair of slack for squashed jelly): 9 of 10 cells. Those minos go at once, what is left
-of each body it crossed splits into its connected groups (new bodies), and everything above falls in the frames after.
-What a clear removes pays at once.
+Measured (`PHYSICS_TABLE=1 node scripts/test.cjs`): a stack 15 rows tall settles 0.87 of a row lower and sleeps; a pile of
+26 random hard drops (104 minos) stands 13 to 14 rows tall with at most 0.02 of a cell of area of one piece inside
+another; a six-long bar across a gap of four sags 0.47 and keeps the bend; a hard drop squishes its minos visibly (their
+diagonals up to 0.31 apart). A full 20 × 40 board with every one of its ~650 minos awake costs about 3.4 to 4 ms a frame
+in Chromium (the Node test holds it under 8); at rest nothing runs.
+
+*Clears* remove whole minos, never part of one, and are measured on the minos themselves. A band is one mino tall,
+centred on a row of minos (the middle of those centred in a grid row, so a row that sagged is met where it is); it clears
+the step the minos centred in it, each moving slower than 3 cells/s (never one passing through), *cover* 90% of its area
+(less a hair, 3%, for jelly that keeps its area but not its exact square): each mino's own outline, clipped to the band,
+on eight lines across it, the spans joined, so overlaps count once and gaps count as gaps. A row of minos sunk into each
+other, crowded, zigzagging up and down or spread with holes does not clear; nine well set cells of ten do. Those minos go
+at once, what is left of each body it crossed splits into its connected groups (new bodies), and everything above falls
+in the frames after. What a clear removes pays at once.
 
 *Pay* is per mino removed, flat: `Physics.WORTH` (0.55) of a cell of a row, by the board's worth (`Library.worth`). No
 quads, T-spins, back-to-back, combos, perfect clears or streak multiplier; a band scores 100 × bands² + 10 a mino.
-Fairness (`scripts/physics-test.cjs`): a bot that picks the lowest landing from the bodies' picture and hard drops never
-earns more per piece or per action than a Standard board played by a greedy or key-sparing bot (measured: about 0.20
-a piece at widths 6, 10 and 16 against Standard's 0.38; 0.04 to 0.08 an action against 0.091).
+Fairness (`scripts/physics-test.cjs`): a bot that picks the lowest landing from the bodies' picture and sets each piece
+down gently never earns more per piece or per action than a Standard board played by a greedy or key-sparing bot
+(measured: 0.006 to 0.014 a piece at widths 6, 10 and 16 against Standard's 0.38; 0.0015 to 0.0024 an action against
+0.091). Hard-drop spam (random columns and turns, a drop every quarter second, 10 × 20) tops out after about 36 pieces
+with 0.005 lines a piece, against Standard's 27 pieces and 0.007 (before the piece was the player's and clears were
+measured by area it ran past 600 pieces, clearing 0.41 lines a piece).
 
 *Rewind 5 s* takes Undo's place on a Physics board: the Undo power-up reads "Rewind 5 s" (tray, tooltip, Buy & use, the
 Board full card) and costs what Undo costs (one held, or 5 lines). A ring of snapshots, one every quarter second for the
@@ -754,9 +784,9 @@ level, B type's 25). Shapes, sizes 4 × 8 to 20 × 40 and Big play as they are.
 The golden run (`scripts/golden.cjs`) never touches a Physics board and stays identical.
 
 *The look.* Each body is one smooth outline drawn from its particles (rounded at its corners) in the palette's colours
-whatever the skin, so every squash, stretch, sag and wobble on screen is the simulation's own; faint seams between its
-minos, light along its top, a deeper tone low down, a gloss on its highest mino, a darker rim. The piece in play is
-drawn the same way between rows. A clear's minos swell and fade where they were (reduced motion: they only fade). Tests:
+whatever the skin, so every squash, stretch, sag, bend and wobble on screen is the simulation's own; faint seams between
+its minos, light along its top, a deeper tone low down, a gloss on its highest mino, a darker rim. The piece in play is
+drawn the same way, rigid, where it is. A clear's minos swell and fade where they were (reduced motion: they only fade). Tests:
 `scripts/physics-test.cjs` (Node) and `scripts/physics-browser-test.cjs` (the page, a phone, light and dark).
 
 ### Protect

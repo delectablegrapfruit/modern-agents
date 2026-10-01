@@ -1,9 +1,12 @@
 // Physics (js/physics.js): the material's numbers; the recipe (a modifier: its Material, Mirror and Protect ruled out,
-// Classic's garbage too); bodies that never lose a mino but to a clear and never tear; a tall stack that hardly sinks;
-// sleep at rest (and no work then); clears that take whole minos and split what they cross; hard drops that knock and
-// soft ones that do not; Rewind 5 s; the top out both ways; the save; Physics + Classic; power-ups refused on Physics
-// boards only; fairness (a bot never earns more per piece or per action than a Standard board); and the cost of a full
-// 20 × 40 board in Node.
+// Classic's garbage too); the piece in play, rigid and the player's until let go (no fall by itself, touching never sets
+// it, ↓ rests it, ↓ again or held, or Space, lets it go), shoving bodies aside as it moves and refused when they are
+// pinned, never passed through; bodies that never lose a mino but to a clear, never tear, never merge or sink into each
+// other; a tall stack that hardly sinks, a pile as tall as its minos; soft bodies that bend, sag and keep dents; sleep at
+// rest (and no work then); clears measured on the minos' own area (honest cover) that take whole minos and split what
+// they cross; hard drops that knock and soft ones that do not; hard-drop spam that tops out like Standard; Rewind 5 s;
+// the top out both ways; the save; Physics + Classic; power-ups refused on Physics boards only; fairness (a bot never
+// earns more per piece or per action than a Standard board); and the cost of a full 20 × 40 board in Node.
 // Run by test.cjs: require('./physics-test.cjs')(test, L).
 'use strict';
 const assert = require('assert');
@@ -23,6 +26,33 @@ module.exports = function physicsTests(test, L) {
   /** A world with bodies made from cell lists (each [[x, y], …], at rest). */
   const world = (w, h, shapes) => { const W = new Physics.World(w, h, 'jelly'); for (const cells of shapes) W.bodies.push(Physics.fromCells(W.next++, cells, cells.map(() => 3), 0, 0, 0)); return W; };
   const settle = (W, secs) => { for (let i = 0; i < secs * 120; i++) Physics.stepWorld(W); };
+  /** Holds ↓ until the piece in play rests on something (it is not let go). */
+  const lowerToRest = (g) => { const ev = []; for (let k = 0; k < 600 && g.piece && !g.over && !X(g).resting(g); k++) ev.push(...X(g).tick(g, 1 / 60, { soft: true })); return ev; };
+  /** Area two convex quads share (Sutherland–Hodgman). */
+  const shared = (a, b) => {
+    let out = a;
+    for (let i = 0; i < 4 && out.length; i++) {
+      const A = b[i], B = b[(i + 1) % 4], inp = out, side = (p) => (B[0] - A[0]) * (p[1] - A[1]) - (B[1] - A[1]) * (p[0] - A[0]);
+      out = [];
+      for (let j = 0; j < inp.length; j++) {
+        const P0 = inp[j], Q = inp[(j + 1) % inp.length], sp = side(P0), sq = side(Q);
+        if (sp >= 0) out.push(P0);
+        if ((sp >= 0) !== (sq >= 0)) { const t = sp / (sp - sq); out.push([P0[0] + t * (Q[0] - P0[0]), P0[1] + t * (Q[1] - P0[1])]); }
+      }
+    }
+    let ar = 0;
+    for (let i = 0; i < out.length; i++) { const [x0, y0] = out[i], [x1, y1] = out[(i + 1) % out.length]; ar += x0 * y1 - x1 * y0; }
+    return Math.abs(ar) / 2;
+  };
+  const quadOf = (b, k) => [0, 1, 2, 3].map((e) => [b.x[b.q[4 * k + e]], b.y[b.q[4 * k + e]]]);
+  /** The area minos of different bodies share, all of it (0: nothing of one piece is inside another). */
+  const overlapOf = (W) => {
+    const all = [];
+    for (const b of W.bodies) for (let k = 0; k < b.m; k++) all.push([b, quadOf(b, k)]);
+    let t = 0;
+    for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) if (all[i][0] !== all[j][0]) t += shared(all[i][1], all[j][1]);
+    return t;
+  };
   /** Plays n pieces at random (columns, turns, hard or soft), returns the events. */
   const randomPlay = (g, n, seed, hardShare) => {
     let s = seed >>> 0;
@@ -34,7 +64,7 @@ module.exports = function physicsTests(test, L) {
       const dx = Math.floor(rnd() * g.w) - p.x;
       for (let k = 0; k < Math.abs(dx); k++) g.move(Math.sign(dx));
       if (rnd() < hardShare) { X(g).hardDrop(g); ev.push(...run(g, 0.35)); }
-      else { const before = g.s.pieces; for (let k = 0; k < 600 && g.s.pieces === before && !g.over; k++) ev.push(...X(g).tick(g, 1 / 60, { soft: true })); ev.push(...run(g, 0.2)); }
+      else { ev.push(...lowerToRest(g)); if (!X(g).release(g)) X(g).hardDrop(g); ev.push(...run(g, 0.2)); }
     }
     return ev;
   };
@@ -44,10 +74,12 @@ module.exports = function physicsTests(test, L) {
   test('physics: the material is numbers (Jelly the only one); reduced motion is stiffer and calmer, the same game', () => {
     assert.deepStrictEqual(Physics.MATERIAL_IDS, ['jelly']);
     const m = Physics.material('jelly');
-    for (const k of ['stiffness', 'flow', 'yield', 'drift', 'area', 'wobble', 'restitution', 'friction', 'density', 'damping']) assert(typeof m[k] === 'number' && m[k] >= 0, k);
-    for (const k of ['stiffness', 'area', 'wobble', 'restitution', 'friction']) assert(m[k] <= 1, k + ' is a share');
+    for (const k of ['stiffness', 'mino', 'edge', 'flow', 'yield', 'drift', 'area', 'wobble', 'restitution', 'friction', 'density', 'damping']) assert(typeof m[k] === 'number' && m[k] >= 0, k);
+    for (const k of ['stiffness', 'mino', 'edge', 'area', 'wobble', 'restitution', 'friction']) assert(m[k] <= 1, k + ' is a share');
     assert(m.friction < 0.3, 'slippery');
-    assert(m.flow > 0 && m.drift > 0 && m.drift < 0.3, 'partly fluid, never far from its shape');
+    assert(m.stiffness < m.mino && m.mino < m.edge, 'soft as a whole, each mino a little firmer, its squash firmest');
+    assert(m.flow > 0 && m.drift > 0 && m.drift < 0.5, 'partly fluid, never far from its shape');
+    assert(P.SQUASH <= 0.15 && P.BEND <= 0.2 && P.REST_SQUASH <= 0.05, 'a mino stays near a square');
     const still = Physics.material('jelly', true);
     assert(still.stiffness > m.stiffness && still.wobble > m.wobble && still.restitution < m.restitution, 'reduced motion: stiffer, less wobble');
     assert.strictEqual(Physics.material('nope'), m, 'an unknown material is Jelly');
@@ -94,21 +126,105 @@ module.exports = function physicsTests(test, L) {
 
   // ---- bodies --------------------------------------------------------------------------------------------------------
 
-  test('physics: a piece falls on its own, becomes a body when it touches, and the next appears at once; the grid stays empty', () => {
+  test('physics: the piece in play is the player\'s: it never falls by itself, touching never sets it, ↓ rests it, only the player lets it go', () => {
     const g = phys({ seed: 2 });
-    const y0 = g.piece.y - X(g).off;
-    run(g, 0.5);
-    assert(g.piece.y - X(g).off < y0 - 0.5, 'it falls');
+    const x = X(g), y0 = g.piece.y - x.off;
+    run(g, 2);
+    assert.strictEqual(g.piece.y - x.off, y0, 'no fall by itself');
+    assert.strictEqual(g.s.pieces, 0);
+    // ↓ takes it down to the floor; it rests there, not set, however long.
     const first = g.piece;
-    for (let i = 0; i < 1200 && g.piece === first; i++) X(g).tick(g, 1 / 60, {});
+    lowerToRest(g);
+    assert(x.resting(g) && g.piece === first, 'resting, still in play');
+    assert(g.piece.y - x.off < 0.05, 'on the floor: ' + (g.piece.y - x.off));
+    run(g, 2, { soft: true });
+    assert.strictEqual(g.piece, first, 'held against the floor in Node (no controller) it stays');
+    assert.strictEqual(g.s.pieces, 0);
+    // Let go: it becomes a body where it rests, the next piece comes at once; the grid stays empty.
+    assert(x.release(g));
     assert.notStrictEqual(g.piece, first, 'the next piece came');
     assert.strictEqual(g.s.pieces, 1);
-    assert.strictEqual(X(g).W.bodies.length, 1);
-    assert.strictEqual(minosOf(X(g).W), first.type.rots[0].length);
+    assert.strictEqual(x.W.bodies.length, 1);
+    assert.strictEqual(minosOf(x.W), first.type.rots[0].length);
     assert(g.board.cells.every((v) => !v), 'nothing on the grid');
-    // It touches the floor, flush (within a hair), not above it.
     run(g, 1);
-    assert(X(g).W.bodies[0].y0 < 0.05 && X(g).W.bodies[0].y0 > -0.05);
+    assert(x.W.bodies[0].y0 < 0.05 && x.W.bodies[0].y0 > -0.05, 'flush on the floor');
+    // A piece resting on a body: not set by touching it either; Space lets it go gently (it has no room to be thrown).
+    aim(g, 'O', 0, 0);
+    lowerToRest(g);
+    run(g, 1.5);
+    assert.strictEqual(g.s.pieces, 1, 'resting on a body, still in play');
+    x.hardDrop(g);
+    assert.strictEqual(g.s.pieces, 2);
+  });
+
+  test('physics: the piece in play shoves bodies aside as it moves (speed given, sleepers woken); refused when they are pinned', () => {
+    // An O body on the floor; the piece (an O) set down beside it, then moved into it: the body goes, the move stands.
+    const g = phys({ seed: 3 });
+    const x = X(g), W = x.W;
+    W.bodies.push(Physics.fromCells(W.next++, [[4, 0], [5, 0], [4, 1], [5, 1]], [5, 5, 5, 5], 0, 0, 0));
+    run(g, 1.5);
+    const box = W.bodies[0];
+    assert(!box.awake, 'asleep');
+    aim(g, 'O', 2, 0);
+    lowerToRest(g);
+    assert(g.move(1), 'the move stands');
+    assert(box.awake, 'woken');
+    assert(box.x0 > 4.9, 'shoved a column over: ' + box.x0.toFixed(3));
+    let vx = 0; for (let i = 0; i < box.n; i++) vx += (box.x[i] - box.px[i]) / box.n;
+    assert(vx > 0, 'and moving on');
+    // On into it until it is pinned against the wall: then the move is refused and nothing moves.
+    let moves = 1;
+    for (; moves < 8; moves++) { run(g, 0.3); if (!g.move(1)) break; }
+    const right = Math.max(...x.cellsOf(g, g.piece).map(([cx]) => cx)) + 1;
+    assert(moves < 8 && right >= 6.9, 'refused next to it: ' + moves + ' moves, its right side at ' + right);
+    assert(box.x1 <= 10.02 && box.x1 > 9.9, 'the wall holds it');
+    const at = box.x0;
+    assert.strictEqual(g.move(1), false, 'refused: it has nowhere to go');
+    assert(Math.abs(box.x0 - at) < 0.02);
+    // Two in a row are pushed together; pinned behind one that cannot move, neither.
+    const h = phys({ seed: 4 }), y = X(h), V = y.W;
+    V.bodies.push(Physics.fromCells(V.next++, [[3, 0], [3, 1]], [5, 5], 0, 0, 0), Physics.fromCells(V.next++, [[4, 0], [4, 1]], [6, 6], 0, 0, 0));
+    run(h, 1);
+    aim(h, 'O', 1, 0);
+    lowerToRest(h);
+    assert(h.move(1), 'two bodies shoved together');
+    assert(V.bodies[0].x0 > 3.9 && V.bodies[1].x0 > 4.9, V.bodies.map((b) => b.x0.toFixed(2)).join());
+    V.bodies.push(Physics.fromCells(V.next++, [[6, 0], [7, 0], [8, 0], [9, 0], [6, 1], [7, 1], [8, 1], [9, 1]], [1, 1, 1, 1, 1, 1, 1, 1], 0, 0, 0));
+    V.hashed = false;
+    run(h, 0.5);
+    assert.strictEqual(h.move(1), false, 'pinned by a body against the wall');
+    // Down onto bodies on the floor: it rests on them, never pushes them into the floor or passes through.
+    aim(h, 'O', 6, 0);
+    lowerToRest(h);
+    run(h, 1, { soft: true });
+    assert(h.piece.y - y.off > 1.85, 'on top of what is below: ' + (h.piece.y - y.off).toFixed(3));
+  });
+
+  test('physics: a body falling onto the piece in play rests on it (never through it); a move or turn into bodies never passes them', () => {
+    const g = phys({ seed: 5 });
+    const x = X(g), W = x.W;
+    aim(g, 'I', 3, 0);
+    lowerToRest(g);
+    const top = g.piece.y - x.off + 1;
+    // An O let fall onto the I from above.
+    W.bodies.push(Physics.fromCells(W.next++, [[4, 4], [5, 4], [4, 5], [5, 5]], [5, 5, 5, 5], 0, 0, -6));
+    run(g, 2);
+    const o = W.bodies[0];
+    assert(o.y0 > top - 0.06, 'rests on the piece: ' + o.y0.toFixed(3) + ' over ' + top);
+    assert.strictEqual(g.s.pieces, 0, 'and that did not set it');
+    // Random moves and turns among bodies: the piece never overlaps one by more than a graze.
+    const h = phys({ seed: 6 }), y = X(h);
+    randomPlay(h, 14, 11, 0.5);
+    let s = 17;
+    const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+    for (let i = 0; i < 200 && h.piece && !h.over; i++) {
+      const r = rnd();
+      if (r < 0.35) h.move(-1); else if (r < 0.7) h.move(1); else if (r < 0.85) h.rotate(1); else y.tick(h, 1 / 60, { soft: true });
+      y.tick(h, 1 / 60, {});
+      const p = h.piece;
+      assert(!Physics.hits(y.W, p.type.rots[p.rot].map(([cx, cy]) => [h.board.wx(p.x + cx), cy]), p.y - y.off, 0.12), 'the piece is inside a body after step ' + i);
+    }
   });
 
   test('physics: bodies never lose a mino but to a clear, never tear, and none floats (random play, hard and soft, three widths)', () => {
@@ -119,6 +235,8 @@ module.exports = function physicsTests(test, L) {
       const ev = randomPlay(g, 45, seed * 31, 0.6).concat(run(g, 4));
       for (const e of ev) if (e.type === 'clear') removed += e.minos;
       const W = X(g).W;
+      // (A board that filled up stops its clock: let what was still moving come to rest.)
+      if (g.over) settle(W, 4);
       assert.strictEqual(minosOf(W), placed - removed, 'minos placed less minos cleared, w ' + w);
       for (const b of W.bodies) {
         // No tearing: every edge of every mino stays near a cell long, and every mino keeps most of its area.
@@ -137,13 +255,15 @@ module.exports = function physicsTests(test, L) {
         const keep = new Uint8Array(b.m).fill(1);
         assert.strictEqual(Physics.split({ next: 1e6 }, b, keep).length, 1, 'body ' + b.id + ' is one piece');
         // Nothing floats: on the floor or resting on another body (something within a hair under its lowest point).
-        const held = b.y0 < 0.06 || W.bodies.some((o) => o !== b && o.x1 > b.x0 - 0.05 && o.x0 < b.x1 + 0.05 && o.y1 > b.y0 - 0.12 && o.y0 < b.y0);
-        assert(held, 'body ' + b.id + ' at ' + b.y0.toFixed(2) + ' rests on something (w ' + w + ')');
+        // (or on the piece in play: it holds up what falls on it, until it is let go)
+        const K = W.kin, onPiece = !!K && K.cells.some(([x, y]) => x + 1 > b.x0 - 0.05 && x < b.x1 + 0.05 && y - K.off + 1 > b.y0 - 0.12 && y - K.off < b.y0);
+        const held = onPiece || b.y0 < 0.06 || W.bodies.some((o) => o !== b && o.x1 > b.x0 - 0.05 && o.x0 < b.x1 + 0.05 && o.y1 > b.y0 - 0.12 && o.y0 < b.y0);
+        assert(held, 'body ' + b.id + ' at ' + b.y0.toFixed(2) + '..' + b.y1.toFixed(2) + ' x ' + b.x0.toFixed(2) + '..' + b.x1.toFixed(2) + ' rests on something (w ' + w + '; ' + (W.kin ? JSON.stringify(W.kin.cells) + ' off ' + W.kin.off : 'no piece') + '; awake ' + b.awake + '; over ' + g.over + ')');
       }
     }
   });
 
-  test('physics: a stack 15 rows tall sinks under its own weight by less than three quarters of a row (5%), then sleeps', () => {
+  test('physics: a stack 15 rows tall (soft jelly) sinks under its own weight by less than a row (7%), never into itself, then sleeps', () => {
     // Two I pieces a row against the walls (8 of 10 cells: no band clears), fifteen rows.
     const shapes = [];
     for (let y = 0; y < 15; y++) { shapes.push([[0, y], [1, y], [2, y], [3, y]]); shapes.push([[6, y], [7, y], [8, y], [9, y]]); }
@@ -151,9 +271,71 @@ module.exports = function physicsTests(test, L) {
     settle(W, 30);
     const top = Math.max(...W.bodies.map((b) => b.y1));
     if (process.env.PHYSICS_TABLE) console.log('       15 rows settle at ' + top.toFixed(3));
-    assert(top > 15 - 0.75 && top < 15.05, 'the top at ' + top.toFixed(3));
+    assert(top > 15 - 1 && top < 15.1, 'the top at ' + top.toFixed(3));
+    assert(overlapOf(W) < 0.15, 'rows sunk into each other: ' + overlapOf(W).toFixed(3));
     assert(W.bodies.every((b) => !b.awake), 'all asleep');
     assert.strictEqual(Physics.clearBands(W), null);
+  });
+
+  test('physics: pieces never merge: a pile of random hard drops keeps every piece its own, nothing inside another, as tall as its minos', () => {
+    const sv = P.COVER;
+    P.COVER = 5; // (no clears: the pile as it falls)
+    try {
+      for (const seed of [1, 2]) {
+        const g = phys({ seed });
+        let s = seed * 77 + 1;
+        const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+        let worst = 0;
+        for (let n = 0; n < 26 && g.piece && !g.over; n++) {
+          for (let k = Math.floor(rnd() * 4); k > 0; k--) g.rotate(1);
+          const dx = Math.floor(rnd() * 10) - g.piece.x;
+          for (let k = 0; k < Math.abs(dx); k++) g.move(Math.sign(dx));
+          X(g).hardDrop(g);
+          run(g, 0.25);
+          if (n % 5 === 4) worst = Math.max(worst, overlapOf(X(g).W));
+        }
+        const W = X(g).W;
+        for (let i = 0; i < 600; i++) Physics.stepWorld(W);
+        const minos = minosOf(W), ov = overlapOf(W), top = Math.max(...W.bodies.map((b) => b.y1));
+        if (process.env.PHYSICS_TABLE) console.log('       pile ' + seed + ': ' + minos + ' minos, ' + top.toFixed(2) + ' tall, overlap ' + ov.toFixed(3) + ' at rest, ' + worst.toFixed(3) + ' at worst in motion');
+        assert(ov < 0.004 * minos && worst < 0.01 * minos, 'pieces sunk into each other: ' + ov.toFixed(3) + ' / ' + worst.toFixed(3) + ' of ' + minos);
+        // Every body is one piece (or a part a clear split off); none shares a particle with another.
+        for (const b of W.bodies) assert.strictEqual(Physics.split({ next: 1e6 }, b, new Uint8Array(b.m).fill(1)).length, 1);
+        // Volume kept: at least as tall as its minos packed solid, and every mino about its area.
+        assert(top >= minos / 10 - 0.3, 'it melted: ' + top.toFixed(2) + ' tall for ' + minos + ' minos');
+        for (const b of W.bodies) for (let k = 0; k < b.m; k++) { let a = 0; const q = quadOf(b, k); for (let i = 0; i < 4; i++) a += q[i][0] * q[(i + 1) % 4][1] - q[(i + 1) % 4][0] * q[i][1]; assert(a / 2 > 0.75 && a / 2 < 1.2, 'a mino of area ' + (a / 2).toFixed(2)); }
+      }
+    } finally { P.COVER = sv; }
+  });
+
+  test('physics: jelly is malleable: a piece over a gap sags and keeps the bend, an impact dents and squishes, each mino stays near a square', () => {
+    // A six-long bar over a gap of four: its middle sags, it stays sagged (its rest shape took it), and it does not fall.
+    const W = world(10, 20, [[[0, 0], [0, 1]], [[5, 0], [5, 1]], [[0, 2], [1, 2], [2, 2], [3, 2], [4, 2], [5, 2]]]);
+    settle(W, 6);
+    const bar = W.bodies[2], bottom = (lx) => { let y = 0; for (let i = 0; i < bar.n; i++) if (bar.lx[i] === lx && bar.ly[i] === 2) y = bar.y[i]; return y; };
+    const sag = (bottom(0) + bottom(6)) / 2 - bottom(3);
+    let kept = 0; for (let i = 0; i < bar.n; i++) kept = Math.max(kept, Math.hypot(bar.rx[i] - bar.lx[i], bar.ry[i] - bar.ly[i]));
+    if (process.env.PHYSICS_TABLE) console.log('       a bar over a gap of 4 sags ' + sag.toFixed(3) + ', its rest shape ' + kept.toFixed(3) + ' from the grid');
+    assert(sag > 0.25 && sag < 0.8, 'it sags: ' + sag.toFixed(3));
+    assert(kept > 0.1, 'and keeps the bend');
+    assert(bar.y0 > 1.0, 'held up by the two posts');
+    // A hard drop onto a stack: the piece squishes on impact (well off its rigid shape), and the minos stay near squares.
+    const V = world(10, 20, [0, 2, 4, 6].map((x) => [[x, 0], [x + 1, 0], [x, 1], [x + 1, 1]]));
+    settle(V, 2);
+    const I = Physics.fromCells(V.next++, [[2, 8], [3, 8], [4, 8], [5, 8]], [1, 1, 1, 1], 0, 0, -P.HARD_V);
+    V.bodies.push(I);
+    let squish = 0;
+    for (let i = 0; i < 90; i++) {
+      Physics.stepWorld(V);
+      for (let k = 0; k < I.m; k++) {
+        const q = quadOf(I, k);
+        for (let e = 0; e < 4; e++) { const l = Math.hypot(q[(e + 1) % 4][0] - q[e][0], q[(e + 1) % 4][1] - q[e][1]); assert(l > 1 - P.SQUASH - 0.02 && l < 1 + P.SQUASH + 0.02, 'an edge ' + l.toFixed(3)); }
+        const a = Math.hypot(q[2][0] - q[0][0], q[2][1] - q[0][1]), b = Math.hypot(q[3][0] - q[1][0], q[3][1] - q[1][1]);
+        squish = Math.max(squish, Math.abs(a - b));
+      }
+    }
+    if (process.env.PHYSICS_TABLE) console.log('       a hard drop squishes its minos by up to ' + squish.toFixed(3) + ' (the difference of their diagonals)');
+    assert(squish > 0.05, 'it squishes: ' + squish.toFixed(3));
   });
 
   test('physics: at rest everything sleeps and the world does no work; a strike wakes what it hits and what rests on it', () => {
@@ -180,7 +362,7 @@ module.exports = function physicsTests(test, L) {
       aim(g, 'I', 3, 0);
       let peak = 0;
       if (hard) X(g).hardDrop(g);
-      else for (let k = 0; k < 900 && W.bodies.length < 2; k++) X(g).tick(g, 1 / 60, { soft: true });
+      else { lowerToRest(g); X(g).release(g); }
       const land = W.bodies[1];
       let maxV = 0;
       for (let i = 0; i < 60; i++) {
@@ -224,6 +406,27 @@ module.exports = function physicsTests(test, L) {
     const fast = world(10, 20, [[[0, 0], [1, 0], [2, 0], [3, 0]], [[4, 0], [5, 0], [6, 0], [7, 0]], [[8, 0], [9, 0]]]);
     fast.bodies[2].py.forEach((v, i, a) => { a[i] = v + 0.1; });
     assert.strictEqual(Physics.clearBands(fast), null);
+  });
+
+  test('physics: a band clears by the area the minos really cover: overlaps count once, gaps count, a sagged row is met where it is', () => {
+    const row = (xs, ys) => world(10, 20, xs.map((x, i) => [[x, ys ? ys[i] : 0]]));
+    const lift = (W, ys) => W.bodies.forEach((b, i) => { for (let k = 0; k < b.n; k++) { b.y[k] += ys[i]; b.py[k] += ys[i]; } b.bounds(); });
+    // Ten minos, every other one half a row up: their centres share a grid row, but they cover only about 80% of any band.
+    const zig = row([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    lift(zig, [0, 0.45, 0, 0.45, 0, 0.45, 0, 0.45, 0, 0.45]);
+    assert.strictEqual(Physics.clearBands(zig), null, 'a zigzag row is not full');
+    // Eleven minos crowded into the room of eight (each sunk into the next): eight cells' worth of cover, not eleven.
+    const crowd = world(10, 20, []);
+    for (let i = 0; i < 11; i++) { const b = Physics.fromCells(crowd.next++, [[0, 0]], [3], 0, 0, 0); for (let k = 0; k < b.n; k++) { b.x[k] += i * 0.7; b.px[k] += i * 0.7; } b.bounds(); crowd.bodies.push(b); }
+    assert.strictEqual(Physics.clearBands(crowd), null, 'overlaps count once');
+    // Nine minos with a hair between each (and one gap): about 90% and it clears; eight with gaps does not.
+    assert(Physics.clearBands(row([0, 1, 2, 3, 4, 5, 6, 7, 9])), 'nine of ten');
+    assert.strictEqual(Physics.clearBands(row([0, 1, 2, 3, 5, 6, 7, 9])), null, 'eight of ten');
+    // A whole row sagged a third of a row: the band follows it.
+    const sag = row([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    lift(sag, Array(10).fill(0.33));
+    const c = Physics.fullBands(sag);
+    assert(c.length === 1 && c[0].cover > 9.9, 'a sagged row is full: ' + JSON.stringify(c.map((b) => b.cover)));
   });
 
   test('physics: a clear in play is counted and paid at once, per mino, at the reduced rate, and nothing waits for the board to rest', () => {
@@ -272,9 +475,12 @@ module.exports = function physicsTests(test, L) {
     const g = phys({ w: 6, h: 10, seed: 3 });
     let ends = 0;
     g.on('topout', () => ends++);
-    // Bodies piled where the pieces appear (no band full): the piece in play lands at once, the next has no room.
+    // Bodies piled where the pieces appear (no band full): the piece in play is let go, the next has no room.
     const Wg = X(g).W;
-    for (let y = 0; y < 10; y++) Wg.bodies.push(Physics.fromCells(Wg.next++, [[1, y], [2, y], [3, y], [4, y]], [3, 3, 3, 3], 0, 0, 0));
+    for (let y = 0; y < 9; y++) Wg.bodies.push(Physics.fromCells(Wg.next++, [[1, y], [2, y], [3, y], [4, y]], [3, 3, 3, 3], 0, 0, 0));
+    run(g, 0.5);
+    assert(!g.over, 'not before it is let go');
+    X(g).hardDrop(g);
     run(g, 0.5);
     assert(g.over && ends === 1, 'full, once');
     // Above the line: a tall stack against the wall reaching past the top (nothing in play).
@@ -360,7 +566,10 @@ module.exports = function physicsTests(test, L) {
     }
     return { pay, actions, pieces };
   }
-  /** A Physics board played by a bot: the column and turn that keep the surface lowest (the bodies' picture), hard dropped. */
+  /**
+   * A Physics board played by a bot: the column and turn that keep the surface lowest (the bodies' picture), lowered
+   * with ↓ and set down gently (↓ again: the careful way, which clears more than throwing it).
+   */
   function physicsBot(seed, n, w) {
     const g = phys({ w, h: 20, seed });
     let pay = 0, actions = 0, pieces = 0;
@@ -379,10 +588,15 @@ module.exports = function physicsTests(test, L) {
         }
       }
       const p = g.piece;
-      actions += Math.min(best.rot, 4 - best.rot) + Math.abs(best.x - p.x) + 1;
+      actions += Math.min(best.rot, 4 - best.rot) + Math.abs(best.x - p.x) + 2;
       for (let k = 0; k < best.rot; k++) g.rotate(1);
       for (let k = 0; k < 12 && p.x !== best.x; k++) if (!g.move(Math.sign(best.x - p.x))) break;
-      X(g).hardDrop(g);
+      // (↓ held all the way, at once: straight down to what it meets.)
+      const x = X(g), rel = x.rel(g, p);
+      let lo = p.y - x.off;
+      while (lo > 0 && !Physics.hits(x.W, rel, lo - 0.25, 1e-4)) lo -= 0.25;
+      x.place(p, Math.max(0, x.contact(g, p, lo, lo - 0.25)));
+      if (!x.release(g)) x.hardDrop(g);
       for (const e of run(g, 0.5)) if (e.type === 'clear') pay += e.pay;
     }
     return { pay, actions, pieces };
@@ -397,22 +611,47 @@ module.exports = function physicsTests(test, L) {
       for (const seed of [1, 2, 3]) { const r = standard(seed, 300, lean); for (const k in std) std[k] += r[k]; }
       stdPiece = Math.max(stdPiece, std.pay / std.pieces); stdAction = Math.max(stdAction, std.pay / std.actions);
     }
+    let total = 0;
     for (const w of [6, 10, 16]) {
       const ph = { pay: 0, actions: 0, pieces: 0 };
       for (const seed of [1, 2]) { const r = physicsBot(seed, 90, w); for (const k in ph) ph[k] += r[k]; }
       const perPiece = ph.pay / ph.pieces, perAction = ph.pay / ph.actions;
       if (T) console.log('       w ' + w + ': per piece ' + perPiece.toFixed(4) + ' (Standard ' + stdPiece.toFixed(4) + '), per action ' + perAction.toFixed(4) + ' (Standard ' + stdAction.toFixed(4) + ')');
-      assert(ph.pay > 0, 'it clears, w ' + w);
+      total += ph.pay;
       assert(perPiece <= stdPiece, 'per piece, w ' + w + ': ' + perPiece + ' > ' + stdPiece);
       assert(perAction <= stdAction, 'per action, w ' + w + ': ' + perAction + ' > ' + stdAction);
       // The ceiling: every mino of every piece cleared, at WORTH: never above Standard's cells.
       assert(ph.pay <= ph.pieces * 4 * Physics.WORTH * (w / 10) / w + 1e-9);
     }
+    // (Honest clears are hard to come by for a bot that reads the bodies as a grid: it clears now and then.)
+    assert(total > 0, 'it clears');
     // No difficult clears: the multiplier stays ×1 and nothing is a quad.
     const g = phys({ seed: 3 });
     randomPlay(g, 30, 3, 1);
     assert.strictEqual(g.s.quadRun || 0, 0);
     assert(g.s.b2b < 0 && g.s.tspins === 0);
+  });
+
+  test('physics: hard-drop spam (random columns and turns, a drop every quarter second) tops out about as soon as on Standard, with few lines', () => {
+    const T = process.env.PHYSICS_TABLE;
+    const spam = (seed, physics) => {
+      const g = physics ? phys({ seed }) : new Game({ w: 10, h: 20, seed, recipe: {} });
+      let s = seed * 77 + 1, n = 0;
+      const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+      while (n < 300 && g.piece && !g.over) {
+        for (let k = Math.floor(rnd() * 4); k > 0; k--) g.rotate(1);
+        const dx = Math.floor(rnd() * 10) - g.piece.x;
+        for (let k = 0; k < Math.abs(dx); k++) g.move(Math.sign(dx));
+        n++;
+        if (physics) { X(g).hardDrop(g); run(g, 0.25); } else if (!g.drop()) break;
+      }
+      return { n, lines: g.s.lines };
+    };
+    const sum = (rs) => rs.reduce((a, r) => ({ n: a.n + r.n, lines: a.lines + r.lines }), { n: 0, lines: 0 });
+    const ph = sum([1, 2, 3, 4, 5].map((k) => spam(k, true))), st = sum([1, 2, 3, 4, 5].map((k) => spam(k, false)));
+    if (T) console.log('       spam: Physics tops out after ' + (ph.n / 5).toFixed(1) + ' pieces (' + (ph.lines / ph.n).toFixed(3) + ' lines a piece), Standard ' + (st.n / 5).toFixed(1) + ' (' + (st.lines / st.n).toFixed(3) + ')');
+    assert(ph.n / 5 < 2 * (st.n / 5), 'Physics spam lasts ' + ph.n / 5 + ' pieces, Standard ' + st.n / 5);
+    assert(ph.lines / ph.n < 0.05, 'spam clears ' + (ph.lines / ph.n).toFixed(3) + ' lines a piece');
   });
 
   // ---- cost ------------------------------------------------------------------------------------------------------------
