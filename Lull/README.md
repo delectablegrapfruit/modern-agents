@@ -712,8 +712,8 @@ What a clear removes pays at once.
 *Pay* is per mino removed, flat: `Physics.WORTH` (0.55) of a cell of a row, by the board's worth (`Library.worth`). No
 quads, T-spins, back-to-back, combos, perfect clears or streak multiplier; a band scores 100 × bands² + 10 a mino.
 Fairness (`scripts/physics-test.cjs`): a bot that picks the lowest landing from the bodies' picture and hard drops never
-earns more per piece or per action than a Standard board played by a greedy or key-sparing bot (measured: per piece
-0.21, 0.20, 0.19 at widths 6, 10, 16 against Standard's 0.38; per action 0.078, 0.056, 0.039 against 0.091).
+earns more per piece or per action than a Standard board played by a greedy or key-sparing bot (measured: about 0.20
+a piece at widths 6, 10 and 16 against Standard's 0.38; 0.04 to 0.08 an action against 0.091).
 
 *Rewind 5 s* takes Undo's place on a Physics board: the Undo power-up reads "Rewind 5 s" (tray, tooltip, Buy & use, the
 Board full card) and costs what Undo costs (one held, or 5 lines). A ring of snapshots, one every quarter second for the
