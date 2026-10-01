@@ -191,7 +191,12 @@ module.exports = async function physicsTests({ browser, check, PAGE, OUT }) {
       const mid = await ev(() => window.__state());
       const back = await ev(() => { const m = Lull.app.modes.play; m.useItem('rewind'); return Object.assign(window.__state(), { held: Lull.app.store.state.inventory.rewind }); });
       check('Rewind 5 s (the Undo held) turns time back about five seconds: fewer pieces, the clock back', back.held === 0 && back.pieces < mid.pieces && mid.t - back.t > 4.5 && mid.t - back.t < 5.6 && !back.over, JSON.stringify({ before, mid, back }));
-      check('at rest the bodies (nearly all) sleep', mid.awake <= 2 && mid.bodies >= 3, JSON.stringify(mid));
+      // The same stack again, left alone: it comes to rest and (nearly all) sleeps; a slow runner (CI) takes longer for
+      // the last wobble to die down, so it is given up to 12 s.
+      await ev(() => window.__phys(10, 20, 7));
+      for (let i = 0; i < 5; i++) { await page.keyboard.press(['ArrowLeft', 'ArrowRight'][i % 2]); await page.keyboard.press('Space'); await page.waitForTimeout(450); }
+      const rest = await ev(() => new Promise((res) => { const t0 = performance.now(); const look = () => { const s = window.__state(); if ((s.awake <= 2 && performance.now() - t0 > 3000) || performance.now() - t0 > 12000) res(Object.assign(s, { waited: Math.round(performance.now() - t0) })); else setTimeout(look, 100); }; look(); }));
+      check('at rest the bodies (nearly all) sleep', rest.awake <= 2 && rest.bodies >= 3, JSON.stringify(rest));
     }
 
     // Full: bodies under where the pieces appear; the Board full card.
