@@ -1,5 +1,6 @@
 // Lull — Physics in Free Play (js/physics.js has its rules): the controller that runs the simulation in real time
-// (a fixed step, every frame the board is in front), throws a hard drop, hurries a soft one, pays the bands as they
+// (a fixed step, every frame the board is in front), throws a hard drop, lowers the piece with ↓ and lets it go when ↓
+// comes again while it rests (or is held against what it rests on), pays the bands as they
 // clear and turns time back five seconds (Rewind 5 s, in Undo's place); the look (each body one soft outline drawn
 // from its particles, so every squash and stretch on screen is the simulation's own, with a rim and a shine); the
 // New board window's Material setting; the summary's tile and the Stats rows.
@@ -71,7 +72,7 @@
         play.renderStatus();
         st.touch();
       },
-      /** A hard drop: thrown straight down (Physics.hardDrop); a lowered piece only hurries while ↓ is held. */
+      /** A hard drop: thrown straight down (Physics.hardDrop; resting already, let go gently). */
       gate(act, rep) {
         const G = g();
         if (!G || G.over) return undefined;
@@ -83,7 +84,18 @@
         }
         return undefined;
       },
-      softDrop() { if (!g().piece) return false; this.soft = 0.16; g().s.lowers++; return true; },
+      /**
+       * ↓ (a key, or a drag down): down it goes, smoothly, to what is below, and rests there; ↓ pressed again while it
+       * rests, or held (or dragged) against it for Physics.P.REST_HOLD, lets it go gently.
+       */
+      softDrop(rep) {
+        const G = g(), x = X();
+        if (!G.piece) return false;
+        if (x.resting(G) && (!rep || x.restT >= Physics.P.REST_HOLD)) return x.release(G);
+        this.soft = 0.16;
+        G.s.lowers++;
+        return true;
+      },
       blocked() { return this.waiting; },
       tapStarts() { return this.waiting; },
       pause(why) {
@@ -355,7 +367,7 @@
         return h('div', { class: 'cl-set ph-set' },
           h('div', { class: 'cl-row' }, h('span', { class: 'cl-nm' }, 'Material'),
             h('div', { class: 'seg cl-seg', role: 'group', 'aria-label': 'Material' }, Physics.MATERIAL_IDS.map((id) => api.option('physics.material', id, 'nb-level', Physics.MATERIALS[id].name)))),
-          h('p', { class: 'ph-note' }, 'Pieces become soft bodies when they land. Rewind 5 s takes Undo’s place.'));
+          h('p', { class: 'ph-note' }, 'The piece stays firm and yours until you let it go: Space throws it, ↓ on the stack sets it down. Then it turns soft. Rewind 5 s takes Undo’s place.'));
       },
       said(path, v) { return path === 'physics.material' ? 'Material ' + ((Physics.MATERIALS[v] || {}).name || v) : null; },
       tiles: (ext) => (ext && ext.cleared != null ? [[fmtInt(ext.cleared), 'Blocks cleared']] : []),
