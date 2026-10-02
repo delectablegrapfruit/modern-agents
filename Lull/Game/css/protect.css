@@ -3,3 +3,7 @@
 :root { --area-protect: #86cf95; }
 :root[data-theme="light"] { --area-protect: #2f6b3c; }
 [data-area="protect"] { --area: var(--area-protect); }
+
+/* Protect's Pause button in the status bar (js/guardview.js): a 28 px icon with a 44 px hit area. */
+.statusbar .gd-pause { position: relative; align-self: center; margin-left: 4px; }
+.statusbar .gd-pause::after { content: ""; position: absolute; inset: -8px; }

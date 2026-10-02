@@ -791,59 +791,81 @@ drawn the same way, rigid, where it is. A clear's minos swell and fade where the
 `scripts/physics-test.cjs` (Node) and `scripts/physics-browser-test.cjs` (the page, a phone, light and dark).
 
 ### Protect
-A mode: shield a sprout from falling stones and burrowing moles (`js/guard.js`). The sprout sits on the floor in the
-middle of the well, 2 wide on an even width and 3 on an odd one, 2 tall, with 3 leaves; the two rows it stands in are
-its bed and never clear, no power-up removes it (Drill stops on it, Bomb and Black Hole go round it, Laser leaves the
-bed rows) and Settle leaves it where it is. Time is counted in pieces set, never in seconds: after each piece lock (a
-tool piece and the Drill too) the guard takes one step, in this order: the moles are read off the board (one a clear
-took was swept away); each mole acts (next to the sprout it nibbles a leaf and leaves; boxed in on all four sides by
-solid cells that are not stones, your blocks, other moles, the side walls and the floor, it curls up into a stone; out
-of patience it wanders off; else it moves a cell along its route, digging through a stone in the level's time, counted
-in pieces whatever the pace); stones that are due fall, each column onto that column's own top, so a stone never
-leaves a covered hole, and one that would land on the sprout breaks there and costs a leaf; moles that are due come in
-at a side wall, on that column's top (at most four are out); then the wave or calm moves on. A mole crawls through
-open cells that touch something solid side by side (never along the open top of the well), so it climbs faces and
-floors but cannot round a corner in the open: your blocks stop it, and it digs only through stones. Settle and Undo
-take no step (Undo takes the last one back with the rest; Settle is refused, "Nothing to settle", while the sprout is
-all there is), and at 0 leaves the board wilts. Tornado, Trapdoor and Mirror World are refused ("Not in Protect"). A
-board is at least 6 × 12, and the shapes must fit in the rows above the bed (a shape set's minimum height plus 2).
+A mode: shield a sprout from meteors and burrowing moles, and keep building its shelter as they wear it away
+(`js/guard.js`). The sprout sits on the floor in the middle of the well, 2 wide on an even width and 3 on an odd one, 2
+tall, with 3 leaves; the two rows it stands in are its bed and never clear, no power-up removes it (Drill stops on it,
+Bomb and Black Hole go round it, Laser leaves the bed rows) and Settle leaves it where it is. Tornado, Trapdoor and
+Mirror World are refused ("Not in Protect"). A board is at least 6 × 12, and the shapes must fit in the rows above the
+bed (a shape set's minimum height plus 2).
+
+*The clock.* Protect runs in real time, not by pieces: its clock ticks ten times a second (`Guard.TPS`) while the board
+is in play, and the pieces still never fall by themselves (Relaxed play), so the threats keep coming while you think. A
+new board waits at its Ready card ("Protect Hard", Start, Space); after that, away from the board (another tab, window
+or app, the page hidden, the pointer gone with Pause when the pointer leaves) it pauses at a Paused card (its time and
+wave, Resume, Space), as do P and the Pause button in the status bar; a window over the board only holds the clock.
+While it waits, the board takes no moves (a tap or Space starts it). A piece set is no time at all, Settle runs no tick,
+and Undo goes back to just before the last piece was set, the clock and every threat with it.
+
+*A tick* (`Guard.tick`, in this order): the moles are read off the board (one a clear took was swept away, one a
+power-up took is gone); the clock moves on; threats that are due come (a meteor shows its column, a mole comes in at a
+side wall, on top of that column's stack, at most four out); each falling meteor drops, and one that reaches the top of
+its column(s) breaks the cells round where it strikes (Easy: only the block it hits; Medium and Hard a diamond of radius
+1, the sprout aside) and any mole there, and costs a leaf when it reaches the sprout; each mole whose time has come
+takes its next cell: next to the sprout it nibbles a leaf and leaves, an empty cell it walks into, a block it eats (the
+level's dig time) and then moves into, leaving its tunnel open behind it; then the wave or calm moves on, and at 0
+leaves the board wilts. A mole goes the cheapest way (Dijkstra: a move through an empty cell that touches something
+solid, never along the open top of the well; a dig and a move through any block, yours included; never the sprout,
+another mole or the walls). Against a mole: thicker shelter (each block is a dig), or clear the row it is in (a mole in
+a cleared row is swept away; the bed rows never clear, so stop it above them).
 
 | | Easy | Medium | Hard |
 |---|---|---|---|
-| Quiet start, then wave / calm (pieces) | 12, 24 / 12 | 10, 24 / 10 | 8, 24 / 8 |
-| Stones a wave at 10 wide (by w/10) | 2 → 4 | 2 → 4 | 3 → 6 |
-| Stone sizes | 1 | 2 wide from wave 4 (40%) | 2 wide from wave 3; 2 × 2 from wave 6 (25%) |
-| Warning (pieces) | 3 | 3 | 2 |
-| Moles: from wave, a wave | 3, 1 → 2 | 2, 1 → 3 | 1, 2 → 4 |
-| A mole moves | every 2nd piece | every piece | every piece |
-| Digging through a stone (pieces) | 3 | 2 | 1 |
-| Patience (pieces) | 16 | 16 | 20 |
-| A leaf grows back | every wave | every wave | every 2nd wave |
+| Quiet start, then waves / calms (s) | 10, 30 / 8 | 8, 30 / 6 | 6, 30 / 5 |
+| Meteors a wave at 10 wide (by w/10) | 3, +1 a wave to 8 | 4, +1.5 to 14 | 5, +2 to 20 |
+| Meteor sizes | 1 | 1 | 2 wide from wave 3 (a third) |
+| Aimed at the sprout and one column either side | 50% | 60% | 70% |
+| Column shown before it falls (s); fall (rows a second) | 2.5; 10 | 2; 12 | 1.5; 14 |
+| Blast | the block it hits | a diamond, radius 1 | a diamond, radius 1 |
+| Moles a wave | from wave 2: 1, +0.5 a wave to 3 | 1, +0.75 to 5 | 2, +1 to 8 |
+| A mole's step / eating a block (s) | 0.8 / 2.4, 0.1 less a wave to 1.6 | 0.6 / 1.6 to 0.9 | 0.5 / 1.4 to 0.6 |
+| A leaf grows back | every wave | every 2nd wave | never |
+| Score a second survived | 5 | 10 | 20 |
 
-Counts go up by one every two waves to their cap. A wave's threats are drawn when it starts, spread through its 24
-pieces (never sooner than their warning), 60% of stones aimed at the sprout's columns and one either side, on the
-guard's own random stream (the board's seed, apart from the pieces'): saved with the board, so a resume or an Undo
-brings the same stones and moles. Stones are `FOREIGN | 8`, moles `FOREIGN | MOLE | slot`, the sprout `ASSET | 31`.
+A wave's threats are drawn when it starts, spread through its 30 seconds, on the guard's own random stream (the board's
+seed, apart from the pieces'): saved with the board (`x.protect`: the clock, the plan, meteors in flight, moles and
+their digs), so a resume, mid-wave, plays on exactly as an unbroken run, and an Undo brings the same threats. Moles are
+`FOREIGN | MOLE | slot`, the sprout `ASSET | 31`; meteors are never cells.
+
+*How hard* (`scripts/protect-unit.cjs`): a defending bot that sets a piece a second and keeps a roof two deep over the
+sprout survives, on 5 seeds at 10 × 20, Easy 295–740 s (mean 504), Medium 115–213 s (mean 177) and Hard 67–114 s
+(mean 101): Hard beats it within two minutes every time.
 
 *Pay* — rated as its shape set is (a Protect board on Normal shapes keeps the streak, the bonus and the feats): a row
-pays only its own cells, and a row holding a stone or a mole is plain (never part of a quad, never a streak link), so
-a row with k stones pays (w − k)/10. Stones, moles, waves and leaves pay nothing. Measured with a tidy bot that keeps a
-roof over the sprout (`scripts/protect-unit.cjs`, 1500 pieces a level), a Protect board earns no more per piece or per
-action than Standard. *Achievements* (their own group, any Protect board): **Green Thumb** (60) 5 waves on one board;
-**Night Watch** (175) 20 waves on one board, Medium or Hard; **Curled Up** (100) box in 25 moles, Medium or Hard;
-**Not a Leaf** (300, legend) 8 waves in a row on Hard with no leaf lost and no power-ups, Undo included.
+pays only its own cells, and a row holding a mole is plain (never part of a quad, never a streak link). Time survived
+adds to the score (above) but pays nothing; meteors, moles, waves and leaves pay nothing. Measured with the same bot at
+a piece a second and at two a second (`scripts/protect-unit.cjs`), a Protect board earns no more per piece or per
+action than Standard: 0.371 / 0.294 / 0.306 lines a piece (Easy / Medium / Hard) against Standard's 0.395, and 0.084 /
+0.068 / 0.068 an action against 0.092.
+
+*Achievements* (their own group, any Protect board 6 wide or more): **Green Thumb** (60) keep a sprout alive for 3
+minutes; **Night Watch** (200) 5 minutes on Hard with no power-ups; **Swept Away** (100) clear 25 moles away in lines,
+Medium or Hard; **Not a Leaf** (300, legend) 3 minutes on Hard with no leaf lost and no power-ups. Power-ups other than
+Luck, Undo included, start the Hard runs over (and Undo takes the clock back anyway).
 
 *The look* (`js/guardview.js`) — the sprout is a soil mound, a stem and its leaves (a lost leaf a faint outline), in its
-own greens and browns in each theme; stones a warm grey with two specks; a mole a small round body with a pale nose the
-way it goes, fainter when it is about to give up. What is coming is drawn still and worked out again only when the
-board changes: where each stone would land now, dashed, with a dot for each piece left (rose when it would land on the
-sprout), a notch at the wall where a mole will come in, and each mole's next two cells as faint dots. A stone falls a
-short way and puffs dust; a lost leaf drifts off; "Wave 3" and "Calm" show quietly; nothing shakes. With reduced motion
-stones fade in, moles jump and leaves fade. *In Free Play* — Leaves takes Score's place in the status bar, its tip the
-wave and the pieces left in it ("Wave 4 · 9 pieces left", "Calm · 6 pieces to wave 4"); a board at 0 leaves shows the
-Wilted card (its summary, Undo, which brings the leaf back, Boards and Retire), is tagged Wilted in the library and its
-full view says so; its summary adds Waves, Leaves lost, Stones and Moles boxed in, and Stats ▸ Free Play a Protect
-section. The New board window's Mode tab has Protect and its level row, and the preview shows the sprout.
+own greens and browns in each theme. A meteor's column is a faint band down to where it would land, deepening as it
+comes (rose when it would reach the sprout), the cells it would break outlined; then a small warm stone falls down it
+and breaks them in shards (reduced motion: a short fade). A mole is a small round body with a pale nose the way it
+goes, stepping from cell to cell (it jumps with reduced motion), a bite growing in the block it is eating, a soft
+earthy tunnel fading behind it, a notch at the wall a moment before one comes in, and its next two cells as faint dots.
+A lost leaf drifts off; "Wave 3" and "Calm" show quietly; nothing shakes. *In Free Play* — Leaves takes Score's place in
+the status bar (its tip the wave and the seconds left in it: "Wave 4 · 12 s left", "Calm · 5 s to wave 4"), Time
+follows it, and a Pause button ends the row; a board at 0 leaves shows the Wilted card (its summary, Undo, Boards and
+Retire), is tagged Wilted in the library and its full view says so; its summary adds Time, Waves, Leaves lost and
+Meteors, and Stats ▸ Free Play a Protect section (time, waves, meteors, moles, moles swept away, leaves lost, boards
+wilted, the longest board on each level). The New board window's Mode tab has Protect and its level row, and the
+preview shows the sprout. Tests: `scripts/protect-unit.cjs` (Node) and `scripts/protect-test.cjs` (the page, phones,
+light and dark).
 
 ### Classic
 A mode (`js/classic.js`, its controller and settings `js/classicview.js`): the board plays by Classic's rules (see

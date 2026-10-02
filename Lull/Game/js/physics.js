@@ -1535,7 +1535,7 @@
       R.physics = true;
     },
     conflicts(r, out) {
-      // Mirror copies a piece cell for cell across the grid, Protect's sprout, stones and moles live on the grid:
+      // Mirror copies a piece cell for cell across the grid, Protect's sprout and moles live on the grid:
       // Physics bodies have none.
       if (on(r)) {
         out['mods.mirror=true'] = 'Not with Physics';

@@ -16,7 +16,7 @@
   //
   // A part's view half draws what its option adds. Every hook is optional; hooks run in the parts' order:
   //   active(game) -> bool       is it on this board (default: the game has the part's engine extension)
-  //   claims(v, view) -> bool    a stored cell it draws itself (Protect: the sprout, moles, stones; Battle: filler);
+  //   claims(v, view) -> bool    a stored cell it draws itself (Protect: the sprout, moles; Battle: filler);
   //                              claims: 'rest' draws the own cells no other painter claimed (Physics)
   //   cell(ctx, v, x, y, s, kind, view, at) -> false to fall back   kind: 'stack', 'piece', 'ghost' or 'tray'; v is the
   //                              cell (stack) or the colour slot; at: { x, y } on the board, or { cells } of the piece
