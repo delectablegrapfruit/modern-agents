@@ -176,7 +176,10 @@ async function setup(opts) {
   await focusRow('testshop.badRepeat3');
   await P.keyboard.down('Enter');
   await step(every * 3);
-  T.eq((await state()).cash, 49, 'a row with a minigame runs once and never repeats');
+  // A def's `minigame` is its Hustle button (CONTRACT §8.2): the row itself runs the plain action, so
+  // a repeatable shift repeats while the Hustle never does (W2-Food request 2; GDD §4.4).
+  T.eq((await state()).cash, 46, 'a repeatable row with a Hustle button repeats its plain run (1 + 3 runs)');
+  T.ok(await ev(() => window.SR.ui.card.rows().filter((r) => r.id === 'testshop.badRepeat3')[0].repeatable), 'and the card marks it repeatable');
   await P.keyboard.up('Enter');
   await focusRow('testshop.badRepeat2');
   await P.keyboard.down('Enter');
@@ -416,6 +419,169 @@ async function setup(opts) {
   T.eq(await ev(() => window.__dlg), { choice: 'give' }, 'the next Enter picks the focused choice');
   await ev(() => window.SR.debug.fast(true));
 
+  // ------------------------------------------------------------ wave-2 requests (desk-present)
+  T.section('wave-2 requests: row: false, greetings, titles, chips, stingers, the Pocket over a dialog');
+  await ev(() => {
+    const SR = window.SR;
+    SR.def.text({ 'act.testshop.commitOnly': 'Commit only', 'act.testshop.flagIt': 'Change the situation', 'act.testshop.brawl': 'Start a brawl',
+      'act.testshop.newBed': 'Take a bed', 'test.greetA': 'Situation A, first words.', 'test.greetA2': 'Situation A, other words.',
+      'test.greetB': 'Situation B now.', 'test.titleB': 'Test Shop (B)' });
+    // W2-Civic 1: a sub-screen's commit is never a card row.
+    SR.def.action('testshop.commitOnly', { building: 'testshop', group: 'special', order: 50, icon: 'warning', label: 'act.testshop.commitOnly', p: 0, row: false, effects: [] });
+    SR.def.action('testshop.flagIt', { building: 'testshop', group: 'special', order: 60, icon: 'star', label: 'act.testshop.flagIt', p: 0, effects: [['flag', 'w2greet']] });
+    SR.def.action('testshop.brawl', { building: 'testshop', group: 'special', order: 70, icon: 'warning', label: 'act.testshop.brawl', p: 0,
+      effects: [['karma', -2], ['open', 'test.none']] });
+    SR.def.fn('test.giveBed', function (s) { s.furniture.owned.bed = 1; return {}; });
+    // A sub-screen taller than the card body (W2-Money 2).
+    SR.def.subscreen('test.tall', { title: 'ui.back', mount: function (root) { const d = document.createElement('div'); d.style.height = '2000px'; d.textContent = 'tall'; root.appendChild(d); } });
+    SR.def.action('testshop.newBed', { building: 'testshop', group: 'special', order: 80, icon: 'bed', label: 'act.testshop.newBed', p: 0,
+      cost: { cash: 5 }, effects: [['fn', 'test.giveBed']] });
+    // W2-Civic 6 / W2-Home 7: a greeting fn with variants, and a title fn, that follow the situation.
+    SR.def.fn('greet.testshop', function (s, params, ctx) {
+      return s.flags.w2greet ? { key: 'test.greetB' } : { key: ctx.rng.chance(0.5) ? 'test.greetA' : 'test.greetA2' };
+    });
+    SR.def.fn('title.testshop', function (s) { return s.flags.w2greet ? 'test.titleB' : null; });
+    // W2-Civic 5: a building's song by the state.
+    SR.def.fn('music.testshop', function () { return { id: 'paper_sky', variant: 'w2' }; });
+    window.__stingers = [];
+    const realSting = SR.audio.stinger;
+    SR.audio.stinger = function (id) { window.__stingers.push(id); return typeof realSting === 'function' ? realSting.apply(this, arguments) : null; };
+    window.__beds = [];
+    const realBed = SR.audio.ambience;
+    SR.audio.ambience = function (id, lv) { window.__beds.push([id, lv]); return typeof realBed === 'function' ? realBed.apply(this, arguments) : undefined; };
+    window.__music.length = 0;
+    SR.debug.set({ money: { cash: 500 }, stats: { hp: 10 }, flags: { w2greet: false }, furniture: { owned: { bed: 0 } } });
+  });
+  await t.enter('testshop');
+  await step(2);
+  const w2rows = await ev(() => window.SR.ui.card.rows().map((r) => r.id));
+  T.ok(w2rows.indexOf('testshop.commitOnly') < 0 && w2rows.indexOf('testshop.flagIt') >= 0, 'an action marked row: false is never a card row (W2-Civic 1)', w2rows);
+  T.ok(await ev(() => window.SR.preview('testshop.commitOnly').ok === true), 'and it still previews and commits through SR.act (a sub-screen\'s ctx.act)');
+  T.eq(await ev(() => window.__music.slice(-1)[0]), ['paper_sky', { fade: 0.6, variant: 'w2' }], 'the song comes from music.<building> with its variant (W2-Civic 5)');
+  const greetText = () => ev(() => { const e = document.querySelector('#ui [data-id="card-greeting"]'); return e ? e.textContent : ''; });
+  const g0 = await greetText();
+  T.ok(/Situation A/.test(g0), 'the greeting fn speaks first', g0);
+  await focusRow('testshop.fries');
+  await P.keyboard.press('Enter');
+  await step(1);
+  T.eq(await greetText(), g0, 'an action that leaves the situation alone keeps the same line (no new variant re-typed)');
+  await focusRow('testshop.flagIt');
+  await P.keyboard.press('Enter');
+  await step(1);
+  T.ok(/Situation B/.test(await greetText()), 'an action that changes the situation re-picks the greeting (W2-Civic 6)', await greetText());
+  T.eq(await ev(() => document.querySelector('#ui [data-id="card-title"]').textContent), 'Test Shop (B)', 'and title.<building> renames the card (W2-Home 7)');
+  // W2-Night 3: a row whose Result opens a minigame flies no chips across the frame opening over it.
+  await ev(() => window.SR.debug.fast(false));
+  await focusRow('testshop.brawl');
+  await P.keyboard.press('Enter');
+  const flying = await ev(() => document.querySelectorAll('#ui .chip--fly').length);
+  await focusRow('testshop.fries');
+  await P.keyboard.press('Enter');
+  const flyingFries = await ev(() => document.querySelectorAll('#ui .chip--fly').length);
+  await ev(() => { window.SR.debug.fast(true); window.SR.ui.toast.clear(); });
+  T.ok(flying === 0 && flyingFries > 0, 'a Result with `open` flies no chips; a plain one still does (W2-Night 3)', { flying, flyingFries });
+  await P.waitForTimeout(300);
+  // W2-Goods 1: a furniture Delta floats nothing over your stick (the chip names the piece).
+  await step(70);                                   // the earlier floats rise and go (900 ms)
+  await focusRow('testshop.newBed');
+  await P.keyboard.press('Enter');
+  const bedFloats = await ev(() => window.SR.ui.building.info().floats);
+  T.eq(bedFloats, 1, 'buying a piece floats only the cash, not "bed" (W2-Goods 1)');
+  // W2-Goods 1, W2-Home 8, W2-Money 1, W2-Civic 4: chips name the piece, the home, the rank, the item.
+  const names = await ev(() => {
+    const SR = window.SR, c = (d) => { const el = SR.ui.chip.fromDelta(d); return el ? el.textContent : null; };
+    const g = (gain) => SR.ui.chip.gains({ gains: [gain] })[0].textContent;
+    SR.debug.set({ job: { ranks: { nli: null } }, furniture: { owned: { bed: 1 } } });
+    return {
+      bed: c({ kind: 'furniture', key: 'bed', n: 1, from: 0, to: 1 }), pod: c({ kind: 'furniture', key: 'bed', n: 1, from: 1, to: 2 }),
+      podGain: g({ kind: 'furniture', key: 'bed', n: 1 }),
+      living: c({ kind: 'home', key: 'living', n: 2, from: 'apt', to: 'pent' }), owned: c({ kind: 'home', key: 'owned', n: 1, from: ['apt'], to: ['apt', 'pent'] }),
+      sold: c({ kind: 'home', key: 'owned', n: -1, from: ['apt', 'pent'], to: ['apt'] }), homeGain: g({ kind: 'home', key: 'living', n: 1 }),
+      rank: c({ kind: 'job', key: 'nli', n: 1, from: null, to: 'janitor' }), rankGain: g({ kind: 'job', key: 'nli', n: 1 }),
+      diploma: g({ kind: 'item', key: 'diplomas', n: 1 }),
+      want: { bed: SR.text('furn.bed'), pod: SR.text('furn.pod'), pent: SR.text('home.pent'), janitor: SR.text('job.janitor'), diploma: SR.text('item.diploma') },
+    };
+  });
+  T.eq([names.bed, names.pod, names.podGain], [names.want.bed, names.want.pod, names.want.pod], 'a furniture chip names the piece at its tier (Delta and Preview gain)');
+  T.eq([names.living, names.owned, names.homeGain], [names.want.pent, names.want.pent, 'New home'], 'a home chip names the home (living, owned), "New home" for a bare gain');
+  T.ok(names.sold.indexOf(names.want.pent) >= 0 && /^-/.test(names.sold), 'a sale reads "-1 <home>"', names.sold);
+  T.eq([names.rank, names.rankGain], [names.want.janitor, names.want.janitor], 'a job chip names the rank, not the track "nli" (Delta, and the gain off the ladder)');
+  T.eq(names.diploma, '+1 ' + names.want.diploma, 'an item chip keyed by its state list names the item ("+1 Diploma", not "diplomas")');
+  // W2-Music 1 / W2-Transit 7: the Stamp's stinger by its key.
+  const stings = await ev(() => {
+    const S = window.SR.ui.stamp;
+    return ['stamp.jobs.janitor', 'stamp.jobs.hired', 'stamp.training.business', 'stamp.hospital.flatlined', 'stamp.crime.jailed', 'stamp.stats.int', 'stamp.crime.store']
+      .map((key) => S.stingerFor({ key })).concat([S.stingerFor({ key: 'stamp.stats.int', sting: false }), S.stingerFor({ text: 'HELLO' })]);
+  });
+  T.eq(stings, ['promotion', 'stamp', null, null, null, 'stamp', 'stamp', null, 'stamp'],
+    'stingers: promotion for a rank, none for a degree, FLATLINED and BOOKED (their scenes play theirs), the triad otherwise; sting: false silences');
+  const played = await ev(() => {
+    const SR = window.SR;
+    SR.ui.stamp.clear();
+    window.__stingers.length = 0;
+    SR.ui.stamp({ key: 'stamp.hospital.flatlined', text: 'FLATLINED' });
+    SR.ui.stamp.clear();
+    SR.ui.stamp({ key: 'stamp.jobs.janitor', text: 'JANITOR' });
+    SR.ui.stamp.clear();
+    return { calls: window.__stingers.slice(), promo: !!(SR.reg.song && SR.reg.song['stingers.promotion']) };
+  });
+  T.eq(played.calls, played.promo ? ['promotion'] : ['stamp'], 'FLATLINED lands without the triad; a promotion plays the fanfare', played);
+  // W2-Money 2: a sub-screen opened from low in a scrolled list starts at the top.
+  await ev(() => { const b = document.querySelector('#ui [data-id="card-body"]'); b.style.maxHeight = '200px'; b.scrollTop = 400; });
+  const scrolled = await ev(() => document.querySelector('#ui [data-id="card-body"]').scrollTop);
+  await ev(() => { window.SR.ui.card.push('test.tall', {}); });   // (its promise resolves on pop)
+  const top = await ev(() => document.querySelector('#ui [data-id="card-body"]').scrollTop);
+  T.ok(scrolled > 0 && top === 0, 'a sub-screen opens scrolled to the top of the card body (W2-Money 2)', { scrolled, top });
+  await ev(() => { window.SR.ui.card.pop(); document.querySelector('#ui [data-id="card-body"]').style.maxHeight = ''; });
+  // W2-Pocket 2: the Pocket opens over a dialog by its keys (not Tab), unless the dialog says no.
+  if (await ev(() => !!window.SR.reg.scene.pocket)) {
+    await openDlg({ id: 'street-test', person: 'harold', text: 'Spare a minute?', choices: [{ id: 'leave', label: 'ui.leave' }] });
+    T.eq(await ev(() => (window.SR.ui.dialog.current() || {}).id), 'street-test', 'SR.ui.dialog.current() gives the open sheet\'s params');
+    await P.keyboard.press('Tab');
+    T.eq(await t.scenes(), ['building', 'dialog'], 'Tab does not open the Pocket over a dialog (D57)');
+    await P.keyboard.press('KeyI');
+    await step(1);
+    const pk = await ev(() => ({ stack: window.SR.scenes.stack(), tab: window.SR.ui.pocket && window.SR.ui.pocket.current ? window.SR.ui.pocket.current().tab : null }));
+    T.eq([pk.stack, pk.tab], [['building', 'dialog', 'pocket'], 'bag'], 'the Bag key opens the Pocket on the Bag over the street dialog (W2-Pocket 2)', pk);
+    await ev(() => window.SR.scenes.pop());
+    await ev(() => window.SR.scenes.pop({ choice: 'leave' }));
+    await openDlg({ id: 'stop-test', name: 'Officer Pat', text: 'Hands where I can see them.', pocket: false, choices: [{ id: 'talk', label: 'ui.ok' }] });
+    await P.keyboard.press('KeyI');
+    await step(1);
+    T.eq(await t.scenes(), ['building', 'dialog'], 'a dialog with pocket: false keeps the Pocket shut');
+    await ev(() => window.SR.scenes.pop({ choice: 'talk' }));
+  }
+  // W2-Music 4: an interior's ambience bed under its song, faded on leaving.
+  await ev(() => { window.__beds.length = 0; });
+  await t.enter('bank');
+  await step(2);
+  const bedsIn = await ev(() => window.__beds.slice());
+  await t.enter('testbank');
+  await step(2);
+  const bedsOut = await ev(() => window.__beds.slice());
+  T.ok(bedsIn.some((b) => b[0] === 'office' && b[1] === 1) && bedsOut.some((b) => b[0] === 'office' && b[1] === 0),
+    'the bank plays the office hum and fades it when you leave (W2-Music 4)', bedsOut);
+  // Toasts over a menu panel sit at the bottom centre and let taps through ("Saved to Slot 1." covered
+  // Slot 1's own Save here at the lane's usual y 104).
+  if (await ev(() => !!window.SR.reg.scene.saveload)) {
+    const laneAt = () => ev(() => { const l = document.querySelector('#ui .toast-lane'); const b = l.getBoundingClientRect(); return { top: Math.round(b.top), pe: getComputedStyle(l).pointerEvents }; });
+    await ev(() => { window.SR.ui.toast.clear(); window.SR.scenes.push('saveload', { mode: 'save' }); });
+    await step(2);
+    await ev(() => { window.SR.ui.toast({ text: 'Saved to Slot 1.' }); });
+    const over = await laneAt();
+    await ev(() => { window.SR.ui.toast.clear(); window.SR.scenes.pop(); });
+    await step(2);
+    await ev(() => { window.SR.ui.toast({ text: 'Back in the shop.' }); });
+    const back = await laneAt();
+    T.ok(over.top >= 560 && over.pe === 'none' && back.top < 200 && back.pe === 'auto', 'over Save / Load the toasts sit at the bottom and let taps through; elsewhere at the top lane', { over, back });
+  }
+  await ev(() => {
+    const SR = window.SR;
+    ['greet.testshop', 'title.testshop', 'music.testshop'].forEach((k) => { delete SR.reg.fn[k]; });
+    SR.ui.toast.clear();
+  });
+  T.eq(t.errors(), [], 'zero console errors (wave-2 requests)');
+
   // ------------------------------------------------------------ leaving
   T.section('leaving');
   await ev(() => { window.__ev.length = 0; });
@@ -497,6 +663,21 @@ async function setup(opts) {
   const sc1 = await qev(() => document.querySelector('#ui [data-id="card-body"]').scrollTop);
   T.ok(sc1 > sc0.top + 40, 'a touch drag scrolls the card body (' + sc0.top + ' → ' + sc1 + ')');
   T.eq(await qev(() => getComputedStyle(document.querySelector('#ui [data-id="card-body"]')).touchAction), 'pan-y', 'the card body is touch-action: pan-y');
+  // W2-City request 4: the city HUD fits a phone between its 16 px gutters (the Pause button ran past
+  // the window at 844 × 390), and on a narrower phone too.
+  if (await qev(() => !!window.SR.reg.scene.city)) {
+    for (const [w, hgt] of [[844, 390], [667, 375]]) {
+      await t.resize(w, hgt);
+      await t.goto('city');
+      await qev(() => window.W1D.step(2));
+      const fitHud = await qev(() => {
+        const r = (s) => { const el = document.querySelector('#ui [data-scene="city"] ' + s); return el ? el.getBoundingClientRect().toJSON() : null; };
+        return { vw: window.innerWidth, hud: r('.hud'), right: r('.hud-right'), pause: r('[data-id="hud-pause"]'), centre: r('.hud-centre'), left: r('.hud-left') };
+      });
+      T.ok(fitHud.pause && fitHud.pause.right <= fitHud.vw - 8 && fitHud.right.right <= fitHud.vw - 8 && fitHud.left.right <= fitHud.centre.left && fitHud.centre.right <= fitHud.right.left,
+        'the city HUD fits ' + w + '×' + hgt + ': its cards side by side, Pause inside the window', fitHud);
+    }
+  }
   T.eq(t.errors(), [], 'zero console errors (touch)');
   await t.close();
 

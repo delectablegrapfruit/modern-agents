@@ -9,7 +9,7 @@
 //     lost), Roll again (unlimited, orig) and Fair start (7 / 7 / 7 + 6); live readouts: HP (= STR +
 //     15) and when NLI would hire you (INT 20, B-05).
 //   Step 3: the name TextField (≤ 16), a rotating stick preview in karma-neutral blue, the accessory
-//     carousel (P1; shown with the `wardrobe` flag until the lead names its flag), the tutorial
+//     carousel (P1, the `accessories` flag: CONTRACT D68), the tutorial
 //     toggle and Begin. Naming yourself PAPERGOD shows a wink and no warning (B-02: the cheat).
 // Begin builds the state (SR.rules.state.create), makes it live (SR.save.load), writes a Hardcore
 // run's ironman slot at once, and plays the intro.
@@ -39,6 +39,8 @@
     if (lengths().indexOf(n) < 0) return 'custom';
     return E && typeof E.hofBucket === 'function' ? E.hofBucket(n) : ['short', 'medium', 'long', 'unlimited'][lengths().indexOf(n)];
   }
+  /** @returns {boolean} the accessory carousel shows (UI §5.3, P1; its flag is `accessories`, CONTRACT D68). */
+  function carousel() { return !!SR.features.accessories; }
   function difficulties() { return Object.keys(SR.tuning.difficulty || { relaxed: 1, standard: 1, hardcore: 1 }); }
   function nliInt() { var j = SR.tuning.jobs && SR.tuning.jobs.janitor; return j ? j.int : 20; }
 
@@ -94,7 +96,7 @@
   function options(W) {
     var o = { seed: W.seed, name: W.name.trim(), stats: { str: W.stats.str, int: W.stats.int, cha: W.stats.cha },
       difficulty: W.difficulty, length: gameLength(W), tutorial: !!W.tutorial };
-    if (SR.features.wardrobe && W.acc !== 'none') o.look = { acc: W.acc };
+    if (carousel() && W.acc !== 'none') o.look = { acc: W.acc };
     return o;
   }
 
@@ -135,7 +137,7 @@
     ctx.beginPath(); ctx.ellipse(PREVIEW_W / 2, PREVIEW_H - 26, 56, 12, 0, 0, Math.PI * 2);
     A.paperFill(ctx, 'ui.paper-3');
     if (SR.art.stick && typeof SR.art.stick.draw === 'function') {
-      var look = { acc: SR.features.wardrobe && W.acc !== 'none' ? [W.acc] : [] };
+      var look = { acc: carousel() && W.acc !== 'none' ? [W.acc] : [] };
       try {
         SR.art.stick.draw(ctx, 'idle', { x: PREVIEW_W / 2, y: PREVIEW_H - 28, view: 'side', facing: FACINGS[W.facing], scale: 1.05,
           player: true, karma: 0, look: look, t: W.turn, shadow: false });
@@ -242,7 +244,7 @@
       wink = h('p', { class: 'ng-wink', 'data-id': 'ng-wink', hidden: true }, text('front.new.wink'));
       preview = h('canvas', { class: 'ng-preview', 'data-id': 'ng-preview', 'aria-hidden': 'true', style: { width: PREVIEW_W + 'px', height: PREVIEW_H + 'px' } });
       var left = h('div', { class: 'ng-col' }, nameField, wink);
-      if (SR.features.wardrobe) {
+      if (carousel()) {
         accLabel = h('span', { class: 'ng-acc-name', 'data-id': 'ng-acc' });
         var turnAcc = function (d) { var i = ACCESSORIES.indexOf(W.acc); W.acc = ACCESSORIES[(i + d + ACCESSORIES.length) % ACCESSORIES.length]; refresh(); };
         left.appendChild(h('div', { class: 'ng-acc', role: 'group', 'aria-label': text('front.new.acc') },

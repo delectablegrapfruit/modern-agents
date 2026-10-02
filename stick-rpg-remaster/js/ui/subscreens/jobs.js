@@ -146,18 +146,14 @@
     }
   }
 
-  /** Scrolls the card body back to the top on opening (docs/requests/W2-Money.md 2). */
-  function toTop(root) {
-    for (var el = root.parentElement; el && !el.hasAttribute('data-scene'); el = el.parentElement) if (el.scrollTop) el.scrollTop = 0;
-  }
-
   var mounts = [];
   function of(ctx) { for (var i = mounts.length - 1; i >= 0; i--) if (mounts[i].ctx === ctx) return mounts[i]; return mounts[mounts.length - 1] || null; }
 
   SR.def.subscreen('nli.jobs', {
     title: 'sub.nli.jobs',
     p: 0,
-    mount: function (root, ctx) { var M = { root: root, ctx: ctx, alive: true }; mounts.push(M); render(M); toTop(root); },
+    // the host opens it scrolled to the top (js/ui/card.js; W2-Money request 2)
+    mount: function (root, ctx) { var M = { root: root, ctx: ctx, alive: true }; mounts.push(M); render(M); },
     refresh: function (ctx) { var M = of(ctx); if (!M || !M.alive) return; M.ctx = ctx || M.ctx; render(M); },
     unmount: function () { var M = mounts.pop(); if (M) M.alive = false; },
   });

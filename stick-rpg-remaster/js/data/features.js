@@ -34,6 +34,7 @@
     achievements: false,  // achievements, the Hall of Fame, the legacy score, the results graphs (W3-Prog)
     tutorial: false,      // the full Day 1 script and hints; P0 has the First Day list only (W3-Onboard)
     phone: false,         // the Pocket's Phone tab: Cab, Summon car, Stocks by phone, flagless contacts (W3-Econ)
+    accessories: false,   // the new-game accessory carousel, UI §5.3 (built by W2-Front; CONTRACT D68)
     // P2 (wave 4)
     customLength: false,  // Custom 7-365 days (W4-Rules / W4-UI)
     fleaMarket: false,    // the Sunday flea market (W4-Rules / W4-UI)

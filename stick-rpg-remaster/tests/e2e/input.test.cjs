@@ -95,6 +95,27 @@ const sorted = (l) => l.slice().sort();
   T.eq(consumed, [], 'a listener that sets ev.consumed keeps the press from the scene');
   await take(page);
 
+  T.section('one press acts in one scene');
+  // E at a door: interact opens the building, and E's confirm must not be pressed into it, where it
+  // would run the card's focused first row (a milkshake, a study, Sleep). Found at the wave-2 exit gate.
+  await page.evaluate(() => {
+    const SR = window.SR;
+    SR.scenes.register('test.door', { kind: 'base', onAction(a) { window.__scene.push('door:' + a); if (a === 'interact') SR.scenes.go('test.inside', null, { transition: false }); } });
+    SR.scenes.register('test.inside', { kind: 'base', onAction(a, ev) { window.__scene.push('inside:' + a + (ev.repeat ? 'r' : '')); } });
+    SR.scenes.go('test.door', null, { transition: false });
+  });
+  await take(page); await takeScene(page);
+  await page.keyboard.down('KeyE');
+  const held = await page.evaluate(() => [window.SR.scenes.stack(), window.SR.input.held('interact'), window.SR.input.held('confirm')]);
+  await page.keyboard.down('KeyE');
+  await page.keyboard.up('KeyE');
+  T.eq([await takeScene(page), await take(page), held], [['door:interact', 'inside:interactr'], ['interact+', 'interact+r', 'interact-'], [['test.inside'], true, false]],
+    'E at a door: interact changes the scene; its confirm is not pressed (nor repeated, nor held) in the new one');
+  await t.key('KeyE');
+  T.eq(await takeScene(page), ['inside:interact', 'inside:confirm'], 'the next press of E reaches the new scene whole');
+  await page.evaluate(() => window.SR.scenes.go('test.input', null, { transition: false }));
+  await take(page); await takeScene(page);
+
   T.section('context maps (blackjack shadows H / S / D)');
   await page.evaluate(() => { window.__pop = window.SR.input.pushContext('blackjack'); });
   for (const [key, want] of [['KeyH', ['hit+@blackjack', 'hit-@blackjack']], ['KeyS', ['stand+@blackjack', 'stand-@blackjack']], ['KeyD', ['double+@blackjack', 'double-@blackjack']],

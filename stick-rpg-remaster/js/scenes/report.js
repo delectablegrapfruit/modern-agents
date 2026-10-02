@@ -21,15 +21,16 @@
 //
 // The hand-offs (action:done): a sleep night's Result.report opens this scene over the home card
 // (the jail's and the hospital's nights are W2-Transit's to present); the home's Save row opens the
-// save screen (`saveload` in save mode, W2-Front) or, until it lands, writes the first slot; and
-// (home:changed) the home card's greeting follows its door when the door's mode changes in place.
+// save screen (`saveload` in save mode, W2-Front; a build without it writes the first slot); and
+// the home card's greeting follows its door after an action from anywhere (the card itself follows
+// its own commits and home:changed, js/ui/card.js; this also catches a let from the Pocket).
 // Load-time rule: defines functions and registers the scene only.
 (function () {
   'use strict';
   var SR = window.SR;
 
   var MUSIC = { sleep: 'morning_edition', hospital: 'waiting_room', jail: 'doing_time' };
-  var FALLBACK_SLOT = 'slot1';      // the Save row's slot until W2-Front's save screen lands
+  var FALLBACK_SLOT = 'slot1';      // the Save row's slot when no save screen is registered
 
   var open = null;                  // { params, page, scope, done } while the paper is up
   var overAt = null;                // { state, day } of the last game:over seen on the bus
@@ -113,11 +114,13 @@
   });
 
   // ---- the home card's greeting follows its door (UI §5.6) ------------------------------------------
-  // The card picks its greeting once, at the door (greet.home). Rows switch in place when the door's
-  // mode changes (Tour → buy, Move in, Let out: js/data/buildings/home.js), so the greeting follows:
-  // "For sale: ..." must not stay up over the Move in row. Uses the Card component's setGreeting.
-  // Checked on home:changed and after every action (a let changes no `home` Delta, so SR.act raises
-  // no home:changed for it); the signature keeps it from retyping when nothing it names changed.
+  // Rows switch in place when the door's mode changes (Tour → buy, Move in, Let out:
+  // js/data/buildings/home.js), so the greeting follows: "For sale: ..." must not stay up over the
+  // Move in row. The card re-asks greet.home after its own commits and on home:changed (W2-Home
+  // request 7, js/ui/card.js; it also renames the card through title.home); this hook re-checks after
+  // every action from anywhere (a let from the Pocket changes no `home` Delta, so SR.act raises no
+  // home:changed for it). The signature keeps it from retyping when nothing it names changed, and the
+  // card skips a key it already shows.
   var greetSig = null;              // the door's mode:home:let when the card's greeting was picked
 
   /** @returns {string|null} what the home card's greeting depends on at this door, or null. */
@@ -139,7 +142,7 @@
     if (g) el.setGreeting(typeof g === 'string' ? g : g.key, g.vars);
   }
 
-  /** The home's Save row: the save screen in save mode, else (until W2-Front's lands) slot 1. */
+  /** The home's Save row: the save screen in save mode, else (no save screen registered) slot 1. */
   function openSave() {
     if (SR.reg.scene.saveload) { SR.scenes.push('saveload', { mode: 'save' }); return; }
     try {

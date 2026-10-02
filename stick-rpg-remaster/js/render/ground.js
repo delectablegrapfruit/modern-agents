@@ -782,10 +782,21 @@
     ctx.restore();
   }
 
+  /** The art kit's painter of a railing or wall (SR.art.props; CONTRACT §15.2), or null. */
+  function artPainter(name) {
+    var A = SR.art && SR.art.props;
+    return A && typeof A[name] === 'function' ? A[name] : null;
+  }
+
   function wall(ctx, w, x0, y0, x1, y1, px) {
     var th = w.w || 20, hz = 20;   // 40 u tall: 20 u on screen
     var ax = Math.min(w.a[0], w.b[0]), bx = Math.max(w.a[0], w.b[0]), ay = Math.min(w.a[1], w.b[1]), by = Math.max(w.a[1], w.b[1]);
     if (!hitsR([ax - th, ay - th - hz, bx + th, by + th], x0, y0, x1, y1)) return;
+    // W2-Exterior request 4: the props painter draws the castle wall when it is there.
+    var paint = artPainter('wall');
+    if (paint) {
+      try { paint(ctx, w.a, w.b, th); return; } catch (e) { SR.util.warnOnce('render.wall', 'SR.render: SR.art.props.wall threw: ' + e.message); }
+    }
     var pal = L().pal, top = pal('stone', 0.66), face = pal('stoneShade', 0.55);
     var horiz = bx - ax >= by - ay;
     var r = horiz ? [ax, ay - th / 2, bx, ay + th / 2] : [ax - th / 2, ay, ax + th / 2, by];
@@ -807,6 +818,11 @@
   function railing(ctx, r, x0, y0, x1, y1, px) {
     var ax = r.a[0], ay = r.a[1], bx = r.b[0], by = r.b[1];
     if (!hitsR([Math.min(ax, bx) - 10, Math.min(ay, by) - 24, Math.max(ax, bx) + 10, Math.max(ay, by) + 10], x0, y0, x1, y1)) return;
+    // W2-Exterior request 4: the props painter draws the railings (posts every 48 u) when it is there.
+    var paint = artPainter('railing');
+    if (paint) {
+      try { paint(ctx, r.a, r.b); return; } catch (e) { SR.util.warnOnce('render.railing', 'SR.render: SR.art.props.railing threw: ' + e.message); }
+    }
     var len = Math.hypot(bx - ax, by - ay), n = Math.max(1, Math.round(len / 48));
     ctx.strokeStyle = L().pal('railing', 0.3);
     ctx.lineCap = 'round';

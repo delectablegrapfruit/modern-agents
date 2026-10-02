@@ -1,0 +1,976 @@
+{
+ "fmt": "sr-save",
+ "v": 1,
+ "meta": {
+  "slot": "slot1",
+  "name": "Botty",
+  "day": 20,
+  "min": 600,
+  "length": 40,
+  "difficulty": "standard",
+  "inProgress": false,
+  "title": "sales",
+  "netWorth": 1877,
+  "savedAt": 1790000000000,
+  "playSec": 21600,
+  "thumb": ""
+ },
+ "state": {
+  "v": 1,
+  "seed": 4040,
+  "rng": {
+   "rules": [
+    3934708134,
+    1162551971,
+    989871285,
+    307
+   ]
+  },
+  "mode": {
+   "length": 40,
+   "difficulty": "standard",
+   "tutorial": true,
+   "cheat": false,
+   "keepPlaying": false,
+   "inProgress": false
+  },
+  "clock": {
+   "day": 20,
+   "min": 600,
+   "wake": 240,
+   "pillAuto": true
+  },
+  "player": {
+   "name": "Botty",
+   "look": {
+    "acc": "none"
+   },
+   "x": 998,
+   "y": 1096,
+   "facing": 180,
+   "driving": null,
+   "cars": {
+    "junker": {
+     "owned": false,
+     "bought": false,
+     "x": 727,
+     "y": 1113,
+     "a": 0,
+     "towed": false
+    },
+    "sports": {
+     "owned": false,
+     "bought": false,
+     "x": 1865,
+     "y": 1120,
+     "a": 0,
+     "towed": false
+    }
+   },
+   "lastSafe": {
+    "x": 998,
+    "y": 1096
+   }
+  },
+  "stats": {
+   "str": 41,
+   "int": 101,
+   "cha": 31,
+   "karma": 74,
+   "hp": 56,
+   "hpMax": 56,
+   "heat": 0,
+   "buzz": 0
+  },
+  "money": {
+   "cash": 342,
+   "bank": 35,
+   "rate": 0.9819,
+   "rateHist": [
+    1.4,
+    1.72,
+    1.776,
+    1.9208,
+    1.6366,
+    1.7093,
+    1.3674,
+    1.3939,
+    1.2151,
+    1.2721,
+    1.2177,
+    1.0742,
+    0.9594,
+    1.3675,
+    1.494,
+    1.3952,
+    1.3162,
+    1.253,
+    1.1024
+   ],
+   "cds": [],
+   "loan": null,
+   "lien": 0,
+   "creditFrozenUntil": 0
+  },
+  "job": {
+   "ranks": {
+    "mcsticks": "cook",
+    "nli": "sales"
+   },
+   "shiftsAtRank": {
+    "mcsticks": 19,
+    "nli": 1
+   },
+   "totalShifts": 32,
+   "rating": 1,
+   "weekNliWages": 510,
+   "weekNliShifts": 5,
+   "overtimeToday": 0,
+   "lastFullEnd": -1,
+   "ceoSinceDay": 0,
+   "office": null
+  },
+  "edu": {
+   "classes": {
+    "biz": 0,
+    "kin": 0,
+    "thr": 0
+   },
+   "degrees": {
+    "biz": false,
+    "kin": false,
+    "thr": false
+   }
+  },
+  "perks": {
+   "owned": [],
+   "pending": []
+  },
+  "items": {
+   "smokes": 0,
+   "pills": 0,
+   "gum": 0,
+   "paper": 0,
+   "scratch": 0,
+   "takeout": [],
+   "knife": 0,
+   "knuckles": 0,
+   "gun": 1,
+   "ammo": 5,
+   "vest": 0,
+   "alarm": 1,
+   "phone": 0,
+   "skateboard": 0,
+   "prodeck": 0,
+   "booze": 0,
+   "snow": 0,
+   "shirt": 0,
+   "scraps": [],
+   "coupon": 0,
+   "diplomas": []
+  },
+  "homes": {
+   "owned": [
+    "apt"
+   ],
+   "living": "apt",
+   "lets": {}
+  },
+  "furniture": {
+   "owned": {
+    "bed": 1,
+    "tv": 1,
+    "satellite": 1
+   },
+   "storage": []
+  },
+  "stocks": {
+   "MCS": {
+    "price": 14.5,
+    "prev": 14.54,
+    "hist": [
+     14.11,
+     14.05,
+     13.9,
+     13.31,
+     13.43,
+     13.82,
+     13.82,
+     14.14,
+     14.51,
+     14.25,
+     14.15,
+     14.49,
+     14.53,
+     14.54,
+     14.5
+    ],
+    "held": 0,
+    "basis": 0
+   },
+   "NLI": {
+    "price": 29.36,
+    "prev": 28.81,
+    "hist": [
+     28.43,
+     28.49,
+     29.34,
+     28.49,
+     29.99,
+     29.51,
+     31.05,
+     31.06,
+     30.59,
+     29.31,
+     30.12,
+     29.55,
+     29.43,
+     28.81,
+     29.36
+    ],
+    "held": 0,
+    "basis": 0
+   },
+   "SLC": {
+    "price": 21.84,
+    "prev": 20.26,
+    "hist": [
+     20.24,
+     21.18,
+     21.51,
+     22.36,
+     22.15,
+     23.27,
+     22.49,
+     21.93,
+     20.52,
+     19.92,
+     21.16,
+     22.19,
+     21.11,
+     20.26,
+     21.84
+    ],
+    "held": 0,
+    "basis": 0
+   },
+   "PPR": {
+    "price": 5.75,
+    "prev": 5.66,
+    "hist": [
+     5.81,
+     5.69,
+     5.43,
+     5.5,
+     5.7,
+     5.59,
+     5.59,
+     5.62,
+     5.86,
+     5.95,
+     5.7,
+     5.65,
+     5.73,
+     5.66,
+     5.75
+    ],
+    "held": 0,
+    "basis": 0
+   },
+   "GLU": {
+    "price": 5.62,
+    "prev": 5.69,
+    "hist": [
+     5.94,
+     5.95,
+     5.8,
+     5.77,
+     5.88,
+     5.87,
+     5.76,
+     5.7,
+     5.73,
+     5.71,
+     5.64,
+     5.68,
+     5.66,
+     5.69,
+     5.62
+    ],
+    "held": 0,
+    "basis": 0
+   },
+   "SKY": {
+    "price": 2.96,
+    "prev": 3.39,
+    "hist": [
+     3.51,
+     3.06,
+     3.21,
+     3.01,
+     3.42,
+     3.76,
+     3.76,
+     4,
+     3.99,
+     3.51,
+     4.01,
+     3.58,
+     3.57,
+     3.39,
+     2.96
+    ],
+    "held": 0,
+    "basis": 0
+   }
+  },
+  "tip": null,
+  "trade": {
+   "rep": {},
+   "visited": {
+    "gusty": true
+   },
+   "smuggleProfit": 0,
+   "tours": 0,
+   "demand": {},
+   "tourDemand": {},
+   "tourWeek": {},
+   "buyers": [
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "offer": null
+  },
+  "fight": {
+   "won": 0,
+   "champion": false,
+   "ringBouts": 0,
+   "open": null
+  },
+  "casino": {
+   "points": 0,
+   "barredUntil": 0,
+   "suspicion": 0,
+   "winToday": 0,
+   "shoe": null,
+   "lastBet": 0,
+   "match": null,
+   "card": null
+  },
+  "crime": {
+   "bankRobDays": [],
+   "open": null
+  },
+  "daily": {
+   "shifts": 1,
+   "tv": {},
+   "beers": 0,
+   "gambleKarma": 0,
+   "uofsKarma": 0,
+   "seminars": 0,
+   "paper": 0,
+   "chess": 0,
+   "nap": 0,
+   "benchNap": 0,
+   "online": 0,
+   "dartsPractice": 0,
+   "dartsMatches": 0,
+   "bjHands": 0,
+   "homePerk": 0,
+   "charity": 0,
+   "ducks": 0,
+   "preacher": 0,
+   "skate": 0,
+   "soup": 0,
+   "leftovers": 0,
+   "relax": 0,
+   "secondWind": 0,
+   "vipDrinks": 0,
+   "falls": 0,
+   "forecastSeen": false,
+   "ring": 0,
+   "campaign": {
+    "rally": 0,
+    "tvAd": 0,
+    "doorKnock": 0,
+    "kissBabies": 0,
+    "intimidate": 0,
+    "bribe": 0,
+    "debate": 0
+   }
+  },
+  "weekly": {
+   "index": 2,
+   "openMic": 0,
+   "party": 0,
+   "mchollandTip": 0,
+   "bankRob": 0
+  },
+  "npc": {
+   "harold": {
+    "gave10": 0,
+    "bottles": 0,
+    "takeout": 0,
+    "shirt": false,
+    "branch": null,
+    "stage": "start",
+    "hiredDay": 0,
+    "repayDay": 0
+   },
+   "kid": {
+    "packs": 0,
+    "gumDays": 0,
+    "lastGumDay": 0,
+    "branch": null,
+    "stage": "start",
+    "dead": false,
+    "contestDay": 0,
+    "diedDay": 0
+   },
+   "dealer": {
+    "bought": 0,
+    "credit": null,
+    "creditEnded": false,
+    "goonsDue": false,
+    "stage": "red",
+    "turnedInDay": 0
+   },
+   "mcholland": {
+    "stage": "none",
+    "bribedUntil": 0
+   },
+   "crease": {
+    "stage": "none"
+   }
+  },
+  "election": {
+   "status": "none",
+   "path": null,
+   "nominatedDay": 0,
+   "poll": 0,
+   "campaignDay": 0,
+   "chest": 0,
+   "debateDone": false,
+   "decrees": [],
+   "decreesUsed": [],
+   "offer": [],
+   "nextDecreeDay": 0,
+   "retryFromDay": 0,
+   "flipMornings": 0,
+   "runs": 0,
+   "cityName": null
+  },
+  "world": {
+   "weather": "clear",
+   "tomorrow": "clear",
+   "forecast": "clear",
+   "todayHadRain": false,
+   "encounters": [],
+   "cityEvent": null,
+   "skateContestDay": 0
+  },
+  "jail": null,
+  "pending": null,
+  "msgs": [
+   {
+    "id": 1,
+    "from": "mel",
+    "key": "vm.mel.job",
+    "vars": {},
+    "day": 1,
+    "read": false,
+    "archived": false
+   },
+   {
+    "id": 2,
+    "from": "mel",
+    "key": "vm.mel.firstShift",
+    "vars": {},
+    "day": 1,
+    "read": false,
+    "archived": false
+   },
+   {
+    "id": 3,
+    "from": "bea",
+    "key": "vm.bea.hired",
+    "vars": {},
+    "day": 6,
+    "read": false,
+    "archived": false
+   },
+   {
+    "id": 4,
+    "from": "gil",
+    "key": "vm.gil.promoted",
+    "vars": {},
+    "day": 9,
+    "read": false,
+    "archived": false
+   },
+   {
+    "id": 5,
+    "from": "frankie",
+    "key": "vm.frankie.promoted",
+    "vars": {},
+    "day": 19,
+    "read": false,
+    "archived": false
+   }
+  ],
+  "log": {
+   "today": [],
+   "yesterday": [
+    {
+     "kind": "promoted",
+     "weight": 60,
+     "vars": {
+      "job": "sales",
+      "title": "Salesperson"
+     }
+    }
+   ]
+  },
+  "journal": {
+   "hintsSeen": {},
+   "tracked": null
+  },
+  "records": {
+   "falls": 0,
+   "carHits": 0,
+   "fightsWon": 0,
+   "ringWins": 0,
+   "jailDays": 0,
+   "jailWorkouts": 0,
+   "robberies": 1,
+   "bankRobberies": 0,
+   "hospital": 0,
+   "shiftsMcsticks": 19,
+   "citiesVisited": 1,
+   "spent": 7170,
+   "meals": 0
+  },
+  "history": {
+   "nw": [
+    [
+     1,
+     100
+    ],
+    [
+     2,
+     142
+    ],
+    [
+     3,
+     184
+    ],
+    [
+     4,
+     186
+    ],
+    [
+     5,
+     228
+    ],
+    [
+     6,
+     270
+    ],
+    [
+     7,
+     172
+    ],
+    [
+     8,
+     274
+    ],
+    [
+     9,
+     376
+    ],
+    [
+     10,
+     88
+    ],
+    [
+     11,
+     564
+    ],
+    [
+     12,
+     696
+    ],
+    [
+     13,
+     353
+    ],
+    [
+     14,
+     290
+    ],
+    [
+     15,
+     160
+    ],
+    [
+     16,
+     292
+    ],
+    [
+     17,
+     424
+    ],
+    [
+     18,
+     556
+    ],
+    [
+     19,
+     588
+    ],
+    [
+     20,
+     780
+    ]
+   ],
+   "str": [
+    [
+     1,
+     7
+    ],
+    [
+     2,
+     13
+    ],
+    [
+     3,
+     21
+    ],
+    [
+     4,
+     29
+    ],
+    [
+     5,
+     39
+    ],
+    [
+     6,
+     41
+    ],
+    [
+     7,
+     41
+    ],
+    [
+     8,
+     41
+    ],
+    [
+     9,
+     41
+    ],
+    [
+     10,
+     41
+    ],
+    [
+     11,
+     41
+    ],
+    [
+     12,
+     41
+    ],
+    [
+     13,
+     41
+    ],
+    [
+     14,
+     41
+    ],
+    [
+     15,
+     41
+    ],
+    [
+     16,
+     41
+    ],
+    [
+     17,
+     41
+    ],
+    [
+     18,
+     41
+    ],
+    [
+     19,
+     41
+    ],
+    [
+     20,
+     41
+    ]
+   ],
+   "int": [
+    [
+     1,
+     7
+    ],
+    [
+     2,
+     11
+    ],
+    [
+     3,
+     13
+    ],
+    [
+     4,
+     13
+    ],
+    [
+     5,
+     13
+    ],
+    [
+     6,
+     21
+    ],
+    [
+     7,
+     25
+    ],
+    [
+     8,
+     33
+    ],
+    [
+     9,
+     41
+    ],
+    [
+     10,
+     49
+    ],
+    [
+     11,
+     49
+    ],
+    [
+     12,
+     57
+    ],
+    [
+     13,
+     59
+    ],
+    [
+     14,
+     67
+    ],
+    [
+     15,
+     67
+    ],
+    [
+     16,
+     75
+    ],
+    [
+     17,
+     83
+    ],
+    [
+     18,
+     91
+    ],
+    [
+     19,
+     93
+    ],
+    [
+     20,
+     101
+    ]
+   ],
+   "cha": [
+    [
+     1,
+     7
+    ],
+    [
+     2,
+     7
+    ],
+    [
+     3,
+     7
+    ],
+    [
+     4,
+     11
+    ],
+    [
+     5,
+     11
+    ],
+    [
+     6,
+     11
+    ],
+    [
+     7,
+     11
+    ],
+    [
+     8,
+     11
+    ],
+    [
+     9,
+     11
+    ],
+    [
+     10,
+     11
+    ],
+    [
+     11,
+     11
+    ],
+    [
+     12,
+     11
+    ],
+    [
+     13,
+     21
+    ],
+    [
+     14,
+     21
+    ],
+    [
+     15,
+     21
+    ],
+    [
+     16,
+     21
+    ],
+    [
+     17,
+     21
+    ],
+    [
+     18,
+     21
+    ],
+    [
+     19,
+     31
+    ],
+    [
+     20,
+     31
+    ]
+   ],
+   "karma": [
+    [
+     1,
+     0
+    ],
+    [
+     2,
+     4
+    ],
+    [
+     3,
+     8
+    ],
+    [
+     4,
+     12
+    ],
+    [
+     5,
+     16
+    ],
+    [
+     6,
+     20
+    ],
+    [
+     7,
+     24
+    ],
+    [
+     8,
+     29
+    ],
+    [
+     9,
+     34
+    ],
+    [
+     10,
+     42
+    ],
+    [
+     11,
+     34
+    ],
+    [
+     12,
+     39
+    ],
+    [
+     13,
+     42
+    ],
+    [
+     14,
+     47
+    ],
+    [
+     15,
+     47
+    ],
+    [
+     16,
+     52
+    ],
+    [
+     17,
+     57
+    ],
+    [
+     18,
+     62
+    ],
+    [
+     19,
+     65
+    ],
+    [
+     20,
+     73
+    ]
+   ]
+  },
+  "achievements": {},
+  "flags": {
+   "jobOffer": true,
+   "melFirstShift": true
+  },
+  "over": false,
+  "result": null
+ }
+}

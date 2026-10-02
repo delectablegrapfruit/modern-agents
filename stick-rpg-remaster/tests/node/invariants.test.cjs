@@ -412,11 +412,27 @@ T.section('text and world actions');
   T.eq(long, [], 'labels ≤ 28 characters, toasts and Ori\'s lines ≤ 80');
   const own = Object.keys(SR.reg.text).filter((k) => SR.registry.file('text', k) === 'js/data/text/en-world.js');
   T.eq(own.filter((k) => !/^(place|door|ori|act\.world|toast\.world)\./.test(k)), [], 'en-world.js registers only place.*, door.*, ori.*, act.world.*, toast.world.*');
-  T.eq(Object.keys(SR.reg.action).filter((id) => id.indexOf('world.') === 0).sort(), ['world.carCrash', 'world.carFished', 'world.carHit', 'world.enter', 'world.fall'], 'the five world actions of ARCHITECTURE §8.3');
+  // The world actions (ARCHITECTURE §8.3, CONTRACT §8.10): the five involuntary ones of wave 1, plus
+  // W2-City's world.city (the nomination check on stepping outside), world.retire (the pause menu's
+  // Retire, W2-Front 2) and the P1 cab ride world.cab (decisions-w2-desk-lead.md, W2-City 1).
+  T.eq(Object.keys(SR.reg.action).filter((id) => id.indexOf('world.') === 0).sort(),
+    ['world.cab', 'world.carCrash', 'world.carFished', 'world.carHit', 'world.city', 'world.enter', 'world.fall', 'world.retire'],
+    'the world actions of ARCHITECTURE §8.3 (plus world.city, world.retire and the P1 cab, CONTRACT §8.10)');
   T.ok(['world.fall', 'world.carHit', 'world.carCrash', 'world.carFished', 'world.enter'].every((id) => {
     const d = SR.reg.action[id];
     return d.building === 'world' && d.p === 0 && d.timeRule === 'free' && !d.repeatable && !(d.requires || []).length;
   }), 'world actions: owner world, P0, free of the time wall, never repeatable, no requirements (involuntary)');
+  T.ok([['world.city', 'election.check'], ['world.retire', 'endgame.retire']].every(([id, fn]) => {
+    const d = SR.reg.action[id];
+    return d.building === 'world' && d.p === 0 && d.timeRule === 'free' && d.silent === true && !d.repeatable &&
+      !(d.requires || []).length && !d.cost && JSON.stringify(d.effects) === JSON.stringify([['fn', fn]]);
+  }), 'world.city and world.retire: owner world, P0, silent, free, no cost or requirements, one named fn (election.check, endgame.retire)');
+  {
+    const d = SR.reg.action['world.cab'];
+    T.ok(d.building === 'world' && d.p === 1 && d.feature === 'phone' && !d.repeatable &&
+      (d.requires || []).some((r) => r[0] === 'phone') && d.cost && d.cost.cash === 'world.cabCash' && d.cost.min === 'world.cabMin',
+    'world.cab: P1 behind the phone flag, needs a phone, costs the named fns world.cabCash / world.cabMin (B-15 cab)');
+  }
 }
 
 // ------------------------------------------------------------------------------------------------

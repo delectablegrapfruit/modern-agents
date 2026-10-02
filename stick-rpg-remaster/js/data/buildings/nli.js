@@ -75,7 +75,9 @@
 
   // Full 6 h (orig) with +1 karma; Half and Overtime are P1 (`hustles`): their variants hide while
   // the flag is off, so the row is the original's Full shift. The Hustle button (P1) plays the
-  // rank's skin. A row with a Hustle is not repeatable (CONTRACT §8.2).
+  // rank's skin and commits this row itself with { m, hustle }, so there is no :resolve (CONTRACT
+  // D61). The row stays unrepeatable until js/rules/act.js's registration check follows D61, as
+  // McSticks' (docs/requests/decisions-w2-desk-content.md).
   SR.def.action('nli.work', {
     building: 'nli', group: 'work', order: 30, icon: 'work', label: 'act.nli.work', p: 0,
     variants: ['full', 'half', 'overtime'],
@@ -85,11 +87,6 @@
     effects: [['fn', 'jobs.work', TRACK], ['fn', 'nli.ruthless']],
     minigame: { skin: 'nli.hustleSkin', auto: true },
   });
-
-  // The Hustle's result comes back into nli.work itself (the card commits the row with { m, hustle },
-  // CONTRACT §15.4), never through a :resolve; tools/validate.cjs asks every `minigame` row for one,
-  // so this is a deliberate no-op, as W2-Food's mcsticks.work:resolve (docs/requests/W2-Food.md 1).
-  SR.def.action('nli.work:resolve', { building: 'nli', p: 0, timeRule: 'free', effects: [] });
 
   /** The Hustle's skin and step for your NLI rank (B-05 hustle.skins, pitchStep). */
   SR.def.fn('nli.hustleSkin', function (s) {

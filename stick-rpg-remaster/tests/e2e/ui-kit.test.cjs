@@ -140,6 +140,25 @@ function a11yAudit(rootSel) {
     }
     const clips = await t.eval(clipAudit);
     T.eq(clips, [], 'no component clips or overflows at ' + Math.round(scale * 100) + ' %');
+    if (scale === 1) {
+      // The 24:00 ClockRing pulses; the audit above samples it at whatever moment it runs, so check
+      // the pulse at its peak (900 ms, 50 %): the face scales inside the svg's own box.
+      const late = await t.eval(() => {
+        const clk = document.querySelector('.gal-item .clk.is-late');
+        if (!clk) return { found: false };
+        const root = clk.closest('.gal-box').firstElementChild;
+        const anims = root.getAnimations({ subtree: true });
+        anims.forEach((a) => { a.pause(); a.currentTime = 450; });
+        const rr = root.getBoundingClientRect();
+        const out = Array.from(root.querySelectorAll('*')).filter((el) => {
+          const r = el.getBoundingClientRect();
+          return (r.width || r.height) && (r.left < rr.left - 1 || r.right > rr.right + 1 || r.top < rr.top - 1 || r.bottom > rr.bottom + 1);
+        }).map((el) => el.getAttribute('class'));
+        anims.forEach((a) => a.play());
+        return { found: true, anims: anims.length, out };
+      });
+      T.ok(late.found && late.anims > 0 && late.out.length === 0, 'the 24:00 ClockRing pulses inside its own box (checked at the peak)', late);
+    }
     await fullShot(t, file);
     T.eq(t.errors(), [], 'zero console errors');
     await t.close();
@@ -286,6 +305,35 @@ function a11yAudit(rootSel) {
   T.eq((await counts()).crumb, 1, 'Breadcrumb: Enter follows a crumb');
   await focus('g-tip'); await P.waitForTimeout(500);
   T.ok(await P.evaluate(() => { const tip = document.querySelector('.tip.is-shown'); return !!tip && /buy a paper/.test(tip.textContent); }), 'Tooltip: shows on focus after 400 ms');
+  await focus('btn-ghost');
+  // A tip follows its target (W2-Front 6, W2-Transit 6): a target removed while its tip shows takes
+  // the tip with it (no blur fires), and a button updated before its 400 ms are up never shows the
+  // old tip.
+  const tips = await P.evaluate(async () => {
+    const SR = window.SR, host = document.querySelector('.sheet');
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const frames = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const shown = () => !!document.querySelector('.tip.is-shown');
+    SR.ui.tooltip.hide();
+    const a = SR.ui.iconButton({ id: 'tmp-tip-a', label: 'ui.more', icon: 'info' });
+    host.appendChild(a);
+    a.focus();
+    await wait(480);
+    const before = shown();
+    a.remove();
+    await frames();
+    const afterRemove = shown();
+    const b = SR.ui.button({ id: 'tmp-tip-b', label: 'ui.ok', disabled: true, reason: 'ui.refused' });
+    host.appendChild(b);
+    b.focus();
+    await wait(120);
+    b.update({ disabled: false, reason: null });
+    await wait(480);
+    const stale = shown();
+    b.remove();
+    return { before, afterRemove, stale };
+  });
+  T.eq(tips, { before: true, afterRemove: false, stale: false }, 'Tooltip: goes when its target leaves the DOM; a pending tip is dropped when its button changes');
   await focus('btn-ghost');
 
   // ------------------------------------------------------------ mocked gamepad

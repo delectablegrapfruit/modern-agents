@@ -125,7 +125,11 @@
 
   // Half and Overtime are P1 (`hustles`): their variants hide while the flag is off, so the row is
   // the original's Full shift. The Hustle button (P1) plays the rank's skin (B-05 hustle.skins:
-  // orderup for the cook and the Shift Manager). A row with a Hustle is not repeatable (CONTRACT §8.2).
+  // orderup for the cook and the Shift Manager) and commits this row itself with { m, hustle }, so
+  // there is no :resolve (CONTRACT D61). D61 also lets the shift repeat (GDD §4.4: R runs the plain
+  // Auto shift, never the Hustle), but SR.rules.act's registration check still warns on a repeatable
+  // row with a `minigame` (js/rules/act.js), so the row stays unrepeatable until that check follows
+  // D61 (docs/requests/decisions-w2-desk-content.md).
   SR.def.action('mcsticks.work', {
     building: 'mcsticks', group: 'work', order: 10, icon: 'work', label: 'act.mcsticks.work', p: 0,
     variants: ['full', 'half', 'overtime'],
@@ -135,11 +139,6 @@
     effects: [['fn', 'jobs.work', 'mcsticks'], ['fn', 'mcsticks.afterShift']],
     minigame: { skin: 'mcsticks.hustleSkin', auto: true },
   });
-
-  // The Hustle's result comes back into mcsticks.work itself (the card commits the row with { m },
-  // CONTRACT §15.4), never through a :resolve. tools/validate.cjs asks every `minigame` row for one,
-  // so this is a deliberate no-op (docs/requests/W2-Food.md 1 asks to drop the check for Hustle rows).
-  SR.def.action('mcsticks.work:resolve', { building: 'mcsticks', p: 0, timeRule: 'free', effects: [] });
 
   /** The Hustle's skin and step for your McSticks rank (B-05 hustle.skins; the card reads { skin, step }). */
   SR.def.fn('mcsticks.hustleSkin', function (s) {

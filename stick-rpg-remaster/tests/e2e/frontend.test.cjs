@@ -250,6 +250,25 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-Front');
   T.eq(await t.scenes(), ['newgame'], 'and Cancel keeps the wizard (the run in progress stays)');
 
   // ------------------------------------------------------------------------------------------------
+  T.section('the accessory carousel: P1, behind its own flag `accessories` (UI §5.3; CONTRACT D68)');
+  await clearSaves();
+  await t.debug('feature', 'wardrobe', true);
+  await t.goto('newgame', { seed: 6 });
+  await t.clickUI('ng-next'); await t.clickUI('ng-next');
+  T.ok(!(await visible('ng-acc-next')), '`wardrobe` (P2: accessories after creation) alone shows no carousel');
+  await t.debug('feature', 'wardrobe', false);
+  await t.debug('feature', 'accessories', true);
+  await t.goto('newgame', { seed: 6 });
+  await t.clickUI('ng-next'); await t.clickUI('ng-next');
+  T.ok(await visible('ng-acc-next'), 'with `accessories` on, step 3 shows the carousel');
+  await t.clickUI('ng-acc-next');
+  await page.locator('#ui [data-id="ng-name-input"]').fill('Capper');
+  await t.clickUI('ng-next');
+  await t.step(3);
+  T.eq((await t.state()).player.look, { acc: 'cap' }, 'the chosen accessory goes to player.look.acc');
+  await t.debug('feature', 'accessories', false);
+
+  // ------------------------------------------------------------------------------------------------
   T.section('the intro: captions, hold-to-skip, the apartment');
   await t.fast(false);
   await clearSaves();

@@ -577,6 +577,11 @@
        * A hand already decided (the dealer's cards still being turned over) is not abandoned: it is
        * applied as played first, so leaving then can never turn a win into a forfeit.
        */
+      /**
+       * Exit asks only while a hand is out (dealt and not yet settled); between hands nothing is at
+       * stake, so it leaves at once (W2-Night request 7). No side effects: the frame asks it first.
+       */
+      exitRisk: function () { return liveStake() > 0; },
       progress: function () {
         if (phase === 'reveal' && r && r.phase === 'over' && !finished) { revealAll(); apply(); }
         var o = sessionResult();
@@ -599,7 +604,7 @@
     keys: { hit: ['KeyH', 'Pad0'], stand: ['KeyS', 'Pad1'], double: ['KeyD', 'Pad2'], split: ['KeyP', 'Pad3'],
       chip1: ['Digit1'], chip2: ['Digit2'], chip3: ['Digit3'], chip4: ['Digit4'], chip5: ['Digit5'] },
     assist: false,
-    confirmExit: true,
+    confirmExit: true,   // the instance's exitRisk() answers first: only while a hand is out
     create: create,
     /**
      * One hand by the book without the frame (the simulator): params.bet (default the table minimum)

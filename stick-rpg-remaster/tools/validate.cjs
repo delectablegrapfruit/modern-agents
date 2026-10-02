@@ -10,15 +10,17 @@
 //   - the frozen names: sub-screens in their files with their P / flag (a row opening a P1 one
 //     carries its flag), skins on their engines in their files, songs in their files (§10, §13, §14);
 //     `open` names a skin or an engine without skins (D29), and a minigame row's hpAbove covers
-//     its `:resolve`;
+//     its `:resolve`; an interior's `palette` names a set of SR.art.palette.int ('apt' or 'int.apt',
+//     as the kit reads it), and its `@name` keys resolve in that set (W2-Home request 3);
 //   - only known condition and effect names (SR.rules.conditions.names / effects.names), known
 //     rule events for `emit` and arc stages (§9.1), known HP-0 causes for `hurt`;
 //   - `p` on every def of the flagged kinds and `feature` (a known flag) on every def with p ≥ 1;
-//   - `repeatable` only where allowed; every HP-costing voluntary def has `hpAbove` ≥ its worst case;
+//   - `repeatable` only where allowed (a Hustle `minigame` does not block it, D61); every
+//     HP-costing voluntary def has `hpAbove` ≥ its worst case;
 //   - text only in js/data/text/en-*.js; text length limits by prefix (GDD §6.11; enc. and event.
 //     carry its "event and encounter cards ≤ 400");
 //   - song and sfx data formats (SR.audio.validate, with a structural fallback while it is a stub);
-//   - arc stages reachable; `open` actions have their `:resolve`;
+//   - arc stages reachable; `open` actions have their `:resolve` (a Hustle row has none, D61);
 //   - no colour literal (#rgb…, rgb(, rgba(, hsl(, hsla() in js/** or css/** outside
 //     js/art/palette.js and css/tokens.css; no Math.random in the pure files (rules and data).
 //
@@ -30,6 +32,7 @@
 //
 //   const { validate } = require('./tools/validate.cjs');
 //   validate({ root, wave, plant: { 'js/data/x.js': code }, isStub(rel) }) → { errors, warnings, info }
+//   (a planted path that names a real file replaces it: the real file is not loaded)
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -138,6 +141,7 @@ function textOwner(key) {
   else if (a === 'enc' || a === 'arc' || a === 'event') f = 'en-events';
   else if (a === 'taunt') f = 'en-night';
   else if (a === 'contact' || a === 'pocket') f = 'en-pocket';
+  else if (a === 'person') f = 'en-street';   // the people's names (data/people.js; D73)
   else if (a === 'sub' || a === 'act' || a === 'desc' || a === 'greet' || a === 'card') f = BUILDING_TEXT[b] || null;
   else if (a === 'toast' || a === 'stamp') f = MODULE_TEXT[b] || BUILDING_TEXT[b] || null;
   else if (a === 'bark') f = b === 'ped' ? 'en-city' : NPC_TEXT[b] || null;
@@ -170,7 +174,8 @@ const LIST_FIELDS = ['requires', 'hidden', 'effects', 'when', 'conditions', 'unl
 /**
  * Validates a tree.
  * @param {object=} opts root (default this project), wave (null = strict), plant ({ rel: code }:
- *   extra virtual files run after the real ones and scanned like them; selftest), isStub (rel → bool)
+ *   virtual files run after the real ones and scanned like them; one that names a real file
+ *   replaces it, so the real file is not loaded; selftest), isStub (rel → bool)
  * @returns {{errors: object[], warnings: object[], info: string[], stats: object}}
  */
 function validate(opts) {
@@ -227,7 +232,10 @@ function validate(opts) {
   let files;
   try { files = L.files('all'); } catch (e) { err('load', 'index.html', e.message); return finish(out); }
   const extra = ['js/audio/music.js'].filter((f) => files.indexOf(f) < 0 && fs.existsSync(path.join(root, f)));
-  const res = L.load({ mode: 'all', extra, boot: false, keepGoing: true, console: quietConsole });
+  // A planted file of a real path replaces it (W2-Food request 6): the real one is not loaded, so a
+  // self-test plant never meets the real registrations of the same file as duplicates.
+  const loadList = files.concat(extra).filter((f) => !hasOwn(plant, f));
+  const res = L.load({ mode: 'all', files: loadList, boot: false, keepGoing: true, console: quietConsole });
   for (const e of res.errors) err('load', e.file, (e.error && e.error.message) || String(e.error));
   const SR = res.context.SR;
   if (!SR || !SR.registry) { err('load', 'js/boot/namespace.js', 'SR or SR.registry is missing after loading'); return finish(out); }
@@ -543,11 +551,12 @@ function validate(opts) {
       if (hasOwn(SUBSCREEN_P1, d.screen) && d.feature !== SUBSCREEN_P1[d.screen]) err('feature', where, 'opens the P1 sub-screen "' + d.screen + '" but its feature is ' + short(d.feature) + ', not "' + SUBSCREEN_P1[d.screen] + '" (CONTRACT §10)');
     }
     scanFields(d, where);
-    // repeatable only where allowed (CONTRACT §8.2)
+    // repeatable only where allowed (CONTRACT §8.2). A Hustle (`minigame`, the row's own button)
+    // does not block it: the repeat runs the row plainly, never the Hustle (D61); a row whose run
+    // opens a minigame (an `open` effect) still may not repeat.
     if (d.repeatable) {
       const why = [];
       if (d.confirm) why.push('confirm');
-      if (d.minigame) why.push('minigame');
       if (d.screen) why.push('screen');
       if (d.group === 'crime') why.push('group crime');
       if (d.timeRule === 'robbery' || d.timeRule === 'trip') why.push('timeRule ' + d.timeRule);
@@ -573,7 +582,9 @@ function validate(opts) {
         else if (typeof hp === 'number' && worst !== Infinity && hp < worst) err('hpAbove', where, '["hpAbove", ' + hp + '] is below the worst-case HP cost ' + worst + via);
       }
     }
-    if (opens || d.minigame) openActions.push([e.id, where, e.file]);
+    // A row whose run opens a minigame needs its `:resolve`; a Hustle commits its own row with
+    // { m, hustle } and has none (D61; CONTRACT §15.4).
+    if (opens) openActions.push([e.id, where, e.file]);
     if (typeof b === 'string' && reg.building && hasOwn(reg.building, b) && !resolve && e.id.indexOf(b + '.') !== 0) warn('action', where, 'the id does not start with its building "' + b + '."');
   }
   for (const [id, where, file] of openActions) {
@@ -687,12 +698,46 @@ function validate(opts) {
   }
 
   // ---- interiors and exteriors
+  // An interior's `palette` names a set of SR.art.palette.int, short ('apt') or as its key ('int.apt');
+  // the kit reads both (js/art/interiors/kit.js paletteSet; W2-Home request 3). Its `@name` keys
+  // resolve in the set the kit draws with: the def's palette, else the variant's key, else the
+  // interior's id, else int.default (then int.default.<name>).
+  const intSets = palette && isObj(palette.int) ? palette.int : {};
+  const intSetName = (v) => (typeof v === 'string' ? v.replace(/^int\./, '') : null);
+  const intSetOf = (d, id, variantKey) => {
+    const p = intSetName(d.palette);
+    if (p && isObj(intSets[p])) return p;
+    if (variantKey && isObj(intSets[variantKey])) return variantKey;
+    if (isObj(intSets[id])) return id;
+    return 'default';
+  };
+  const checkInterior = (d, where, set) => {
+    if (d.palette !== undefined) {
+      const p = intSetName(d.palette);
+      if (!p) err('palette', where + '.palette', 'an interior palette names a set of SR.art.palette.int ("apt" or "int.apt"), not ' + short(d.palette));
+      else if (!isObj(intSets[p])) missing('palette', where + '.palette', 'interior palette "' + d.palette + '" is not a set of SR.art.palette.int', 'js/art/palette.js');
+    }
+    const rest = {};
+    Object.keys(d).forEach((k) => { if (k !== 'palette' && k !== 'variants') rest[k] = d[k]; });
+    scanFields(rest, where, { interior: set });
+    list(d.props).forEach((p, k) => { if (isObj(p) && p.type === 'menuBoard') list(p.items).forEach((it) => refIcon(it, where + '.props[' + k + '].items')); });
+  };
   for (const e of entries('interior')) {
     const d = e.def;
     const where = 'interior "' + e.id + '" (' + e.file + ')';
     if (!isObj(d)) continue;
-    scanFields(d, where, { interior: e.id });
-    list(d.props).forEach((p, k) => { if (isObj(p) && p.type === 'menuBoard') list(p.items).forEach((it) => refIcon(it, where + '.props[' + k + '].items')); });
+    checkInterior(d, where, intSetOf(d, e.id, null));
+    // Per-params variants (W2-Home request 2): each is the base def overlaid by its own fields.
+    if (d.variants !== undefined) {
+      if (!isObj(d.variants)) err('interior', where, 'variants must be an object { key: def }');
+      else if (typeof d.variant !== 'function') err('interior', where, 'variants need variant(state, params) → key');
+      else Object.keys(d.variants).forEach((k) => {
+        const v = d.variants[k];
+        if (!isObj(v)) { err('interior', where + '.variants.' + k, 'a variant is a def object'); return; }
+        const merged = Object.assign({}, d, v);
+        checkInterior(v, where + '.variants.' + k, intSetOf(merged, e.id, k));
+      });
+    }
   }
   for (const e of entries('exterior')) {
     const d = e.def;
@@ -968,7 +1013,10 @@ function selftest() {
       (e) => e.check === 'skin' && /bag\.qaDuel/.test(e.where) && /engine with skins/.test(e.msg)],
     ['a P1 frozen sub-screen with the wrong flag', { 'js/ui/subscreens/bank.js': "(function () { 'use strict'; window.SR.def.subscreen('bank.cds', { title: 'sub.bank.cds', p: 1, feature: 'degrees', mount: function () {} }); })();\n" },
       (e) => e.check === 'subscreen' && /bank\.cds/.test(e.where) && /homesPlus/.test(e.msg)],
-    ['a frozen sub-screen outside its file', { 'js/ui/subscreens/qa.js': "(function () { 'use strict'; window.SR.def.subscreen('home.tv', { title: 'sub.home.tv', p: 0, mount: function () {} }); })();\n" },
+    // W2-Food request 6 (b): the real tv.js registers home.tv; an empty plant replaces it, so only
+    // the planted qa.js registers it (outside its file).
+    ['a frozen sub-screen outside its file', { 'js/ui/subscreens/tv.js': "(function () { 'use strict'; })();\n",
+      'js/ui/subscreens/qa.js': "(function () { 'use strict'; window.SR.def.subscreen('home.tv', { title: 'sub.home.tv', p: 0, mount: function () {} }); })();\n" },
       (e) => e.check === 'subscreen' && /home\.tv/.test(e.where) && /tv\.js/.test(e.msg)],
     ['a row opening a P1 sub-screen without its flag', plant("SR.def.action('bag.qaCds', { building: 'bag', group: 'services', " + L + ", p: 0, screen: 'bank.cds' });"),
       (e) => e.check === 'feature' && /bag\.qaCds/.test(e.where) && /homesPlus/.test(e.msg)],
@@ -986,6 +1034,13 @@ function selftest() {
       (e) => e.check === 'text' && /qa-reason\.js/.test(e.where) && /reason\.qaMissing/.test(e.msg), 'strict'],
     ['an sfx named in code that is not registered (strict)', { 'js/ui/qa-sound.js': "(function () { 'use strict'; var SR = window.SR; function f() { SR.audio.sfx('qa_no_sfx'); } })();\n" },
       (e) => e.check === 'sfx' && /qa-sound\.js/.test(e.where) && /qa_no_sfx/.test(e.msg), 'strict'],
+    // Wave-2 integration (desk-world): D61 and the interior palette sets (W2-Home request 3)
+    ['a row that opens a minigame without its :resolve', plant("SR.def.action('bag.qaDarts', { building: 'bag', group: 'special', " + L + ", p: 0, effects: [['open', 'darts', {}]] });"),
+      (e) => e.check === 'action' && /bag\.qaDarts/.test(e.where) && /bag\.qaDarts:resolve/.test(e.msg)],
+    ['a repeatable row whose run opens a minigame', plant("SR.def.action('bag.qaOpen', { building: 'bag', group: 'special', " + L + ", p: 0, repeatable: true, effects: [['open', 'darts', {}]] });\nSR.def.action('bag.qaOpen:resolve', { building: 'bag', p: 0, timeRule: 'free', effects: [] });"),
+      (e) => e.check === 'repeatable' && /bag\.qaOpen/.test(e.where) && /effect open/.test(e.msg)],
+    ['an interior palette that names no set of SR.art.palette.int', { 'js/art/interiors/qa-room.js': "(function () { 'use strict'; window.SR.def.interior('qa_room', { palette: 'qaNoSuchSet', wall: '@wall' }); })();\n" },
+      (e) => e.check === 'palette' && /qa_room/.test(e.where) && /qaNoSuchSet/.test(e.msg)],
   ];
   T.section('each plant is caught (and only it)');
   for (const [label, files, match, mode, needs] of cases) {
@@ -997,6 +1052,16 @@ function selftest() {
   }
   const clean = validate({ wave: 1, plant: plant("SR.def.action('bag.qaClean', { building: 'bag', group: 'train', " + L + ", p: 0, requires: [['hpAbove', 10]], cost: { min: 30, hp: 5 }, effects: [['chance', 0.5, [['hurt', 5, 'other']], []], ['stat', 'str', 1]], repeatable: true });") });
   T.eq(newErrors(clean).map((e) => e.msg), [], 'a valid planted action (hpAbove 10 ≥ worst case 10, repeatable) adds no error');
+  // D61 (W2-Food requests 1-2, W2-Money 5): a Hustle row may repeat and has no :resolve.
+  const hustle = validate({ wave: 1, plant: plant("SR.def.action('bag.qaShift', { building: 'bag', group: 'work', " + L + ", p: 0, repeatable: true, minigame: { skin: 'orderup', auto: true }, effects: [['stat', 'str', 1]] });") });
+  T.eq(newErrors(hustle).map((e) => e.msg), [], 'a repeatable Hustle row (minigame { skin }) without a :resolve adds no error (D61)');
+  // W2-Home request 3: an interior's palette names its set short or in full; @keys resolve in it.
+  const rooms = validate({ wave: 1, plant: { 'js/art/interiors/qa-rooms.js': "(function () { 'use strict'; var SR = window.SR;\n" +
+    "SR.def.interior('qa_short', { palette: 'apt', wall: '@wall', floor: ['@floorA', '@floorB'] });\n" +
+    "SR.def.interior('qa_full', { palette: 'int.apt', wall: '@wall', lights: [{ x: 1, y: 1, r: 9, color: '@light' }] });\n" +
+    "SR.def.interior('qa_tiers', { wall: '@wall', variants: { apt: { wall: '@wallHi' }, pent: { palette: 'int.pent', floor: '@floorA' } }, variant: function () { return 'apt'; } });\n" +
+    '})();\n' } });
+  T.eq(newErrors(rooms).map((e) => e.msg), [], 'interior palettes "apt" and "int.apt" (and per-params variants) add no error, as the kit reads both');
   const code = validate({ plant: { 'js/ui/qa-code-ok.js': "(function () { 'use strict'; var SR = window.SR; function f(ctx, x) {\n" +
     "  var item = { key: 'cars.junker' };                               // a state path, not a text namespace\n" +
     "  var a = SR.text.has('ui.qaOptional') ? SR.text('ui.qaOptional') : '';   // optional: tested with has()\n" +
@@ -1024,6 +1089,7 @@ function selftest() {
   T.eq([textOwner('vm.crew.day365'), textOwner('vm.skywatch.storm'), textOwner('vm.carhit.1'), textOwner('door.home.live'), textOwner('ori.fall1'), textOwner('report.loanDays')],
     ['js/data/text/en-econ.js', 'js/data/text/en-econ.js', 'js/data/text/en-city.js', 'js/data/text/en-world.js', 'js/data/text/en-world.js', 'js/data/text/en-econ.js'],
     'vm.crew.* and vm.skywatch.* belong to en-econ.js (W1-E R4); door.*, ori.* to en-world.js and report.* to en-econ.js (D51)');
+  T.eq(textOwner('person.harold'), 'js/data/text/en-street.js', 'person.* (the people\'s names) belongs to en-street.js (W2-Street request 3, D73)');
   T.section('structural audio fallback');
   T.eq(songProblems({ bpm: 100, inst: { d: { preset: 'kit' } }, patterns: { A: { bars: 1, tracks: { d: 'k . h . s . h . k . h . s . h .' } } }, order: ['A'], loopFrom: 0 }), [], 'a valid song passes');
   T.ok(songProblems({ bpm: 100, inst: { d: { preset: 'kit' } }, patterns: { A: { bars: 1, tracks: { d: 'k . h' } } }, order: ['A', 'B'] }).length === 2, 'a short track and a missing pattern fail');

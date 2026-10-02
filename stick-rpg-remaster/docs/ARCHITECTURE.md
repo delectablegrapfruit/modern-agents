@@ -245,6 +245,38 @@ dialog or sub-screen resolves or closes first). Owners: `player:down` → `js/sc
 (W2-Transit); `jail` (a rule event, §6.8) → `js/scenes/jail.js` (W2-Transit); `game:over` →
 `js/scenes/results.js` (W2-Front).
 
+**Scene params and the game-over routing** (wave-2 integration; CONTRACT §11.5 lists the same).
+
+- **Scene params** (W2-Front, W2-Home, W2-Transit, W2-Pocket): `title { gate }` (the boot card;
+  the boot scene passes it); `newgame { seed }`; `results { reason, result }` (`result` defaults to
+  `state.result`, then the rules' results for the reason); `saveload { mode: 'save' | 'load', more
+  }`; `settings { tab }`, `halloffame { tab }`, `profile { tab }`; `report { report, next: 'city' |
+  'pop' | <scene id>, events: bool, dayStarted: bool }` (the default `next` is `'pop'` for a jail
+  report and `'city'` otherwise; a sleep steps out at the home door, a hospital night at the
+  worldmap's `afterHospital` spawn; on a `sleep` Result the scene pushes itself on `action:done`
+  unless a report is already on top); `bustrip { city, kind, from }` or `{ resume: true }`; `jail {
+  report, jailed, from }` or `{ resume: true }`; `hospital { down, cause }`; `death { down, cause,
+  reason }` (or `{ reason, dead }` after a loan default); `pocket { tab, params }` (`tab`:
+  `journal`, `map`, `stats`, `bag`, `messages`, `phone` (P1 `phone`), `achievements` (P1
+  `achievements`); `params`: the tab's own, `{ item }` for the Bag, `{ place }` for the Map, `{
+  topic }` for the Journal's Help; opened over a street dialog it opens on the Bag; the `pocket`
+  overlay `blocksUpdate`). Every front-end and transit scene def has `info()` for tests;
+  `newgame.begin(opts)` and `intro.skip()`; the city scene def has `get music()` (by the clock, D66)
+  and `debug { prompt(), talk(id), songFor(min), song() }`.
+- **The game-over routing** (D63): `js/scenes/results.js` queues the results on `game:over` once
+  the action is done, unless the report, death, hospital, jail or results scene is on the stack, the
+  reason is `death` while the death scene is registered, or a `player:down` / `jail` came in the
+  same turn; those scenes go to the results themselves (`SR.scenes.go('results', { reason, result
+  })`): death after the FLATLINED stamp, the dirge and the ink blot (3.4 s, or a press); the
+  hospital through its Stick General report; the jail from the Jail Day card's "Read the Final
+  Edition"; the report scene after its last page. A `retire` always gets its results (the pause
+  menu also opens over the cell and the ward). Keep playing after a game that ended in jail goes
+  back to the cell (`jail { resume: true }`), else to the city at the home door; a save of an ended
+  run resumes on its Final Edition (`s.over` alone).
+- **The pause menu and Esc**: one Esc press fires `back`, then `pause` (§11); an
+  overlay that closes on `back` swallows that same press's `pause` when its key is a `back` binding
+  (the Pocket and the pause menu do), so the scene below does not reopen the menu.
+
 ## 6. State and the rules layer
 
 ### 6.1 State schema (v1)
@@ -289,18 +321,22 @@ settings (§16); nothing is stored twice.
                           want, units, perUnit, total, key, vars} or a booked {kind: 'tour', city, day} */ },
   fight: { won: 0, champion: false, ringBouts: 0, open: null /* the fight in progress {kind, n, k, fighter, day} */ },
   casino: { points: 0, barredUntil: 0, suspicion: 0, winToday: 0, shoe: null, lastBet: 0,
-            match: null /* a darts match in progress {tier, stake, day} */ },
+            match: null /* a darts match in progress {tier, stake, day} */,
+            card: null /* the scratch card being revealed {roll, pay, tier, day} (wave 2, D64) */ },
   crime: { bankRobDays: [] /* days of bank robberies, pruned after 14 days */,
            open: null /* the robbery in progress {target, day} */ },
   daily: { tv: {}, beers: 0, gambleKarma: 0, uofsKarma: 0, seminars: 0, paper: 0, chess: 0, nap: 0,
            benchNap: 0, online: 0, dartsPractice: 0, dartsMatches: 0, bjHands: 0, homePerk: 0,
            charity: 0, ducks: 0, preacher: 0, skate: 0, soup: 0, leftovers: 0, relax: 0,
            secondWind: 0, vipDrinks: 0, falls: 0, forecastSeen: false, shifts: 0 /* today's shifts */,
-           campaign: { rally: 0, tvAd: 0, doorKnock: 0, kissBabies: 0, intimidate: 0, bribe: 0 } },
+           ring: 0 /* today's Ring bouts (wave 2) */,
+           campaign: { rally: 0, tvAd: 0, doorKnock: 0, kissBabies: 0, intimidate: 0, bribe: 0,
+                       debate: 0 /* debates opened today (wave 2) */ } },
   weekly: { index: 0 /* = week(s) */, openMic: 0, party: 0, mchollandTip: 0, bankRob: 0 },
   npc: { harold: { gave10: 0, bottles: 0, takeout: 0, shirt: false, branch: null /* null|'comeback'|'barfly' */,
                    stage: 'start', hiredDay: 0, repayDay: 0 },
-         kid: { packs: 0, gumDays: 0, lastGumDay: 0, branch: null, stage: 'start', dead: false, contestDay: 0 },
+         kid: { packs: 0, gumDays: 0, lastGumDay: 0, branch: null, stage: 'start', dead: false, contestDay: 0,
+                diedDay: 0 /* the day of the tenth pack (wave 2) */ },
          dealer: { bought: 0, credit: null /* {grams, owed, dueDay} */, creditEnded: false,
                    goonsDue: false, stage: 'red', turnedInDay: 0 },
          mcholland: { stage: 'none' /* none|informant|closed */, bribedUntil: 0 },
@@ -318,7 +354,8 @@ settings (§16); nothing is stored twice.
   log: { today: [], yesterday: [] } /* {kind, weight, vars}; at most 20 per day (§6.9) */,
   journal: { hintsSeen: {}, tracked: null },
   records: { falls: 0, carHits: 0, fightsWon: 0, ringWins: 0, jailDays: 0, jailWorkouts: 0,
-             robberies: 0, bankRobberies: 0, hospital: 0, shiftsMcsticks: 0, citiesVisited: 0, spent: 0 },
+             robberies: 0, bankRobberies: 0, hospital: 0, shiftsMcsticks: 0, citiesVisited: 0, spent: 0,
+             meals: 0 /* the eat rule events (wave 2) */ },
   history: { nw: [], str: [], int: [], cha: [], karma: [] } /* [day, value] points: day 1 from create(),
              then one per morning to day 120, then weekly (§15) */,
   achievements: {},  // id -> day unlocked (this run)
@@ -339,6 +376,15 @@ shape, the facts must survive a save (Hardcore's `pending.worst` resolves after 
 event card is a decision you may reload into), and each resolve fn refuses unless its record is
 open and closes it, so a stray or repeated `:resolve` never pays twice. They are deep-filled, so
 the schema stays v1.
+
+**Wave-2 additions** (D64; additive and deep-filled, so the version stays 1): `casino.card` (the
+scratch card being revealed, an "in progress" record between `casino.scratch` and
+`casino.scratchResolve`), `npc.kid.diedDay` (McHolland's P1 walk "within 3 days of the kid's
+death"), `records.meals` (the Journal's First Day "Eat something" survives a reload), `daily.ring`
+(B-13 `ring.perDay`, P1) and `daily.campaign.debate` (B-17 `debate.cap`: the debate's resolve
+needs today's start). `daily.ring` and `daily.campaign.debate` are created by `fight.start` and
+`election.debateStart` when first counted and zeroed by night step 9 with the rest of `daily`, so
+they hold before `defaults()` lists them.
 
 ### 6.2 The action pipeline
 
@@ -377,7 +423,10 @@ unless the action declares `timeRule`) → compute the price (§6.10) and check 
 `js/rules/act.js`, still free of browser APIs) then emits the result's rule events and
 `action:done` on `SR.events` (§13) and returns; `js/core/save.js` listens to `action:done` and
 writes the Hardcore ironman slot when HP, money or karma changed (§15). Minigame actions return `open`; the building scene runs the minigame and calls
-`SR.act('<id>:resolve', result)`.
+`SR.act('<id>:resolve', result)`. Wave-2 details (§6.13): the intra-day weather step (P1), the
+`records.meals` count, `job.lastFullEnd`, the derived `stat` events, the refusal once `over` is
+set, and `game:over`, which `SR.act` does not emit when the game ends in a night the report scene
+presents (that scene emits it after the last page; D63).
 
 **Hard money rule:** cash, bank and every item count never go below 0. Voluntary costs are
 checked first (the action is refused). **Forced charges** (a hospital bill, the car tow, the fight
@@ -419,11 +468,17 @@ with `p ≥ 1`**, validated), `cost` (`cash`, `min`, `hp`, `items`), `priceTarge
 `effects`, `variants`, `minigame`, **`screen`** (a sub-screen id; with `screenParams`),
 `timeRule` (`'robbery'` | `'trip'` | `'free'`), `repeatable`, `confirm` (text key: the UI asks
 first), `hidden` (condition list: hide instead of disable), `hotkey`, `silent` (no feedback; used
-by `world.enter`).
+by `world.enter`), `row` (`false`: never a card row; a sub-screen presents the action and commits it
+through `ctx.act`; D62, §7.1). Data-owned fields that only the file's own fns or one named reader
+use, and the pipeline ignores: `number` (the street dialog's NumberField), `item` (the Bag key a
+shop row sells), `food`, `drink`, `tune` (a street row's B-26 path).
 
-- **`repeatable: true`** is allowed only on defs without `confirm`, `minigame`, `screen` or an
-  irreversible effect (crime, loans, fights, property, election actions); the validator enforces
-  it. Only repeatable rows respond to R and hold-to-repeat (§11, UI §1).
+- **`repeatable: true`** is allowed only on defs without `confirm`, `screen`, an `open` effect (a
+  row whose run opens a minigame) or an irreversible effect (crime, loans, fights, property,
+  election actions); the validator enforces it. A `minigame` field (the Hustle button) does not
+  block it: R and hold-to-repeat run the row plainly (the Auto shift), never the Hustle (D61), so a
+  shift row may repeat as GDD §4.4 lists. Only repeatable rows respond to R and hold-to-repeat (§11,
+  UI §1).
 - **HP costs:** every voluntary action with an HP cost `c` (in `cost.hp` or a guaranteed or
   possible `hurt` in its effects, worst case) has the requirement `['hpAbove', c]` (reason key
   `reason.tooHurt`, "Too hurt"). The validator checks that every `hurt` in a def with `p` has a
@@ -431,7 +486,8 @@ by `world.enter`).
   fights' enemy turns) is exempt and is what can reach 0 HP (§6.7).
 - Each building file defines its own `'<id>:resolve'` actions for its minigames (robberies,
   fights, darts, the casino games, trips, hotwiring, the debate); they are `timeRule: 'free'`,
-  never shown as rows, and take the minigame result as `params`.
+  never shown as rows, and take the minigame result as `params`. A Hustle has none: the card's
+  Hustle button commits its own row with `{ m, hustle }` (D61).
 
 ### 6.4 Conditions and effects
 
@@ -443,7 +499,8 @@ by `world.enter`).
 `timeBetween(a, b)` (a window: start allowed when `a ≤ now < b`), `weather(list)`, `heat(min, max)`,
 `buzzBelow(n)`, `dailyBelow(key, n)`, `weeklyBelow(key, n)`, `npcStage(npc, stage)`,
 `election(status)`, `perk(id)`, `difficulty(list)`, `phone`, `cityEvent(id)`, `not(cond)`,
-`any(list)`, `all(list)`, `fn(name, ...args)`.
+`any(list)`, `all(list)`, `fn(name, ...args)`. `furniture(id, minTier)` holds only for a piece in
+use in the home you live in, not one in storage (wave 2, §6.13).
 
 **Effects** (`js/rules/effects.js`): `cash(n, src)`, `bank(n, src)`, `charge(n, reason)` (forced;
 §6.2), `heal(n)`, `hurt(n, cause)`, `stat(key, n)`, `karma(n)`, `heat(n)`, `buzz(n)`, `item(key, n)`,
@@ -736,12 +793,19 @@ W2-Transit, W2-Civic):
   `['fn', 'fight.resolve', 'bar']`; the engine plays `Result.open.params.fight` with
   `SR.rules.fight.{playerMove, endTurn, run}` and `host.rng`, its `auto` is
   `SR.rules.fight.autoPlay(state, params.fight, rng)`, and its result may add `choice: 'drink'` (P1).
-- **Casino:** the engines apply each round with `SR.act` on rows calling `casino.slotsSpin` (params
-  `{ bet }`), `casino.bjHand` (`{ bet, net, wagered, trueCount, shoe }`, `wagered` being the round's
-  whole stake, `bj.wagered(round)`; or `{ round, shoe, trueCount }` after playing on a copy of
-  `SR.rules.casino.bj.shoeOf(state)`), `casino.rouletteSpin` (`{ bets }`; a pocket is 0-36 or
-  `'00'`), and read the round's facts from the `gamble` event of the Result; the minigame's `{ net }`
-  resolve then needs no money effect. `casino.settle` with `params.apply` applies a whole session.
+- **Casino:** the engines apply each round with `SR.act` on minigame-resolution actions (D65; no
+  card lists a `:resolve`) calling `casino.slotsSpin` (params `{ bet }`; W2-Night's
+  `casino.slots.pull:resolve`), `casino.bjHand` (`{ bet, net, wagered, trueCount, shoe }`,
+  `wagered` being the round's whole stake, `bj.wagered(round)`; or `{ round, shoe, trueCount }`
+  after playing on a copy of `SR.rules.casino.bj.shoeOf(state)`; `casino.blackjack.hand:resolve`),
+  `casino.rouletteSpin` (`{ bets }`; a pocket is 0-36 or `'00'`; `casino.roulette.spin:resolve`),
+  and read the round's facts from the `gamble` event of the Result; the minigame's session resolve
+  (`casino.<game>:resolve`) then needs no money effect: it runs `['fn', 'casino.settle']` and
+  `['fn', 'casino.sessionEnd', game]`. `casino.settle` with `params.apply` applies a whole sampled
+  session, within the stake its rounds allow (§6.13).
+- **Scratch (P1 `shopsPlus`):** the row `{ cost: { items: { scratch: 1 } }, effects: [['fn',
+  'casino.scratch']] }` draws the card and keeps it in `casino.card`; its `:resolve` runs `['fn',
+  'casino.scratchResolve']`, which pays it at the reveal (the engine's `{ net }` is only an echo).
 - **Darts (Sticky's):** practice rows call `casino.dartsPractice` (`cost: { min: 30 }`); a match row
   (P1) calls `casino.dartsMatchStart` (`{ tier, stake }`, `cost: { min: 60 }`), and its `:resolve`
   `['fn', 'casino.dartsMatch']` with the engine's `{ score }` pays the match stored in
@@ -759,7 +823,74 @@ W2-Transit, W2-Civic):
   [['fn', 'election.campaign']]` (the campaign action is the id's last segment: `cityhall.rally`),
   the debate's `election.debateStart` / `election.debate`, the Mayor's Office `election.decree`
   (`{ id, name }`). Stepping into the city runs a silent, free action whose effect is
-  `['fn', 'election.check']` besides the morning check (GDD §4.17; W2-City adds it).
+  `['fn', 'election.check']` besides the morning check (GDD §4.17): W2-City's `world.city`.
+
+### 6.13 Additive rule names (wave-2 integration)
+
+The rules desks' additions (W2-RulesE: the kernel and the economy; W2-RulesC: the conflict rules;
+`docs/requests/W2-RulesE.md` 1, 2, 4, 8 and `W2-RulesC.md` 3, 4, 6). Nothing frozen changes
+(CONTRACT §8.11 lists the same names).
+
+- **Named fns for data** (W2-RulesE): `items.room(key, n)` (a condition: n more fit the B-06
+  stack; `reason.stackFull`, or `reason.haveItem` for gear of stack 1); `items.buy(key, n, where,
+  value)` (an effect: puts n in the Bag within the stack and raises `buy { item, n, where, price }`
+  with the price paid after B-28a; `n` defaults to `params.n` or 1); `items.pillToggle` (an effect:
+  flips `clock.pillAuto`, or sets `params.on`); `homes.channel(channel)` (a condition: `'news'`,
+  `'fitness'`, `'dating'` or `'market'` can be watched; the reason names the missing piece);
+  `stocks.maybeReveal(source)` (an effect, P1 `stockTips`: reveals today's tip with B-10's chance
+  for that source and a `toast.stocks.tip`; it draws nothing while the flag is off, without a tip or
+  once the tip is known, so a P0 row may carry it); `endgame.retire` (an effect: ends an Unlimited
+  or Keep-playing run with `over.reason` `retire`; a timed game is refused with
+  `reason.timedGame`). (W2-RulesC): `casino.scratchResolve` (the scratch row's `:resolve`: pays
+  the card in progress; `reason.notNow` when none is open).
+- **Module names** (W2-RulesE): `SR.rules.state.{roll(rng), fair()}` (the wizard's orig roll and
+  the fair start, B-02); `SR.rules.training.left(s, id)` (views or uses left today; `null` without
+  a limit); `SR.rules.stocks.revealChance(s, source)`; `SR.rules.endgame.{retire(s),
+  keepPlaying(s)}` (Keep playing continues an ended timed game unranked and keeps `state.result`
+  of the original end for the Hall of Fame); `endgame.results` adds `achievements` (the count this
+  run); `SR.rules.night.{preview(s) → { hp, pill, restore, gains }, restoreHp(s, pill)}` (what
+  tonight's sleep would restore and train, and the B-07 formula night step 6 uses);
+  `SR.rules.calendar.intraday(s, from, to, rng)` (P1 `weather`: the 12:00 / 18:00 step of B-19);
+  `SR.rules.effects.{room(s, key), addItem(s, key, n, value, ctx), gainStat(s, key, n, src, ctx,
+  res)}` (the stack room; the `item` effect's body, which stops a list item at its stack; a stat
+  gain with its UI §4.3 feedback, shared by the `stat` effect and `training.apply`);
+  `SR.rules.jobs.missingReason(p)` returns `reason.needAll` ("Need {list}", the parts
+  `reason.part.*` joined by " · ") when two or more requirements are missing. (W2-RulesC):
+  `SR.rules.casino.scratchResolve(s)`; `SR.rules.casino.scratchRound(s, ctx)` no longer pays: it
+  keeps the drawn card in `casino.card` and opens the engine (a card left unpaid is paid before the
+  next one is drawn, except in a preview's dry run); `SR.rules.election.acceptBy(s)` → the last day
+  the nomination can be accepted (`nominatedDay + acceptWithin - 1`, the day whose night lapses it;
+  `null` when no offer waits), which the Board's voicemail, City Hall, the Campaign HQ and the phone
+  all read; `SR.rules.crime.jailDay` releases at once (no gain, no night) when `jail.daysLeft ≤ 0`.
+- **The `furniture(id, minTier)` condition** holds only for a piece **in use** in the home you live
+  in (a stored piece refuses with `reason.inStorage`; the satellite also needs the TV in use); a
+  tier-2 id (`skydish`) names its base at tier 2 (GDD §4.15: "pieces in storage do nothing").
+- **The pipeline** (W2-RulesE): (a) between the arcs and the HP-0 hook, the intra-day weather runs
+  when the action's time passes 12:00 or 18:00 on the same day (P1 `weather`; nothing is drawn while
+  the flag is off); (b) each `eat` rule event a Result carries adds 1 to `records.meals` (after the
+  arcs, so an arc's `eat` counts; never in a preview or a refused run); (c) an action that goes
+  through clears `job.lastFullEnd` unless it set it, so Overtime follows a Full shift "with no other
+  action in between" (B-05); (d) a `stat` rule event derived from the Deltas leaves out the gains a
+  night Report in the Result (`Result.report`, `Result.down.report`) raised itself, because the
+  report, jail and hospital scenes re-emit that Report's events; (e) `SR.act` and `SR.preview`
+  refuse every action with `reason.gameOver` once `state.over` is set (an ended Keep-playing run
+  too: "the game is over" reads `s.over` alone); (f) an action that throws is refused with
+  `reason.error` after the state and the stream roll back, and still emits `action:done`. When
+  `SR.act` emits `game:over`: D63.
+- **The "in progress" records** add `casino.card` (`casino.scratch` → `casino.scratchResolve`) and
+  today's debate (`daily.campaign.debate`, counted by `election.debateStart`; the named fn
+  `election.debate` refuses with `reason.notNow` when none was opened today, `reason.alreadyDone` on
+  a repeat).
+- **Casino settlement** (W2-RulesC): `casino.settle` with `params.apply` refuses a stake beyond its
+  rounds × the largest round the table allows today (`reason.badBet`), and a blackjack session while
+  backed off (`reason.barred`) or past the day's 60 hands (`reason.dailyLimit`); a played blackjack
+  `{ round }` must agree with its own bet and stake within `maxStake` (`reason.badBet`); a fractional
+  net (a $5 natural's $7.50) is paid as a whole dollar with the fraction's own probability (from
+  `hash(seed, 'casino.wholeNet', ...)`: no draw, so a natural pays exactly 3:2 on average).
+- **Text keys the rules raise** (W2-RulesE): `reason.inStorage`, `reason.stackFull`,
+  `reason.notOver`, `reason.timedGame`, `reason.needAll`, `reason.part.*` (en-prog);
+  `toast.stocks.tip`, `report.unreadOne`, `report.jail.summaryMarket`, `report.loanDueTonight`
+  (en-econ).
 
 ## 7. Data-driven content
 
@@ -791,8 +922,8 @@ the Bag, the Pocket, dialogs and encounter seeding filter on `SR.features`.
 | `encounter` | `data/encounters.js` | `id, weight, cap, when, where, conditions, choices: [{label, preview, effects}]` |
 | `arc` | `data/arcs.js` | `npc, stages: {id: {on: '<event>', match: {...}, cond, effects, next}}` (events: §6.8) |
 | `event` | `data/events.js` | shift events, city events, campaign events: `{kind, id, text, choices}` |
-| `person` | `data/people.js` | named NPCs: `id, name, look, voice, schedule: [[weekdays, from, to, placeId, cond?]], barks` (the schedule table: GDD §6.2) |
-| `contact` | `data/actions/phone.js` | Phone contacts: `id, name, unlock: [conds], actions: [actionIds], p, feature` (UI §5.9) |
+| `person` | `data/people.js` | named NPCs: `id, name, look, voice, schedule: [[weekdays, from, to, placeId, cond?]], barks` (the schedule table: GDD §6.2); wave 2 adds `portrait`, `idle`, `facing`, `gifts`, `p` (§7.4) |
+| `contact` | `data/actions/phone.js` | Phone contacts: `id, name, unlock: [conds], actions: [actionIds], p, feature` (UI §5.9); wave 2 adds `role`, `icon`, `app`, `waypoint`, `nameVars`, `roleVars` (§7.4) |
 | `skin` | `minigames/skins/*.js` | `engine, params, art, text, auto` (§10) |
 | `song`, `sfx` | `audio/songs/*.js`, `audio/sfx.js` | the data formats of ART_AUDIO §13.8 (frozen at M0) |
 | `text` | `data/text/en-*.js` | `SR.def.text({ 'act.mcsticks.fries': 'Fries', ... })` |
@@ -843,6 +974,29 @@ SR.def.subscreen('bank.deposit', {
   tabs (`shop.js`); `uofs.transcript` (P1) (`transcript.js`); `cityhall.campaign` (`campaign.js`);
   `bus.board` (`bus.js`); `cityhall.mayor` (P1) (`mayor.js`); `casino.vip` (P1) (`vip.js`).
 
+**Sub-screen conventions** (wave-2 integration; CONTRACT §10.1 lists the same).
+
+- **Sub-screen commits** (D62; W2-Goods, W2-Money, W2-Civic): a sub-screen's commit action is an
+  action of its building that takes its object as a parameter, carries `row: false` and is `hidden`
+  while the parameter is missing (`furniture.noPiece`, `bank.noParam(key)`, `pawn.noItem`,
+  `cityhall.noChest`), so no card lists it, while `ctx.preview` and `ctx.act` with the parameter
+  work as usual. `SR.rules.act.actions(owner)` still lists every action of an owner (tests and
+  sub-screens enumerate commits with it).
+- **`pawn.shop`** takes `params.tab` (`'buy'` | `'sell'`) and pushes the `tabs` input context while
+  its tabs show (a tabbed sub-screen uses `tabs` like the Pocket, Settings and the Profile).
+- **`bank.realestate`** needs no building: any host may run its commits (a home door's Tour, Top
+  floor, Sell and Properties rows; the Pocket's P1 Paperweight Realty through
+  `SR.ui.subhost.create(root, { host: 'pocket' })`). `params.homeId` (with the door's `mode`) puts
+  that home first, framed, with its first button focused, marked "On tour" only while it is for
+  sale; from an Owned door's Sell row (`mode: 'owned'`) the Sell button takes the focus. Test hook
+  (no public name): `SR.reg.subscreen['bank.realestate'].peek()` → the property order and each
+  card's buttons.
+- **`bank.loan`** takes `params.focus: 'repay'` (the Repay row).
+- **`cityhall.campaign`** handles every election status (none, nominated, campaign, office, lost,
+  removed), so it opens from City Hall and from the castle's Campaign HQ (`home.campaign`); its
+  def carries two test hooks read through `SR.reg.subscreen` (`diary()`: this session's campaign
+  news; `outcomes(actionId)`: a row's poll change).
+
 ### 7.2 Text
 
 `SR.text(key, vars)` returns the string with `{name}` style substitution; an array value picks a
@@ -865,7 +1019,8 @@ the Advisor and the perk card) and `en-world.js` (W1-W: place names `place.<id>`
 modes `door.*`, Pilot Ori `ori.*`, `act.world.*`, `desc.world.*`, world toasts). Keys that a rule
 module raises itself (`toast.<module>.*`, `stamp.<module>.*`) belong to the module owner's file
 (D27); `vm.<npc>.*` and `bark.<npc>.*` to the NPC's file; `en-pocket.js` (W2-Pocket) holds
-`act.bag.*`, `act.phone.*`, `contact.*`, `pocket.*` (D16). CONTRACT §7 has the full prefix table,
+`act.bag.*`, `act.phone.*`, `contact.*`, `pocket.*` (D16); `person.*` (the names of
+`data/people.js`) belongs to `en-street.js` (D73). CONTRACT §7 has the full prefix table,
 which `tools/validate.cjs` (`textOwner`) follows (D51). The validator also has a `--wave N` mode: a
 missing key whose prefix belongs to a file that is still a stub is a warning instead of an error.
 
@@ -880,7 +1035,138 @@ or a key) chooses the greeting by first visit, time, karma, weather or job (UI �
 the card picks one of `building.greetings[]`, else `greet.<id>` if registered. A row with `screen`
 passes the door params to its sub-screen; the row's own `screenParams` win over a door param of
 the same name. The Hustle button reads `{ skin, step }` from `jobs.hustleSkin` and runs
-`SR.minigame.run(skin, { skin, step, auto, ...params })`.
+`SR.minigame.run(skin, { skin, step, auto, ...params })`. Wave 2 adds the named fns
+`title.<buildingId>` (the card's title) and `music.<buildingId>` (the building's song), `row:
+false` and the greeting that follows the state after each action (§9.6).
+
+### 7.4 Building, street, Pocket and transit data names (wave-2 integration)
+
+The actions, named fns and data fields the wave-2 building, street, Pocket and transit packages
+expose (their requests to the lead; CONTRACT §8.12 lists the same names). Nothing frozen changes.
+`:resolve` actions follow §6.3; sub-screen commits carry `row: false` (D62).
+
+- **The world** (W2-City, `js/data/actions/world.js`): `world.city` (P0, silent, free, effect
+  `['fn', 'election.check']`: the city scene runs it at mount, each time you step outside: the
+  nomination check of GDD §4.17); `world.retire` (P0, silent, free, effect `['fn',
+  'endgame.retire']`: the pause menu's Retire, so the pipeline sets `Result.over` and emits
+  `game:over { reason: 'retire' }`; text `act.world.retire`); `world.cab { door }` (P1 `phone`;
+  requires `['phone']` and `['fn', 'world.cabOk']`; cost `{ cash: 'world.cabCash', min:
+  'world.cabMin' }`: B-15 `world.cab.cash` $15 and `world.cab.min` 30 minutes, or only what is left
+  of the day; a ride that would end past 24:00 goes only to your home door, and at 24:00 takes no
+  minutes); named fns `world.cabOk`, `world.cabMin`, `world.cabCash`.
+- **The Bag** (W2-Pocket, `js/data/actions/bag.js`): `bag.smoke` (P0), `bag.eatTakeout` (P1
+  `shopsPlus`; `params.value` picks the meal), `bag.pillToggle` (P0; `params.on`); named fns
+  `bag.min`, `bag.hp`, `bag.karma`, `bag.takeoutHp`, `bag.takeoutEaten`, `bag.pillNote`. There is no
+  `bag.give` (D69).
+- **The phone** (W2-Pocket, `js/data/actions/phone.js`; every row P1): `phone.summon` (`{ car, x,
+  y, a }`; the UI finds the nearest road lane), `phone.stocks` (screen `home.stocks`; needs the
+  Workstation), `phone.bail`, `phone.lawyer`, `phone.realty` (screen `bank.realestate`),
+  `phone.red`, `phone.mcholland`, `phone.buyer1`-`phone.buyer5`, `phone.hospital`, `phone.board`;
+  named fns `phone.min`, `phone.hasCar`, `phone.summon`, `phone.redKnown`, `phone.redInfo`,
+  `phone.buyerKnown`, `phone.buyerName`, `phone.buyerInfo`, `phone.boardInfo` (its day is
+  `SR.rules.election.acceptBy`), `phone.fare` (the cab fare as a contact's role vars). Contacts
+  (`SR.def.contact`): `lawyer`, `realty`, `cabs`, `red`, `mcholland`, `buyer1`-`buyer5`,
+  `hospital`, `board`, with the fields of §7 plus `role` (a text key), `icon`, `app`
+  (`'cab'`: the call opens that app), `waypoint` (a worldmap `spots` id the call pins), `nameVars`
+  and `roleVars` (`[fnName, ...args]`). There is no `phone.save` (D69).
+- **The street cast** (W2-Street, `js/data/buildings/street.js`, `js/data/people.js`): actions
+  `street.harold.give10`, `street.harold.giveBottle`, `street.kid.givePack`, `street.dealer.buy`
+  (`{ n }`, with a `number` field), `street.junker.hotwire`, and P1 `arcs` `street.junker.ring` with
+  its `:resolve`; `street.<harold|kid|dealer|junker>.talk` (silent, free: the `talk` rule event);
+  `street.jobOffer` (owner `street:mel`; silent, free, once: Mel's day-1 voicemail `vm.mel.job`,
+  run on `save:loaded` for a day-1 state, so a new game starts through `SR.save.load(state)`). A
+  street action names its B-26 row in a `tune` field (`'harold.give10'` →
+  `SR.tuning.street.harold.give10`). Named fns: costs `street.cash`, `street.min`, `street.karma`,
+  `street.bottles`, `dealer.cash`, `dealer.karma`; conditions `street.here`, `junker.owned`,
+  `junker.ringInstead`, `kid.coughing`, and `junker.ringHp` (a number); effects `street.gift`,
+  `street.pack`, `dealer.bought`, `junker.hotwire`, `junker.ringStart`, `junker.ringResolve`;
+  greetings `greet.harold`, `greet.kid`, `greet.dealer`, `greet.junker`. **Person defs** add
+  `portrait`, `idle` (`sit | stand | pace`; `pace` walks the worldmap `people` path of its spot),
+  `facing` (degrees), `gifts` (`{ item: actionId }`) and `p`; a schedule row is `[weekdays, from,
+  to, placeId, cond?]` (weekdays `'all'` or a list of names or indices; `from ≤ now < to`, `to`
+  1440 includes 24:00, `from > to` wraps past midnight; placeId a worldmap `spots` name or a
+  building id, meaning inside it); the first row that holds places the person. State written:
+  `npc.harold.gave10` / `bottles`, `npc.kid.packs` / `dead` / `stage: 'dead'` / `diedDay`,
+  `npc.dealer.bought`, `player.cars.junker.owned`, `flags.jobOffer`, `flags.junkerRing` (the ring
+  attempt in progress, so its `:resolve` pays once).
+- **McSticks and Five-O** (W2-Food): the Hustle rows `mcsticks.work` and `nli.work` carry a
+  documented no-op `:resolve` (free, no effects) until `tools/validate.cjs` stops asking for one
+  (D61); the scratch card's `store.scratchPlay:resolve` runs `[['fn', 'store.scratchDone'], ['fn',
+  'casino.scratchResolve']]` (Dee reads `state.casino.card` before it is paid and closed); food rows
+  carry `food` / `item` and `drink` fields their own fns read; the `holdup` skin serves the bank
+  with `target: 'bank'` (Penny Wise at the window, `mg.holdup.bank.1..3`); Mel's day-1 offer is
+  `vm.mel.job` (en-food).
+- **The pawn shop and Fine Line** (W2-Goods): `pawn.knife`, `pawn.gun`, `pawn.ammo`, `pawn.alarm`,
+  `pawn.phone`, P1 `shopsPlus` `pawn.knuckles`, `pawn.vest`, `pawn.skateboard` and P1 `arcs`
+  `pawn.shirt` (each with an `item` field naming the Bag key it sells), `pawn.counter` (screen
+  `pawn.shop`), `pawn.sell` (`{ item }`, P1 `shopsPlus`, `row: false`), `furniture.showroom`
+  (screen `furniture.browse`), `furniture.buy` (`{ piece }`, `row: false`), `furniture.upgrade`
+  (`{ piece }`, P1 `homesPlus`, `row: false`); named fns `pawn.{price, per, note, shirtAsked,
+  noItem, sellable, sell, rate}` (`pawn.rate(s)`: the buyback share `pawn.sell` pays, 0.40, or 0.55
+  with Smooth Talker), `furniture.{noPiece, delivered}`, `greet.pawn`, `greet.furniture`, and
+  `pawn.use` (`(s, params, ctx, item)` → `{ id, vars }`: what an item does, for the purchase toast
+  `toast.pawn.<id>` and the counter's line `card.pawn.use.<id>`, its numbers read from the tables
+  the rules use; like `greet.<building>`, a data fn the UI reads).
+- **Homes** (W2-Home, `js/data/buildings/home.js`): rows `home.sleep`, `home.nap`,
+  `home.leftovers`, `home.tv`, `home.online`, `home.stargaze`, `home.party`, `home.swim`,
+  `home.holdCourt`, `home.messages`, `home.computer`, `home.save`, `home.properties`,
+  `home.campaign`, `home.topFloor`, `home.moveIn`, `home.letOut`, `home.endLet`, `home.sell`,
+  `home.tour`; sub-screen actions `home.tvNews`, `home.tvFitness`, `home.tvDating`, `home.tvMarket`
+  (P1 `stockTips`), `home.msgRead`, `home.msgArchive`, `home.stockBuy`, `home.stockSell`; named fns
+  `home.notMode`, `home.hasPiece`, `home.dailyOk`, `home.isLet`, `home.tvMin`, `home.napMin`,
+  `home.leftoversMin`, `home.leftoversHp`, `home.onlineMin`, `home.onlineCash`, `home.perkMin`,
+  `home.perkCash`, `home.sleep`, `home.moveIn`, `home.letOut`, `home.endLet`, `home.ateLeftovers`,
+  `home.tvExtra`, `home.msgRead`, `home.msgArchive`, `home.effective`, `greet.home`. **The home
+  door:** the card's mode is the door resolver's, and the rows switch in place with the effective
+  mode (`params.homeId` or the home you live in): every row carries `hidden: [['fn',
+  'home.notMode', mode]]`, so moving in or buying at a door changes the rows without reopening the
+  card. `home.tour`, `home.sell`, `home.properties` and `home.topFloor` push `bank.realestate` with
+  `{ homeId }` (`home.topFloor`: `{ homeId: 'apt2' }`; D71); `home.save` pushes `saveload { mode:
+  'save' }`; `home.campaign` (the castle's Campaign HQ) opens `cityhall.campaign`.
+- **The bank and NLI** (W2-Money): card rows `bank.depositOpen`, `bank.withdrawOpen`,
+  `bank.loanOpen`, `bank.repayOpen` (screen `bank.loan`, `screenParams: { focus: 'repay' }`),
+  `bank.realestateOpen`, `bank.ratesOpen`, `bank.cdsOpen` (P1 `homesPlus`), `bank.rob` and its
+  `:resolve`; `nli.apply`, `nli.promote`, `nli.work` (and its no-op `:resolve`), `nli.ladderOpen`,
+  `nli.takeover` (P1 `hustles`) and its `:resolve`. Sub-screen commits (`row: false`, hidden while
+  their parameter is missing): `bank.deposit`, `bank.withdraw`, `bank.loan`, `bank.repay`,
+  `bank.openCd` (`{ amount }`), `bank.breakCd` (`{ index }`), `bank.buyHome`, `bank.moveIn`,
+  `bank.sellHome`, `bank.letHome`, `bank.endLet` (`{ homeId }`). Named fns `bank.noParam(key)` (a
+  hidden condition), the feedback effects `bank.{loanTaken, repaid, homeBought, movedIn, homeSold,
+  homeLet, letEnded, cdOpened, cdBroken, pennyReacts}`, `greet.bank`; `nli.newBoss` (the voicemail
+  after a rung), `nli.hustleSkin`, `nli.ruthless` (B-30's -1 karma per Ruthless pick, read from
+  `params.hustle.picks` or a resolve's `picks`), `nli.takeoverOpen`, `nli.takeoverNews`,
+  `greet.nli`. `SR.reg.building.nli.owner` / `.portrait` (and the NLI interior's `owner.id`) are
+  getters of the live game: `'terry'` from Vice President up, else `'bea'` (ART_AUDIO §9).
+- **The U of S and City Hall** (W2-Civic): named fns `uofs.cash`, `uofs.min`, `uofs.hp` (the rows'
+  costs, read from `tuning.training` by the action id; graduation takes `degree.ceremonyMin`),
+  `uofs.invited` (a seminar's stat and class requirement, for `hidden`), `greet.uofs`,
+  `greet.cityhall`, and the hidden conditions `cityhall.offCampaign(path)`, `cityhall.offDebate`,
+  `cityhall.noChest`. The campaign actions `cityhall.rally`, `cityhall.tvAd`, `cityhall.doorKnock`,
+  `cityhall.kissBabies` (P1 `civicPlus`), `cityhall.intimidate`, `cityhall.bribe`,
+  `cityhall.debate` (and its `:resolve`) and the nomination's `cityhall.accept` (`{ chest }`) are
+  `row: false` commits of the `cityhall.campaign` sub-screen; `cityhall.office` is the card's row.
+- **Sticky's and the casino** (W2-Night): named fns `bar.beerCash`, `bar.beerMin`,
+  `bar.beerBuzz`, `bar.bottleCash`, `bar.fightMin`, `bar.dartsMin`, `bar.ringMin` (read from
+  `SR.tuning` at call time: B-03 `beer`, B-06 `booze`, B-13 `startCost` / `ring.min`, B-14f
+  `practice.min`), `bar.canDrink` (Buzz below B-03's cut-off; `reason.tooBuzzed`), `bar.canCarry`
+  (the B-06 stack; `reason.stackFull`), `bar.bought` (the `buy` rule event with the price actually
+  paid), `bar.dartsDone` (the practice round's toast), `greet.bar`; `casino.sessionEnd`,
+  `casino.minChip` (`SR.tuning.casino.chips[0]`, the roulette row's `cashAtLeast`),
+  `greet.casino`. The casino's round actions are minigame resolutions (D65):
+  `casino.slots.pull:resolve { bet }` → `casino.slotsSpin`, `casino.blackjack.hand:resolve { round,
+  shoe, trueCount }` → `casino.bjHand`, `casino.roulette.spin:resolve { bets }` →
+  `casino.rouletteSpin` (all `building: 'casino'`, `timeRule: 'free'`); the session resolves
+  `casino.<game>:resolve` run `['fn', 'casino.settle']` (a sampled session, `apply: true`), then
+  `['fn', 'casino.sessionEnd', game]` (a blackjack hand abandoned mid-play loses its stake `live`
+  and keeps its cards dealt through `shoe`, its hole card counted; a sampled blackjack session keeps
+  its `shoe` and counts its hands toward the day; one toast for the visit's net).
+- **The depot, trips, jail and the hospital** (W2-Transit): `bus.board` (the depot's one card row,
+  `screen: 'bus.board'`); owner `trip`: `trip.redeye` (`{ city, kind: 'smuggle' }`, 00:00, the
+  ticket as `cost.cash: 'trade.ticket'`), `trip.take`, `trip.haggle` (P1 `tours`), `trip.walk`,
+  `trip.tour` (P1 `tours`, `{ city, kind: 'tour' }`) and `trip.tour:resolve` (D72), `bus.wait` (P1
+  `tours`); owner `jail`: `jail.day` (`{ choice }`), `jail.bail` (P1 `police`); owner `hospital`:
+  `hospital.discharge`; named fns `greet.bus` (Tabby's departure clock), `trip.waitUntil`,
+  `trip.beforeTours`.
 
 ## 8. World model
 
@@ -994,8 +1280,10 @@ The renderer finds the entities by convention, without a registration call (§8.
 The world never changes rule state directly. It raises requests that go through rules, all
 defined in **`js/data/actions/world.js`** (W1-W): `world.fall` (`{ x, y }`), `world.carHit`,
 `world.carCrash`, `world.carFished` (`{ car }`: the car went off an edge; the tow is charged at
-night) and `world.enter` (`{ building }`, silent and free: raises the `enter` event). The junker
-is a street dialog (W2-Street), not a world action. A door →
+night) and `world.enter` (`{ building }`, silent and free: raises the `enter` event); wave 2 adds
+`world.city` (silent, free: the nomination check on stepping outside), `world.retire` (the pause
+menu's Retire) and the P1 cab ride `world.cab { door }` (§7.4). The junker is a street dialog
+(W2-Street), not a world action. A door →
 `SR.world.doors.resolve` (§8.4) → `SR.scenes.go('building', ...)`; a street person →
 `SR.scenes.push('dialog', { person })`. Position fields in `state.player` are written by the world
 once per second and on scene changes (they are saved).
@@ -1116,6 +1404,59 @@ on a crash. After jail `SR.world.place('afterJail')`; after the hospital
 `SR.world.place('afterHospital')`. The touch stick is `SR.input.axis('move')` (and
 `SR.input.stick` to draw it); a touch that starts on the right half of the world is free for
 tap-to-walk.
+
+### 8.7 Additive world names (wave-2 integration)
+
+W2-City's, W2-Street's and W2-Front's world names (their requests; CONTRACT §15.6 lists the same).
+
+- **`SR.world.traffic`** (W2-City, `js/world/traffic.js`): `update(dt)`, `cars` (the live cars,
+  with the §8.2 fields `id lane x y a v vTarget kind state honkT`, plus `phase` (= `state`: `drop`,
+  `drive`, `tumble`), `len w z visible braking why px py`), `live` (false stops the simulation; the
+  city scene sets it on enter and exit, the title's backdrop runs it), `spawning`, `stats {
+  spawned, exited, despawned, hits, crashes, noticed, missed, blocked }`, `last` (the last hit or
+  crash), `skids` (`{ kind, a, x, y, len, alpha, t }`, at most 16, each fading over 8 s; only an
+  emergency stop from 240 u/s or faster lays one, with the `brake` squeal; the ground pass draws
+  them under the cars), `noticeChance(karma)`, `reset()`, `clear()`, `occupied()`,
+  `zebraClear(zebraId)`, `routes`, `net`, `add(routeKey, opts)`, `pick(lane)`, `range()`,
+  `density()`, `probe(car)`, `touches(car, x, y, r)`, `overlap(a, b)`, `invalidate()`.
+- **`SR.world.pedestrians`** (W2-City, `js/world/pedestrians.js`): `update(dt)`, `list` (each
+  walker has the §8.2 fields `id x y node next speed archetype look state bark`, plus `facing zebra
+  hopT barkT visible px py`; `look` is a look object `{ head: 'npc.<name>', acc, col }`, the form
+  `SR.art.stick.draw` takes), `live`, `stats { spawned, recycled, crossed, waved, barks }`,
+  `lastBark`, `target(min)` (the hour table × rain × `SR.quality.params.crowd`, ≤ `maxPeds`),
+  `reset()`, `clear()`, `invalidate()`, `get(id)`, `archetypes`. Crowd barks, the turn toward you
+  within `tuning.crowd.turnRange` and the scurry at karma ≤ -50 (`tuning.crowd.scurry`) wait for
+  `cityReacts` (P1).
+- **The `zebra` field**: a walker that carries a `zebra` field counts as on a crosswalk only while
+  it holds that zebra id (it has committed to crossing); entities without the field (W2-Street's
+  people, W3-Crime's officers) count by position, so cars stop for them on any crosswalk with
+  nothing to do on their side. A walker that wants to cross asks
+  `SR.world.traffic.zebraClear(id)` first (cars get a 3 s turn after a crossing held them up, and
+  keep it, up to 10 s, while a car waits at that crosswalk's stop line for a busy box).
+- **`SR.world.cab(doorId)`** (W2-City, `js/scenes/city.js`): runs `world.cab`, places you at the
+  door (`SR.world.place`), toasts `toast.world.cabRide` and brings the city back if needed; returns
+  the Result (the Pocket's Cab app and the Map card's "Call a cab").
+- **`SR.world.streetnpcs`** (W2-Street, `js/world/streetnpcs.js`): `people` and `list` (the same
+  live array), `talking` (the id of the person whose dialog is open), `t`, `stats { judged, barks,
+  talks, acts }`; `update(dt)`, `talk(id, entity)` → Promise resolved when the conversation ends
+  (or `false`), `judge(snap)` → the list, `reset()`, `get(id)`, `placeOf(id, s?)` → `{ place, x, y,
+  path } | null`, `giveAction(item, id?)` (the action the dialog's own gift row runs: `cash` →
+  `street.harold.give10`, `booze` → `street.harold.giveBottle`, `smokes` → `street.kid.givePack`,
+  from the person defs' `gifts`), `parkedJunker()`, `jobOffer()`, `speaker()` → `{ x, y } | null`
+  (where the person you talk to stands; a reused point). Entity fields `id, named, x, y, px, py,
+  facing, state, look, clip, visible, active, talk, place, home, path, idle, bark, barkT, hopT,
+  hopUntil`; a person's `bark` is set only while `cityReacts` is on (barks are P1, GDD §3.11; the
+  car's "Hey!" stays P0).
+- **Street talk** (the city scene, §8.3's "a street person → dialog"): when
+  `SR.world.streetnpcs.talk(id, entity)` exists the city calls it and W2-Street owns the dialog;
+  otherwise the city opens `SR.ui.dialog` itself with the rows of `SR.rules.act.actions('street:' +
+  id)` (an action's `number` field becomes the dialog's number field), a Leave row and the greeting
+  from the fn `greet.<id>`, then `person.greetings`, then the text key `greet.<id>`; a row that
+  opens a minigame runs it and its `:resolve` like a card.
+- **Actor sources** (`SR.render.actors.source`): `city.fold` (the stand-in during the Fold Rescue),
+  `city.sports` (the player's parked sports car), `street.junker` (the junker whenever it stands
+  parked, owned or not; a priority-50 boot hook), `front.hide` (the title and the intro hide the
+  player).
 
 ## 9. Render pipeline
 
@@ -1257,7 +1598,8 @@ re-bake only their building (`SR.render.invalidate('building:<id>')`).
   angle and zoom), `SR.art.props.size(type, variant, a)` → `{ w, h, ax, ay }` (u; the anchor is the
   contact point inside the box), and `SR.art.skyline.draw(ctx, view, worldmap)` (the six distant
   islands and the Sky Ribbon, in stage units during the sky pass; `view` carries `x, y, zoom, W, H,
-  t, min, light, sky.ambient`). Railings and the castle wall are baked into the ground chunks from
+  t, min, light, sky.ambient`, and since wave 2 `ppu, tx, ty, s`: world → stage, for the Sky Ribbon
+  under the Bus Hole). Railings and the castle wall are baked into the ground chunks from
   worldmap geometry; optional `SR.art.props.railing(ctx, a, b)` / `wall(ctx, a, b, w)` are called
   by the ground bake when they exist. Until then `js/render/buildings.js` and `js/render/sky.js`
   draw placeholders.
@@ -1316,6 +1658,108 @@ re-bake only their building (`SR.render.invalidate('building:<id>')`).
   `fighter.<n>`; pedestrians by number; or a look object `{ head: 'npc.<name>', acc: ['beanie', ...],
   col: { beanie: 'acc.red' }, child }`. Aliases resolve the long forms (`skid`, `red`, `margin`,
   `lucky_lou`, ...); an unknown id draws the plain look and warns once.
+
+### 9.6 Additive render, art and UI names (wave-2 integration)
+
+W2-City's, W2-Exterior's, W2-Front's, W2-Home's, W2-Pocket's and W2-Transit's render, art and UI
+names (their requests; CONTRACT §15.6 lists the same).
+
+- **`SR.render.minimap`** (W2-City, `js/render/minimap.js`): `SIZE`, `toMap(x, y)`, `toWorld(mx,
+  my)`, `waypoint(x, y)` / `waypoint(null)` (the pin the Pocket's Map sets; a waypoint is session
+  state, not a save field), `draw(canvas)`, `tick(canvas, t, force)` (10 Hz), `invalidate()`; it
+  hides with the minimal HUD (`.hud.is-minimal`).
+- **`SR.art.props`** (W2-Exterior, `js/art/props.js`): besides `draw`, `size`, `railing`, `wall`:
+  `stateKey(type, variant, a)` (the state a prop's look depends on; `''` when static), `types()`,
+  `variants(type)`; prop types `tree` (0 oak, 1 poplar, 2 cloud tree), `lamp`, `bench` (variant 1
+  Harold's), `hydrant`, `bin`, `planter`, `mailbox`, `newsbox`, `shelter`, `billboard` (0-4),
+  `sawhorse`, `plinth`, `chessTable`, `binoculars`, `car`, `fountainJet`, `duck`, `memorial`,
+  `forSale`, `flagpole` (0 city, 1 President, 2 Dictator).
+- **`SR.art.skyline`** (`js/art/skyline.js`): besides `draw`: `screenOf(view, worldmap, island)`,
+  `cities()`, `invalidate()`, `stats()` (`px`: its six island sprites). The `view` passed to `draw`
+  also carries `ppu`, `tx`, `ty` and `s` (world → stage), which start the Sky Ribbon under the Bus
+  Hole.
+- **`SR.art.logos`** (`js/art/logos.js`): `draw(ctx, name, x, y, h, { lw, mono, colour, shade, min,
+  outline })`, `aspect(name)`, `names()`, `has(name)`; glyphs `burger`, `lines`, `dollar`, `cloud`,
+  `balls`, `mug`, `slushee`, `sofa`, `bus`, `mortarboard`, `clock`.
+- **`SR.art.exteriorDetail`** (`js/art/exteriors-detail.js`): `stateKey(buildingId, state)`,
+  `refresh()` (invalidates `building:<id>` for every baked sprite whose state key changed; a
+  priority-40 boot hook calls it on `action:done`, `day:started`, `save:loaded`, `home:changed`,
+  `job:changed`, `election:changed`, `karma:changed` and `game:over`, and `SR.ui.saveload.quit()`
+  after nulling the state), `baked()`, `stateful()`. The facades' sign words are `place.sign.*`
+  keys (en-world). For Sale boards and the kid's memorial are P0 (D67); the other reacting
+  elements wait for `cityReacts`.
+- **`SR.art.intro`** (W2-Front, `js/art/intro.js`): `draw`, `beatAt`, `BEATS`, `DURATION`.
+- **The trip's island painter** (W2-Transit, `js/art/interiors/special.js`):
+  `SR.reg.interior.trip.fns.island(ctx, cityId, x, y, scale, t, { night, still })` and its baked
+  far-island sprite `fns.islandSprite(cityId, scale, night, px)` → `{ canvas, x, y, w, h }`.
+- **`SR.ui.title`** (W2-Front) = `{ mount, backdrop: { enter, exit, update, render, at }, classic,
+  navigate, swallowClick, badge, metaLines, playTime, difficultyName, thumb, CLASSIC_URL }` (the P1
+  Classic cabinet in Sticky's calls `SR.ui.title.classic()`); **`SR.ui.saveload`** = `{ latest,
+  continueLatest, load, resume, suspend, quit, hardcore, copyText, SLOTS }`; **`SR.ui.newgame`** =
+  `{ mount, create, roll, fair, step, options, cheatName, ACCESSORIES }` (a new game is
+  `SR.save.load(SR.rules.state.create(opts))`); **`SR.ui.results`** = `{ build, summary, headline,
+  file, dayShown, rankText }`; **`SR.ui.settings`** = `{ contexts, actionsOf, actionLabel }`.
+- **`SR.ui.report`** (W2-Home, `js/ui/screens/report.js`) = `{ build(report, opts)` → the page
+  element (with `.button`, `.next()`, `.onShow()`), `newsVars(vars)`, `headline(report)`, `COLUMNS
+  }`; `news.election.line` takes `{ n }`, the winning poll (`tuning.election.win.threshold`, which
+  also places the needle's line).
+- **`SR.ui.pocket`** (W2-Pocket, `js/ui/pocket/pocket.js`): `panel(id, def)` (the tab files register
+  their panels from a priority-50 boot hook), `tabs()`, `open(tab, params)`, `close()`, `select(tab,
+  params)`, `isOpen()`, `current()` → `{ tab, tabs }`, `refresh()`, `act(id, params, originEl)`
+  (`SR.act` plus `SR.ui.card.feedback`; a Result with `open`, `down`, `jailed` or `over` closes the
+  Pocket first), `preview`, `talk()` → `{ npc, name, actions }` (the street dialog under the
+  Pocket), `panelDef(id)`, `waypoint({ id, x, y, name, door })`, `debug()`. An element marked
+  `data-no-swipe` (the Map's canvas) keeps its own finger gestures: a sideways drag that starts on it
+  does not turn the tab.
+- **`SR.ui.jail`** (W2-Transit, `js/ui/screens/jail.js`) = `{ card(opts), view(state, report,
+  extra), summary(report), booked(days, reason), CHOICES }`; **`SR.ui.hospital`** = `{ card(opts),
+  gag(), lines(down, state), flatlined() }` (`flatlined()` shows the FLATLINED stamp and plays the
+  dirge for the hospital and death scenes).
+
+#### Applied to the lead's UI and painter files at the wave-2 integration
+
+Requests the wave-2 packages addressed to `js/ui/{card,components,dialog,stamp}.js`,
+`js/scenes/building.js`, `js/art/exteriors.js` and `js/art/interiors/kit.js` (the lead's in wave 2)
+add these names (the decisions are in `docs/requests/decisions-w2-*.md`):
+
+- **Card** (`js/ui/card.js`): a row whose action has `row: false` is never listed (D62); a Hustle
+  row may repeat (D61). A named fn **`title.<buildingId>`** (`(s, params, ctx)` → a text key, or `{
+  key }`) names the card by the state and the door's params (a home door's For Sale mode), else the
+  building's `name`. After each committed action and on a home change at the door, the card runs
+  `greet.<buildingId>` again with the visit's seed and re-types the greeting only when its key
+  changed. The Card component adds `el.setTitle(text, vars)` and `el.greetingKey` (the greeting's
+  key now shown). `SR.ui.card.feedback(res, origin, opts)` takes `opts.flyChips` (default: the chips
+  fly unless `res.open` is set, so no chip crosses a minigame frame that opens over the row). A
+  sub-screen opens with its scrolling ancestors reset to the top.
+- **Building scene** (`js/scenes/building.js`): a named fn **`music.<buildingId>`** (`(s, params,
+  ctx)` → a song id or `{ id, variant }`) picks the building's song by the state (City Hall's march
+  in office), else `def.music`; the scene plays the interior bed of ART_AUDIO §13.6 under the song
+  (`casino`, `bar`, `fryer` at McSticks, `office` at the bank, NLI and City Hall, `campus` at the U
+  of S) and fades it on exit; `furniture`, `home` and `job` Deltas float no text (their chips name
+  them); the interior is re-picked on `home:changed`.
+- **Chips** (`js/ui/components.js`): `chip({ ..., from, to })`, and `chip.gains` / `chip.fromDelta`
+  pass a gain's or a Delta's `from` / `to`, so a `job` chip names the rank reached, a `furniture`
+  chip the piece at its tier, a `home` chip the home (`ui.chip.home` when a preview cannot name
+  it); an `item` chip finds the item def whose `key` field is the state key (`diplomas` → the
+  Diploma). A tooltip drops a pending show of a target that is detached or hidden, and hides once its
+  target leaves the DOM.
+- **Stamp** (`js/ui/stamp.js`): `SR.ui.stamp(o)` picks its stinger by `o.key` (`stamp.jobs.*`
+  except `stamp.jobs.hired` → `stingers.promotion`; `stamp.training.*`, `stamp.hospital.flatlined`
+  and `stamp.crime.jailed` → none, their scenes play their own; anything else → `stingers.stamp`);
+  `o.sting` overrides it (`false`: none; a stinger name plays that one); `stamp.stinger()` (the
+  current stamp's) and `stamp.stingerFor(o)` for tests.
+- **Dialog** (`js/ui/dialog.js`): `bag`, `map`, `journal` and `pocket` (not by Tab) open the Pocket
+  over a dialog (on the Bag for a street person) unless `SR.ui.dialog.open({ pocket: false })`;
+  `SR.ui.dialog.current()` → the top dialog's params, or `null`.
+- **Interiors** (`js/art/interiors/kit.js`): a def's `palette` may be the short set name (`'apt'`)
+  or the full palette key (`'int.apt'`); a def may carry `variants: { <key>: def }` and
+  `variant(state, params)` → key: one building with several rooms (the five dwellings of `home`),
+  each variant the base def overlaid by its own fields, cached per `id + ':' + key` with its own
+  palette set.
+- **The exterior painter** (`js/art/exteriors.js`): the detail's `geom` adds `roofSign` (the shop
+  roof sign's board), `post` (the north porch's sign post `{ x, y, h, w }`) and `tops` (the def's
+  tall roof features `{ kind, rect, h }`); the castle's tallest cone tower is the south-east one; a
+  house's bounds pad its eaves (10 u).
 
 ## 10. Minigame framework
 
@@ -1419,6 +1863,40 @@ SR.minigame.run(id, params) → Promise<Result>   // pushes the 'minigame' scene
   layout anchors `#ui` to the window while `#world` stays letterboxed, so only an own canvas keeps
   pointer mapping exact in every layout; a visual golden of a minigame reads that canvas.
 
+### 10.2 Additive minigame names (wave-2 integration)
+
+- **Casino session results** (W2-Night; CONTRACT §13 said `{ net }`): slots, blackjack and roulette
+  return `{ net, rounds, wagered }` (+ `auto: true` from Auto, `exited: true` from Exit); a
+  blackjack exit mid-hand adds `live` (the stake lost) and `shoe`; a hand already decided when you
+  leave (its cards still being revealed) is applied as played first, so it is never a forfeit; a
+  sampled Auto without the frame (`SR.minigame.auto`, the simulator) returns `{ game, net, rounds,
+  wagered, apply: true }` (blackjack adds `shoe`). Each round is applied as it is decided, through
+  the round `:resolve` actions (D65), so the session's result is a summary, not a payment.
+- **Hustles** (D61): the card's Hustle button runs the row's skin and commits the row itself with
+  `{ m: result.m, hustle: result }`; there is no `:resolve`. `jobs.work` treats
+  `params.hustle.auto` like `params.auto`, so an Auto round pays exactly 1.0 (B-05).
+- **Engine def extras** (read-only helpers for tests and sheets): `SR.reg.minigame.darts.CENTER`,
+  `SR.reg.minigame.slots.symbol(ctx, host, sym, x, y, scale)`, `SR.reg.minigame.roulette.{spotAt,
+  hit, ORDER}`; every engine's instance has `peek()`. The table chips are `SR.tuning.casino.chips`
+  (`[5, 25, 100, 500]`; blackjack's fifth chip clears the bet).
+- **Pad play in the casino** (W2-Night): the frozen `roulette` and `blackjack` contexts bind no pad
+  button to spin, clear or the chips, so the engines answer the global actions a pad still fires
+  there: in roulette RB (`tabNext`) spins, LB (`tabPrev`) clears, Y (`car`) changes the chip, A
+  (`confirm`) places and the D-pad moves; in blackjack the D-pad picks a chip and Up places it (only
+  for `ev.device === 'pad'`). Naming them in the contexts (`spin: ['Space', 'Pad5']`, `clearBets:
+  ['KeyC', 'Pad4']`, `nextChip: ['Pad3']`, ...) so Settings › Controls can remap them is deferred to
+  W3-Input with W3-Nightlife (`decisions-w2-desk-lead.md`, W2-Night 4).
+- **Skin params**: `sortit` → `{ mode: 'conveyor', set: 'janitor' | 'mail', subtitle, bins, items
+  }` (a run's `set` wins over the rank); `pitch` → `{ mode: 'grade', subtitle }` (the step comes
+  with the run); `boardroom` → `{ opponent, situations (3 of mg.boardroom.card.1..9 by hash(seed,
+  'boardroom', day, shift | takeover)), cards (2-3 options each), cardOptions (labels), subtitle }`;
+  `debate` adds `opponent { name, portrait }`, `situations` (three of `mg.debate.q.1..9`, chosen by
+  `SR.util.hash(seed, 'debate', runs)`) and `subtitle` to `SR.rules.election.debateParams`;
+  `holdup` with `target: 'bank'` shows Penny Wise at the window and `mg.holdup.bank.1..3`.
+- **`tourhook`** is a stub until W3-Crime: the trip scene runs `SR.minigame.run('tourhook')` on
+  arrival and, when it cannot run, resolves with `SR.minigame.auto(...)` or a forfeit (`{ beats: [],
+  wins: 0, exited: true }`, the hook's -20 %); its keys `mg.tourhook.*` belong to `en-transit.js`.
+
 ## 11. Input
 
 `SR.input` maps devices to **actions**; scenes and UI listen to actions, never to raw keys.
@@ -1493,7 +1971,9 @@ SR.minigame.run(id, params) → Promise<Result>   // pushes the 'minigame' scene
   `pushContext(name, map?, opts)` returns a function that pops exactly that context; `map` defaults
   to the named context of CONTRACT §12.3, else to the `keys` of the engine registered under that
   name. Popping releases what the context pressed, and a key held across the pop stays inert until
-  released. Events carry `consumed` (a listener sets it to keep a press from the scene),
+  released. One press acts in one scene: once one of a binding's actions has changed the top scene
+  (E at a door: `interact`), its later ones (`confirm`) are not pressed into the new scene.
+  Events carry `consumed` (a listener sets it to keep a press from the scene),
   `preventDefault()` and `defaultPrevented`. Enter and Space always become actions; bound keys lose
   their browser default except Tab; keys with Ctrl, Meta or Alt are left to the browser; the left
   mouse button is never a binding source (DOM clicks, click-to-walk); the device follows
@@ -1603,6 +2083,48 @@ SR.minigame.run(id, params) → Promise<Result>   // pushes the 'minigame' scene
   priority 2.5 in the voice pool (above UI 2 and world one-shots 1, below stingers and the Stamp 3).
   Mono downmixes after the master gain. The engine suspends its own context while the tab is hidden
   and resumes it (if it was unlocked) when the tab shows again.
+
+### 12.2 Songs as built (wave-2 integration)
+
+W2-Music registered every song and stinger of ART_AUDIO §13.4; nothing in the frozen formats
+changed (`docs/requests/W2-Music.md` 2-3).
+
+- **Variant names** other packages ask for: `crossroads_strut` and `streetlights` → `rain` (the
+  hats become a shaker-and-brush rain-drum; the night theme's Rhodes sit lower);
+  `hail_to_the_stick` → `dictator` (B♭ minor: `cityhall.campaign` asks for it while a Dictator
+  campaigns or holds office, and a Dictator's election-night edition may pass it so the march stays
+  in one key); `final_edition` → `stamp` (every pitched part a whole tone up, E major: the key change
+  on the stamp, switched on the next bar line) and `minor` (D minor, below $1,500; the leitmotif is
+  sung over the relative major, so its intervals hold at the `motif` annotation). An unknown variant
+  plays the base song.
+- **The city songs** (D66): the day and night themes share a harmonic grid in form, not in key or
+  tempo: a two-bar minor i - IV vamp in the A section (`crossroads_strut`: Em7 - A in E dorian at
+  104 bpm; `streetlights`: Dm9 - G13 in D minor at 84 bpm, swung), a B section that leaves it, and
+  28-bar loops, so the 4 s cross-fades land on the same kind of bar. The city scene plays the night
+  song from 19:30 to 05:30.
+- **Tempi the table leaves open**: `morning_edition` 104 bpm, 4 bars (9.2 s), played once (no
+  `loopFrom`); stingers: fall 240 bpm (1 s), rescue 150 (1.6 s), jail 90 (2.7 s), flatlined 60 in
+  3/4 (3 s), promotion 132 (3.6 s), degree 80 (3 s), jackpot 150 (1.6 s), election_win 116 in B♭
+  (4.1 s), election_loss 100 (4.8 s), stamp 180 (1.3 s). `final_edition`: a four-bar reflective
+  intro at 84 bpm, a one-bar lift at 92, the anthem at 100 (per-pattern `bpm`), looping from the
+  anthem (28 bars, 67 s). `please_hold` loops every 28.8 s (`loopFrom` 0: "restarts every 30 s as a
+  joke"), the one exception to ART_AUDIO §13.1's 60-120 s loops.
+- **Instruments the format approximates** (it has no pitch bend, per-note filter sweep, detune or
+  distortion): `pawnbroker_blues`' slide lead and `doing_time`'s bent harmonica scoop from a
+  semitone or a tone below, a triplet ahead; `funky_aisle`'s wah square is the `harmonica` preset;
+  `last_call_shuffle`'s honky keys are a Rhodes and a pluck on the same notes, panned apart;
+  `brawl_hall`'s distorted bass is the `slap` preset, pushed. A per-note `bend` or an `inst.detune`
+  would be a W1-S format change; none is requested.
+- **Levels and cost** (W1-S 8, measured): every song peaks between -10.9 and -12 dBFS with an RMS
+  of -23.6 to -28.2 dBFS; no song asks more voices a second or more render time than
+  `crossroads_strut`, so the 3 % render-cost budget stays measured on it.
+- **The city's sounds** (W2-City): footsteps (`step`, `step_grass`, `step_paper` on the Dog-Ear)
+  every 70 u on foot, `skate_loop` and `skate_push` on the board, `engine_loop` pitched by speed and
+  `ignition` in the car, and a door's own sound on entering (`door_bell` shops and the pawn shop,
+  `door_whoosh` towers and halls, `door_ding` the casino, `door_creak` the rest); the Fold Rescue
+  plays `stingers.fall` and `stingers.rescue` over the `fall_whistle` and `plane_swoop` sfx.
+- **Tests** under W2-Music's name: `tests/node/songs.test.cjs`, `tests/e2e/songs.test.cjs` and the
+  sheet `tests/sheets/music.html`.
 
 ## 13. Event bus
 
@@ -1750,7 +2272,12 @@ day)` runs on every `day:started`. Defaults before a game: rules 1, world 2, fx 
   flushed when the tab hides. History points are thinned only when they carry their day. The
   retention limits and the 60 KB budget are engine constants in `save.js` (D49; the log follows
   `tuning.news.logMax` and the stock history `tuning.stocks.history`). The profile defaults to
-  `{ v: 1, achievements, hallOfFame, badges, hintsSeen, totals }`.
+  `{ v: 1, achievements, hallOfFame, badges, hintsSeen, totals }`. W2-Front fills it (wave 2):
+  `hallOfFame.<short|medium|long|unlimited>` = up to `tuning.endgame.hof.top` entries `{ run, name,
+  rank, rankKey, netWorth, legacy, day, difficulty, date, banners }` sorted by legacy; `totals` =
+  `{ runs, days, falls, fights, best: { <bucket>: netWorth }, seen }` (`seen` remembers the recent
+  runs, so a run is filed once); `badges.oldSchool` / `badges.metArtist` (the date earned);
+  `hintsSeen.whatsNew` (CONTRACT §16).
 
 ## 16. Settings
 
@@ -2015,11 +2542,11 @@ stick-rpg-remaster/
   js/data/buildings/bus.js            W2-Transit
   js/data/buildings/street.js         W2-Street
   js/data/buildings/park.js           W3-Park
-  js/data/actions/world.js            W1-W   world.fall, carHit, carCrash, carFished, enter (§8.3)
-  js/data/actions/bag.js              W2-Pocket   bag.smoke, bag.eatTakeout, bag.give, bag.usePill toggle, bag.info
-  js/data/actions/phone.js            W2-Pocket (W3-Econ in wave 3)   phone.* apps, contacts (SR.def.contact), phone.save
+  js/data/actions/world.js            W1-W   world.fall, carHit, carCrash, carFished, enter (§8.3); W2-City: world.city, retire, cab
+  js/data/actions/bag.js              W2-Pocket   bag.smoke, bag.eatTakeout, bag.pillToggle (Give runs the person's gift action; D69)
+  js/data/actions/phone.js            W2-Pocket (W3-Econ in wave 3)   phone.* apps, contacts (SR.def.contact); Save is a UI hand-off (D69)
   js/data/actions/jail.js             W2-Transit  jail.day (the choice), jail.bail
-  js/data/actions/trip.js             W2-Transit  trip.take, trip.haggle, trip.walk, trip:resolve, bus.wait
+  js/data/actions/trip.js             W2-Transit  trip.redeye, trip.take, trip.haggle, trip.walk, trip.tour, trip.tour:resolve, bus.wait
   js/data/actions/hospital.js         W2-Transit  hospital.discharge (acknowledges the bill card)
   js/data/text/en-ui.js               W1-D   UI chrome, HUD, settings, glyphs, captions, the minigame frame (W2-Front in wave 2)
   js/data/text/en-econ.js             W1-E        items, jobs, homes, furniture, stocks, ranks, every report.* line (W3-Econ in wave 3)
@@ -2128,7 +2655,7 @@ stick-rpg-remaster/
   js/minigames/skins/tourhook.js                         W3-Crime
   js/audio/engine.js, synth.js, sfx.js, music.js, ambience.js   W1-S
   js/audio/songs/paper_sky.js, crossroads_strut.js, home_sweet_paper.js   W1-S
-  js/audio/songs/<the other 19 songs>.js                 W2-Music
+  js/audio/songs/<the other 19 songs>.js                 W2-Music (tests/node/songs.test.cjs, tests/e2e/songs.test.cjs, tests/sheets/music.html)
   js/main.js                          W1-K
   tests/harness.cjs                   W1-K
   tests/node/load.cjs                 W1-K
@@ -2137,6 +2664,7 @@ stick-rpg-remaster/
   tests/node/invariants.test.cjs      W1-W
   tests/node/tokens.test.cjs          W1-D
   tests/e2e/{boot,slice,input,save,stage}.test.cjs   W1-K
+  tests/e2e/{p0rows,run40,electionrun,matrix}.test.cjs   lead (the wave-2 exit gate, BUILD_PLAN §4.14)
   tests/e2e/audio.test.cjs            W1-S (W2-Music adds its songs)
   tests/node/shuffle.test.cjs         W1-Q
   tests/e2e/<area>.test.cjs           the area's owner
@@ -2172,7 +2700,11 @@ card rows with enabled state and chips, toasts), `grid(bool)` (draw nav grid, co
 `time(bool)` (hour scrubber overlay for lighting), `night(kind)` (runs `SR.rules.night.run`),
 `down(cause)` (forces HP 0 through `SR.rules.health.down`), `quality(preset)`, `feature(flag, on)`,
 `projected(bool)` (draws every mass's projected rect, porch and signature rect). URL flags: `index.html#debug` shows an FPS and
-perf overlay; `#artbible` opens the art-bible scene (ART_AUDIO §1).
+perf overlay; `#artbible` opens the art-bible scene (ART_AUDIO §1). With `SR.debug.fast()` the
+hospital scene skips its presentation (its first update runs `hospital.discharge`, finishes the
+night and brings the city at 12:00 outside the home door, or the results), the death scene goes on
+to the results on its first update, the trip scene skips both rides (the event card still waits),
+and the Jail Day card always waits for a choice (D72; CONTRACT §17.1).
 
 As built (D26, D39, D46): `newGame(opts)` = `SR.save.load(SR.rules.state.create(opts))` (seed 12345
 when omitted; `opts.scene` / `opts.sceneParams` then go to a scene) and returns the state; `goto`

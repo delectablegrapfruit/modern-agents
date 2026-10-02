@@ -43,7 +43,8 @@ T.section('defaults(): the v1 schema');
   T.eq(d.stocks.MCS, { price: 12, prev: 12, hist: [], held: 0, basis: 0 }, 'a ticker entry');
   T.eq(d.items.takeout, [], 'list items start as empty lists');
   T.eq(Object.keys(d.items).length, 21, 'the 21 item slots');
-  T.eq(Object.keys(d.daily.campaign), ['rally', 'tvAd', 'doorKnock', 'kissBabies', 'intimidate', 'bribe'], 'daily campaign caps');
+  T.eq(Object.keys(d.daily.campaign), ['rally', 'tvAd', 'doorKnock', 'kissBabies', 'intimidate', 'bribe', 'debate'],
+    'daily campaign caps: B-17\'s six actions and the debates opened today (W2-RulesC request 6, D64)');
   T.eq(Object.keys(d.npc), ['harold', 'kid', 'dealer', 'mcholland', 'crease'], 'the street cast');
   T.eq(Object.keys(d.election).length, 15, 'the 15 election fields');
   T.eq(Object.keys(d.records).length, 13, 'the records (the 12 of ARCHITECTURE §6.1 and meals, W2-Pocket request 5)');
@@ -98,6 +99,7 @@ T.section('wave-1 integration additions (W1-C request 1, W1-E request R2)');
   T.eq([d.trade.offer, d.fight.open, d.casino.match, d.crime.open, d.casino.card], [null, null, null, null, null],
     'the start → :resolve records: trade.offer, fight.open, casino.match, crime.open (and casino.card, W2-RulesC 3) start null');
   T.eq(d.daily.shifts, 0, 'daily.shifts: the day\'s shift count (B-05 mondayBonus)');
+  T.eq([d.daily.ring, d.daily.campaign.debate], [0, 0], 'daily.ring (today\'s Ring bouts, B-13 ring.perDay) and daily.campaign.debate (debates opened today) start 0 (W2-RulesC request 6, D64)');
   T.eq(d.history, { nw: [], str: [], int: [], cha: [], karma: [] }, 'defaults() has empty history series');
   const c = St.create({ seed: 4, stats: { str: 3, int: 9, cha: 10 }, difficulty: 'relaxed' });
   T.eq(c.history, { nw: [[1, SR.rules.endgame.netWorth(c)]], str: [[1, 3]], int: [[1, 9]], cha: [[1, 10]], karma: [[1, 0]] },
@@ -105,9 +107,10 @@ T.section('wave-1 integration additions (W1-C request 1, W1-E request R2)');
   T.eq(c.history.nw[0][1], 300, 'day 1 net worth = the starting cash');
   const old = K.json(St.create({ seed: 5 }));
   delete old.trade.offer; delete old.fight.open; delete old.casino.match; delete old.crime.open; delete old.daily.shifts; delete old.casino.card;
+  delete old.daily.ring; delete old.daily.campaign.debate;
   SR.util.deepFill(old, St.defaults());
-  T.eq([old.trade.offer, old.fight.open, old.casino.match, old.crime.open, old.daily.shifts, old.casino.card], [null, null, null, null, 0, null],
-    'an older v1 save without them is deep-filled');
+  T.eq([old.trade.offer, old.fight.open, old.casino.match, old.crime.open, old.daily.shifts, old.casino.card, old.daily.ring, old.daily.campaign.debate],
+    [null, null, null, null, 0, null, 0, 0], 'an older v1 save without them is deep-filled');
 }
 
 T.section('deep-fill of a partial v1 state (the save migration)');

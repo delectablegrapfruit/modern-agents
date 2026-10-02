@@ -88,14 +88,6 @@
   }
 
   /**
-   * Scrolls the card body back to the top when a sub-screen opens: the host resets its own body,
-   * but the card's scrolling body keeps the row list's offset (docs/requests/W2-Money.md 2).
-   */
-  function toTop(root) {
-    for (var el = root.parentElement; el && !el.hasAttribute('data-scene'); el = el.parentElement) if (el.scrollTop) el.scrollTop = 0;
-  }
-
-  /**
    * Rebuilds a sub-screen's DOM, keeping focus on the control with the same data-id; when the
    * rebuilt screen has no control left (all the cash deposited), the host's Breadcrumb takes it, as
    * the host's own show() does, so focus never falls back to the page body (UI.md §8).
@@ -159,8 +151,7 @@
     return {
       mount: function (root, ctx) {
         var M = reg.add({ root: root, ctx: ctx, alive: true, dirty: false });
-        rebuild(M, build);
-        toTop(root);
+        rebuild(M, build);   // the host opens it scrolled to the top (js/ui/card.js; W2-Money request 2)
       },
       refresh: function (ctx) {
         var M = reg.of(ctx);

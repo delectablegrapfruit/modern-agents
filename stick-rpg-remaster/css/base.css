@@ -113,7 +113,9 @@ ul, ol { list-style: none; }
 
 /* ---- focus: always visible (UI.md §2.3); keyboard, pad and programmatic focus alike ---- */
 [data-nav]:focus { outline: none; box-shadow: var(--focus-ring); }
-[data-nav].nav-inset:focus { box-shadow: var(--focus-ring-inset); }
+/* !important: an inset-ring control that carries its own inline box-shadow (the Pocket's Bag tiles,
+   var(--e-1)) must still show the ring; the a11y suite's arrow walk of the Pocket found it hidden. */
+[data-nav].nav-inset:focus { box-shadow: var(--focus-ring-inset) !important; }
 :focus-visible { outline: none; }
 /* Buttons outside spatial navigation (the HUD's Pocket and Pause) can still take keyboard focus
    (Tab in the city, where no focus scope wraps it): they show the same ring. */

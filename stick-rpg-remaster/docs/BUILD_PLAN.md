@@ -553,8 +553,8 @@ lead.
   `tests/e2e/{bus,jail,hospital}.test.cjs`.
 - **Depends on:** W2-RulesC (trade, crime), W2-RulesE (night subsets, health).
 - **Provides:** the depot's board (`bus.board`), the red-eye (00:00 only), the trip scene and event
-  cards (`trip.take`, `trip.haggle`, `trip.walk`, `trip:resolve`), jail (`jail.day` choices, the jail
-  night, the one-line report, `jail.bail` behind `police`, timed-game end in jail), the `player:down`
+  cards (`trip.take`, `trip.haggle`, `trip.walk`, `trip.tour:resolve`), jail (`jail.day` choices,
+  the jail night, the one-line report, `jail.bail` behind `police`, timed-game end in jail), the `player:down`
   listener that queues the hospital or death scene, the hospital flow (FLATLINED gag, bill card,
   Stick General edition via W2-Home's report, `hospital.discharge`, 12:00 at the home door), and
   FLATLINED on Hardcore.
@@ -603,7 +603,8 @@ lead.
   `js/data/actions/{bag,phone}.js`; `tests/e2e/pocket.test.cjs`.
 - **Depends on:** W1-D (sub-screen host), W1-W (map data), W1-A icons, W2-RulesE.
 - **Provides:** the notebook and its tabs (UI §5.9): Journal (First Day list, Help), Map (pan, zoom,
-  pins, waypoint), Stats, Bag (`bag.smoke`, `bag.eatTakeout`, `bag.give`, the pill toggle, Info),
+  pins, waypoint), Stats, Bag (`bag.smoke`, `bag.eatTakeout`, Give (the person's own gift action;
+  CONTRACT D69), `bag.pillToggle`, Info),
   Messages, Phone (P1 flag: the apps and the contacts table as actions and `SR.def.contact`),
   Achievements (placeholder until wave 3).
 - **Acceptance:** every tab by keyboard, mouse, gamepad and touch (lists scroll by touch); smoking
@@ -615,7 +616,8 @@ lead.
 - **Files:** `js/audio/songs/{streetlights,fry_day,funky_aisle,pawnbroker_blues,showroom_smooth,
   compound_interest,please_hold,campus_canon,last_call_shuffle,high_roller_lounge,brawl_hall,
   tick_tock_trouble,midnight_express,hail_to_the_stick,doing_time,waiting_room,morning_edition,
-  final_edition,stingers}.js`; `tests/sheets/music.html`.
+  final_edition,stingers}.js`; `tests/sheets/music.html`; `tests/node/songs.test.cjs`,
+  `tests/e2e/songs.test.cjs` (recorded at the wave-2 integration).
 - **Depends on:** W1-S (the frozen formats).
 - **Provides:** every song and stinger of ART_AUDIO §13.4 with the leitmotif and its `motif`
   annotation where listed.
@@ -634,6 +636,12 @@ lead.
   bought) reaches office through the election-night edition.
 - The lead captures `tests/fixtures/save-v1-wave2.json` (a mid-game v1 save with the satellite) for
   the wave-3 v2 migration.
+- **Tests** (the lead's, in run-all's e2e group): `tests/e2e/p0rows.test.cjs` (every P0 card row
+  and sub-screen commit of the buildings, the street, the five minigames on Auto, results; the
+  coverage is checked against the registry), `tests/e2e/run40.test.cjs` (the 40-day bot with its
+  daily invariants; every run also loads the fixture, and `--capture` re-captures it on day 20),
+  `tests/e2e/electionrun.test.cjs` and `tests/e2e/matrix.test.cjs` (3 difficulties × 4 lengths to
+  a night and to the results; Classic mode).
 - Veteran review: a reviewer agent compares the city and each building with the original's
   reference screenshots for topology and identity (not look).
 - The lead tags this commit as the fallback release.
@@ -981,7 +989,7 @@ def without one. There is no other switch (no `tuning.*.enabled`).
 | `degrees` | extra classes, seminars, degrees, transcript | W3-Econ |
 | `perks` | stat-milestone perks | W3-Prog |
 | `karmaTiers` | karma tier perks and glyphs (the Good-tier discount and Heat decay, the Bad-tier Hold-up bonus and Red's discount) | W3-Prog |
-| `homesPlus` | tier-2 furniture, home perks, nap, leftovers, let and sell (and the Owned-mode rows), CDs, the Workstation catalogue (sports car, delivery), Paperweight Realty contact | W3-Econ |
+| `homesPlus` | tier-2 furniture, home perks, nap, leftovers, let and sell (and the Owned-mode rows), CDs, the Workstation catalogue (sports car, delivery), Paperweight Realty contact, Fine Line's live preview of a piece in your home | W3-Econ |
 | `stockTips` | the daily tip, Market Watch, Workstation trading, the paper | W3-Econ |
 | `shopsPlus` | knuckles, vest, used skateboard, pawn Sell, scratch, gum, takeout, mega meal, Bag takeout | W3-Econ |
 | `tours` | speaking tours, haggling, reputation, rumours, the vest in muggings | W3-Crime |
@@ -996,6 +1004,7 @@ def without one. There is no other switch (no `tuning.*.enabled`).
 | `achievements` | achievements, the Hall of Fame, the legacy score and the results graphs | W3-Prog |
 | `tutorial` | the full Day 1 script and hints (P0 has the First Day list only) | W3-Onboard |
 | `phone` | the Pocket's Phone tab: the Cab and Summon-car apps, Stocks by phone (with the Workstation), and the contacts that have no flag of their own | W3-Econ |
+| `accessories` | the new-game accessory carousel (UI §5.3; added at the wave-2 integration, CONTRACT D68) | W2-Front (built); the lead flips it at the wave-3 integration |
 | `customLength` | Custom 7-365 days | W4-Rules / W4-UI |
 | `fleaMarket` | the Sunday flea market | W4-Rules / W4-UI |
 | `aquarium` | the aquarium | W4-Rules |

@@ -747,6 +747,17 @@
     });
   }
 
+  /** @returns {boolean} true when an effect list (nested `check` / `chance` branches too) has an `open` effect. */
+  function opensMinigame(list) {
+    return (list || []).some(function (x) {
+      if (!Array.isArray(x)) return false;
+      if (x[0] === 'open') return true;
+      if (x[0] === 'check') return opensMinigame(x[4]) || opensMinigame(x[5]);
+      if (x[0] === 'chance') return opensMinigame(x[2]) || opensMinigame(x[3]);
+      return false;
+    });
+  }
+
   // Priority 20 (D28): index-free check of this module's own vocabulary in every registered action.
   SR.onBoot(20, function () {
     var cn = SR.rules.conditions.names, en = SR.rules.effects.names;
@@ -755,9 +766,11 @@
       checkNames(e.def.hidden, cn, 'condition', e.id);
       checkNames(e.def.effects, en, 'effect', e.id);
       if (e.def.p >= 1 && !e.def.feature) SR.util.warnOnce('act.feature:' + e.id, 'SR.rules.act: action "' + e.id + '" has p ' + e.def.p + ' but no feature flag');
-      // CONTRACT §8.2: R and hold-to-repeat never apply to a confirm, a minigame or a sub-screen row.
-      if (e.def.repeatable && (e.def.confirm || e.def.minigame || e.def.screen)) {
-        SR.util.warnOnce('act.repeatable:' + e.id, 'SR.rules.act: action "' + e.id + '" is repeatable but has confirm, minigame or screen');
+      // CONTRACT §8.2 / D61: R and hold-to-repeat never apply to a confirm, a sub-screen row or a
+      // row whose run opens a minigame (an `open` effect). A Hustle (`minigame`, the row's own
+      // button) does not block it: the repeat runs the row plainly, never the Hustle.
+      if (e.def.repeatable && (e.def.confirm || e.def.screen || opensMinigame(e.def.effects))) {
+        SR.util.warnOnce('act.repeatable:' + e.id, 'SR.rules.act: action "' + e.id + '" is repeatable but has confirm, screen or an open effect');
       }
     });
   }, { headless: true });

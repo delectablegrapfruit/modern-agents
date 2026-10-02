@@ -20,6 +20,10 @@ gives the tuning name (the old one in brackets). Engine and presentation limits 
 retention and budget, the stat-check clamp, the inbox cap, the stamp threshold, the mix, the render
 budgets) are named constants in their files, not tuning (CONTRACT D49).
 
+**Wave-2 integration.** Rows marked *(w2)* were added at the wave-2 integration: numbers the GDD
+states that the wave-2 packages needed as keys (BUILD_PLAN §1.7). `js/data/tuning.js` has them under
+the same names, except where a row says the key lands with its feature.
+
 ## B-01 Time — `tuning.time`
 
 | Key | Value | Notes |
@@ -59,6 +63,7 @@ budgets) are named constants in their files, not tuning (CONTRACT D49).
 | `karmaRange` | -100..+100 |
 | `heatRange` *(w1)* | [0, 100] (GDD §4.2) |
 | `buzzRange` *(w1)* | [0, 5] (GDD §4.2) |
+| `customLength` *(w2)* | [7, 365] days: the Custom length bounds (GDD §5; P2 `customLength`). The tuning row lands with the feature (W4-Rules); until then the new-game wizard holds them as `CUSTOM_MIN` / `CUSTOM_MAX` |
 | `nameMax` | 16 characters |
 | `cheat` | name `PAPERGOD` → STR/INT/CHA 555, cash 10,000, name "Totally Legit", achievements off |
 | `startJob` | Fry Cook (hired, orig) |
@@ -340,7 +345,7 @@ workstation 7,000, library 11,000, homegym 13,250, lounge 15,500).
 | `default.seize` | in order until the debt is paid: bank → cash → CDs (broken, principal - 10 %) → stocks (sold at price × 0.995, no fee) → furniture, most expensive first, at 50 % of price → homes not lived in, most expensive first, at 90 % |
 | `default.lien` | whatever is still owed becomes `money.lien`; while > 0, 50 % of every income credit (sources `wage`, `rent`, `salary`, `interest`, `deal`, `tour`, `loot`, `win`, `prize`) goes to it; net worth subtracts it |
 | `default.penalty` | -10 karma; credit frozen 60 days |
-| `default.standard` | seize + lien + penalty; HP = 1 |
+| `default.standard` | seize + lien + penalty; HP set to 1 at night step 2, before the night's restore (step 6): you wake with 1 + the restore (CONTRACT D70) |
 | `default.relaxed` | seize + lien + penalty; HP unchanged |
 | `default.hardcore` | death (orig): `flags.dead = 'loan'`, the night finishes, then the game ends |
 | `charge` | forced charges (bill, tow, tab, mugging, goons' debt, fines): cash → bank → written off; never negative |
@@ -589,6 +594,10 @@ American wheel, 38 pockets, the correct red set {1,3,5,7,9,12,14,16,18,19,21,23,
 
 0 and 00 lose all outside bets. Table limit 2,000 per spin (orig); VIP Gold 10,000. House edge
 5.26 %.
+
+| Key | Value | Notes |
+|---|---|---|
+| `chips` *(w2)* | [5, 25, 100, 500] | the blackjack and roulette chips (GDD §2.1 "$5 / $25 / $100 chips (+$500)", §6.5); blackjack's fifth chip clears the bet; `casino.minChip` reads the first |
 
 ### B-14d VIP (P1)
 
@@ -877,6 +886,8 @@ only Monday-Thursday so that both its market nights exist). Monday's paper annou
 | pedSpeed | rand(90..140) u/s |
 | pedSeparation | 20 u |
 | barkInterval | ≥ 4 s between barks on screen |
+| `crowd.turnRange` *(w2)* | 80 u: idle pedestrians within this range turn toward you (GDD §3.11; P1 `cityReacts`) |
+| `crowd.scurry` *(w2)* | 0.2: at karma ≤ -50 one walker in five scurries away (GDD §3.11; P1 `cityReacts`) |
 
 ## B-23 Progression targets (asserted by the simulator)
 

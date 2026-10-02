@@ -1,6 +1,6 @@
 // tests/e2e/boot.test.cjs — owner: W1-K (lead). Boot from file:// (BUILD_PLAN §3.1): index.html has
-// the stage layers and every script; SR boots; the boot scene hands over to the title (the kernel's
-// stub until W2-Front registers its scenes); the M1 kernel is live (loop, stage, quality, input,
+// the stage layers and every script; SR boots; the boot scene hands over to the title (W2-Front's,
+// or the kernel's stub without it); the M1 kernel is live (loop, stage, quality, input,
 // save, settings, the debug API, scene transitions through SR.render.fx); #debug shows the perf
 // overlay; #artbible opens the art-bible scene; zero console errors.
 //   node tests/e2e/boot.test.cjs        (screenshots: shots/W1-K-M1/, git-ignored)
@@ -111,7 +111,9 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W1-K-M1');
   T.section('debug API');
   const ui = await t.ui();
   T.eq([ui.scenes, ui.top, ui.contexts], [['title'], 'title', []], 'SR.debug.ui() lists the scene stack, the top and the input contexts');
-  T.ok(Array.isArray(ui.items) && ui.items.some((x) => x.id === 'title-stub') && Array.isArray(ui.rows) && Array.isArray(ui.toasts), 'and the visible [data-id] items, card rows and toasts', ui.items);
+  // The title on screen: W2-Front's (its boot card `title`, UI §5.1), or the kernel's fallback
+  // `title-stub` (CONTRACT §11.3) when the front end is not loaded (W2-Front 1).
+  T.ok(Array.isArray(ui.items) && ui.items.some((x) => x.id === 'title-stub' || x.id === 'title') && Array.isArray(ui.rows) && Array.isArray(ui.toasts), 'and the visible [data-id] items, card rows and toasts', ui.items);
   T.eq(await t.goto('boot'), ['title'], 'SR.debug.goto(boot) lands on the title again');
   const hasRules = await page.evaluate(() => !!(window.SR.rules.state && window.SR.rules.state.create));
   if (hasRules) {

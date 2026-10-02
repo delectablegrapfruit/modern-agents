@@ -203,11 +203,59 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-City');
     await t.key('KeyE');
     await t.step(2);
     const got = await ev(() => ({ stack: window.SR.scenes.stack(), cash: window.SR.state.money.cash, min: window.SR.state.clock.min }));
+    // UI.md §5.7 (W2-Street request 7): while the sheet is up the camera eases 10 % of the way
+    // toward the speaker (at once in fast mode, over 0.3 s otherwise; not at all with Reduced
+    // Motion), moving x / y and px / py together.
+    const lean = await ev(() => {
+      const SR = window.SR, cam = SR.world.camera, dbg = SR.scenes.get('city').debug;
+      const read = () => {
+        const a = dbg.lean(), sp = a.speaker;
+        const want = sp ? [a.x0 + (sp.x - a.x0) * 0.1, a.y0 + (sp.y - a.y0) * 0.1] : null;
+        return { on: a.on, k: a.k, far: sp ? Math.hypot(sp.x - a.x0, sp.y - a.y0) : 0, off: want ? Math.hypot(cam.x - want[0], cam.y - want[1]) : -1,
+          still: Math.hypot(cam.x - a.x0, cam.y - a.y0), synced: cam.px === cam.x && cam.py === cam.y };
+      };
+      const fast = read();
+      SR.debug.fast(false);
+      SR.loop.step(1);
+      const early = read();
+      SR.loop.step(20);
+      const eased = read();
+      document.documentElement.classList.add('rm');
+      SR.loop.step(1);
+      const rm = read();
+      document.documentElement.classList.remove('rm');
+      SR.loop.step(1);
+      // The Pocket over the sheet (the Bag's Give): the lean holds and does not compound after it.
+      const x0 = dbg.lean().x0;
+      let pocket = null;
+      if (SR.reg.scene.pocket) {
+        SR.scenes.push('pocket', { tab: 'bag' });
+        SR.loop.step(2);
+        const stack = SR.scenes.stack().join();
+        SR.scenes.pop();
+        SR.loop.step(2);
+        pocket = Object.assign(read(), { stack, back: SR.scenes.stack().join(), kept: dbg.lean().x0 === x0 });
+      }
+      SR.debug.fast(true);
+      SR.loop.step(1);
+      return { fast, early, eased, rm, pocket };
+    });
+    T.ok(lean.fast.on && lean.fast.far > 5 && Math.abs(lean.fast.k - 0.1) < 1e-9 && lean.fast.off < 0.5 && lean.fast.synced,
+      'the camera leans 10 % toward Harold while his sheet is up (x / y and px / py together)', lean.fast);
+    T.ok(lean.early.k > 0 && lean.early.k < 0.1 && Math.abs(lean.eased.k - 0.1) < 1e-9 && lean.eased.off < 0.5,
+      'without fast mode it eases there over 0.3 s', { early: lean.early, eased: lean.eased });
+    T.ok(lean.rm.k === 0 && lean.rm.still < 0.5, 'Reduced Motion: the camera stays put', lean.rm);
+    if (lean.pocket) {
+      T.ok(lean.pocket.stack === 'city,dialog,pocket' && lean.pocket.back === 'city,dialog' && lean.pocket.kept && Math.abs(lean.pocket.k - 0.1) < 1e-9 && lean.pocket.off < 0.5,
+        'the Pocket opened over the sheet keeps the lean (it does not add another 10 % when it closes)', lean.pocket);
+    }
     await t.key('Escape');
     await t.step(2);
     const back = await t.scenes();
+    const unlean = await ev(() => window.SR.scenes.get('city').debug.lean().on);
     T.ok(real.prompt === 'talk:harold' && got.stack.join() === 'city,dialog' && got.cash === real.cash && got.min === real.min && back.join() === 'city',
       'with W2-Street\'s people: E opens Harold\'s dialog without giving him $10, Esc closes it', { real, got, back });
+    T.eq(unlean, false, 'closing the sheet hands the camera back to its spring');
   }
   await t.enter('mcsticks');
   await t.step(2);

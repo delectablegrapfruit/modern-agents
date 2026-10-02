@@ -203,8 +203,9 @@ invariant protects.
 
 **Reacting elements (P1):** the NLI billboard (portrait), castle flags (karma colour), the plinth
 statue (your stick; President white marble, Dictator red with a raised fist), bunting or banners
-along Main Street, wanted posters on shelters and lamp posts (Heat ≥ 50), For Sale signs on
-unowned homes, the kid's memorial (skateboard and flowers).
+along Main Street, wanted posters on shelters and lamp posts (Heat ≥ 50). **State-drawn but P0**
+(no flag; CONTRACT D67): For Sale signs on the homes you own no tier of (the home doors' For Sale
+mode is P0), the kid's memorial (skateboard and flowers; BALANCE's P0 `kid.givePack` row).
 
 ## 6. Props (`js/art/props.js`)
 
@@ -379,7 +380,8 @@ vehicle   car sportscar cab
 Warm, bouncy, slightly lo-fi: chiptune-adjacent synthesis played like a small live band. Every
 sound is short, readable and friendly; nothing harsh above 8 kHz; no sound is louder than the
 Stamp. Music loops are 60-120 s and never annoying on repeat (A/B sections, a breakdown every
-third loop). All music is original; the city theme captures the spirit of the original's funky
+third loop); `please_hold` restarts every 30 s as its joke, and `morning_edition` and the stingers
+play once. All music is original; the city theme captures the spirit of the original's funky
 street loop, never its notes.
 
 ### 13.2 Engine and instruments
@@ -417,7 +419,7 @@ annotation, and the audio test checks the interval sequence there.
 |---|---|---|---|---|
 | `paper_sky` | title, credits | 92, F major, 4/4 | hopeful; whistle lead, pluck, warm pad, brushed kit; AABA 32 bars | P0 |
 | `crossroads_strut` | city, day | 104, E dorian | funky slap-bass ostinato, clav chops, call-and-response lead, the leitmotif as a horn hook; rain variant: hats replaced by a rain-drum pattern, pad lowered | P0 |
-| `streetlights` | city, night (20:00-05:00) | 84, D minor, lazy swing | lo-fi swung hats, Rhodes chords, sparse walking bass, vinyl crackle | P0 |
+| `streetlights` | city, night (19:30-05:30) | 84, D minor, lazy swing | lo-fi swung hats, Rhodes chords, sparse walking bass, vinyl crackle; rain variant: the hats become a shaker-and-brush rain-drum, the Rhodes sit lower | P0 |
 | `home_sweet_paper` | home | 76, C major, 3/4 | music-box lullaby over a soft pad | P0 |
 | `fry_day` | McSticks | 128, E major | surf twang: pluck with spring-style delay, shaker, cheesy organ | P0 |
 | `funky_aisle` | Funkytown Five-O | 100, E minor | slap bass, wah square, clap | P0 |
@@ -431,17 +433,23 @@ annotation, and the audio test checks the interval sequence there.
 | `brawl_hall` | fights, the ring | 150, D minor | driving square arpeggios, four-on-the-floor, distorted bass | P0 |
 | `tick_tock_trouble` | hustles, darts, scratch | 124, A minor | light chiptune with a ticking hat | P1 |
 | `midnight_express` | bus depot, trips | 120, E minor | train rhythm on hats, harmonica-like pulse, boogie bass | P0 |
-| `hail_to_the_stick` | campaign, City Hall in office | 116 march, B♭ major (Dictator: B♭ minor) | brass saws, snare rolls, cymbal swells | P0 |
+| `hail_to_the_stick` | campaign, City Hall in office | 116 march, B♭ major (Dictator: B♭ minor, the `dictator` variant) | brass saws, snare rolls, cymbal swells | P0 |
 | `doing_time` | jail | 70, E blues | harmonica blues, a slow shuffle | P0 |
 | `waiting_room` | hospital | 80, E major | sparse bells over a sine pad, a heart-monitor blip in tempo | P0 |
 | `morning_edition` | the morning report | 4 bars, F major | the leitmotif on bells and a paper-rustle | P0 |
-| `final_edition` | results | 84 → 100, D major | reflective intro, then an anthem; key change up a tone on the stamp; a minor variant below $1,500 | P0 |
+| `final_edition` | results | 84 → 100, D major | reflective intro, then an anthem; key change up a tone on the stamp (the `stamp` variant); a minor variant below $1,500 (`minor`, D minor) | P0 |
 | `stingers` | events | — | fall (whistle-down, 1 s), rescue (up-swoop), jail (low brass), flatlined (dirge, 3 s), promotion (brass fanfare with the leitmotif), degree (organ chord), jackpot (bells), election win (march tutti), election loss (sad trombone glide), level-up / stamp (rising triad) | P0 |
 
-**Adaptive rules:** day and night city songs share a harmonic grid and cross-fade over 4 s at 19:30
-and 05:30; the rain variant swaps drum patterns on the bar line; entering a building cross-fades
+**Adaptive rules:** day and night city songs share a harmonic grid (the same form in their own keys
+and tempi: 28-bar loops whose A section is a two-bar minor i - IV vamp, E dorian at 104 and D minor
+at 84; CONTRACT D66) and cross-fade over 4 s at 19:30 and 05:30; the rain variant swaps drum patterns on the bar line; entering a building cross-fades
 to its song in 600 ms; minigames duck the song 6 dB (casino and fights switch songs); the song
 resumes at its position after overlays.
+
+**As built (wave 2):** the variant names, the tempi the table leaves open, the loop lengths and the
+four instruments the frozen format approximates (the slide lead and bent harmonica as scoops, the
+wah square as the `harmonica` preset, the honky keys as a Rhodes and pluck pair, the distorted bass
+as a pushed `slap`) are recorded in CONTRACT §14.5 (ARCHITECTURE §12.2).
 
 ### 13.5 SFX palette (`js/audio/sfx.js`, about 80 recipes)
 

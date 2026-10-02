@@ -475,7 +475,14 @@
     Object.keys(cache.clouds).forEach(function (k) { px += cache.clouds[k].canvas.width * cache.clouds[k].canvas.height; });
     Object.keys(cache.islands).forEach(function (k) { px += cache.islands[k].canvas.width * cache.islands[k].canvas.height; });
     if (cache.shadow) px += cache.shadow.canvas.width * cache.shadow.canvas.height;
-    return { px: px, bytes: px * 4, clouds: Object.keys(cache.clouds).length, islands: Object.keys(cache.islands).length, skipped: cache.skipped };
+    // The distant islands W2-Exterior's skyline paints in place of the placeholders live in
+    // js/art/skyline.js; the sky's ≤ 6 MB budget counts them too (W2-Exterior request 5).
+    var sl = SR.art && SR.art.skyline, slPx = 0, slN = 0;
+    if (sl && typeof sl.stats === 'function') {
+      try { var st = sl.stats() || {}; slPx = st.px || 0; slN = st.islands || 0; } catch (e) { slPx = 0; }
+    }
+    px += slPx;
+    return { px: px, bytes: px * 4, clouds: Object.keys(cache.clouds).length, islands: Object.keys(cache.islands).length + slN, skyline: slPx, skipped: cache.skipped };
   }
 
   SR.render.sky = {

@@ -378,8 +378,11 @@ bay at rows 30-31, columns 7-9; the Bus Hole is the `~` at column 28, rows 21-23
     and Leave.
   - **For Sale** (you own no tier there): a For Sale card (price, slots, sleep bonus, perk) with
     **Tour**, which opens the bank's Real Estate page focused on that property (`bank.realestate`
-    with `homeId`), where you can buy it on the spot. While you live in the apartment and the top
-    floor is unsold, the Paperview card also has a "Top floor: Tour" row.
+    with `homeId`), where you can buy it on the spot. While you live in the apartment, the
+    Paperview card also has a "Top floor: Tour" row, also once the top floor is yours: it opens the
+    Real Estate page on the top floor, whose card then offers Move in (the Paperview door stays in
+    Live mode while you live on the ground floor, so its Owned mode never shows for the top floor;
+    decided at the wave-2 integration, CONTRACT D71).
 
 ### 3.7 Camera and projection
 
@@ -541,6 +544,10 @@ limit uses it.
 | Heat ≥ 50 | Wanted posters of your face on the bus shelters and lamp posts |
 | Anything in yesterday's log (robbery, bust, promotion, graduation, the 20th fall, ...) | The next Daily Fold headlines the heaviest entry (B-29); the TV news leads with it |
 | Decree Mandatory Hats | Every stick wears a hat |
+
+For Sale boards on the homes you own no tier of and the kid's memorial (after the tenth pack) are
+not part of this P1 table: they belong to P0 rows (the home doors' For Sale mode, BALANCE's
+`kid.givePack`) and show without a flag (CONTRACT D67).
 
 ## 4. Mechanics
 
@@ -785,9 +792,11 @@ $10 per hour; a **premium** source 4 per hour for about $40 per hour. TV gives 2
   no fee), furniture from the most expensive down at 50 % of its price, then homes you don't live
   in at 90 %. Whatever is still owed becomes a **lien**: half of all your income (wages, rent,
   salary, interest, deals, tour fees, loot, winnings) goes to it until it is paid; net worth
-  counts it as debt. Default also costs **-10 karma**, **HP drops to 1**, and credit is frozen for
-  **60 days**. **Relaxed:** the same without the HP loss. Defaulting is never cheaper than repaying
-  (a unit test asserts that net worth after a default ≤ net worth after repaying the same loan).
+  counts it as debt. Default also costs **-10 karma**, **HP drops to 1** (at night step 2, before
+  the night's restore at step 6, so you wake with 1 HP plus the restore; CONTRACT D70), and credit
+  is frozen for **60 days**. **Relaxed:** the same without the HP loss. Defaulting is never cheaper
+  than repaying (a unit test asserts that net worth after a default ≤ net worth after repaying the
+  same loan).
 - **Interest-rate board:** today's rate and a 30-day sparkline.
 
 ### 4.9 Stocks (B-10)
@@ -1329,10 +1338,11 @@ masked regulars ("The Stranger", "Paper Tiger", ...), data too.
 | Documents | diplomas, property deeds, bus ticket stubs (the red-eye stub is a souvenir), Torn Scraps | P1 |
 
 Bag actions (`js/data/actions/bag.js`): `bag.smoke` (P0; 1 h, +1 CHA, -10 HP, -1 karma, needs HP >
-10), `bag.eatTakeout` (P1; 30 m, the meal's HP), `bag.give` (to the street person whose dialog is
-open: $10, a bottle, takeout, gum, a pack or the shirt; the same actions as the dialog's rows),
-`bag.pillToggle` (free), and Info. The cell phone turns the Pocket into a phone (UI §5.9) whose
-apps and contacts are actions in `js/data/actions/phone.js`.
+10), `bag.eatTakeout` (P1; 30 m, the meal's HP), Give (to the street person whose dialog is
+open: $10, a bottle, takeout, gum, a pack or the shirt; it runs that person's own gift action, the
+same action as the dialog's row, so it has no action of its own; CONTRACT D69), `bag.pillToggle`
+(free), and Info (the Bag's detail pane). The cell phone turns the Pocket into a phone (UI §5.9)
+whose apps and contacts are actions in `js/data/actions/phone.js`.
 
 ### 6.5 Minigames: engines and skins
 

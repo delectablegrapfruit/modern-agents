@@ -31,6 +31,12 @@ function install() {
     W.camera.setLevel(1); W.camera.target = null; W.camera.snap();
     return s;
   };
+  // W2-City request 7 / W2-RulesE request 6: the title backdrop (W2-Front) switches W2-City's traffic
+  // and walkers on, and this suite drives SR.world with its own state under the title: a car would
+  // run under the test's player (a fall sample hit after landing, a road end blocked). They stay off
+  // here, with no car or walker left standing in the way; traffic.test.cjs and crowd.test.cjs test them.
+  if (W.traffic) { W.traffic.live = false; if (typeof W.traffic.clear === 'function') W.traffic.clear(); }
+  if (W.pedestrians) { W.pedestrians.live = false; if (Array.isArray(W.pedestrians.list)) W.pedestrians.list.length = 0; }
   X.step = function (n, input) { input = input || { x: 0, y: 0, skate: false }; for (let i = 0; i < n; i++) W.update(STEP, input); };
   X.place = function (x, y) { F.reset(); P.place(x, y, 180); D.reset(); W.camera.snap(); };
   /** Steers toward (tx, ty) with the move input until within `within` u. */

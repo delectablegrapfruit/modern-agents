@@ -25,9 +25,9 @@
 
   var SERIF = 'news';
   // How much higher (u of z) the painter raises the castle's tallest cone tower, the south-east one
-  // (ART_AUDIO §5.2): 0 while its tallest-tower bug stands, 40 once docs/requests/W2-Exterior.md 2a
-  // lands, so the karma flags stay on the painter's pennants.
-  var CASTLE_TALLEST = 0;
+  // (ART_AUDIO §5.2; js/art/exteriors.js ARCH.castle since docs/requests/W2-Exterior.md 2a landed),
+  // so the karma flags stay on the painter's pennants.
+  var CASTLE_TALLEST = 40;
   var baked = {};            // building id -> the state key its last detail was drawn with
 
   function fill(ctx, r, c) { ctx.fillStyle = c; ctx.fillRect(r[0], r[1], r[2] - r[0], r[3] - r[1]); }

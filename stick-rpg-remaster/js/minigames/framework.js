@@ -20,7 +20,9 @@
 //   forfeit(params, progress) → result  the result of leaving early (default: worst)
 //   summary(result, text) → string      one line for the result banner and #aria
 //   assist        false hides the Assist toggle (default true)
-//   confirmExit   true: Exit always asks (otherwise only with a live stake)
+//   confirmExit   true: Exit always asks (otherwise only with a live stake); or
+//                 fn(progress, params) → boolean: asks when it returns true. An instance's
+//                 exitRisk?() → boolean answers first (blackjack: a hand is out)
 //   stake         true: every round is stake-bearing (Hardcore pending)
 //
 // Skin definition (SR.def.skin(id, def); ARCHITECTURE §10): { engine, params, art, text, auto,

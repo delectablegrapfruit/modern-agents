@@ -19,23 +19,17 @@
 
   /**
    * The FLATLINED moment (UI §5.12, ART_AUDIO §13.4): any stamp still showing or queued goes, the
-   * FLATLINED stamp lands at once, and the dirge (`stingers.flatlined`) plays alone. The Stamp plays
-   * the level-up stinger (`stingers.stamp`, a rising triad) with every stamp (js/ui/stamp.js); over
-   * the dirge that would celebrate the death, so it is held back for this one stamp only
-   * (docs/requests/W2-Transit.md 7 asks for a stamp option instead).
+   * FLATLINED stamp lands at once, and the dirge (`stingers.flatlined`) plays alone: the stamp lands
+   * without the level-up triad (`sting: false`; js/ui/stamp.js's table also gives this key none,
+   * docs/requests/W2-Transit.md 7, W2-Music.md 1), which would celebrate the death over the dirge.
    * @returns {{stop: function()}|null} the dirge (stop it at the BZZT), or null (not registered, audio locked)
    */
   function flatlined() {
-    var A = SR.audio, sting = A && typeof A.stinger === 'function' ? A.stinger : null;
+    var A = SR.audio;
     SR.ui.stamp.clear();
-    if (sting) A.stinger = function (id) { return id === 'stamp' || id === 'stingers.stamp' ? null : sting.apply(this, arguments); };
-    try {
-      SR.ui.stamp({ key: 'stamp.hospital.flatlined', kind: 'hp' });
-    } finally {
-      if (sting) A.stinger = sting;
-    }
-    if (!sting || !SR.reg.song || !SR.reg.song['stingers.flatlined']) return null;
-    try { return sting.call(A, 'flatlined'); } catch (e) { SR.util.warnOnce('hospital.dirge', 'SR.ui.hospital: the dirge failed: ' + e.message); return null; }
+    SR.ui.stamp({ key: 'stamp.hospital.flatlined', kind: 'hp', sting: false });
+    if (!A || typeof A.stinger !== 'function' || !SR.reg.song || !SR.reg.song['stingers.flatlined']) return null;
+    try { return A.stinger('flatlined'); } catch (e) { SR.util.warnOnce('hospital.dirge', 'SR.ui.hospital: the dirge failed: ' + e.message); return null; }
   }
 
   /**

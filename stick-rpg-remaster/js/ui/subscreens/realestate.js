@@ -241,11 +241,6 @@
     if (el) SR.ui.focus.focus(el);
   }
 
-  /** Scrolls the card body back to the top on opening (docs/requests/W2-Money.md 2). */
-  function toTop(root) {
-    for (var el = root.parentElement; el && !el.hasAttribute('data-scene'); el = el.parentElement) if (el.scrollTop) el.scrollTop = 0;
-  }
-
   var mounts = [];
   function of(ctx) { for (var i = mounts.length - 1; i >= 0; i--) if (mounts[i].ctx === ctx) return mounts[i]; return mounts[mounts.length - 1] || null; }
 
@@ -255,8 +250,7 @@
     mount: function (root, ctx) {
       var M = { root: root, ctx: ctx, alive: true, focusAfter: null };
       mounts.push(M);
-      render(M);
-      toTop(root);
+      render(M);   // the host opens it scrolled to the top (js/ui/card.js; W2-Money request 2)
     },
     refresh: function (ctx) {
       var M = of(ctx);

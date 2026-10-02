@@ -123,11 +123,75 @@
   var CHIP_CLASS = { money: 'money', bank: 'money', lien: 'money', time: 'time', hp: 'hp', hpMax: 'hp', karma: 'karma',
     heat: 'heat', buzz: 'cha', chance: 'info', info: 'info', job: 'money', home: 'info', furniture: 'info', item: 'item' };
 
+  /**
+   * The item def of a chip key: the item id, else the def whose state key is it (js/data/items.js
+   * `key`: graduation adds to `items.diplomas`, whose item is `diploma`; W2-Civic request 4).
+   * @returns {object|null}
+   */
+  function itemDef(key) {
+    var reg = SR.reg.item;
+    if (!reg || key === undefined || key === null) return null;
+    if (reg[key]) return reg[key];
+    for (var id in reg) if (hasOwn.call(reg, id) && reg[id] && reg[id].key === key) return reg[id];
+    return null;
+  }
   function itemName(key) {
-    var def = SR.reg.item && SR.reg.item[key];
+    var def = itemDef(key);
     if (def && def.name) return t(def.name);
     var k = 'item.' + key;
     return SR.text.has(k) ? SR.text(k) : String(key);
+  }
+
+  /**
+   * A furniture chip's name (W2-Goods request 1): the piece at the tier it reaches. A Delta keys the
+   * tier-1 id with `to` the tier (`bed`, 2 → the Hibernation Pod); a Preview gain has only `n`, so the
+   * tier is read from the state (display only).
+   */
+  function furnitureName(o) {
+    var reg = SR.reg.furniture || {}, base = o.key, tier = typeof o.to === 'number' ? o.to : null;
+    var owned = SR.state && SR.state.furniture && SR.state.furniture.owned;
+    if (tier === null && typeof o.n === 'number' && owned) tier = (owned[base] || 0) + o.n;
+    var id = base;
+    if (tier >= 2 && SR.rules.homes && typeof SR.rules.homes.tierId === 'function') {
+      try { id = SR.rules.homes.tierId(base, 2) || base; } catch (e) { id = base; }
+    }
+    var def = reg[id] || reg[base];
+    if (def && def.name) return t(def.name);
+    return SR.text.has('furn.' + id) ? SR.text('furn.' + id) : String(base);
+  }
+
+  /**
+   * A home chip's name (W2-Home request 8, W2-Goods request 1): `living` names the home moved into,
+   * `owned` the home bought (or, as "-1 …", the one sold), a home id its home. A Preview gain carries
+   * no from / to: it reads `ui.chip.home`.
+   */
+  function homeName(o) {
+    var id = null, sold = false;
+    if (o.key === 'living') id = typeof o.to === 'string' ? o.to : null;
+    else if (o.key === 'owned') {
+      var a = Array.isArray(o.from) ? o.from : [], b = Array.isArray(o.to) ? o.to : [];
+      id = b.filter(function (x) { return a.indexOf(x) < 0; })[0] || null;
+      if (!id) { id = a.filter(function (x) { return b.indexOf(x) < 0; })[0] || null; sold = !!id; }
+    } else if (o.key) { id = o.key; sold = typeof o.n === 'number' && o.n < 0; }
+    var name = id && SR.text.has('home.' + id) ? SR.text('home.' + id) : null;
+    if (!name) return t('ui.chip.home');
+    return sold ? t('ui.chip.item', { n: signed(-1), item: name }) : name;
+  }
+
+  /**
+   * A job chip's name (W2-Money request 1): the rank reached. A Delta's `to` is the rank id (`key` is
+   * the track); a Preview gain has only `n`, so the rank is read off the track's ladder from the state.
+   */
+  function jobName(o) {
+    var to = typeof o.to === 'string' ? o.to : null;
+    var ladders = SR.tuning && SR.tuning.jobs && SR.tuning.jobs.ladder;
+    if (!to && typeof o.n === 'number' && ladders && ladders[o.key] && SR.state && SR.state.job) {
+      var ladder = ladders[o.key], cur = SR.state.job.ranks ? SR.state.job.ranks[o.key] : null;
+      to = ladder[ladder.indexOf(cur) + o.n] || null;
+    }
+    if (to && SR.text.has('job.' + to)) return SR.text('job.' + to);
+    if (SR.text.has('job.' + o.key)) return SR.text('job.' + o.key);
+    return SR.text.has('place.' + o.key) ? SR.text('place.' + o.key) : String(o.key);
   }
 
   /** The label of a chip (UI.md §2.3: `$20`, `2h`, `+20 HP`, `+2 INT`, `+1`, `+30 Heat`, `-1 ammo`, `62 %`). */
@@ -150,8 +214,9 @@
       case 'buzz': out = t('ui.chip.buzz', { n: num || signed(n) }); break;
       case 'item': out = t('ui.chip.item', { n: num || signed(o.cost ? -Math.abs(n) : n), item: itemName(o.key) }); break;
       case 'chance': out = SR.text.pct(n); break;
-      case 'job': out = o.key ? t('ui.chip.job', { job: SR.text.has('job.' + o.key) ? SR.text('job.' + o.key) : o.key }) : ''; break;
-      case 'home': case 'furniture': out = o.key ? itemName(o.key) : ''; break;
+      case 'job': out = o.key ? t('ui.chip.job', { job: jobName(o) }) : ''; break;
+      case 'home': out = homeName(o); break;
+      case 'furniture': out = o.key ? furnitureName(o) : ''; break;
       default: out = n !== undefined ? signed(n) : '';
     }
     if (o.capped) out += ' ' + t(kind === 'hp' ? 'ui.chip.full' : 'ui.chip.max');
@@ -161,15 +226,17 @@
   function chipIcon(o) {
     if (o.icon) return o.icon;
     if (o.kind === 'stat') return o.key;
-    if (o.kind === 'item') { var def = SR.reg.item && SR.reg.item[o.key]; return (def && def.icon) || o.key; }
+    if (o.kind === 'item') { var def = itemDef(o.key); return (def && def.icon) || o.key; }
+    if (o.kind === 'furniture') { var f = SR.reg.furniture && SR.reg.furniture[o.key]; if (f && f.icon) return f.icon; }
     return CHIP_ICON[o.kind] || 'info';
   }
 
   /**
    * A Chip (UI.md §2.3): 24 tall, 16 px icon + value in 14 / 700 on the kind's -100 well.
    * @param {{kind: string, key: string, n: number, text: string, cost: boolean, short: boolean,
-   *   capped: boolean, range: number[], restOfDay: boolean, id: string, icon: string}} o
-   *   kind: money | bank | time | hp | hpMax | stat | karma | heat | buzz | item | chance | job | home | furniture | info
+   *   capped: boolean, range: number[], restOfDay: boolean, id: string, icon: string, from: *, to: *}} o
+   *   kind: money | bank | time | hp | hpMax | stat | karma | heat | buzz | item | chance | job | home | furniture | info;
+   *   from / to: a Delta's (or gain's) ends, which name a job's rank, a home and a furniture tier
    * @returns {HTMLElement}
    */
   function chip(o) {
@@ -195,7 +262,7 @@
     preview.gains.forEach(function (g) {
       if (!g || g.kind === 'time') return;
       var range = g.min !== undefined && g.max !== undefined && g.min !== g.max ? [g.min, g.max] : null;
-      out.push(chip({ kind: g.kind, key: g.key, n: g.n !== undefined ? g.n : g.max, range: range, capped: g.capped }));
+      out.push(chip({ kind: g.kind, key: g.key, n: g.n !== undefined ? g.n : g.max, range: range, capped: g.capped, from: g.from, to: g.to }));
     });
     if (typeof preview.chance === 'number') out.push(chip({ kind: 'chance', n: preview.chance }));
     return out;
@@ -239,7 +306,7 @@
     if (!d || !d.n) return null;
     if (d.kind === 'cash' || d.kind === 'bank') return chip({ kind: d.kind === 'cash' ? 'money' : 'bank', n: d.n });
     if (d.kind === 'time') return chip({ kind: 'time', n: d.n, cost: true });
-    return chip({ kind: d.kind, key: d.key, n: d.n });
+    return chip({ kind: d.kind, key: d.key, n: d.n, from: d.from, to: d.to });
   };
   chip.text = chipText;
 
@@ -484,8 +551,10 @@
     var ghost = S('path', { class: 'clk-ghost' });
     var hand = S('line', { class: 'clk-hand', x1: 50, y1: 50 });
     var hub = S('circle', { cx: 50, cy: 50, r: 5, class: 'clk-hub' });
-    var svgEl = S('svg', { viewBox: '0 0 100 100', class: 'clk-svg', 'aria-hidden': 'true', width: st.size, height: st.size },
-      track, left, night1, night2, ghost, hand, hub);
+    // The face pulses at 24:00 inside the svg's own box (the ring's outer edge is at 45 of 50), so
+    // the late pulse never reaches past the component (ui-kit's clip audit caught the svg scaling).
+    var face = S('g', { class: 'clk-face' }, track, left, night1, night2, ghost, hand, hub);
+    var svgEl = S('svg', { viewBox: '0 0 100 100', class: 'clk-svg', 'aria-hidden': 'true', width: st.size, height: st.size }, face);
     var digits = h('span', { class: 'clk-digits t-label' });
     var el = h('div', { class: 'clk', role: 'img', 'data-id': st.id || null, style: { '--clk-size': st.size + 'px' } }, svgEl, st.label ? digits : null);
     var shown = st.min, raf = 0;
@@ -1145,12 +1214,29 @@
   };
 
   // ------------------------------------------------------------------ Tooltip
-  var tipEl = null, tipTimer = 0, tipOwner = null;
+  // tipPending: the target whose show is waiting out the 400 ms, so detaching (or hiding) that target
+  // also drops its pending show (W2-Transit request 6: a button updated while hovered showed its old
+  // label 400 ms later). tipWatch: while a tip shows, a frame watch hides it once its target has left
+  // the DOM, which fires no blur or pointerleave (W2-Front request 6: a re-rendered tab).
+  var tipEl = null, tipTimer = 0, tipOwner = null, tipPending = null, tipWatch = 0;
   function hideTip(owner) {
-    if (owner && owner !== tipOwner) return;
+    if (owner && owner !== tipOwner && owner !== tipPending) return;
     if (tipTimer) { clearTimeout(tipTimer); tipTimer = 0; }
+    tipPending = null;
     if (tipEl) tipEl.classList.remove('is-shown');
     tipOwner = null;
+    if (tipWatch && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(tipWatch);
+    tipWatch = 0;
+  }
+  function watchTip() {
+    if (typeof requestAnimationFrame !== 'function' || tipWatch) return;
+    var step = function () {
+      tipWatch = 0;
+      if (!tipOwner) return;
+      if (!tipOwner.isConnected) { hideTip(); return; }
+      tipWatch = requestAnimationFrame(step);
+    };
+    tipWatch = requestAnimationFrame(step);
   }
   function showTip(target, content) {
     var text = typeof content === 'function' ? content() : t(content);
@@ -1173,6 +1259,7 @@
     tipEl.style.left = x + 'px';
     tipEl.style.top = y + 'px';
     tipOwner = target;
+    watchTip();
   }
   /**
    * Attaches a Tooltip (UI.md §2.3): max 280 wide, 14 px; hover or focus after 400 ms;
@@ -1181,7 +1268,11 @@
    */
   function tooltip(target, content) {
     var pressTimer = 0;
-    function later() { hideTip(); tipTimer = setTimeout(function () { tipTimer = 0; showTip(target, content); }, TOOLTIP_DELAY_MS); }
+    function later() {
+      hideTip();
+      tipPending = target;
+      tipTimer = setTimeout(function () { tipTimer = 0; tipPending = null; showTip(target, content); }, TOOLTIP_DELAY_MS);
+    }
     function enter(e) { if (e.pointerType === 'touch') return; later(); }
     function leave() { hideTip(target); }
     function down(e) {

@@ -21,10 +21,10 @@
 // "campaign, City Hall in office"; the Dictator asks for the `dictator` variant): the screen plays
 // the march while a campaign runs or you hold office, and re-asserts it after every refresh (a
 // minigame with a song of its own hands the building's song back when it closes; the debate has
-// none and ducks the march); on close it gives the host building
-// its song, except City Hall in office, which keeps the march. Entering City Hall in office plays
-// the march too (a `door:entered` hook: a building def names one static song). Node-loadable:
-// nothing touches the DOM at load time.
+// none and ducks the march); on close it gives the host building its song as the building scene
+// picks it (the named fn `music.<building>`, else the def's `music`), so City Hall in office keeps
+// the march (`music.cityhall`, js/data/buildings/cityhall.js, which the building scene also plays on
+// entering). Node-loadable: nothing touches the DOM at load time.
 (function () {
   'use strict';
   var SR = window.SR;
@@ -93,12 +93,6 @@
     // A loaded save or a new game (SR.save.load emits save:loaded for both) is another timeline:
     // the diary of the game before it must not show.
     SR.events.on('save:loaded', function () { diary.length = 0; });
-    // City Hall in office plays the march (ART_AUDIO §13.4); the building scene has already asked
-    // for the building's own song when it emits door:entered.
-    SR.events.on('door:entered', function (p) {
-      var s = SR.state;
-      if (p && p.id === 'cityhall' && s && s.job && s.job.office) playMarch(s);
-    });
   });
 
   // ---- poll outcomes -----------------------------------------------------------------------------
@@ -395,12 +389,22 @@
     try { restoreMusic(M.ctx); } catch (e) { SR.util.warnOnce('campaign.music', 'cityhall.campaign: music failed: ' + e.message); }
   }
 
-  /** Gives the host building its song back (City Hall in office keeps the march). */
+  /**
+   * Gives the host building its song back, as the building scene picks it: the named fn
+   * `music.<building>` (a song id, or { id, variant }; City Hall in office keeps the march), else the
+   * def's `music`.
+   */
   function restoreMusic(ctx) {
-    var s = SR.state;
-    if (ctx && ctx.building === 'cityhall' && s && s.job && s.job.office) { playMarch(s); return; }
     var b = ctx && ctx.building && SR.reg.building && SR.reg.building[ctx.building];
-    if (b && b.music && SR.audio && typeof SR.audio.music === 'function') SR.audio.music(b.music, { fade: MUSIC_FADE_S });
+    if (!b || !SR.audio || typeof SR.audio.music !== 'function') return;
+    var id = b.music, variant;
+    var fn = SR.reg.fn && SR.reg.fn['music.' + ctx.building];
+    if (typeof fn === 'function' && SR.state) {
+      var r = fn(SR.state, {}, { source: 'ui', now: SR.state.clock ? SR.state.clock.min : 0 });
+      if (typeof r === 'string' && r) id = r;
+      else if (r && typeof r.id === 'string') { id = r.id; variant = r.variant || undefined; }
+    }
+    if (id) SR.audio.music(id, variant ? { fade: MUSIC_FADE_S, variant: variant } : { fade: MUSIC_FADE_S });
   }
 
   SR.def.subscreen('cityhall.campaign', {

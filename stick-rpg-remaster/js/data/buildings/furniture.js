@@ -31,8 +31,8 @@
     screen: 'furniture.browse',
   });
 
-  // row: false (W2-Civic request 1, the lead's card.js): never a card row; until the card reads it,
-  // `hidden` without params.piece keeps them off the card.
+  // row: false: never a card row (CONTRACT D62); `hidden` without params.piece also keeps them out
+  // of a preview without their object.
   SR.def.action('furniture.buy', {
     building: 'furniture', group: 'buy', order: 20, icon: 'bed', label: 'act.furniture.buy', p: 0, row: false,
     hidden: [['fn', 'furniture.noPiece']],

@@ -322,8 +322,8 @@ Look), Back and Next.
   steppers, **Roll again** (unlimited, orig) and **Fair start** (7/7/7 + 6); live readouts: HP
   (= STR + 15), "You can apply at NLI at INT 20".
 - **Step 3:** name TextField (≤ 16), accessory carousel (8: none, cap, beanie, glasses, bow tie, scarf,
-  headphones, top hat; P1), a rotating stick preview in karma-neutral blue, the tutorial toggle,
-  **Begin**. Naming yourself `PAPERGOD` shows a wink and no warning.
+  headphones, top hat; P1, flag `accessories`, CONTRACT D68), a rotating stick preview in
+  karma-neutral blue, the tutorial toggle, **Begin**. Naming yourself `PAPERGOD` shows a wink and no warning.
 
 ### 5.4 Intro (P0)
 

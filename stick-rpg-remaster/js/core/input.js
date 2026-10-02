@@ -194,14 +194,41 @@
     return ev;
   }
 
-  /** A binding went down: press every action it resolves to (or the given ones). */
+  /** @returns {Array|null} what names the top scene now: its def, its params, the stack depth. */
+  function sceneMark() {
+    var S = SR.scenes;
+    if (!S || typeof S.top !== 'function') return null;
+    var t = S.top();
+    return [t && t.def, t && t.params, typeof S.stack === 'function' ? S.stack().length : 0];
+  }
+  /** @returns {boolean} the top scene is no longer the one sceneMark() named. */
+  function sceneMoved(m) {
+    var n = sceneMark();
+    return !!(m && n) && (m[0] !== n[0] || m[1] !== n[1] || m[2] !== n[2]);
+  }
+
+  /**
+   * A binding went down: press every action it resolves to (or the given ones), in order. One press
+   * acts in one scene: once an action of it has changed the top scene (E at a door: interact opens
+   * the building), its later actions (E is confirm too) are not pressed into the new scene, where
+   * confirm would run the card's focused first row; they stay inert until the key is released.
+   */
   function codeDown(code, device, raw, actions, entry) {
     if (pressedBy[code]) codeUp(code, raw);       // a lost release: close the old press first
     var res = actions ? { actions: actions, entry: entry || null } : resolve(code);
     if (!res.actions.length) return 0;
     pressedBy[code] = res.actions.map(function (a) { return { action: a, entry: res.entry }; });
     res.actions.forEach(function (a) { holdAdd(a, 'b:' + code); });
-    res.actions.forEach(function (a) { fire(a, true, false, device, res.entry, code, raw); });
+    var mark = sceneMark();
+    for (var i = 0; i < res.actions.length; i++) {
+      fire(res.actions[i], true, false, device, res.entry, code, raw);
+      if (i < res.actions.length - 1 && sceneMoved(mark)) {
+        var rest = res.actions.slice(i + 1);
+        rest.forEach(function (a) { holdRemove(a, 'b:' + code); });
+        if (pressedBy[code]) pressedBy[code] = pressedBy[code].filter(function (p) { return rest.indexOf(p.action) < 0; });
+        break;
+      }
+    }
     return res.actions.length;
   }
   /** A held binding repeats (OS key repeat, pad menu repeat). */

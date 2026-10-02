@@ -538,6 +538,105 @@ function luma(p) { return 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2]; }
     'a cached police car takes its light phase from SR.art.vehicles.lightPhase and flashes (same phase: same pixels; other phase: the bar swaps)', police);
 
   // -------------------------------------------------------------------------------------------
+  T.section('wave-2 hooks: skid marks, reacting props, railings and walls, the skyline in the sky budget');
+  // W2-City request 5: SR.world.traffic.skids are drawn on the ground (after the chunks, before the
+  // shadows) with SR.art.vehicles.skid in the world transform; marks far off screen are skipped.
+  const skid = await page.evaluate(() => {
+    // The shadows pass is W3-Light's (a stub in wave 2): a stand-in marks where it runs.
+    const V = SR.art.vehicles, R = SR.render, orig = V.skid, gd = R.ground.draw, hadShadows = R.shadows, order = [], calls = [];
+    const sd = hadShadows && hadShadows.draw ? hadShadows.draw : function () {};
+    R.ground.draw = function () { order.push('ground'); return gd.apply(this, arguments); };
+    R.shadows = Object.assign({}, hadShadows || {}, { draw: function () { order.push('shadows'); return sd.apply(this, arguments); } });
+    V.skid = function (ctx, kind, a, x, y, len, alpha) {
+      const m = ctx.getTransform();
+      order.push('skid');
+      calls.push({ kind, a, x, y, len, alpha, m: [m.a, m.d, m.e, m.f] });
+      return orig.apply(this, arguments);
+    };
+    const had = SR.world.traffic;
+    const mark = { kind: 'sedan', a: 0, x: 3500, y: 2476, len: 120, alpha: 1, t: 0 };   // eastAve's eastbound lane
+    SR.world.traffic = { skids: [mark, { kind: 'sedan', a: 0, x: 200, y: 200, len: 120, alpha: 1, t: 0 }] };
+    SR.render.setView({ x: 3440, y: 2440, zoom: 1.25, min: 780 });
+    SR.render.warm();
+    SR.loop.step(1);
+    order.length = 0; calls.length = 0;
+    SR.loop.step(1);
+    const firstOrder = order.slice();
+    const v = SR.render.lastView(), drawn = SR.render.stats().frame.skids;
+    const c = SR.stage.world, k = c.width / SR.W, x = c.getContext('2d');
+    const a = SR.render.toScreen(3330, 2440, 0), b = SR.render.toScreen(3470, 2510, 0);
+    const box = [Math.round(a.x * k), Math.round(a.y * k), Math.round((b.x - a.x) * k), Math.round((b.y - a.y) * k)];
+    const withMark = Array.from(x.getImageData(box[0], box[1], box[2], box[3]).data);
+    SR.world.traffic.skids.length = 0;
+    SR.loop.step(1);
+    const without = Array.from(x.getImageData(box[0], box[1], box[2], box[3]).data);
+    let differ = 0;
+    for (let i = 0; i < withMark.length; i += 4) if (withMark[i] !== without[i] || withMark[i + 1] !== without[i + 1] || withMark[i + 2] !== without[i + 2]) differ++;
+    R.ground.draw = gd; V.skid = orig;
+    if (hadShadows === undefined) delete R.shadows; else R.shadows = hadShadows;
+    if (had === undefined) delete SR.world.traffic; else SR.world.traffic = had;
+    return { order: firstOrder, calls, drawn, view: [v.ppu, v.ppu, v.tx, v.ty], differ, after: SR.render.stats().frame.skids };
+  });
+  T.eq(skid.order, ['ground', 'skid', 'shadows'], 'the skid marks are drawn after the ground chunks and before the shadows (under everything else)');
+  T.ok(skid.calls.length === 1 && skid.calls[0].x === 3500 && skid.calls[0].len === 120 && skid.calls[0].alpha === 1 && skid.drawn === 1,
+    'SR.art.vehicles.skid draws the mark in view with its kind, heading, point, length and fade; the one far off screen is skipped', skid.calls);
+  T.eq(skid.calls[0] && skid.calls[0].m, skid.view, 'in the world transform');
+  T.ok(skid.differ > 20 && skid.after === 0, 'the streaks show on the road, and go when traffic drops the mark (' + skid.differ + ' px)', skid);
+
+  // W2-Exterior request 3: a prop's sprite key carries SR.art.props.stateKey, so a reacting prop
+  // re-bakes when its state changes and a static one stays cached.
+  const react = await page.evaluate(() => {
+    const P = SR.art.props, sk = P.stateKey, draw = P.draw;
+    let lamps = 0, trees = 0, key = '';
+    P.draw = function (ctx, type) { if (type === 'lamp') lamps++; else if (type === 'tree') trees++; return draw.apply(this, arguments); };
+    P.stateKey = function (type) { return type === 'lamp' ? key : sk.apply(this, arguments); };
+    SR.render.setView({ x: 2296, y: 990, zoom: 1, min: 780 });
+    SR.render.warm();
+    SR.loop.step(1);
+    const first = lamps;
+    lamps = 0; trees = 0;
+    SR.loop.step(1);
+    const cached = [lamps, trees];
+    key = 'wanted:test';
+    SR.loop.step(1);
+    const changed = [lamps, trees], props = SR.render.stats().frame.props;
+    P.draw = draw; P.stateKey = sk;
+    return { first, cached, changed, props };
+  });
+  T.ok(react.props > 1 && react.cached[0] === 0 && react.changed[0] > 0 && react.changed[1] === 0,
+    'a prop whose state key changes re-bakes its sprite; the others in view stay cached', react);
+
+  // W2-Exterior request 4: the ground bake draws railings and the castle wall with SR.art.props.
+  const rim = await page.evaluate(() => {
+    const P = SR.art.props, rl = P.railing, wl = P.wall, got = { railing: [], wall: [] };
+    P.railing = function (ctx, a, b) { got.railing.push([a, b]); return rl.apply(this, arguments); };
+    P.wall = function (ctx, a, b, w) { got.wall.push([a, b, w]); return wl.apply(this, arguments); };
+    SR.render.invalidate('chunks');
+    SR.render.setView({ x: 3800, y: 700, zoom: 1, min: 780 });
+    SR.render.warm();
+    SR.loop.step(1);
+    SR.render.setView({ x: 1300, y: 300, zoom: 1, min: 780 });
+    SR.render.warm();
+    SR.loop.step(1);
+    P.railing = rl; P.wall = wl;
+    const wm = SR.reg.worldmap.main;
+    return { railing: got.railing.length, wall: got.wall.length, railingOk: got.railing.every((r) => wm.railings.some((q) => q.a[0] === r[0][0] && q.b[1] === r[1][1])),
+      wallOk: got.wall.every((w) => wm.walls.some((q) => q.a[0] === w[0][0] && q.b[1] === w[1][1] && (q.w || 20) === w[2])) };
+  });
+  T.ok(rim.railing > 0 && rim.wall > 0 && rim.railingOk && rim.wallOk, 'the chunk bake calls SR.art.props.railing (a, b) and .wall (a, b, w) for the worldmap\'s railings and walls', rim);
+
+  // W2-Exterior request 5: the skyline's island sprites count toward the sky's budget.
+  const skyB = await page.evaluate(() => {
+    SR.render.setView({ x: 2560, y: 300, zoom: 0.8, min: 780 });
+    SR.render.warm();
+    SR.loop.step(2);
+    const sl = SR.art.skyline.stats(), s = SR.render.stats().sky;
+    return { skyline: sl.px, islands: sl.islands, counted: s.skyline, px: s.px, bytes: s.bytes };
+  });
+  T.ok(skyB.counted === skyB.skyline && skyB.px >= skyB.skyline && skyB.bytes === skyB.px * 4,
+    'SR.render.stats().sky counts SR.art.skyline\'s island sprites (' + (skyB.skyline * 4 / MIB).toFixed(2) + ' MB, ' + skyB.islands + ' islands)', skyB);
+
+  // -------------------------------------------------------------------------------------------
   T.section('memory (1920 × 1080, DPR 1 and 2, every zoom, a full-map tour)');
   async function tour(tt, dpr) {
     const res = await tt.page.evaluate(([levels]) => {

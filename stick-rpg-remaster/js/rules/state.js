@@ -72,7 +72,10 @@
         benchNap: 0, online: 0, dartsPractice: 0, dartsMatches: 0, bjHands: 0, homePerk: 0,
         charity: 0, ducks: 0, preacher: 0, skate: 0, soup: 0, leftovers: 0, relax: 0,
         secondWind: 0, vipDrinks: 0, falls: 0, forecastSeen: false,
-        campaign: { rally: 0, tvAd: 0, doorKnock: 0, kissBabies: 0, intimidate: 0, bribe: 0 },
+        ring: 0,                       // today's Underground Ring bouts (B-13 ring.perDay; W2-RulesC request 6, D64)
+        // debate: the debates opened today by election.debateStart, which election.debate (its
+        // :resolve) requires (B-17 debate.cap; W2-RulesC request 6, D64).
+        campaign: { rally: 0, tvAd: 0, doorKnock: 0, kissBabies: 0, intimidate: 0, bribe: 0, debate: 0 },
       },
       weekly: { index: 0, openMic: 0, party: 0, mchollandTip: 0, bankRob: 0 },
       npc: {

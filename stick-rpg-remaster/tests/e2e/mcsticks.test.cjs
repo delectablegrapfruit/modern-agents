@@ -156,7 +156,8 @@ function rules() {
   flags([]);
   const w = fresh();
   const pw = pv(w, 'mcsticks.work', { variant: 'full' });
-  T.eq([pw.ok, pw.cost.min, pw.repeatable], [true, COOK_FULL[1], false], 'Work Full: 6 h (a Hustle row is not repeatable, CONTRACT §8.2)');
+  T.eq([pw.ok, pw.cost.min, pw.repeatable], [true, COOK_FULL[1], false], 'Work Full: 6 h (not repeatable until js/rules/act.js follows CONTRACT D61)');
+  T.eq([!!SR.reg.action['mcsticks.work:resolve'], !!SR.reg.action['mcsticks.work'].minigame], [false, true], 'the Hustle row has no :resolve (D61: the button commits the row itself)');
   const w0 = SR.util.clone(w);
   const rw = run(w, 'mcsticks.work', { variant: 'full' });
   T.eq([rw.ok, w.money.cash - w0.money.cash, w.clock.min - w0.clock.min, w.stats.karma - w0.stats.karma], [true].concat(COOK_FULL), 'Work Full: +$42, 6 h, +1 karma (the slice numbers)');

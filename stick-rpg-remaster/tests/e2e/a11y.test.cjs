@@ -210,7 +210,35 @@ async function tabWalk(t, opts) {
   return { n: m.n, seq, issues: Array.from(new Set(issues)) };
 }
 
-/** Audits one target: the static audit, then the Tab walk, then a screenshot. */
+/**
+ * Walks the current focus scope with the arrows (SR.ui.focus.move, the spatial navigation the
+ * keyboard's arrows and the D-pad drive): each stop stays in the scope, shows the ring and has a
+ * name, and the walk reaches more than one control. For a scope where Tab is not navigation (the
+ * Pocket closes on Tab: CONTRACT §15.5, D57; docs/requests/W2-Pocket.md 1).
+ * @returns {Promise<{n: number, reached: number, issues: string[]}>}
+ */
+async function arrowWalk(t) {
+  const m = await t.eval(markNavigables);
+  const issues = [];
+  const seen = new Set();
+  if (!m.n) return { n: 0, reached: 0, issues };
+  for (const dir of ['down', 'right', 'down', 'up', 'left']) {
+    for (let k = 0; k < Math.min(m.n, 30); k++) {
+      const moved = await t.eval((d) => window.SR.ui.focus.move(d), dir);
+      const s = await t.eval(focusInfo);
+      if (!s.inScope) issues.push('the arrows left the focus scope (' + s.id + ')');
+      if (!s.ring) issues.push('no visible focus ring on ' + s.id);
+      if (!s.name) issues.push('no name on focused ' + s.id);
+      if (s.idx !== null) seen.add(s.idx);
+      if (!moved) break;
+    }
+  }
+  if (m.n > 1 && seen.size < 2) issues.push('the arrows reached ' + seen.size + ' of ' + m.n + ' controls');
+  await t.eval(() => document.querySelectorAll('[data-a11y-idx]').forEach((el) => el.removeAttribute('data-a11y-idx')));
+  return { n: m.n, reached: seen.size, issues: Array.from(new Set(issues)) };
+}
+
+/** Audits one target: the static audit, then the Tab walk (or the arrow walk), then a screenshot. */
 async function check(T, t, label, rootSel, opts) {
   opts = opts || {};
   const a = await t.eval(audit, rootSel);
@@ -218,6 +246,9 @@ async function check(T, t, label, rootSel, opts) {
   if (opts.tab !== false) {
     const w = await tabWalk(t, opts);
     T.eq(w.issues, [], label + ': Tab walks ' + w.n + ' controls in order, in scope, ringed and named');
+  } else if (opts.arrows) {
+    const w = await arrowWalk(t);
+    T.eq(w.issues, [], label + ': the arrows walk ' + w.reached + ' of ' + w.n + ' controls, in scope, ringed and named');
   }
   fs.mkdirSync(SHOTS, { recursive: true });
   await t.page.screenshot({ path: path.join(SHOTS, label.replace(/[^\w.-]+/g, '-') + '.png') });
@@ -348,12 +379,14 @@ async function run() {
     await t.debug('goto', 'title');
     await t.eval((id) => { window.SR.scenes.push(id, {}); }, id);
     await t.step(2);
-    await check(T, t, 'menu-' + id, '#ui [data-scene="' + id + '"]');
+    // The Pocket closes on Tab (D57; W2-Pocket request 1): its controls are walked with the arrows.
+    const opts = id === 'pocket' ? { tab: false, arrows: true } : undefined;
+    await check(T, t, 'menu-' + id, '#ui [data-scene="' + id + '"]', opts);
     const tabs = await t.eval((id) => Array.from(document.querySelectorAll('#ui [data-scene="' + id + '"] [role="tab"]')).map((el) => el.getAttribute('data-id') || el.textContent.trim()), id);
     for (let k = 0; k < tabs.length; k++) {
       await t.eval(([id, k]) => { const el = document.querySelectorAll('#ui [data-scene="' + id + '"] [role="tab"]')[k]; if (el) el.click(); }, [id, k]);
       await t.step(2);
-      await check(T, t, 'menu-' + id + '-tab-' + tabs[k], '#ui [data-scene="' + id + '"]');
+      await check(T, t, 'menu-' + id + '-tab-' + tabs[k], '#ui [data-scene="' + id + '"]', opts);
     }
   }
   T.eq(t.errors(), [], 'zero console errors on the game page');

@@ -23,6 +23,7 @@
   var TIER_INSET = 12;        // each tier steps back 12 u
   var NEON_IDS = ['bar', 'casino', 'mcsticks'];   // ART_AUDIO §3: the neon signs
   var NEON_MAX = [256, 128];  // neon sprites ≤ 256 × 128 device px (ARCHITECTURE §9.1)
+  var TALLEST_RAISE = 40;     // the castle's tallest cone tower, the south-east one (ART_AUDIO §5.2); exteriors-detail.js CASTLE_TALLEST matches
   var DISPLAY_FONT = '"Arial Black", "Segoe UI Black", "Helvetica Neue", Arial, sans-serif';
   var GRAIN_ALPHA = 0.06;     // paper grain over building sprites (ART_AUDIO §1.1 rule 3)
 
@@ -160,7 +161,9 @@
     // Signature rects (worldmap and W2-Exterior) are drawn inside the sprite: include them.
     g.signature = signatures(def);
     g.signature.forEach(function (r) { b = union(b, r); });
-    var pad = 6;
+    // A pitched roof's eaves overhang about 8 u plus half the ink line: 6 u cropped a 2 u sliver of
+    // the west eave of Paperview and Hillcrest (docs/requests/W2-Exterior.md 10).
+    var pad = arch === 'house' ? 10 : 6;
     g.bounds = [b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad];
     if (geomCache) geomCache.set(def, g);
     return g;
@@ -550,6 +553,7 @@
     var box = [board[0] + 6, board[1] + 3, board[2] - 6, board[3] - 3];
     textOn(ctx, signText(g), box, contrastInk(P, P.trim));
     g.signRect = board;
+    g.roofSign = board;
     g.signBox = { r: box };
     covered(g, top ? [board[0], top[1], board[2], board[3]] : board);
   }
@@ -615,7 +619,9 @@
     }
     var midY = (m.y0 + m.y1) / 2;
     var north = towers.filter(function (t) { return t.y < midY; }), south = towers.filter(function (t) { return t.y >= midY; });
-    var tallest = towers.reduce(function (a, t) { return !a || t.x > a.x ? t : a; }, null);
+    // The tallest is picked among the south towers, the only ones the +40 below applies to (it used to
+    // pick the north-east one, so no tower was ever taller; docs/requests/W2-Exterior.md 2a).
+    var tallest = south.reduce(function (a, t) { return !a || t.x > a.x ? t : a; }, null);
     var behind = [];
     north.forEach(function (t) { tower(ctx, P, lw, t.x, t.y, t.r, t.h, t.x > (m.x0 + m.x1) / 2, behind); });
     block(ctx, P, lw, m, { facade: P.shade, roof: P.walls, noParapet: true, cornice: L().tone(P.walls, 1) });
@@ -638,7 +644,9 @@
     ctx.fill();
     ctx.restore();
     // The tallest cone tower (ART_AUDIO §5.2) is the south-east one.
-    south.forEach(function (t) { tower(ctx, P, lw, t.x, t.y, t.r * 1.05, t === tallest ? t.h + 40 : t.h, t.x > (m.x0 + m.x1) / 2, out); });
+    // Its slit window stays where the other south tower's is (below the keep's roof line): the raise
+    // lengthens the shaft above it.
+    south.forEach(function (t) { tower(ctx, P, lw, t.x, t.y, t.r * 1.05, t === tallest ? t.h + TALLEST_RAISE : t.h, t.x > (m.x0 + m.x1) / 2, out, t === tallest ? TALLEST_RAISE : 0); });
   };
 
   function merlons(ctx, P, lw, x0, x1, y, k) {
@@ -652,7 +660,8 @@
     ink(ctx, P, lw * 0.5, function () { for (var x = x0; x + mw <= x1; x += mw + gap) ctx.rect(x, y - mh, mw, mh); });
   }
 
-  function tower(ctx, P, lw, cx, cy, R, th, flagRight, out) {
+  /** @param {number=} raised u of z added to the tower's height above its window (the tallest tower) */
+  function tower(ctx, P, lw, cx, cy, R, th, flagRight, out, raised) {
     var top = cy - PROJ * th, base = cy + R * 0.45;
     fillRect(ctx, [cx - R, top, cx + R, base], P.shade);
     fillRect(ctx, [cx - R, top, cx - R * 0.45, base], L().tone(P.shade, 1));
@@ -692,7 +701,8 @@
       ctx.moveTo(cx - R - 5, top); ctx.lineTo(cx, top - ch); ctx.lineTo(cx + R + 5, top);
       ctx.moveTo(cx + R + 5, top); ctx.ellipse(cx, top, R + 5, R * 0.45, 0, 0, Math.PI);
     });
-    out.push([cx - 3, top + (base - top) * 0.35, 6, 9]);
+    var wTop = top + PROJ * (raised || 0);
+    out.push([cx - 3, wTop + (base - wTop) * 0.35, 6, 9]);
   }
 
   ARCH.house = function (ctx, P, lw, m, g, rnd, out) {
@@ -1145,6 +1155,11 @@
       }),
       door: g.door ? { face: g.door.face, x: g.door.x, y: g.door.y } : null,
       porch: g.porch, visible: g.visible, awning: g.awning, canopy: g.canopy, sign: g.signRect || null,
+      // What else the painter drew (docs/requests/W2-Exterior.md 2d): the shop roof sign's board, the
+      // north porch's sign post and the def's tall roof features, so a detail need not recompute them.
+      roofSign: g.roofSign ? g.roofSign.slice() : null,
+      post: g.post ? { x: g.post.x, y: g.post.y, h: g.post.h, w: g.post.w } : null,
+      tops: g.tops.map(function (t) { return { kind: t.kind, rect: [t.x0, t.y0, t.x1, t.y1], h: t.h }; }),
       bounds: g.bounds, zoom: zoom, dpr: dpr, scale: sc, lineWidth: lw, colors: P, windows: windows,
       tone: function (c, d) { return L().tone(c, d); }, pal: function (k) { return L().pal(k); }, projection: PROJ,
     };

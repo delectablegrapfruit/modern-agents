@@ -162,6 +162,7 @@
     'ui.chip.item': '{n} {item}',
     'ui.chip.bank': '{money} bank',
     'ui.chip.job': '{job}',
+    'ui.chip.home': 'New home',                         // a home gain whose home a preview cannot name (W2-Home 8)
     'ui.chip.restOfDay': 'rest of day',
     'ui.chip.full': '(full)',
     'ui.chip.max': '(max)',

@@ -375,6 +375,17 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-Civic');
     const dm = await musicLog();
     T.ok(dm.length > 0 && dm.every((m) => m[0] === 'hail_to_the_stick' && m[1] === 'dictator'),
       'the debate ducks the march and hands nothing else back: the Dictator\'s march all along', dm);
+    // The building scene asks the named fn music.cityhall (W2-Civic request 5): the Dictator's City
+    // Hall plays the B♭-minor march from the door, and leaving the office screen keeps it.
+    await t.set({ job: { office: 'dictator' } });
+    await t.press('back');
+    await t.step(2);
+    await t.press('back');
+    await t.step(2);
+    await musicReset();
+    await t.enter('cityhall');
+    await t.step(3);
+    T.eq((await musicLog()).slice(-1)[0], ['hail_to_the_stick', 'dictator'], 'a Dictator\'s City Hall in office plays the `dictator` march', await musicLog());
     T.eq(t.errors(), [], 'zero console errors');
   } catch (e) {
     T.ok(false, 'threw: ' + (e && e.stack || e));

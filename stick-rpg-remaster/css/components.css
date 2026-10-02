@@ -288,7 +288,8 @@
 .clk-ghost { fill: none; stroke: var(--ink-900); stroke-width: 5; stroke-dasharray: 4 3; }
 .clk-hand { stroke: var(--ink-900); stroke-width: 5; stroke-linecap: round; }
 .clk-hub { fill: var(--ink-900); }
-.clk.is-late .clk-svg { animation: sr-late 900ms ease-in-out infinite; }
+.clk-face { transform-box: view-box; transform-origin: center; }
+.clk.is-late .clk-face { animation: sr-late 900ms ease-in-out infinite; }   /* inside the svg's box: 45 × 1.08 < 50 */
 .clk.is-late .clk-track { stroke: var(--danger); }
 .clk.is-late .clk-digits { color: var(--danger-ink); }
 .clk-digits { white-space: nowrap; }
@@ -555,6 +556,12 @@
 .ui-layer--tip { z-index: var(--z-tip); }
 .toast-lane { position: absolute; left: 560px; top: 104px; width: 400px; display: flex; flex-direction: column; gap: var(--sp-2); pointer-events: auto; }
 .toast-lane:empty { display: none; }
+/* Over a menu panel (Save / Load, Settings, Pause) the lane at y 104 lands on the panel's first rows
+   ("Saved to Slot 1." covered Slot 1's own Save here): there the toasts sit at the bottom centre,
+   clear of the panels' header rows and footer buttons, and let taps through. */
+#ui:has([data-scene="saveload"], [data-scene="settings"], [data-scene="pause"]) .toast-lane {
+  top: auto; bottom: 8px; left: 50%; transform: translateX(-50%); flex-direction: column-reverse; pointer-events: none;
+}
 .toast {
   display: flex;
   align-items: flex-start;
@@ -780,9 +787,65 @@
    js/core/stage.js marks #app[data-layout="compact"]; html.touch-compact is the same switch for sheets. */
 :is(.touch-compact, [data-layout="compact"]) .bcard { left: auto; right: 0; top: 0; bottom: 0; height: auto; border-radius: var(--r-l) 0 0 var(--r-l); }
 :is(.touch-compact, [data-layout="compact"]) .dlg { left: 16px; right: 16px; width: auto; }
-:is(.touch-compact, [data-layout="compact"]) .ctx-prompt { top: auto; bottom: 16px; }
+:is(.touch-compact, [data-layout="compact"]) .ctx-prompt { top: auto; bottom: 16px; width: min(480px, calc(100% - 336px)); }   /* clear of the 272 px touch cluster */
 :is(.touch-compact, [data-layout="compact"]) .hud { right: 16px; width: auto; }
+/* The city HUD on a phone fits between the 16 px gutters (W2-City request 4: at 844 × 390 the cash and
+   Pocket card ran past the window): tighter gaps, a left card without its 508 px floor, a shorter HP
+   track and a right card that may give up its bank line's width. */
+:is(.touch-compact, [data-layout="compact"]) .hud:not(.is-compact) { column-gap: 8px; grid-template-columns: minmax(0, auto) auto 1fr minmax(0, auto); }
+:is(.touch-compact, [data-layout="compact"]) .hud:not(.is-compact) .hud-left { min-width: 0; gap: var(--sp-2); }
+:is(.touch-compact, [data-layout="compact"]) .hud:not(.is-compact) .hud-centre { gap: var(--sp-2); }
+:is(.touch-compact, [data-layout="compact"]) .hud:not(.is-compact) .hud-right { gap: var(--sp-2); min-width: 0; }
+:is(.touch-compact, [data-layout="compact"]) .hud:not(.is-compact) .meter--hp .meter-track { width: 128px; }
+/* Narrower phones (under 780 CSS px, e.g. 740 × 360, 667 × 375): the name and job line goes (the
+   medallion stays) and the ClockRing drops to 48, so the three cards still fit. The tap-to-expand
+   strip of UI.md §2.2 is W3-Input's touch polish. */
+@media (max-width: 779px) {
+  :is(.touch-compact, [data-layout="compact"]) .hud:not(.is-compact) .hud-who { display: none; }
+}
+@media (max-width: 699px) {
+  :is(.touch-compact, [data-layout="compact"]) .hud:not(.is-compact) .clk-svg { width: 48px; height: 48px; }
+}
 :is(.touch-compact, [data-layout="compact"]) .hud.is-compact { right: auto; width: auto; max-width: calc(100% - 520px); flex-wrap: wrap; row-gap: 4px; }
 :is(.touch-compact, [data-layout="compact"]) .hud.is-compact .hud-day { display: none; }
 :is(.touch-compact, [data-layout="compact"]) .hud.is-compact .meter--hp .meter-track { width: 96px; }
 :is(.touch-compact, [data-layout="compact"]) .toast-lane { left: 50%; transform: translateX(-50%); }
+
+/* ---------------------------------------------------------------- the city's touch cluster and minimap
+   (UI.md §4.1, §5.5; W2-City request 3). Each button's size and place (Car and Skate 64 at right 192 /
+   112, Action 96 at the corner) and the touch minimap's top: 104px stay on the elements. */
+.city-minimap { position: absolute; right: 16px; bottom: 16px; width: 184px; height: 184px; padding: 0;
+  border: var(--line); border-radius: var(--r-m); background: var(--paper-0); box-shadow: var(--e-2);
+  overflow: hidden; cursor: pointer; z-index: var(--z-hud); }
+.city-minimap canvas { display: block; width: 184px; height: 184px; }
+.city-touch { position: absolute; right: 16px; bottom: 16px; width: 272px; height: 96px;
+  pointer-events: none; z-index: var(--z-hud); }
+.city-touch-btn { position: absolute; padding: 0; border-radius: var(--r-pill); display: flex;
+  flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  pointer-events: auto; touch-action: none; }
+
+/* ---------------------------------------------------------------- the Pocket (UI.md §5.9; W2-Pocket request 6)
+   The notebook's place and size per layout stay with js/ui/pocket/pocket.js (layout()). */
+.pocket-root { z-index: var(--z-overlay); }
+.pocket { position: absolute; display: grid; grid-template-rows: 100%; overflow: hidden; color: var(--ink-900);
+  background: var(--paper-1); border: var(--line); border-radius: var(--r-l); box-shadow: var(--e-3); }
+.pocket-rail { display: flex; flex-direction: column; gap: var(--sp-1); min-height: 0; padding: var(--sp-4) 0;
+  overflow-y: auto; background: var(--paper-2); border-right: var(--line); }
+.pocket-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: var(--sp-4) var(--sp-5);
+  background: var(--paper-1); }
+.pocket-head { display: flex; align-items: center; gap: var(--sp-2); padding: 0 0 var(--sp-3); margin-bottom: var(--sp-3);
+  border-bottom: var(--line-thin); }
+/* A vertical Tab: a 4 px left edge instead of the bottom one; selected: --primary-600 on --paper-1. */
+.pocket-tab { position: relative; display: flex; align-items: center; gap: 6px; width: 100%; min-height: var(--tap);
+  margin: 0; padding: 6px 2px 6px 6px; border: 0; border-left: 4px solid transparent; border-radius: 0;
+  background: transparent; color: var(--ink-900); font-weight: 700; text-align: left; cursor: pointer; }
+.pocket-tab[aria-selected="true"] { border-left-color: var(--primary-600); background: var(--paper-1); }
+.pocket-tab-label { flex: 1 1 auto; min-width: 0; white-space: normal; overflow-wrap: anywhere; line-height: 1.15; }
+.pocket-page { flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto; touch-action: pan-y; padding-right: var(--sp-1); }
+.bag-tile { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  width: 64px; min-width: 64px; height: 64px; padding: 4px 6px; border: var(--line); border-radius: var(--r-m);
+  background: var(--paper-0); box-shadow: var(--e-1); cursor: pointer; }
+.bag-tile[aria-selected="true"] { border: 3px solid var(--primary-600); background: var(--primary-100); }
+.bag-detail { padding: var(--sp-3); border: var(--line); border-radius: var(--r-m); background: var(--paper-0); align-self: flex-start; }
+.phone { max-width: 100%; margin: 0 auto; padding: var(--sp-4) var(--sp-3); border-radius: 28px; background: var(--ink-900); box-shadow: var(--e-2); }
+.phone-screen { min-height: 360px; padding: var(--sp-3); border-radius: var(--r-m); background: var(--paper-0); border: var(--line); }

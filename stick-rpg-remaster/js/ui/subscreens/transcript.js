@@ -40,21 +40,8 @@
     return h('p', { class: small ? 't-small t-ink-700' : 't-body', 'data-id': id || null, style: { margin: '0' } }, t(key, vars));
   }
 
-  /**
-   * The preview with list items named by their item id: graduation adds to the state list
-   * `items.diplomas`, whose item is `diploma` (js/data/items.js `key`), so the chip reads "+1
-   * Diploma" with the item's icon instead of the raw state field.
-   * @returns {object} a shallow copy of the preview
-   */
-  function namedGains(pv) {
-    var items = SR.reg.item || {}, byKey = {};
-    Object.keys(items).forEach(function (id) { var k = items[id].key; if (k && k !== id && !items[k]) byKey[k] = id; });
-    var gains = (pv.gains || []).map(function (g) {
-      return g && g.kind === 'item' && byKey[g.key] ? Object.assign({}, g, { key: byKey[g.key] }) : g;
-    });
-    return Object.assign({}, pv, { gains: gains });
-  }
-
+  // Graduation adds to the state list `items.diplomas`; the chip names it by its item def ("+1
+  // Diploma", js/ui/components.js finds the def whose `key` is the state key: W2-Civic request 4).
   function graduateRow(track) {
     var id = 'uofs.graduate' + TRACK_ID[track];
     var pv = M.ctx.preview(id, {});
@@ -63,7 +50,7 @@
     var ctx = M.ctx;
     var el = SR.ui.actionRow({
       id: 'transcript-graduate-' + track, hotkey: M.rows.length < 9 ? M.rows.length + 1 : null, icon: def.icon, label: 'sub.uofs.transcript.graduate',
-      gains: SR.ui.chip.gains(namedGains(pv)), costs: SR.ui.chip.costs(pv, { def: def }),
+      gains: SR.ui.chip.gains(pv), costs: SR.ui.chip.costs(pv, { def: def }),
       disabled: !pv.ok, reason: pv.reason, reasonVars: pv.vars,
       onRun: function () { if (M && M.ctx === ctx) ctx.act(id, {}); },
     });

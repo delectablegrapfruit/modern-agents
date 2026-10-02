@@ -8,8 +8,9 @@
 // wobbling) and stamp (the level-up: a rising triad onto a ringing chord; js/ui/stamp.js and the
 // results play it with the Stamp's thud). Callers: js/scenes/city.js (fall, rescue), jail.js (jail),
 // death.js and hospital.js (flatlined), js/minigames/slots.js (jackpot), js/ui/stamp.js and
-// results.js (stamp), transcript.js (degree), report.js (election_win / election_loss); promotion
-// waits for a caller (docs/requests/W2-Music.md item 1: the Stamp picks it by the stamp's key).
+// results.js (stamp), transcript.js (degree), report.js (election_win / election_loss), and
+// js/ui/stamp.js (promotion: the Stamp picks its stinger by the stamp's key, `stamp.jobs.<rank>`;
+// docs/requests/W2-Music.md item 1).
 // Original music. Pure data (Node-loadable).
 (function () {
   'use strict';

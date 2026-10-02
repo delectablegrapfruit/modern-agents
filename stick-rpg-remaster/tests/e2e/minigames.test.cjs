@@ -361,6 +361,62 @@ function install(page) {
   await E(() => { SR.save.write = window.__saveWrite; });
 
   // ------------------------------------------------------------------------------------------
+  T.section('Exit by the round\'s progress (confirmExit as a function, exitRisk; W2-Night request 7)');
+  // An engine may answer the exit question from the round's progress (the def's confirmExit as a
+  // function), or its instance may answer at once without side effects (exitRisk()): blackjack asks
+  // only while a hand is out (its stake would be lost), and leaves at once between hands.
+  await E(() => {
+    window.__live = 0;
+    window.__asked = [];
+    if (!SR.reg.minigame.test_exitfn) {
+      SR.minigame.register('test_exitfn', {
+        title: 'mg.frame.paused',
+        confirmExit: function (progress, params) { window.__asked.push({ progress, mark: params && params.mark }); return !!(progress && progress.live > 0); },
+        create: function () {
+          return { update() {}, render() {}, onAction() {}, destroy() {}, progress() { return { live: window.__live }; } };
+        },
+        forfeit: function (params, progress) { return { lost: (progress && progress.live) || 0, exited: true }; },
+      });
+    }
+  });
+  await start('test_exitfn', { mark: 7 });
+  await E(() => { window.__live = 25; });
+  await t.clickUI('mg-exit');
+  c = await cur();
+  T.ok(c.panel === 'exit' && await E(() => window.__asked.length === 1 && window.__asked[0].progress.live === 25 && window.__asked[0].mark === 7),
+    'a hand out: Exit asks (confirmExit(progress, params) returned true)', await E(() => window.__asked));
+  T.ok(new RegExp(await E(() => window.__re('mg.frame.quitLoss').source)).test(await E(() => (document.querySelector('[data-id="mg-panel-text"]') || {}).textContent || '')),
+    'with the "this round counts as a loss" line');
+  await key('Escape');
+  await key('Escape');
+  T.eq((await cur()).panel, null, 'Esc twice resumes');
+  await E(() => { window.__live = 0; });
+  await t.clickUI('mg-exit');
+  r = await untilDone(5);
+  T.eq(r.result, { lost: 0, exited: true }, 'between hands: Exit leaves at once (no question)');
+  await E(() => {
+    window.__risk = false;
+    if (!SR.reg.minigame.test_exitrisk) {
+      SR.minigame.register('test_exitrisk', {
+        title: 'mg.frame.paused',
+        confirmExit: true,
+        create: function () { return { update() {}, render() {}, onAction() {}, destroy() {}, exitRisk() { return window.__risk; } }; },
+        forfeit: function () { return { exited: true }; },
+      });
+    }
+  });
+  await start('test_exitrisk', {});
+  await E(() => { window.__risk = true; });
+  await t.clickUI('mg-exit');
+  const asked = (await cur()).panel;
+  await key('Escape');
+  await key('Escape');
+  await E(() => { window.__risk = false; });
+  await t.clickUI('mg-exit');
+  r = await untilDone(5);
+  T.ok(asked === 'exit' && r.result && r.result.exited === true, 'an instance\'s exitRisk() answers before the def\'s confirmExit: true (asks when at risk, else leaves at once)', { asked, r: r.result });
+
+  // ------------------------------------------------------------------------------------------
   T.section('Duel · stance (debate) · mouse; the counter table and the hint');
   const table = await E(() => {
     const d = SR.reg.minigame.duel, out = {};
@@ -814,6 +870,51 @@ function install(page) {
     return { ducks: window.__ducks.slice(), open: !!SR.minigame.current() };
   });
   T.eq(own, { ducks: [], open: false }, 'a game with its own song switches to it and does not duck');
+  // W2-Civic request 5: closing a game with its own song inside a building plays the building's
+  // song as the building scene would, the named fn music.<building> first ({ id, variant }).
+  const below = await gp.evaluate(() => {
+    SR.debug.newGame({ seed: 5 });
+    SR.debug.enter('mcsticks');
+    SR.loop.step(2);
+    const calls = [], music = SR.audio.music;
+    SR.audio.music = function (id, opts) { calls.push([id, opts && opts.variant ? opts.variant : null]); return music.apply(this, arguments); };
+    const had = SR.reg.fn['music.mcsticks'];
+    const run = (label) => {
+      calls.length = 0;
+      SR.minigame.run('test_ring_song', { auto: true });
+      for (let k = 0; k < 600 && SR.minigame.current(); k++) SR.loop.step(1);
+      return { label, top: SR.scenes.top().id, calls: calls.slice() };
+    };
+    const plain = run('def.music');
+    SR.reg.fn['music.mcsticks'] = function () { return { id: 'paper_sky', variant: 'qaVariant' }; };
+    const viaFn = run('music.mcsticks');
+    if (had === undefined) delete SR.reg.fn['music.mcsticks']; else SR.reg.fn['music.mcsticks'] = had;
+    SR.audio.music = music;
+    return { plain, viaFn, song: SR.reg.building.mcsticks.music };
+  });
+  T.ok(below.plain.top === 'building' && below.plain.calls.length === 2 && below.plain.calls[1][0] === below.song,
+    'closing a game with its own song in McSticks plays the building\'s song again', below.plain);
+  T.eq(below.viaFn.calls[1], ['paper_sky', 'qaVariant'], 'a building with a music.<building> fn gets the fn\'s song and variant back (as on entering)');
+  // Blackjack between hands: nothing is at stake, so Exit leaves at once (W2-Night request 7; a hand
+  // out still asks: tests/e2e/casino.test.cjs).
+  const bj = await gp.evaluate(async () => {
+    SR.debug.newGame({ seed: 6 });
+    SR.state.money.cash = 500;
+    let res = null;
+    SR.minigame.run('blackjack', {}).then((r) => { res = r; });
+    SR.loop.step(2);
+    const c = SR.minigame.current();
+    const out = { phase: c && c.inst.peek().phase, risk: c && c.inst.exitRisk() };
+    document.querySelector('[data-id="mg-exit"]').click();
+    SR.loop.step(2);
+    out.panel = SR.minigame.current() ? SR.minigame.current().panel : 'closed';
+    for (let k = 0; k < 200 && SR.minigame.current(); k++) SR.loop.step(1);
+    out.open = !!SR.minigame.current();
+    await new Promise((ok) => setTimeout(ok, 0));   // run()'s promise settles after the frame closes
+    out.exited = !!(res && res.exited);
+    return out;
+  });
+  T.eq(bj, { phase: 'bet', risk: false, panel: 'closed', open: false, exited: true }, 'blackjack between hands: Exit leaves at once, without the "counts as a loss" question');
   T.eq(g.errors(), [], 'index.html: zero console errors after a round');
   await g.close();
 

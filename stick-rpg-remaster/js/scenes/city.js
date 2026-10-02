@@ -39,6 +39,7 @@
   var MINI = 184;                            // the minimap (UI.md §2.2)
   var MINI_TOP_TOUCH = 104;                  // touch layout: the minimap under the HUD
   var BARK_AFTER_HOP = 0.9;                  // s a hopped person's "Hey!" stays after the hop
+  var LEAN = 0.1, LEAN_SEC = 0.3;            // UI.md §5.7: the camera eases 10 % toward the speaker
   // The Fold Rescue drawn over the frame (ART_AUDIO §12): the stick shrinks to 40 % and spins 1.5
   // turns while it drops; the plane swoops in from the side, catches it and carries it home.
   var FOLD_OUT = 70, FOLD_SINK = 300, FOLD_SCALE = 0.4, FOLD_TURNS = 1.5;
@@ -70,7 +71,8 @@
     unsubs: [], world: null, onDown: null, onUp: null, tap: null,
     song: null, variant: null, audioT: 0, bed: -1, wind: -1,
     phase: 'none', saved: null, hits: 0, crashes: 0, plane: null, midnight: 0, midnightOf: null, left: -1,
-    talkCache: {}, talking: false, entered: false,
+    talkCache: {}, talking: false, talkAt: null, entered: false,
+    lean: { on: false, x0: 0, y0: 0, t0: 0, k: 0 },
     // One key fires several actions (E, Enter, Space, A: interact then confirm; Esc: back then
     // pause), all within one input event. `swallow` is the key whose other actions the city keeps
     // from the dialog it just opened (until that key is released); `arrived` is true while the
@@ -439,6 +441,7 @@
     choices.push({ id: 'leave', label: 'ui.leave', variant: 'ghost' });
     var g = greeting(id);
     C.talking = true;
+    C.talkAt = target.entity && typeof target.entity.x === 'number' ? { x: target.entity.x, y: target.entity.y } : null;
     hidePrompt();
     SR.ui.dialog.open({ id: 'street-' + id, person: id, text: g.key, vars: g.vars, choices: choices, cancel: 'leave' }).then(function (r) {
       C.talking = false;
@@ -557,11 +560,11 @@
     if (C.skateOn) { C.skateOn = false; inject('skate', false); }
     if (C.touch && C.touch.skate) C.touch.skate.setAttribute('aria-pressed', 'false');
   }
+  // The cluster's and the minimap's look is in css/components.css (.city-touch, .city-touch-btn,
+  // .city-minimap; W2-City request 3); each button's size and place stay on the element.
   function touchButton(id, action, size, label, aria, icon, pos) {
     var h = D().h, b = h('button', { type: 'button', class: 'btn btn--' + (size > 64 ? 'primary' : 'secondary') + ' city-touch-btn', 'data-id': 'touch-' + id,
-      'aria-label': txt(aria), style: Object.assign({ position: 'absolute', width: size + 'px', height: size + 'px', minHeight: size + 'px', padding: '0',
-        borderRadius: 'var(--r-pill)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px',
-        pointerEvents: 'auto', touchAction: 'none' }, pos) },
+      'aria-label': txt(aria), style: Object.assign({ width: size + 'px', height: size + 'px', minHeight: size + 'px' }, pos) },
       D().icon(icon, size > 64 ? 32 : 24), h('span', { class: 't-small', 'aria-hidden': 'true' }, txt(label)));
     if (action === 'skate') {
       b.setAttribute('aria-pressed', 'false');
@@ -583,8 +586,7 @@
   function buildTouch() {
     var h = D().h;
     // One row at the bottom right (Car, Skate, Action), so it fits under the minimap on a short phone.
-    var box = h('div', { class: 'city-touch', 'data-id': 'city-touch', role: 'group', 'aria-label': txt('act.world.touch'),
-      style: { position: 'absolute', right: '16px', bottom: '16px', width: '272px', height: '96px', pointerEvents: 'none', zIndex: 'var(--z-hud)' } });
+    var box = h('div', { class: 'city-touch', 'data-id': 'city-touch', role: 'group', 'aria-label': txt('act.world.touch') });
     box.action = touchButton('action', 'interact', 96, 'act.world.action', 'act.world.actionAria', 'talk', { right: '0', bottom: '0' });
     box.skate = touchButton('skate', 'skate', 64, 'act.world.skate', 'act.world.skateAria', 'skateboard', { right: '112px', bottom: '16px' });
     box.car = touchButton('car', 'car', 64, 'act.world.car', 'act.world.carAria', 'car', { right: '192px', bottom: '16px' });
@@ -596,10 +598,8 @@
   // ---- the minimap (UI.md §4.1) ----
   function buildMinimap() {
     var h = D().h;
-    var cv = h('canvas', { 'data-id': 'minimap-canvas', 'aria-hidden': 'true', style: { width: MINI + 'px', height: MINI + 'px', display: 'block' } });
-    var wrap = h('button', { type: 'button', class: 'city-minimap paper', 'data-id': 'minimap', 'aria-label': txt('act.world.minimapOpen'), tabindex: '-1',
-      style: { position: 'absolute', right: '16px', bottom: '16px', width: MINI + 'px', height: MINI + 'px', padding: '0', border: 'var(--line)',
-        borderRadius: 'var(--r-m)', background: 'var(--paper-0)', boxShadow: 'var(--e-2)', overflow: 'hidden', cursor: 'pointer', zIndex: 'var(--z-hud)' } }, cv);
+    var cv = h('canvas', { 'data-id': 'minimap-canvas', 'aria-hidden': 'true' });
+    var wrap = h('button', { type: 'button', class: 'city-minimap paper', 'data-id': 'minimap', 'aria-label': txt('act.world.minimapOpen'), tabindex: '-1' }, cv);
     wrap.addEventListener('click', function () { openOverlay('pocket', { tab: 'map' }); });
     C.miniCanvas = cv;
     return wrap;
@@ -621,8 +621,9 @@
     if (C.mini) {
       C.miniOff = setting('game.minimap') === false;
       C.mini.hidden = C.miniOff || hudMinimal();
+      // Touch: under the HUD at the top right (the cluster takes the bottom); else the stylesheet's corner.
       C.mini.style.top = touch ? MINI_TOP_TOUCH + 'px' : '';
-      C.mini.style.bottom = touch ? '' : '16px';
+      C.mini.style.bottom = touch ? 'auto' : '';
       sizeMinimap();
       if (!C.mini.hidden && SR.render.minimap) SR.render.minimap.tick(C.miniCanvas, 0, true);
     }
@@ -830,10 +831,37 @@
     ctx.restore();
   }
 
+  // ---- UI.md §5.7: the camera eases 10 % toward the speaker (W2-Street request 7) ----
+  // The Dialog sheet blocks the update (the world, the clock and the camera's spring stand still),
+  // so the city's render moves the camera itself: from where it stood when the sheet opened, 10 % of
+  // the way toward the person over LEAN_SEC (smoothstep, by the loop's clock), x / y and px / py
+  // together so the frame's interpolation does not jitter. Reduced Motion: it stays put; SR.debug
+  // fast mode: at once. Closing the sheet hands the camera back to its spring.
+  // The lean holds while the conversation lasts, also under an overlay opened over the sheet (the
+  // Pocket's Bag), so it never compounds when that overlay closes.
+  function speakerNow() {
+    var S = W().streetnpcs, theirs = !!(S && S.talking && typeof S.speaker === 'function');
+    if ((!theirs && !C.talking) || SR.scenes.stack().indexOf('dialog') < 0) return null;
+    return theirs ? S.speaker() : C.talkAt;
+  }
+  function leanCamera() {
+    var L = C.lean, cam = W().camera, sp = W().ready && SR.state ? speakerNow() : null;
+    if (!sp || !cam) { L.on = false; return; }
+    var t = SR.loop && typeof SR.loop.time === 'number' ? SR.loop.time : 0;
+    if (!L.on) { L.on = true; L.x0 = cam.x; L.y0 = cam.y; L.t0 = t; }
+    var rm = typeof document !== 'undefined' && document.documentElement.classList.contains('rm');   // html.rm (UI.md §2)
+    var fast = !!(SR.debug && typeof SR.debug.fast === 'function' && SR.debug.fast() === true);
+    var u = rm ? 0 : fast ? 1 : Math.max(0, Math.min(1, (t - L.t0) / LEAN_SEC));
+    L.k = u * u * (3 - 2 * u) * LEAN;
+    cam.x = cam.px = L.x0 + (sp.x - L.x0) * L.k;
+    cam.y = cam.py = L.y0 + (sp.y - L.y0) * L.k;
+  }
+
   var lastT = null;
   function render(ctx, alpha) {
     if (!SR.render || typeof SR.render.frame !== 'function') return;
     barks();
+    leanCamera();
     SR.render.frame(ctx, alpha);
     var v = SR.render.lastView(), t = v && typeof v.t === 'number' ? v.t : 0, dt = lastT === null ? 0 : Math.max(0, Math.min(0.1, t - lastT));
     lastT = t;
@@ -899,8 +927,9 @@
     render: render,
     onAction: onAction,
     ui: { mount: mount, unmount: unmount },
-    /** Test hooks: the prompt now, and a talk as Interact would start it. */
+    /** Test hooks: the prompt now, a talk as Interact would start it, the camera's lean toward a speaker. */
     debug: { prompt: function () { return computePrompt(); }, talk: function (id) { talk({ id: id }); }, songFor: songFor,
+      lean: function () { return { on: C.lean.on, x0: C.lean.x0, y0: C.lean.y0, k: C.lean.k, speaker: speakerNow() }; },
       song: function () { return { id: C.song, variant: C.variant, bed: C.bed, wind: C.wind }; } },
   });
 })();

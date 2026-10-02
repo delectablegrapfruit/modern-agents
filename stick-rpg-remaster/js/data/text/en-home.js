@@ -74,6 +74,8 @@
     'card.home.forSaleSign': 'FOR SALE',
     'card.home.signPrice': '{price}',
     'card.home.signRealty': 'Paperweight Realty',
+    // the card's title at a For Sale door (title.home; UI §5.6 "a For Sale card")
+    'card.home.title.forSale': 'For Sale',
 
     // ---- toasts (≤ 80) -------------------------------------------------------------------------------
     'toast.home.saved': 'Game saved to slot {slot}.',

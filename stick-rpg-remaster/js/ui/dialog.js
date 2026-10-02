@@ -167,6 +167,14 @@
       }
       if (picks && e.skipCode === code) return;
       if (SR.ui.focus.handle(action, ev)) return;
+      // The Pocket opens over the sheet by key and pad as the HUD's button does (GDD §6.4: the Bag's
+      // Give works while a street dialog is open; W2-Pocket request 2). Tab is `pocket` everywhere
+      // but only moves focus here (D57); a dialog may turn this off with params.pocket === false.
+      if (!(ev && (ev.repeat || ev.down === false)) && e.params.pocket !== false && SR.reg.scene.pocket &&
+          (action === 'bag' || action === 'map' || action === 'journal' || (action === 'pocket' && !(ev && ev.code === 'Tab')))) {
+        SR.scenes.push('pocket', action === 'pocket' ? {} : { tab: action });
+        return;
+      }
       var m = /^row(\d)$/.exec(action);
       if (m && !(ev && ev.repeat)) {
         var r = e.rows[Number(m[1]) - 1];
@@ -184,13 +192,14 @@
     /**
      * Opens the Dialog sheet over the current scene.
      * @param {{id: string, person: string, portrait: string, name: string, text: string, vars: object,
-     *   mood: string, voice: (number|string), cancel: (string|false),
+     *   mood: string, voice: (number|string), cancel: (string|false), pocket: boolean,
      *   choices: {id: string, label: string, vars: object, action: string, params: object,
      *     chips: object[], chance: number, disabled: boolean, reason: string, variant: string,
      *     number: {min: number, max: number, step: number, label: string, value: number, money: boolean}}[]}} opts
      *   action: an action id previewed for the choice's chips and enabled state (the caller runs
      *   it); cancel: the choice id Esc returns (default: 'leave' when offered, else Esc does
-     *   nothing), false: Esc does nothing
+     *   nothing), false: Esc does nothing; pocket: false keeps the Pocket's keys (Tab / View, B, M,
+     *   J) from opening it over this sheet (default: they open it, on the Bag for a street person)
      * @returns {Promise<{choice: (string|null), n: (number|undefined)}>}
      */
     open: function (opts) {
@@ -200,5 +209,7 @@
     refresh: function () { var e = stack[stack.length - 1]; if (e) e.rows.forEach(function (r) { r.render(); }); },
     /** @returns {boolean} a dialog is open. */
     isOpen: function () { return stack.length > 0; },
+    /** @returns {object|null} the top dialog's params ({ id, person, ... }), or null (W2-Pocket request 2). */
+    current: function () { var e = stack[stack.length - 1]; return e ? e.params : null; },
   };
 })();

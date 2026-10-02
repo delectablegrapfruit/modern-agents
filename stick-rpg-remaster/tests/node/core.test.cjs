@@ -47,7 +47,7 @@ T.section('loader');
   T.ok(!all.files.includes('js/art/draw.js') && !all.files.includes('js/ui/card.js'), 'mode all excludes non-registration files');
   T.eq(L.indexScripts().filter((f) => !L.files('all').includes(f)).length + all.files.length, L.indexScripts().length, 'index scripts partition into mode all and the rest');
   T.eq(all.SR.registry.file('features', 'weather'), 'js/data/features.js', 'a registration records its file');
-  T.eq(Object.keys(all.SR.features).length, 30, 'the 30 feature flags of Appendix B are registered');
+  T.eq(Object.keys(all.SR.features).length, 31, 'the 31 feature flags of Appendix B are registered (accessories since the wave-2 integration, D68)');
   T.ok(Object.keys(all.SR.features).every((k) => all.SR.features[k] === false), 'every flag starts off');
 
   for (const seed of [1, 2, 3]) {

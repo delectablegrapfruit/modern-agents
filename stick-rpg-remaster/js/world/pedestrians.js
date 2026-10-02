@@ -30,8 +30,9 @@
   var PLAYER_PUSH = 10;        // u of room a walker gives the player on foot
   var HOP_SEC = 0.6, BARK_SEC = 1.5;
   var REACT_R = 120, WAVE_SEC = 1.2, FLEE_X = 2;   // P1 reactions (cityReacts)
-  // GDD §3.11's numbers until tuning.crowd has them (docs/requests/W2-City.md 6): idle people within
-  // 80 u turn toward the player; at karma ≤ -50 one walker in five scurries (rolled once per encounter).
+  // GDD §3.11: idle people within 80 u turn toward the player; at karma ≤ -50 one walker in five
+  // scurries (rolled once per encounter). Read from tuning.crowd.turnRange / .scurry (B-22, W2-City
+  // request 6); these are the fallbacks for a table without the rows.
   var TURN_R = 80, SCURRY_P = 0.2;
   var BARK_R = 200;            // P1: a bark comes from someone this close
   var FAMOUS_P = 0.4;          // P1: how often a walker who recognises an Executive (or better) says so

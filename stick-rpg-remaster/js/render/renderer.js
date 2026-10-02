@@ -1,6 +1,6 @@
 // js/render/renderer.js — owner: W1-G. The city painter's frame (ARCHITECTURE §9.1): the view
-// (camera, zoom, device scale), the frame order (sky → ground chunks → shadows → Y-sorted pass →
-// grade → emissive → weather → post → world UI → particles), invalidation, cache stats, warm-up,
+// (camera, zoom, device scale), the frame order (sky → ground chunks → skid marks → shadows →
+// Y-sorted pass → grade → emissive → weather → post → world UI → particles), invalidation, cache stats, warm-up,
 // the shared colour and palette helpers (SR.render.lib) and the debug overlays (projected rects
 // and porches, the lighting hour scrubber). Canvas only; nothing runs at load time.
 (function () {
@@ -492,7 +492,7 @@
   // Frame
   // ---------------------------------------------------------------------------------------------
 
-  var last = { t: -1, ms: 0, items: 0, buildings: 0, props: 0, actors: 0, images: 0, fills: 0, parts: {} };
+  var last = { t: -1, ms: 0, items: 0, buildings: 0, props: 0, actors: 0, skids: 0, images: 0, fills: 0, parts: {} };
   var debug = { projected: false, hours: false, scrubber: null, flagTime: false };
 
   function call(mod, fn, a, b, c) {
@@ -505,6 +505,29 @@
     var t1 = performance.now();
     last.parts[name] = t1 - t0;
     return t1;
+  }
+
+  /**
+   * The skid marks of hard stops (ART_AUDIO §8; W2-City request 5), on the ground under everything
+   * else: SR.world.traffic.skids ({ kind, a, x, y, len, alpha }, at most 16, fading over 8 s) drawn
+   * with SR.art.vehicles.skid in the world transform. Traffic decides when a car brakes hard.
+   * @returns {number} the marks drawn
+   */
+  function skids(ctx) {
+    var Tr = SR.world && SR.world.traffic, V = SR.art && SR.art.vehicles;
+    var list = Tr && Tr.skids;
+    if (!list || !list.length || !V || typeof V.skid !== 'function') return 0;
+    var n = 0, PAD = 200;   // u: a mark (≤ 140 u, traffic's SKID_LEN, plus the car's rear) ending off screen still shows
+    ctx.save();
+    worldTransform(ctx);
+    for (var i = 0; i < list.length; i++) {
+      var k = list[i];
+      if (!k || !(k.alpha > 0) || k.x < view.x0 - PAD || k.x > view.x1 + PAD || k.y < view.y0 - PAD || k.y > view.y1 + PAD) continue;
+      V.skid(ctx, k.kind, k.a, k.x, k.y, k.len, k.alpha);
+      n++;
+    }
+    ctx.restore();
+    return n;
   }
 
   /**
@@ -541,6 +564,7 @@
     if (m) {
       call('ground', 'draw', ctx, view, m);
       tp = mark('ground', tp);
+      last.skids = skids(ctx);
       if (R.shadows && typeof R.shadows.draw === 'function') { R.shadows.draw(ctx, view, m); tp = mark('shadows', tp); }
       ysort(ctx, m, alpha);
       tp = mark('ysort', tp);
@@ -762,7 +786,7 @@
       particles: pa,
       frame: {
         ms: last.ms, parts: Object.assign({}, last.parts), items: last.items, buildings: last.buildings,
-        props: last.props, actors: last.actors, images: last.images, fills: last.fills,
+        props: last.props, actors: last.actors, skids: last.skids, images: last.images, fills: last.fills,
       },
       view: { x: view.x, y: view.y, zoom: view.zoom, bakeZoom: view.bz, s: view.s, ppu: view.ppu, min: view.min, day: view.day, light: view.light },
       bytes: (g.bytes || 0) + (b.px || 0) * 4 + small * 4 + (sk.bytes || 0),

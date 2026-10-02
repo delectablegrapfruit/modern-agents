@@ -55,7 +55,12 @@
     var tm = SR.tuning && SR.tuning.time;
     return tm && typeof tm.repeatHoldMs === 'number' ? tm.repeatHoldMs : REPEAT_HOLD_FALLBACK_MS;
   }
-  function isRepeatable(def) { return !!(def && def.repeatable && !def.confirm && !def.minigame && !def.screen); }
+  // A def's `minigame` is its Hustle button (CONTRACT §8.2), a separate button on the row: the row
+  // itself runs the plain (Auto) action, so a shift may repeat while the Hustle never does (GDD §4.4
+  // lists shifts among the repeatable actions; docs/requests/W2-Food.md 2).
+  // A row whose run opens a minigame (an `open` effect) never repeats (CONTRACT D61).
+  function opensMinigame(def) { return (def.effects || []).some(function (e) { return Array.isArray(e) && e[0] === 'open'; }); }
+  function isRepeatable(def) { return !!(def && def.repeatable && !def.confirm && !def.screen && !opensMinigame(def)); }
 
   // ------------------------------------------------------------------ read-only state view
   var roCache = typeof WeakMap === 'function' ? new WeakMap() : null;
@@ -80,7 +85,8 @@
    * @param {{id: string, title: string, brand: string, portrait: string, greeting: string,
    *   greetingVars: object, voice: (number|string), onLeave: function, readout: string}} o brand: a CSS
    *   colour from SR.art.palette (a palette key's value) or a token var()
-   * @returns {HTMLElement} el.body, el.setGreeting(text, vars), el.setReadout(text), el.leave (button)
+   * @returns {HTMLElement} el.body, el.setGreeting(text, vars), el.setTitle(text), el.setReadout(text),
+   *   el.leave (button); el.greetingKey: the greeting's text key (or text) now shown
    */
   function card(o) {
     o = o || {};
@@ -89,7 +95,8 @@
     var el = h('section', { class: 'bcard paper', 'data-id': o.id || 'card', role: 'region', 'aria-label': title,
       style: o.brand ? { '--brand': o.brand } : null });
     el.appendChild(h('div', { class: 'bcard-strip', 'aria-hidden': 'true' }));
-    var head = h('header', { class: 'bcard-head' }, h('h2', { class: 'bcard-title t-h3', 'data-id': 'card-title' }, title));
+    var titleEl = h('h2', { class: 'bcard-title t-h3', 'data-id': 'card-title' }, title);
+    var head = h('header', { class: 'bcard-head' }, titleEl);
     if (o.portrait) head.appendChild(SR.ui.portrait({ id: 'card-portrait', person: o.portrait, size: 56 }));
     el.appendChild(head);
     var bubbleSlot = h('div', { class: 'bcard-speech' });
@@ -101,9 +108,11 @@
       onClick: function () { if (o.onLeave) o.onLeave(); } });
     el.appendChild(h('footer', { class: 'bcard-foot' }, el.leave, readout));
     el.speech = null;
+    el.greetingKey = null;
     el.setGreeting = function (text, vars) {
       D().clear(bubbleSlot);
       el.speech = null;
+      el.greetingKey = text || null;
       if (!text) { bubbleSlot.hidden = true; return null; }
       bubbleSlot.hidden = false;
       el.speech = SR.ui.speech({ id: 'card-greeting', text: text, vars: vars, voice: o.voice, tail: 'right' });
@@ -111,6 +120,12 @@
       return el.speech;
     };
     el.setReadout = function (text) { readout.textContent = text; };
+    /** Renames the card (a home door's mode: "For Sale"; docs/requests/W2-Home.md 7). */
+    el.setTitle = function (text, vars) {
+      var s = t(text, vars);
+      titleEl.textContent = s;
+      el.setAttribute('aria-label', s);
+    };
     el.setGreeting(o.greeting, o.greetingVars);
     return el;
   }
@@ -163,10 +178,12 @@
    * Result shakes the origin, plays the error sound and shows the reason as a warning toast.
    * @param {object} res a Result of SR.act
    * @param {HTMLElement=} origin the row (or control) that ran it
-   * @param {{silent: boolean, flash: boolean, hold: {statShown: boolean}, repeat: boolean}=} opts
-   *   flash false: the caller flashes the row itself; hold: the record of a hold-to-repeat, shared
-   *   by its runs: stat stamps show until one has shown in that hold, later ones are coalesced
-   *   (CONTRACT D47); repeat without a hold: a repeat run whose stat stamps are coalesced
+   * @param {{silent: boolean, flash: boolean, hold: {statShown: boolean}, repeat: boolean,
+   *   flyChips: boolean}=} opts flash false: the caller flashes the row itself; hold: the record of a
+   *   hold-to-repeat, shared by its runs: stat stamps show until one has shown in that hold, later
+   *   ones are coalesced (CONTRACT D47); repeat without a hold: a repeat run whose stat stamps are
+   *   coalesced; flyChips false: no chips fly to the HUD (a Result that opens a minigame: the frame
+   *   opens over the row; docs/requests/W2-Night.md 3). Default: chips fly unless res.open is set.
    * @returns {object} res
    */
   function feedback(res, origin, opts) {
@@ -179,7 +196,7 @@
       return res;
     }
     if (opts.flash !== false && origin && typeof origin.flash === 'function') origin.flash();
-    flyChips(res.deltas, origin && origin.main ? origin.main : origin);
+    if (opts.flyChips !== undefined ? opts.flyChips !== false : !res.open) flyChips(res.deltas, origin && origin.main ? origin.main : origin);
     (res.toasts || []).forEach(function (x) { SR.ui.toast({ key: x.key, vars: x.vars, kind: x.kind || 'info' }); });
     // Stamps: the rules' own (a stat gain ≥ 2 raises stamp.stats.<stat>; promotions, degrees ...),
     // plus a stat stamp derived from the deltas when the rules raised none. A repeat stops at any
@@ -195,7 +212,8 @@
       if (m) seen[m[1]] = true;
       if (m && !statOk) return;
       if (m) statShown = true;
-      SR.ui.stamp({ text: t(x.key, x.vars), kind: x.kind || (m ? statStampKind(m[1]) : 'primary'), stat: !!m });
+      // key too: the Stamp picks its stinger by it (a promotion's fanfare, none for BOOKED).
+      SR.ui.stamp({ key: x.key, text: t(x.key, x.vars), kind: x.kind || (m ? statStampKind(m[1]) : 'primary'), stat: !!m });
     });
     (res.deltas || []).forEach(function (d) {
       if (d && d.kind === 'stat' && d.n >= STAT_STAMP_MIN && SR.ui.STATS.indexOf(d.key) >= 0 && !seen[d.key]) {
@@ -321,6 +339,13 @@
       el.hidden = !stack.length;
       renderCrumbs();
       body.scrollTop = 0;
+      // The host lives in a scrolling body (the card's .bcard-body, the Pocket's page): a sub-screen
+      // opened from a row low in the list must not inherit the list's offset under the sticky
+      // Breadcrumb (docs/requests/W2-Money.md 2). Up to the scene root.
+      for (var p = root; p && p !== document.body && p.nodeType === 1; p = p.parentElement) {
+        if (p.scrollTop) p.scrollTop = 0;
+        if (p.hasAttribute('data-scene')) break;
+      }
       var tp = top();
       if (tp && tp.el) {
         // The sub-screen's [data-autofocus] control (Button { autofocus }), else its first enabled
@@ -460,7 +485,7 @@
       var res = act(open.resolve, result);
       feedback(res, null);
       if (after) after(res);
-      if (C) refreshRows(true);
+      if (C) { if (res && res.ok) followState(); refreshRows(true); }
     }, function (e) { minigameRefused(open.minigame, e); });
   }
 
@@ -481,14 +506,28 @@
     return D().paint('bld.' + (def.exteriorId || def.id) + '.walls') || D().paint('bld.' + def.id + '.walls') || null;
   }
 
-  function pickGreeting(def, params) {
+  function hasGreetFn(def) { return !!(SR.reg.fn && typeof SR.reg.fn['greet.' + def.id] === 'function' && SR.state); }
+
+  /**
+   * Runs the building's greeting fn (CONTRACT §15.4). seed: the visit's seed: the fn draws its
+   * variant from a stream made from it, so asking again during the visit gives the same variant
+   * for the same situation, and only a change of situation (a nomination accepted, a home bought)
+   * changes the key. @returns {{key: string, vars: object}|null|undefined} undefined: no fn
+   */
+  function greetFn(def, params, seed) {
+    if (!hasGreetFn(def)) return undefined;
     var fnName = 'greet.' + def.id;
-    if (SR.reg.fn && typeof SR.reg.fn[fnName] === 'function' && SR.state) {
-      try {
-        var g = SR.reg.fn[fnName](SR.state, params || {}, { rng: SR.rng.fx, now: SR.state.clock.min, source: 'ui' });
-        if (g) return typeof g === 'string' ? { key: g } : g;
-      } catch (e) { SR.util.warnOnce('ui.greet.' + def.id, 'SR.ui.card: ' + fnName + ' threw: ' + e.message); }
-    }
+    var rng = seed !== undefined && SR.rng && typeof SR.rng.create === 'function' ? SR.rng.create(seed) : SR.rng.fx;
+    try {
+      var g = SR.reg.fn[fnName](SR.state, params || {}, { rng: rng, now: SR.state.clock.min, source: 'ui' });
+      if (g) return typeof g === 'string' ? { key: g } : g;
+    } catch (e) { SR.util.warnOnce('ui.greet.' + def.id, 'SR.ui.card: ' + fnName + ' threw: ' + e.message); }
+    return null;
+  }
+
+  function pickGreeting(def, params, seed) {
+    var g = greetFn(def, params, seed);
+    if (g) return g;
     var list = (def.greetings || []).filter(function (x) { return typeof x === 'string' || (x && x.key); });
     if (list.length) {
       var pick = SR.rng.fx.pick(list);
@@ -498,16 +537,50 @@
     return null;
   }
 
-  /** The actions this card shows: the building's (or its mode's list, for home doors). */
+  /**
+   * The card's title: the named fn `title.<building>` (a text key by the state and the door's
+   * params: a home door's For Sale mode) when it exists, else the building's name.
+   * @returns {string} a text key
+   */
+  function titleKey(def, params) {
+    var fnName = 'title.' + def.id;
+    if (SR.reg.fn && typeof SR.reg.fn[fnName] === 'function' && SR.state) {
+      try {
+        var k = SR.reg.fn[fnName](SR.state, params || {}, { source: 'ui' });
+        if (k && typeof k === 'object') k = k.key;
+        if (typeof k === 'string' && k) return k;
+      } catch (e) { SR.util.warnOnce('ui.title.' + def.id, 'SR.ui.card: ' + fnName + ' threw: ' + e.message); }
+    }
+    return def.name || 'place.' + def.id;
+  }
+
+  /**
+   * After an action (or a home change at the door), the greeting fn and the title follow the new
+   * situation: the speech is re-typed only when the greeting's key changed, so a variant never
+   * re-types after every action (docs/requests/W2-Civic.md 6, W2-Home.md 7).
+   */
+  function followState() {
+    if (!C || !C.el) return;
+    var g = greetFn(C.def, C.sceneParams.params, C.greetSeed);
+    if (g && g.key && g.key !== C.el.greetingKey) C.el.setGreeting(g.key, g.vars);
+    var k = titleKey(C.def, C.sceneParams.params);
+    if (k !== C.titleKey) { C.titleKey = k; C.el.setTitle(k); }
+  }
+
+  /**
+   * The actions this card shows: the building's (or its mode's list, for home doors). An action
+   * marked `row: false` is never a row: a sub-screen presents and commits it through ctx.act (the
+   * Election Office's campaign actions, the bank's and the goods' commits; W2-Civic request 1).
+   */
   function cardActions() {
     var def = C.def, mode = C.sceneParams.params && C.sceneParams.params.mode;
     var modes = def.modes;
     if (modes && mode && modes[mode]) {
       var ids = Array.isArray(modes[mode]) ? modes[mode] : modes[mode].actions || [];
-      return ids.map(function (id) { return SR.reg.action[id]; }).filter(Boolean);
+      return ids.map(function (id) { return SR.reg.action[id]; }).filter(function (a) { return a && a.row !== false; });
     }
     return SR.registry.entries('action').map(function (e) { return e.def; }).filter(function (a) {
-      return a.building === C.id && !/:resolve$/.test(a.id);
+      return a.building === C.id && !/:resolve$/.test(a.id) && a.row !== false;
     });
   }
 
@@ -713,6 +786,7 @@
     if (res && res.ok && C) C.last = { id: r.def.id, variant: r.variant };
     if (res && res.ok && res.open) runMinigame(res.open);
     if (C) {
+      if (res && res.ok) followState();
       refreshRows(true);
       var now = rowById(r.def.id);
       if (res && res.ok && now && !r.def.silent) now.el.flash();
@@ -911,10 +985,15 @@
     var id = sceneParams.id;
     var def = buildingDef(id);
     C = { id: id, def: def, sceneParams: { id: id, params: sceneParams.params || {} }, root: root, rows: [], variants: {},
-      hold: null, last: null, pointerDown: false, hooks: hooks || {}, unsubs: [], opener: null, ghostId: null };
-    var greet = pickGreeting(def, C.sceneParams.params);
+      hold: null, last: null, pointerDown: false, hooks: hooks || {}, unsubs: [], opener: null, ghostId: null,
+      greetSeed: undefined, titleKey: null };
+    // The visit's greeting seed (one fx draw, only for a building with a greeting fn), so the fn's
+    // variant stays put when it is asked again after an action (followState).
+    if (hasGreetFn(def)) C.greetSeed = SR.rng.fx.int(0, 0x7fffffff);
+    var greet = pickGreeting(def, C.sceneParams.params, C.greetSeed);
     var owner = def.owner && SR.reg.person && SR.reg.person[def.owner];
-    C.el = card({ id: 'card', title: def.name || 'place.' + id, brand: brandColour(def), portrait: def.portrait || def.owner || null,
+    C.titleKey = titleKey(def, C.sceneParams.params);
+    C.el = card({ id: 'card', title: C.titleKey, brand: brandColour(def), portrait: def.portrait || def.owner || null,
       greeting: greet && greet.key, greetingVars: greet && greet.vars, voice: owner && owner.voice, onLeave: leave });
     C.rowsEl = D().h('div', { class: 'bcard-rows', 'data-id': 'card-rows' });
     C.el.body.appendChild(C.rowsEl);
@@ -925,6 +1004,7 @@
         if (!C || !res || !res.ok) return;
         C.last = { id: actionId };      // a sub-screen commit is the card's last action (R refuses it)
         if (C.hooks.onResult) C.hooks.onResult(res, SR.reg.action[actionId] || { id: actionId });
+        followState();                  // e.g. the nomination accepted in the Election Office
       },
       onOpen: function () { C.rowsEl.hidden = true; C.hold = null; C.ghostId = null; SR.ui.hud.ghost(null); },
       onClose: function () {
@@ -942,6 +1022,9 @@
     ['time:advanced', 'money:changed', 'stat:changed', 'item:changed', 'job:changed', 'home:changed', 'karma:changed', 'day:started'].forEach(function (name) {
       C.unsubs.push(SR.events.on(name, function () { scheduleRefresh(); }));
     });
+    // A home door's rows switch in place with its mode (Tour → Buy, Move in): the greeting and the
+    // title follow (W2-Home request 7), also when the change came from a sub-screen or the Pocket.
+    C.unsubs.push(SR.events.on('home:changed', function () { Promise.resolve().then(followState); }));
     if (sceneParams.screen) C.sub.push(sceneParams.screen, sceneParams.screenParams || {});
     return C.el;
   }

@@ -260,7 +260,18 @@
     newsbox: [24, 30, 12, 26], billboard: [140, 120, 70, 108], sawhorse: [76, 44, 38, 36], statue: [80, 110, 40, 96],
     chessTable: [52, 44, 26, 34], binoculars: [30, 52, 15, 46], plinth: [80, 64, 40, 50] };
 
-  function propKey(p) { return p.type + '|' + (p.variant || 0) + '|' + (p.a || 0); }
+  /**
+   * A prop sprite's cache key: type, variant, angle and, when SR.art.props names one, the state its
+   * look depends on (the statue on the plinth, the wanted posters; '' for a static prop), so a
+   * reacting prop re-bakes when the state changes (W2-Exterior request 3).
+   */
+  function propKey(p) {
+    var A = SR.art.props, sk = '';
+    if (A && typeof A.stateKey === 'function') {
+      try { sk = A.stateKey(p.type, p.variant || 0, p.a || 0) || ''; } catch (e) { sk = ''; }
+    }
+    return p.type + '|' + (p.variant || 0) + '|' + (p.a || 0) + '|' + sk;
+  }
 
   function propSize(type, variant, a) {
     var A = SR.art.props;

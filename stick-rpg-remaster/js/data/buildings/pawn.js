@@ -82,8 +82,8 @@
 
   // Sell (P1 `shopsPlus`): Vinnie buys back anything he sells at 40 % of its price (55 % with the
   // Smooth Talker perk; B-06 pawnBuyback), one item or one box of ammo at a time.
-  // row: false (W2-Civic request 1, the lead's card.js): never a card row; until the card reads it,
-  // `hidden` without params.item keeps it off the card.
+  // row: false: never a card row (CONTRACT D62); `hidden` without params.item also keeps it out of
+  // a preview without its object.
   SR.def.action('pawn.sell', {
     building: 'pawn', group: 'services', order: 20, icon: 'sell', label: 'act.pawn.sell', p: 1, feature: 'shopsPlus', row: false,
     hidden: [['fn', 'pawn.noItem']],

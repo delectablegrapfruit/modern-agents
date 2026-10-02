@@ -18,6 +18,35 @@
 
   function D() { return SR.ui.dom; }
 
+  // The stinger a stamp plays, by its text key (ART_AUDIO §13.4; docs/requests/W2-Music.md 1 and
+  // W2-Transit.md 7): a promotion's brass fanfare carries the leitmotif; a degree, FLATLINED and
+  // BOOKED have their own scene stingers (the transcript's organ, the dirge, the jail sting), so
+  // their stamps only thud; everything else plays the level-up triad. The first match wins; an
+  // explicit o.sting (false, or a stinger id) overrides the table.
+  var STINGERS = [
+    [/^stamp\.jobs\.hired$/, 'stamp'],
+    [/^stamp\.jobs\./, 'promotion'],
+    [/^stamp\.training\./, null],
+    [/^stamp\.hospital\.flatlined$/, null],
+    [/^stamp\.crime\.jailed$/, null],
+  ];
+  /** @returns {string|null} the stinger id for a stamp (without 'stingers.'), or null for none. */
+  function stingerFor(o) {
+    if (o.sting === false || o.sting === null) return null;
+    if (typeof o.sting === 'string') return o.sting;
+    var key = typeof o.key === 'string' ? o.key : '';
+    for (var i = 0; i < STINGERS.length; i++) if (STINGERS[i][0].test(key)) return STINGERS[i][1];
+    return 'stamp';
+  }
+  function playStinger(o) {
+    var id = stingerFor(o);
+    var songs = SR.reg.song || {};
+    if (id && !songs['stingers.' + id] && id !== 'stamp') id = 'stamp';   // a missing fanfare falls back to the triad
+    if (!id || !songs['stingers.' + id] || !SR.audio || typeof SR.audio.stinger !== 'function') return null;
+    try { SR.audio.stinger(id); } catch (e) { SR.util.warnOnce('ui.stamp.stinger', 'SR.ui.stamp: stinger failed: ' + e.message); }
+    return id;
+  }
+
   function build(o) {
     var text = o.text !== undefined ? D().t(o.text, o.vars) : D().t(o.key, o.vars);
     var size = o.size || (text.length > 14 ? 64 : 96);
@@ -48,11 +77,9 @@
     cur = { el: el, o: o, timer: 0, at: D().now() };
     D().announce(el.stampText);
     // The thud (W1-S's `stamp` recipe; `confirm`, the ink-stamp click, until it exists), the
-    // level-up stinger once W2-Music registers `stingers.stamp`, and the 4 px paper jolt (W1-G).
+    // stamp's stinger (the table above; registered stingers only), and the 4 px paper jolt (W1-G).
     if (!D().sfx('stamp')) D().sfx('confirm');
-    if (SR.audio && typeof SR.audio.stinger === 'function' && SR.reg.song && SR.reg.song['stingers.stamp']) {
-      try { SR.audio.stinger('stamp'); } catch (e) { SR.util.warnOnce('ui.stamp.stinger', 'SR.ui.stamp: stinger failed: ' + e.message); }
-    }
+    cur.stinger = playStinger(o);
     if (SR.render && SR.render.fx && typeof SR.render.fx.jolt === 'function' && !D().reduced()) {
       try { SR.render.fx.jolt(); } catch (e2) { /* render core not landed */ }
     }
@@ -80,8 +107,10 @@
 
   /**
    * Queues a stamp. @param {{key: string, vars: object, text: string, kind: string, size: number,
-   * id: string, static: boolean, stat: boolean}} o kind: ink | str | int | cha | money | hp | primary;
-   * static: return the element only (galleries); stat: a stat-gain stamp (see busy)
+   * id: string, static: boolean, stat: boolean, sting: (boolean|string)}} o kind: ink | str | int |
+   * cha | money | hp | primary; static: return the element only (galleries); stat: a stat-gain stamp
+   * (see busy); key: the text key (also picks the stinger, even when text is given); sting: false
+   * lands it without a stinger, a stinger id ('promotion') plays that one
    * @returns {HTMLElement|null} the element when static
    */
   function stamp(o) {
@@ -117,6 +146,10 @@
   stamp.clear = function () { queue.length = 0; finish(); };
   /** @returns {string|null} the current stamp's text (tests, SR.debug.ui). */
   stamp.current = function () { return cur ? cur.el.stampText : null; };
+  /** @returns {string|null} the stinger the current stamp played (tests), or null. */
+  stamp.stinger = function () { return cur ? cur.stinger || null : null; };
+  /** @returns {string|null} the stinger a stamp with these options would play (before registration checks). */
+  stamp.stingerFor = function (o) { return stingerFor(o || {}); };
 
   SR.ui.stamp = stamp;
 

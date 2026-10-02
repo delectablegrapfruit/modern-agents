@@ -649,10 +649,19 @@ T.section('boot-time vocabulary check (D28: warns, never throws)');
   res.SR.def.action('bad.row', { building: 'bad', group: 'eat', p: 1, requires: [['noSuchCond']], effects: [['noSuchEffect'], ['check', 'x', 'int', 5, [['alsoBad']], []]] });
   res.SR.def.action('bad.repeat', { building: 'bad', group: 'crime', p: 0, repeatable: true, confirm: 'confirm.bad.repeat', effects: [] });
   res.SR.def.action('good.repeat', { building: 'bad', group: 'eat', p: 0, repeatable: true, effects: [['heal', 1]] });
+  // D61 (W2-Food 2): a Hustle (`minigame`, the row's own button) does not block repeat; a row whose
+  // run opens a minigame (an `open` effect, nested branches too) or opens a sub-screen does.
+  res.SR.def.action('good.hustle', { building: 'bad', group: 'work', p: 0, repeatable: true, minigame: { skin: 'orderup', auto: true }, effects: [['heal', 1]] });
+  res.SR.def.action('bad.opens', { building: 'bad', group: 'special', p: 0, repeatable: true, effects: [['open', 'darts', {}]] });
+  res.SR.def.action('bad.opensNested', { building: 'bad', group: 'special', p: 0, repeatable: true, effects: [['chance', 0.5, [['heal', 1]], [['check', 'x', 'int', 5, [], [['open', 'darts', {}]]]]]] });
+  res.SR.def.action('bad.screen', { building: 'bad', group: 'services', p: 0, repeatable: true, screen: 'bad.screen', effects: [] });
   res.SR.boot({ headless: true });
   T.ok(warns.some((w) => /noSuchCond/.test(w)) && warns.some((w) => /noSuchEffect/.test(w)) && warns.some((w) => /alsoBad/.test(w)), 'unknown condition and effect names are warned (nested ones too)');
   T.ok(warns.some((w) => /bad\.row.*no feature/.test(w)), 'a P1 action without a feature flag is warned');
   T.ok(warns.some((w) => /bad\.repeat.*repeatable/.test(w)) && !warns.some((w) => /good\.repeat/.test(w)), 'a repeatable row with a confirm is warned (a plain one is not)');
+  T.ok(!warns.some((w) => /good\.hustle/.test(w)), 'D61: a repeatable shift row with a Hustle button (minigame) is not warned');
+  T.eq(['bad.opens', 'bad.opensNested', 'bad.screen'].map((id) => warns.some((w) => w.indexOf('"' + id + '" is repeatable') >= 0)), [true, true, true],
+    'a repeatable row with an open effect (nested in chance / check too) or a screen is warned');
   T.ok(res.SR.booted, 'and boot completes');
 }
 

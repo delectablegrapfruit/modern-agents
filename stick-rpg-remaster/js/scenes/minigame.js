@@ -181,9 +181,14 @@
     if (inp && typeof inp.popContext === 'function') inp.popContext(S.ctxName);
   }
 
-  function playMusic(id) {
+  /** Plays a song: an id, or { id, variant } (the variant only when one is named). */
+  function playMusic(song) {
+    var id = song && typeof song === 'object' ? song.id : song;
     if (id && SR.audio && typeof SR.audio.music === 'function') {
-      try { SR.audio.music(id); } catch (e) { /* audio is optional */ }
+      try {
+        if (song && typeof song === 'object' && song.variant) SR.audio.music(id, { variant: song.variant });
+        else SR.audio.music(id);
+      } catch (e) { /* audio is optional */ }
     }
   }
 
@@ -197,11 +202,27 @@
     try { var r = SR.audio.duck(DUCK_DB, Infinity); return typeof r === 'function' ? r : null; } catch (e) { return null; }
   }
 
-  /** The song of the scene the frame returns to (a building plays its building's song). */
+  /**
+   * The song of the scene the frame returns to. A building plays its building's song: the named fn
+   * `music.<building>` (a song id, or { id, variant }) when it exists, as js/scenes/building.js does
+   * on entering (W2-Civic request 5: City Hall's march while you hold office), else def.music.
+   * @returns {string|{id: string, variant: (string|undefined)}|null}
+   */
   function musicBelow() {
     var top = SR.scenes.top();
     if (!top) return null;
-    if (top.id === 'building' && top.params && SR.reg.building[top.params.id]) return SR.reg.building[top.params.id].music || null;
+    if (top.id === 'building' && top.params && SR.reg.building[top.params.id]) {
+      var def = SR.reg.building[top.params.id];
+      var fn = SR.reg.fn && SR.reg.fn['music.' + def.id];
+      if (typeof fn === 'function' && SR.state) {
+        try {
+          var r = fn(SR.state, top.params.params || {}, { source: 'ui', now: SR.state.clock ? SR.state.clock.min : 0 });
+          if (typeof r === 'string' && r) return r;
+          if (r && typeof r.id === 'string') return { id: r.id, variant: r.variant || undefined };
+        } catch (e) { SR.util.warnOnce('mg.musicFn.' + def.id, 'minigame: music.' + def.id + ' threw: ' + e.message); }
+      }
+      return def.music || null;
+    }
     return top.def && top.def.music || null;
   }
 
@@ -603,8 +624,24 @@
 
   function requestExit() {
     if (!S || S.finished || S.replay) return;
-    if (SR.minigame.isStake(S.L) || S.def.confirmExit === true) openPanel('exit');
+    if (exitAsks()) openPanel('exit');
     else leaveNow();
+  }
+
+  /**
+   * Exit asks first with a live stake, or as the engine says (W2-Night request 7): the instance's
+   * `exitRisk()` → boolean when it has one (asked now, without side effects: blackjack asks only
+   * while a hand is out), else the def's `confirmExit`: `true` always, or `confirmExit(progress,
+   * params)` → boolean by the round's progress. A function that throws asks.
+   */
+  function exitAsks() {
+    if (SR.minigame.isStake(S.L)) return true;
+    if (S.inst && typeof S.inst.exitRisk === 'function') {
+      try { return !!S.inst.exitRisk(); } catch (e) { return true; }
+    }
+    var c = S.def.confirmExit;
+    if (typeof c !== 'function') return c === true;
+    try { return !!c(S.inst && S.inst.progress ? S.inst.progress() : null, S.L.params); } catch (e) { return true; }
   }
 
   function leaveNow() {

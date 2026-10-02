@@ -104,7 +104,8 @@ function rules() {
   const rel = at('janitor', { mode: { difficulty: 'relaxed' } });
   run(rel, 'nli.work');
   T.eq(rel.money.cash - 100, Math.round(60 * 1.25), 'Relaxed wages ×1.25 (B-16)');
-  T.eq([pv(at('janitor'), 'nli.work', { variant: 'half' }).hidden, pv(at('janitor'), 'nli.work').repeatable], [true, false], 'Half and Overtime hide without hustles; a row with a Hustle never repeats');
+  T.eq([pv(at('janitor'), 'nli.work', { variant: 'half' }).hidden, pv(at('janitor'), 'nli.work').repeatable], [true, false], 'Half and Overtime hide without hustles; the shift is not repeatable until js/rules/act.js follows CONTRACT D61');
+  T.eq([!!SR.reg.action['nli.work:resolve'], !!SR.reg.action['nli.work'].minigame], [false, true], 'the Hustle row has no :resolve (D61: the button commits the row with { m, hustle })');
 
   T.section('the Friday bonus: Executive 10 %, VP 20 %, CEO 30 % of the week\'s NLI wages');
   const week = (rank, days) => {

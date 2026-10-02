@@ -281,14 +281,21 @@
       page.skipAnim = needle(cv, e, function () {
         result.style.visibility = 'visible';
         var key = e.won ? 'news.election.stamp.' + (e.path === 'dictator' ? 'dictator' : 'president') : 'news.election.stamp.concede';
-        SR.ui.stamp({ text: t(key), kind: e.won ? 'primary' : 'ink' });
+        // The result has its own stingers (below), so the Stamp lands without the level-up triad
+        // (`sting: false`, js/ui/stamp.js; docs/requests/decisions-w2-desk-present.md, W2-Music 1).
+        SR.ui.stamp({ text: t(key), key: key, kind: e.won ? 'primary' : 'ink', sting: false });
         // The march tutti and the march, or the sad trombone (ART_AUDIO §13.4), once W2-Music
         // registers them: an unknown song would stop the music that is playing (SR.audio.music).
+        // A Dictator's win plays the B♭-minor `dictator` variant, the key City Hall's march keeps
+        // (js/data/buildings/cityhall.js `music.cityhall`, js/ui/subscreens/campaign.js).
         var A = SR.audio || {};
         if (e.won) {
           if (typeof A.stinger === 'function' && hasSong('stingers.election_win')) SR.audio.stinger('election_win');
           if (!D().fast() && SR.render && SR.render.fx && typeof SR.render.fx.confetti === 'function') SR.render.fx.confetti();
-          if (typeof A.music === 'function' && hasSong('hail_to_the_stick')) SR.audio.music('hail_to_the_stick');
+          if (typeof A.music === 'function' && hasSong('hail_to_the_stick')) {
+            if (e.path === 'dictator') SR.audio.music('hail_to_the_stick', { variant: 'dictator' });
+            else SR.audio.music('hail_to_the_stick');
+          }
         } else if (typeof A.stinger === 'function' && hasSong('stingers.election_loss')) SR.audio.stinger('election_loss');
         D().announce(t(key) + '. ' + t('news.election.result', { final: final }));
       });

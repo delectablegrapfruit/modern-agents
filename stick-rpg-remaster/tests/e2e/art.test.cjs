@@ -132,6 +132,39 @@ async function sheet(T, name, check) {
   }));
   T.eq([api.palette, api.stick, api.icon, api.interior, api.bible], [true, 'function', 'function', 'function', 'function'], 'the W1-A API is present on the game page');
   T.ok(/^url\(/.test(api.grain), '--grain holds the generated paper grain', api.grain);
+  // Per-params variants of one interior id and the two spellings of an interior palette
+  // (docs/requests/W2-Home.md 2 and 3): each variant draws its own walls in its own palette set.
+  const iv = await g.page.evaluate(() => {
+    const SR = window.SR;
+    SR.def.interior('w2variants', {
+      wall: { type: 'plain' }, floor: { type: 'planks' }, props: [], palette: 'int.mcsticks',
+      variants: { a: { palette: 'apt' }, b: { palette: 'int.bank' }, c: {} },
+      variant: (s, p) => (p && p.v) || null,
+    });
+    const c = document.createElement('canvas');
+    c.width = 1280; c.height = 720;
+    const ctx = c.getContext('2d');
+    const wallAt = (params) => {
+      const r = SR.art.interior('w2variants', params);
+      ctx.clearRect(0, 0, 1280, 720);
+      r.drawStatic(ctx, SR.state);
+      return { key: r.variant(SR.state), px: Array.from(ctx.getImageData(900, 200, 1, 1).data).slice(0, 3) };
+    };
+    const hex = (k) => SR.art.draw.color(k);
+    return {
+      a: wallAt({ v: 'a' }), b: wallAt({ v: 'b' }), c: wallAt({ v: 'c' }), none: wallAt({ v: 'zz' }),
+      want: { apt: hex('int.apt.wall'), bank: hex('int.bank.wall'), mcsticks: hex('int.mcsticks.wall'), c: SR.art.palette.int.c ? hex('int.c.wall') : hex('int.mcsticks.wall') },
+      same: SR.art.interior('w2variants', { v: 'a' }) === SR.art.interior('w2variants', { v: 'b' }),
+    };
+  });
+  // The nearest of the three wall colours (the plain wall carries the paper grain).
+  const nearest = (px) => ['apt', 'bank', 'mcsticks'].map((k) => {
+    const c = [1, 3, 5].map((i) => parseInt(String(iv.want[k]).slice(i, i + 2), 16));
+    return [k, c.reduce((d, v, i) => d + (v - px[i]) * (v - px[i]), 0)];
+  }).sort((x, y) => x[1] - y[1])[0][0];
+  T.eq([iv.a.key, iv.b.key, iv.c.key, iv.none.key], ['a', 'b', 'c', null], 'variant(state, params) picks the variant per call (an unknown key draws the base)');
+  T.eq([nearest(iv.a.px), nearest(iv.b.px)], ['apt', 'bank'], 'each variant draws its walls in its own palette set (\'apt\' and \'int.bank\' both resolve)', iv);
+  T.eq([nearest(iv.none.px), nearest(iv.c.px)], ['mcsticks', 'mcsticks'], 'the base def\'s palette \'int.mcsticks\' (the validator\'s spelling) resolves to int.mcsticks', iv);
   await g.close();
 
   const hasRoute = /artbible/.test(fs.readFileSync(path.join(h.ROOT, 'js', 'core', 'debug.js'), 'utf8'));

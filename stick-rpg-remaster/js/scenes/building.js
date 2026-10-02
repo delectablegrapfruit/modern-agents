@@ -20,6 +20,12 @@
   var OWNER = { x: 360, y: 430 };
   var FLOAT_TOKEN = { hp: '--hp', hpMax: '--hp', cash: '--money', bank: '--money', karma: '--karma-zero', heat: '--heat',
     str: '--str', int: '--int', cha: '--cha', time: '--time' };
+  // Deltas that are not numbers rising from your stick: the chips name them (an item, a piece of
+  // furniture, a home, a rank) and the stamp or toast tells the rest (W2-Goods 1, W2-Money 1).
+  var NO_FLOAT = { time: 1, item: 1, furniture: 1, home: 1, job: 1 };
+  // The interior ambience beds of ART_AUDIO §13.6 under the building's song (docs/requests/W2-Music.md 4;
+  // W1-S registered the beds): casino murmur, bar chatter, fryer sizzle, office hum, campus murmur.
+  var BED = { casino: 'casino', bar: 'bar', mcsticks: 'fryer', nli: 'office', bank: 'office', cityhall: 'office', uofs: 'campus' };
 
   var B = null;               // the scene's state while it is on the stack
 
@@ -152,7 +158,7 @@
     if (!res || !res.ok) return;
     var n = 0;
     (res.deltas || []).forEach(function (d) {
-      if (!d || !d.n || n >= 3 || d.kind === 'time' || d.kind === 'item') return;
+      if (!d || !d.n || n >= 3 || NO_FLOAT[d.kind]) return;
       var c = SR.ui.chip.fromDelta(d);
       if (!c) return;
       var key = d.kind === 'stat' ? d.key : d.kind;
@@ -196,6 +202,28 @@
 
   function minutesOf(s) { return s && s.clock ? (s.clock.day - 1) * 1440 + s.clock.min : 0; }
 
+  /**
+   * The building's song: the named fn `music.<building>` (a song id, or { id, variant }) when it
+   * exists, else def.music (W2-Civic request 5: City Hall plays the march while you hold office).
+   * @returns {{id: string, variant: (string|undefined)}|null}
+   */
+  function songFor(def, params) {
+    var fn = SR.reg.fn && SR.reg.fn['music.' + def.id];
+    if (typeof fn === 'function' && SR.state) {
+      try {
+        var r = fn(SR.state, params || {}, { source: 'ui', now: SR.state.clock ? SR.state.clock.min : 0 });
+        if (typeof r === 'string' && r) return { id: r };
+        if (r && typeof r.id === 'string') return { id: r.id, variant: r.variant || undefined };
+      } catch (e) { SR.util.warnOnce('ui.musicFn.' + def.id, 'building: music.' + def.id + ' threw: ' + e.message); }
+    }
+    return def.music ? { id: def.music } : null;
+  }
+
+  function audioCall(name, a, b) {
+    if (!SR.audio || typeof SR.audio[name] !== 'function') return;
+    try { SR.audio[name](a, b); } catch (e) { SR.util.warnOnce('ui.audio.' + name + '.' + a, 'building: SR.audio.' + name + '("' + a + '") failed: ' + e.message); }
+  }
+
   SR.scenes.register('building', {
     kind: 'base',
     enter: function (params) {
@@ -208,11 +236,18 @@
       if (SR.state && typeof SR.act === 'function' && SR.reg.action['world.enter']) {
         try { SR.act('world.enter', { building: id }); } catch (e) { console.error('building: world.enter failed', e); }
       }
-      if (def.music && SR.audio && typeof SR.audio.music === 'function') {
-        try { SR.audio.music(def.music, { fade: MUSIC_FADE_S }); } catch (e2) { SR.util.warnOnce('ui.music.' + id, 'building: music failed: ' + e2.message); }
-      }
+      var song = songFor(def, B.params);
+      if (song) audioCall('music', song.id, song.variant ? { fade: MUSIC_FADE_S, variant: song.variant } : { fade: MUSIC_FADE_S });
+      B.bed = BED[id] || null;
+      if (B.bed) audioCall('ambience', B.bed, 1);
       B.unsubs.push(SR.events.on('stage:resized', function () { if (B) B.cacheDirty = true; }));
-      B.unsubs.push(SR.events.on('home:changed', function () { if (B) B.cacheDirty = true; }));
+      B.unsubs.push(SR.events.on('home:changed', function () {
+        if (!B) return;
+        B.cacheDirty = true;
+        // An interior with per-params variants (the five dwellings of `home`) may change with it.
+        var next = interiorFor(B.def, B.params);
+        if (next) B.interior = next;
+      }));
       SR.events.emit('door:entered', { id: id, min: SR.state && SR.state.clock ? SR.state.clock.min : 0 });
     },
     exit: function () {
@@ -220,6 +255,7 @@
       B.unsubs.forEach(function (f) { f(); });
       var spent = Math.max(0, minutesOf(SR.state) - B.entered);
       var id = B.id;
+      if (B.bed) audioCall('ambience', B.bed, 0);   // the bed fades out over 1 s (ART_AUDIO §13.7)
       B = null;
       SR.events.emit('door:exited', { id: id, spentMin: spent });
     },

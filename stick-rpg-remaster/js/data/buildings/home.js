@@ -333,6 +333,16 @@
     return { key: min < NOON ? 'greet.home.morning' : min < EVENING ? 'greet.home.day' : 'greet.home.evening', vars: vars };
   });
 
+  /**
+   * The card's title (CONTRACT §15.6: js/ui/card.js reads `title.<building>` at mount and after
+   * each action or home change): a For Sale door reads "For Sale" (UI §5.6 "a For Sale card"), and
+   * turns into "Home" in place once the home is bought (W2-Home request 7). null: the building's name.
+   * @returns {string|null} a text key
+   */
+  SR.def.fn('title.home', function (s, params) {
+    return effective(s, params || {}).mode === 'forSale' ? 'card.home.title.forSale' : null;
+  });
+
   // Exposed for the home's UI files and tests (what the resolver would say now).
   SR.def.fn('home.effective', function (s, params) { return effective(s, params); });
 })();

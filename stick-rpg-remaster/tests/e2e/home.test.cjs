@@ -309,6 +309,30 @@ const LIVE_P0 = ['home.sleep', 'home.tv', 'home.messages', 'home.computer', 'hom
       } finally { SR.debug.fast(true); }
     });
     T.eq(skip, [0, 'hidden', true, 0, 'visible', true, 1], 'the first press settles the swinging needle on the front page, the next turns it');
+    // A Dictator's win (W2-Civic's note): the march in its B♭-minor `dictator` variant, the key City
+    // Hall keeps; the result's Stamp lands without the level-up triad (its own stinger plays).
+    const won = await ev(() => {
+      const SR = window.SR, A = SR.audio, music = A.music, sting = A.stinger, calls = [];
+      A.music = function (id, o) { calls.push(['music', id, (o && o.variant) || null]); return null; };
+      A.stinger = function (id) { calls.push(['stinger', id]); return null; };
+      SR.ui.stamp.clear();
+      try {
+        const out = {};
+        ['dictator', 'president'].forEach((path) => {
+          calls.length = 0;
+          const el = SR.ui.report.build({ kind: 'sleep', day: 2, weekday: 1, lines: [], headline: { key: 'news.head.absurd', vars: { variant: 1 } },
+            election: { won: true, poll: 55, roll: 1, path }, events: [] }, {});
+          document.getElementById('ui').appendChild(el);
+          el.onShow();
+          el.remove();
+          SR.ui.stamp.clear();
+          out[path] = calls.slice();
+        });
+        return out;
+      } finally { A.music = music; A.stinger = sting; }
+    });
+    T.eq(won, { dictator: [['stinger', 'election_win'], ['music', 'hail_to_the_stick', 'dictator']], president: [['stinger', 'election_win'], ['music', 'hail_to_the_stick', null]] },
+      'election night: the Dictator\'s march in its `dictator` variant, the President\'s plain; no level-up triad under the result\'s stamp');
   });
 
   await section('the last day of a timed game leads to the results; a Hardcore default too', async () => {
@@ -412,6 +436,8 @@ const LIVE_P0 = ['home.sleep', 'home.tv', 'home.messages', 'home.computer', 'hom
     }, real);
     const r = await openDoor('home_pent');
     T.eq([r.params.mode, await rows()], ['forSale', ['home.tour']], 'the penthouse is for sale: the Tour row');
+    const cardTitle = () => ev(() => { const e = document.querySelector('#ui [data-id="card-title"]'); return e ? e.textContent : ''; });
+    T.eq(await cardTitle(), await text('card.home.title.forSale'), 'the For Sale card is titled "For Sale" (title.home; UI §5.6)');
     await t.clickUI('row-home.tour');
     await t.step(1);
     T.eq(await ev(() => window.SR.ui.card.screens()), ['bank.realestate'], 'Tour opens the bank\'s Real Estate page in the home card');
@@ -436,6 +462,7 @@ const LIVE_P0 = ['home.sleep', 'home.tv', 'home.messages', 'home.computer', 'hom
     await t.step(2);
     T.eq(await rows(), ['home.moveIn'], 'back on the card: the door is Owned now, with Move in');
     T.ok((await greeting()).indexOf(forSaleText.slice(0, 12)) < 0, 'and the greeting follows the door: no "For sale" over Move in', await greeting());
+    T.eq(await cardTitle(), await text('place.home'), 'and the title too: "For Sale" turned into the home\'s in place');
     await t.clickUI('row-home.moveIn');
     await t.step(2);
     s = await t.state();

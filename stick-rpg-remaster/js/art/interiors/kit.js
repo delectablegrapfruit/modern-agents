@@ -21,6 +21,9 @@
 //   lights: [{ x: 300, y: 60, r: 220, color: 'int.mcsticks.light' }],
 //   custom: 'mcsticksHero',   // a function, or a name in fns: { mcsticksHero: fn | { static, anim } }
 //   floorY: 400, vp: [400, 300],                         // optional composition overrides
+//   palette: 'apt',          // optional palette set: 'apt' or 'int.apt' (default: int.<id>, else int.default)
+//   variants: { apt: { wall, floor, window, props, lights, palette }, ... },   // optional: per-params
+//   variant: function (state, params) { return 'apt'; },  // variants of one id (the five dwellings of `home`)
 // });
 //
 // Prop fields: type, x, y, w, h, d (depth), color (main palette key), alt (second key), anim (a
@@ -51,6 +54,7 @@
 (function () {
   'use strict';
   var SR = window.SR;
+  var hasOwn = Object.prototype.hasOwnProperty;
   var W = 1280, H = 720;
   var FLOOR_Y = 400, VP = [400, 300], FOCAL = 600;
   var LW = 3, DL = 1;     // ink widths in interiors (ART_AUDIO §1.1 rule 2: outlines 3 u, details inside shapes 1 u)
@@ -1183,10 +1187,23 @@
     lights: [{ x: 380, y: 70, r: 240 }],
   };
 
-  function Renderer(id, def) {
+  /**
+   * The palette set an interior def names: its short name ('apt') or its full palette key
+   * ('int.apt', which the validator checks; docs/requests/W2-Home.md 3) both resolve to
+   * SR.art.palette.int.apt; else the set named like the interior, else int.default.
+   */
+  function paletteSet(id, def, variant) {
+    var p = def && typeof def.palette === 'string' ? def.palette.replace(/^int\./, '') : null;
+    if (p && SR.art.palette.int[p]) return p;
+    if (variant && SR.art.palette.int[variant]) return variant;   // a dwelling variant 'apt' → int.apt
+    if (SR.art.palette.int[id]) return id;
+    return p || 'default';
+  }
+
+  function Renderer(id, def, variant) {
     var K = {
-      id: id, def: def || PLACEHOLDER, placeholder: !def,
-      pid: def && def.palette ? def.palette : (SR.art.palette.int[id] ? id : 'default'),
+      id: id, def: def || PLACEHOLDER, placeholder: !def, variant: variant || null,
+      pid: paletteSet(id, def, variant),
       floorY: (def && def.floorY) || FLOOR_Y, vp: (def && def.vp) || VP,
     };
     K.kit = kit;
@@ -1312,10 +1329,58 @@
    */
   function interior(id, params) {
     var def = SR.reg.interior ? SR.reg.interior[id] : null;
+    if (def && def.variants && typeof def.variant === 'function') return variantRenderer(id, def, params);
     var hit = cache.get(id);
     var r;
     if (hit && hit.src === def) r = hit.r;
     else { r = new Renderer(id, def || null); cache.set(id, { src: def, r: r }); }
+    r.params = r.K.params = params || null;
+    return r;
+  }
+
+  /**
+   * Per-params variants of one interior id (docs/requests/W2-Home.md 2): a def with
+   * `variants: { <key>: def, … }` and `variant(state, params) → key` draws, at each call, the
+   * variant the state and the door's params pick (one building, `home`, and five dwellings). A
+   * variant def is the base def's fields overlaid by its own (walls, floor, window, lights, props,
+   * palette, …); an unknown key draws the base def. One cached renderer per id + ':' + key, each
+   * with its own palette set (the variant's `palette`, else int.<key> when it exists).
+   * @returns {{id: string, def: object, params: object, variant: function(object): (string|null),
+   *   drawStatic: function, drawAnim: function}}
+   */
+  function variantRenderer(id, def, params) {
+    var hit = cache.get(id);
+    var r = hit && hit.src === def ? hit.r : null;
+    if (!r) {
+      r = { id: id, def: def, params: null, K: { id: id, def: def, params: null } };
+      r.variant = function (state) {
+        var k = null;
+        try { k = def.variant(state || SR.state, r.params || {}); } catch (e) {
+          SR.util.warnOnce('variant:' + id, 'SR.art.interior: ' + id + '.variant() threw: ' + e.message);
+        }
+        return k !== null && k !== undefined && hasOwn.call(def.variants, k) ? String(k) : null;
+      };
+      r.pick = function (state) {
+        var k = r.variant(state);
+        var ck = id + ':' + (k === null ? '' : k);
+        var c = cache.get(ck);
+        var x = c && c.src === def ? c.r : null;
+        if (!x) {
+          var merged = {};
+          var prop;
+          for (prop in def) if (hasOwn.call(def, prop) && prop !== 'variants' && prop !== 'variant') merged[prop] = def[prop];
+          var own = k === null ? null : def.variants[k];
+          if (own) for (prop in own) if (hasOwn.call(own, prop)) merged[prop] = own[prop];
+          x = new Renderer(id, merged, k);
+          cache.set(ck, { src: def, r: x });
+        }
+        x.params = x.K.params = r.params;
+        return x;
+      };
+      r.drawStatic = function (ctx, state) { r.pick(state).drawStatic(ctx, state); };
+      r.drawAnim = function (ctx, t, state, actors) { r.pick(state).drawAnim(ctx, t, state, actors); };
+      cache.set(id, { src: def, r: r });
+    }
     r.params = r.K.params = params || null;
     return r;
   }

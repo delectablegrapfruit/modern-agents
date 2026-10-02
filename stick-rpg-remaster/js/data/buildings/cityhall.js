@@ -12,10 +12,11 @@
 // shows them as chips. The nightly bookkeeping (the rival's gain, campaign days in jail and hospital
 // too, the debate no-show, election night, the lapse, the salary) is the night's.
 // The campaign and accept rows carry `row: false`: they are committed from the Election Office
-// sub-screen (which shows their poll change, uses and caps), not listed as card rows
-// (docs/requests/W2-Civic.md asks js/ui/card.js to skip them; until then they show on the City Hall
-// card during a campaign only, through `hidden`). P1 City Hall rows (Mayor's Office, charity, soup
-// kitchen, the Precinct desk, city-event rows) are W3-Crime's.
+// sub-screen (which shows their poll change, uses and caps), never listed as card rows (CONTRACT
+// D62); their `hidden` conditions also keep them out of a preview outside a campaign. The building's
+// song follows the office (`music.cityhall`: the march while you hold office, ART_AUDIO §13.4).
+// P1 City Hall rows (Mayor's Office, charity, soup kitchen, the Precinct desk, city-event rows) are
+// W3-Crime's.
 (function () {
   'use strict';
   var SR = window.SR;
@@ -71,6 +72,19 @@
     if (el.status === 'removed') return { key: 'greet.cityhall.removed' };
     if (min >= LATE || min < EARLY) return { key: 'greet.cityhall.late' };
     return { key: 'greet.cityhall.default' };
+  });
+
+  /**
+   * City Hall's song (CONTRACT §15.6: the building scene and the minigame frame read
+   * `music.<building>`): in office the campaign march, `hail_to_the_stick` (ART_AUDIO §13.4 "City Hall
+   * in office"; the Dictator's B♭-minor `dictator` variant); otherwise null, so the lobby keeps the
+   * building's own song (`campus_canon`).
+   * @returns {{id: string, variant: (string|undefined)}|null}
+   */
+  SR.def.fn('music.cityhall', function (s) {
+    var office = s && s.job ? s.job.office : null;
+    if (!office) return null;
+    return { id: 'hail_to_the_stick', variant: office === 'dictator' ? 'dictator' : undefined };
   });
 
   // ---- rows ------------------------------------------------------------------------------------
