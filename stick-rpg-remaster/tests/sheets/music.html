@@ -179,6 +179,7 @@
       Object.keys(reg).forEach(function (id) { if (id.indexOf('stingers.') !== 0 && ids.indexOf(id) < 0) ids.push(id); });
       return ids;
     }
+    /** @returns {string[]} the registered stinger ids, in ART_AUDIO §13.4's order. */
     function stingerIds() {
       var reg = SR.reg.song || {};
       return Object.keys(STINGERS).map(function (n) { return 'stingers.' + n; }).filter(function (id) { return reg[id]; });
@@ -321,6 +322,7 @@
     /** @returns {number[]} the step times of gridOf. */
     function grid(id, variant, seconds, pos) { return gridOf(id, seconds, pos).steps; }
 
+    /** @returns {number} the distance from x to the nearest value of the ascending arr. */
     function nearest(arr, x) {
       var lo = 0, hi = arr.length - 1;
       while (hi - lo > 1) { var mid = (lo + hi) >> 1; if (arr[mid] <= x) lo = mid; else hi = mid; }
@@ -331,7 +333,8 @@
      * Plays a song live for o.ms and checks every scheduled event against the step grid.
      * @param {string} id
      * @param {object} o { ms (default 4000), variant, switchTo: a variant asked for after switchAt ms }
-     * @returns {Promise<object>} { n, worst (s), ahead (s), variant: { name, time, fromBarLine (s) } | null, pos }
+     * @returns {Promise<object>} { n, worst (s), ahead (s), last (s: the latest event, from the start),
+     *   variant: { name, time, fromBarLine (s) } | null, pos }
      */
     function tempo(id, o) {
       o = o || {};
@@ -348,7 +351,7 @@
         return Promise.resolve(sw).then(function () { return wait(o.ms || 4000); }).then(function () {
           var tr = SR.audio.engine.live().trace.filter(function (e) { return e.song === id; });
           var G = gridOf(id, (o.ms || 4000) / 1000 + 10, pos), g = G.steps;
-          var worst = 0, ahead = Infinity, v = null;
+          var worst = 0, ahead = Infinity, v = null, last = -Infinity;
           tr.forEach(function (e) {
             var rel = e.time - start;
             if (e.kind === 'variant') {
@@ -357,9 +360,10 @@
             }
             worst = Math.max(worst, nearest(g, rel));
             ahead = Math.min(ahead, e.time - e.at);
+            last = Math.max(last, rel);
           });
           SR.audio.engine.live().trace = null;
-          return { n: tr.length, worst: worst, ahead: ahead, variant: v, pos: pos };
+          return { n: tr.length, worst: worst, ahead: ahead, last: last, variant: v, pos: pos };
         });
       });
     }
@@ -442,6 +446,7 @@
       return c;
     }
 
+    /** Plays a song (a variant, or the default with null) with the sheet's fade. @param {string} id @param {?string} variant */
     function play(id, variant) {
       SR.audio.unlock();
       SR.audio.music(id, { fade: Number($('fade').value), variant: variant || undefined });

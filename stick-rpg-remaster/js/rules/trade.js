@@ -235,9 +235,14 @@
     return trip;
   }
 
+  /**
+   * The `trip` rule event (CONTRACT §9.1) with the §8.9 extras: the story's `key` and `vars`, and
+   * `mugged` (a tour mugged on the way home still ends 'toured'; a smuggling trip says it in its
+   * outcome), so arcs and achievements can match `{ mugged: true }` on either kind.
+   */
   function tripEvent(trip) {
     return { name: 'trip', payload: { city: trip.city, kind: trip.kind, outcome: trip.outcome, units: trip.units || 0,
-      cash: trip.cash || 0, key: trip.key, vars: trip.vars } };
+      cash: trip.cash || 0, key: trip.key, vars: trip.vars, mugged: trip.kind === 'tour' ? !!trip.mugged : trip.outcome === 'mugged' } };
   }
 
   /** Mugged at steps 2-4: all cash (P1 `tours`: the vest keeps half) and all goods (orig). */

@@ -33,7 +33,12 @@
   function T() { return SR.tuning.start; }
 
   function lengths() { return (SR.tuning.endgame && SR.tuning.endgame.hof && SR.tuning.endgame.hof.lengths) || [15, 40, 100, 0]; }
-  function lengthId(n) { return n === 0 ? 'unlimited' : n === 15 ? 'short' : n === 40 ? 'medium' : n === 100 ? 'long' : 'custom'; }
+  /** The standard lengths' names follow their Hall of Fame buckets (B-18 `hof.lengths`); any other length is Custom. */
+  function lengthId(n) {
+    var E = SR.rules.endgame;
+    if (lengths().indexOf(n) < 0) return 'custom';
+    return E && typeof E.hofBucket === 'function' ? E.hofBucket(n) : ['short', 'medium', 'long', 'unlimited'][lengths().indexOf(n)];
+  }
   function difficulties() { return Object.keys(SR.tuning.difficulty || { relaxed: 1, standard: 1, hardcore: 1 }); }
   function nliInt() { var j = SR.tuning.jobs && SR.tuning.jobs.janitor; return j ? j.int : 20; }
 

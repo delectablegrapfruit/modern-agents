@@ -15,7 +15,8 @@ a file this desk does not own, are named "not this desk".
 | 2 | mid-wave (continuous, as each request file appeared) | `W2-Food.md` item 4 (below). Read and nothing for this desk: `W2-Civic.md` (its campaign rows call `election.*` as CONTRACT §8.10 records), `W2-Goods.md`, `W2-Exterior.md` (reads `tuning.crime.police.posters` and the cities' palette keys, both present), `W2-Transit.md` (its rows call `trade.*` / `crime.*` as recorded; the tour hook's forfeit `{ wins: 0 }` gets the -20 % of `trade.tour`), `W2-Night.md` ("nothing is asked of the rules desks": every §8.10 call worked), `W2-City.md` (`world.city` runs `election.check`), `W2-Home.md` (its item 1 is `act.js`, W2-RulesE's), `W2-RulesE.md` |
 | 3 | before finishing | nothing new for this desk: `W2-Money.md`, `W2-Street.md` and `W2-Pocket.md` (new) name no conflict rule or file of this desk; `W2-RulesE.md` 4 and `decisions-w2-W2-RulesE.md` answer this desk's request 3 (applied: `casino.card: null` in `defaults()`); `W2-Food.md` 4 records the adopted order of its scratch resolve |
 | 4 | after the pause (resumed), before handing off | nothing new for this desk: the files changed since sweep 3 (`W2-Front.md` 1-5, `W2-Transit.md` 1-5, `W2-Home.md` 1-9, `decisions-w2-W2-RulesE.md` sweep 4) name no conflict rule or file of this desk (W2-Transit 5, Keep playing after a game that ended in jail, is W2-Front's; the cell still releases through `crime.jailDay`, and a sentence already served releases at once); this desk's request 5 (`phone.boardInfo` → `election.acceptBy`) was applied by W2-Pocket after the pause (`js/data/actions/phone.js` reads `SR.rules.election.acceptBy`), so the Board's voicemail, City Hall, the Campaign HQ and the phone name the same day; W2-Food, W2-Front and W2-Pocket's edits after the pause and `decisions-w2-W2-RulesE.md` sweep 5 add nothing for this desk |
-| 5 | the review | nothing new for this desk: the items added since sweep 4 (`W2-City.md` 6-7, `W2-Civic.md` 6, `W2-Front.md` 6, `W2-Exterior.md` 10-11 and its item 6 update, which asks the lead's render sheet to load `cities.js` and `en-conflict.js` as they are, `W2-RulesE.md` 6, `decisions-w2-W2-RulesE.md` sweep 6) name other owners' files; `W2-Night.md` still asks nothing of the rules desks |
+| 5 | the review | nothing new for this desk: the items added since sweep 4 (`W2-City.md` 6-7, `W2-Civic.md` 6, `W2-Front.md` 6, `W2-Exterior.md` 10-11 and its item 6 update, which asks the lead's render sheet to load `cities.js` and `en-conflict.js` as they are, `W2-RulesE.md` 6, `decisions-w2-W2-RulesE.md` sweep 6) name other owners' files; `W2-Night.md` 6 (casino.js: a fractional blackjack payout) was answered in the wave but missing from this file; recorded below by the second review |
+| 6 | the second adversarial review | `W2-Night.md` 6 (below: applied in the wave, now recorded). Nothing else new for this desk: `W2-Music.md` (changed after sweep 5) names `stamp.crime.jailed` only to say the jail scene plays its stinger; `W2-RulesE.md` 7-8 and `W2-Transit.md` 4-5 name other owners' files (the cell still releases through `crime.jailDay`); `decisions-w2-W2-RulesE.md` sweeps 7-8 add nothing for this desk |
 
 ## Requests from wave-2 packages
 
@@ -41,6 +42,18 @@ a file this desk does not own, are named "not this desk".
   The Board's voicemail now takes its `day` from it, and every screen (City Hall, the phone, the
   castle's Campaign HQ) can read the same day instead of repeating the arithmetic. Pinned against
   the night's lapse in `election.test.cjs`; the CONTRACT record is `docs/requests/W2-RulesC.md` 4.
+- **W2-Night 6** (`js/rules/casino.js`: a fractional blackjack payout was rounded up for the
+  player) → applied in the wave, differently: rounding toward the house (the request's proposal)
+  would have moved B-14b's edge the other way (1.13 % against 0.73 % exact at the $5 minimum, 10⁶
+  basic-strategy hands, seed 99), so `applyRound` now pays a fractional net as a whole dollar with
+  the fraction's own probability (`wholeNet`: a $5 natural pays $8 or $7, $7.50 on average),
+  decided by `hash(seed, 'casino.wholeNet', day, the day's hands, cash)`: no draw and no state
+  field, so the rules stream stays aligned and every bet pays exactly 3:2 on average. Pinned in
+  `casino.test.cjs` ("a natural on an odd bet pays 3:2 on average"). The answer was in the code's
+  comment only; the second review records it here (W2-Night's file is W2-Night's to mark).
+- **W2-Night 1** (CONTRACT §8.10 / ARCHITECTURE §6.12: how the casino engines apply their rounds)
+  → the lead's record; the rules already behave as it describes (`casino.slotsSpin`, `bjHand`,
+  `rouletteSpin` per round; `casino.settle` without `apply` is a no-op).
 - **W2-Food 1-3, 5** → not this desk (`tools/validate.cjs`, `js/ui/card.js` and `en-ui.js`: the
   lead / W2-Front; `js/rules/jobs.js`: W2-RulesE).
 
@@ -105,6 +118,53 @@ No public name changes; each is pinned in the suite named.
 - **A stale header** (`js/data/decrees.js`) pointed at named constants in `election.js` that the
   wave-1 integration moved to `tuning.election`; it now names the tuning rows.
 
+## Fixes from the second adversarial review (wave 2)
+
+No public name changes; each is pinned in the suite named.
+
+- **A played blackjack round could pay more than its stake** (`js/rules/casino.js` `bjRound`):
+  the `{ round }` form clamped only the echoed-net form, and `settle` pays a natural on the
+  round's own `bet` field, so a $5 hand in a round claiming `bet: 500` paid $750. A played round
+  must now agree with its bet (`playedRound`: the round's bet is the bet, every hand stakes it,
+  twice when doubled, the whole round within `maxStake`), else `reason.badBet`, and its settle
+  is clamped to ±`maxStake` like an echoed net. The engine's rounds are unaffected (they are
+  built by `bj.deal` / `split` / `double`) (`casino.test.cjs`).
+- **The `trip` event had no `mugged`** (`js/rules/trade.js` `tripEvent`): CONTRACT §8.9 and §9.1
+  give the payload a `mugged` extra (tours), but only `Trip.mugged` carried it, so an arc or an
+  achievement matching `{ on: 'trip', match: { mugged: true } }` never saw a tour mugged on the
+  way home (its outcome stays `toured`). Every `trip` event now carries `mugged` (a tour: its
+  flag; a red-eye: outcome `mugged`) (`trade.test.cjs`).
+- **The debate's resolve paid without a debate** (`js/rules/election.js`, the named fn
+  `election.debate`): unlike the other resolve fns (CONTRACT §8.9's "in progress" records) it needed
+  no start, so a stray `cityhall.debate:resolve` on campaign day 4 skipped the 2 h and the no-show's
+  -5 and could pay up to +9. `debateStart` now counts the debate opened today in
+  `daily.campaign.debate` (zeroed by the night with the other campaign counters; the campaign screen
+  lists only B-17's six actions; its schema record is `docs/requests/W2-RulesC.md` 6), and the named fn refuses with `reason.notNow` when none was opened
+  (a repeat still gets `reason.alreadyDone`). The module function `debate(s, r)` is unchanged
+  (`election.test.cjs`; W2-Civic's `civic.test.cjs` and `tests/e2e/election.test.cjs` start the
+  debate first and pass).
+- **A settled session's stake was unbounded** (`js/rules/casino.js`, the named fn `casino.settle`
+  with `apply`): the net was held to what the echoed `wagered` could win, but `wagered` itself was
+  not held, so one "pull" claiming $1,000,000 staked could pay $699,000,000; and a sampled blackjack
+  session ignored the back-off (P1) and the day's 60 hands (B-14b), which `bjRound` enforces for
+  played hands. A session now stakes at most its rounds × the largest round its table allows today
+  (`roundStake`: the top slot bet, the roulette limit, 2 × the blackjack maximum; VIP limits
+  included), else `reason.badBet`; a blackjack session is refused while backed off or when its
+  hands would pass the 60 (`reason.barred`, `reason.dailyLimit`). The hand count itself stays with
+  W2-Night's `casino.sessionEnd`, which already adds a sampled session's hands, so nothing is counted
+  twice (`casino.test.cjs`; `tests/e2e/casino.test.cjs`'s sampled sessions pass).
+- **The store robbery's confirm did not say it takes the day** (`en-conflict.js`
+  `crime.rob.confirm.store`): both robberies set the clock to 24:00 (B-11b, orig), but only the
+  bank's confirm said so.
+- **Untested paths now pinned:** the bus board's `mugChance` against every roll of every city
+  (`trade.test.cjs`); the fight screen's `moves(f)` chips (AP costs, the exact min / max of the
+  rolls, `ok` by AP and phase, Guard only with `nightlife`) (`fight.test.cjs`); the Ring's daily
+  counter reset overnight (`fight.test.cjs`; its schema record is `docs/requests/W2-RulesC.md` 6).
+- **Left for W3-Crime** (the wave-3 owner of `crime.js`): `crime.interrogation`, `policeTalk`,
+  `policeBribe`, `policeRun` and `fine` (P1 `police`) have no caller in wave 2; when the street stop
+  and McHolland's interrogation are wired, the interrogation's resolve should get an "in progress"
+  record like the robbery's (`crime.open`), so a stray resolve cannot take -10 Heat.
+
 ## Notes for the wave-2 data (how the conflict rules read through `SR.act`)
 
 - `SR.act`'s Result keeps only the fields of CONTRACT §8.3: the module functions' extras (`released`,
@@ -120,8 +180,9 @@ No public name changes; each is pinned in the suite named.
 
 ## Checks
 
-- `node tests/node/{crime,trade,fight,casino,election}.test.cjs`: 115 / 73 / 68 / 108 / 117 passed,
-  0 failed (after the review's fixes above). New in wave 2: the game can end in jail (the arrest night of the last day, a Jail Day
+- `node tests/node/{crime,trade,fight,casino,election}.test.cjs`: 115 / 76 / 73 / 127 / 118 passed,
+  0 failed (after both reviews' fixes above; the second review re-ran `tests/e2e/{conflict-sheet,
+  store,bank,bar,casino,fight,darts,bus,jail,election}.test.cjs`: all pass). New in wave 2: the game can end in jail (the arrest night of the last day, a Jail Day
   night, Keep playing), the release of a served sentence, the scratch card paid at its reveal
   (module and pipeline), a debug-assisted election run from the Board's call to office through
   the pipeline and the real nights (a police catch mid-campaign counts as campaign days; the

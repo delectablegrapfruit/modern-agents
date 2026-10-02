@@ -3,8 +3,9 @@
 // (debug-set net worths), the count-up and the stamp (a press skips), the banners (PRESIDENT /
 // DICTATOR OF STICKS, UNVERIFIED, DECEASED, the MET THE ARTIST sticker), Copy summary in the exact
 // format of UI §5.14 (the clipboard and the textarea fallback), the Hall of Fame filed once per ranked
-// run (never the cheat name), Keep playing after a timed game, and how the game reaches the results
-// (the paper first after the last night; FLATLINED first on Hardcore). Screenshots: shots/W2-Front/.
+// run (never the cheat name; a run only at its first end), Keep playing after a timed game, a saved
+// game that is over resuming on its results, and how the game reaches the results (the paper first
+// after the last night; FLATLINED first on Hardcore). Screenshots: shots/W2-Front/.
 //   node tests/e2e/results.test.cjs
 'use strict';
 const path = require('path');
@@ -161,6 +162,26 @@ const B18 = [
   await shot('results-deceased');
   T.eq(await banners({ nw: 3000, patch: { flags: { foldDone: true } } }), ['MET THE ARTIST'], 'the Theory of the Fold: the MET THE ARTIST sticker');
 
+  // Every headline of every ending reads with every rank, name, title and home (no "A IN THE RED",
+  // no placeholder left).
+  const heads = await ev(() => {
+    const SR = window.SR, bad = [];
+    const keys = Object.keys(SR.reg.text).filter((k) => /^front\.head\./.test(k));
+    const ranks = Object.keys(SR.reg.text).filter((k) => /^rank\.[a-z_]+$/.test(k)).map((k) => SR.text(k));
+    keys.forEach((k) => {
+      const n = Array.isArray(SR.reg.text[k]) ? SR.reg.text[k].length : 1;
+      for (let v = 0; v < n; v++) {
+        ranks.forEach((rank) => {
+          const s = SR.text(k, { variant: v, rank, name: 'RIKKI', title: 'EXECUTIVE', home: 'APARTMENT', days: 40, money: '$1' });
+          if (/\bA [AEIOU]/.test(s)) bad.push(k + '#' + v + ': ' + s);
+          if (/[{}⟦]/.test(s)) bad.push(k + '#' + v + ': ' + s);
+        });
+      }
+    });
+    return { n: keys.length, bad: bad.slice(0, 5) };
+  });
+  T.ok(heads.n >= 10 && heads.bad.length === 0, 'every headline reads with every rank (' + heads.n + ' endings)', heads.bad);
+
   // ------------------------------------------------------------------------------------------------
   T.section('Copy summary (UI §5.14)');
   const expected = await ev(() => {
@@ -252,6 +273,27 @@ const B18 = [
   });
   T.eq([longhaul.best, longhaul.runs, longhaul.days, longhaul.hof], [longhaul.first, 1, 60, [longhaul.first]],
     'a Keep-playing run counts once and adds its later days, but its best net worth and Hall of Fame entry stay at the original end', longhaul);
+  // An Unlimited run retired, resumed from its autosave (written before the Retire) and retired again
+  // is still one run: B-18 enters it once, at its first end.
+  await clearProfile();
+  const twice = await ev(() => {
+    const SR = window.SR;
+    SR.debug.newGame({ seed: 15, name: 'Twice', length: 0 });
+    SR.state.clock.day = 9; SR.state.money.cash = 5000;
+    SR.save.write('auto');
+    SR.rules.endgame.retire(SR.state);
+    const first = SR.state.result.netWorth;
+    SR.scenes.go('results', { reason: 'retire', result: SR.state.result }, { transition: false });
+    SR.ui.saveload.load('auto');
+    const back = !SR.state.over;
+    SR.state.clock.day = 12; SR.state.money.cash = 9000;
+    SR.rules.endgame.retire(SR.state);
+    SR.scenes.go('results', { reason: 'retire', result: SR.state.result }, { transition: false });
+    const p = SR.save.profile();
+    return { back, hof: p.hallOfFame.unlimited.map((e) => [e.name, e.day]), best: p.totals.best.unlimited === first, runs: p.totals.runs, days: p.totals.days };
+  });
+  T.eq(twice, { back: true, hof: [['Twice', 9]], best: true, runs: 1, days: 12 },
+    'the same run retired twice (resumed from its autosave in between) is entered once, at its first end', twice);
   await t.debug('feature', 'achievements', false);
 
   // ------------------------------------------------------------------------------------------------
@@ -287,6 +329,24 @@ const B18 = [
   await t.step(2);
   const kj = await t.state();
   T.eq([await t.scenes(), kj.over, kj.jail && kj.jail.daysLeft], [['jail'], false, 3], 'Keep playing after a game that ended in jail goes back to the cell (W2-Transit 5)');
+  // Keep playing clears `over`, so a Keep-playing run that is over again (a Retire, a Hardcore death)
+  // is over for good: a save of it resumes on its Final Edition, not in a city that refuses every
+  // action (docs/requests/W2-RulesE.md 7).
+  const resumed = await ev(() => {
+    const SR = window.SR;
+    SR.debug.newGame({ seed: 25, name: 'Resumer', length: 15 });
+    const s = SR.state;
+    s.clock.day = 16; s.over = true; s.result = SR.rules.endgame.results(s, 'time');
+    SR.rules.endgame.keepPlaying(s);
+    s.clock.day = 20;
+    SR.rules.endgame.retire(s);
+    SR.save.write('slot3', s);
+    SR.state = null;
+    SR.ui.saveload.load('slot3');
+    return { scenes: SR.scenes.stack(), reason: SR.reg.scene.results.info() && SR.reg.scene.results.info().result.reason };
+  });
+  T.eq(resumed, { scenes: ['results'], reason: 'retire' }, 'a saved Keep-playing run that was retired resumes on its Final Edition');
+  await ev(() => window.SR.save.remove('slot3'));
   await t.newGame({ seed: 22, name: 'Unkept', length: 0 });
   await t.set({ clock: { day: 5 } });
   await ev(() => { window.SR.rules.endgame.retire(window.SR.state); window.SR.scenes.go('results', { reason: 'retire', result: window.SR.state.result }, { transition: false }); });
@@ -294,6 +354,13 @@ const B18 = [
   await t.clickUI('results-title');
   await t.step(1);
   T.eq([await t.scenes(), await ev(() => window.SR.state)], [['title'], null], 'Title leaves the game');
+
+  T.section('nothing to print');
+  await ev(() => { window.SR.state = null; window.SR.scenes.go('results', {}, { transition: false }); });
+  await t.step(1);
+  T.ok(/Nothing to print/.test(await t.uiText()) && await ev(() => !!document.querySelector('#ui [data-id="results-title"]')), 'with no game and no result the page says so and offers Title');
+  await t.press('back'); await t.step(1);
+  T.eq(await t.scenes(), ['title'], 'and Back (or a press) leaves for the title (no dead end, no error)');
 
   T.section('Hardcore: FLATLINED first, then the results with DECEASED');
   await t.newGame({ seed: 23, name: 'Fragile', difficulty: 'hardcore' });

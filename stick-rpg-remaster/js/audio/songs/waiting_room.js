@@ -2,8 +2,10 @@
 // sixteenths; sparse bells over a sine pad (the whistle preset's sine, held as chords, its breath
 // noise a soft air hiss), a low bass holding the root, and a heart-monitor blip on every beat (a
 // short high sine, B5, at the song's tempo: a resting 80). A (I - vi - IV - V, I - iii - IV -
-// Vsus), B (vi - iii - IV - I, ii - vi - IV - V) and A again; 24 bars (72 s) a loop after two bars of
-// the monitor and the pad. Original music. Pure data (Node-loadable).
+// Vsus), B (vi - iii - IV - I, ii - vi - IV - V), A again and a four-bar lull (the breakdown of
+// ART_AUDIO §13.1: the bass and the tune drop out, the monitor and the pad go on with a bell or
+// two); 28 bars (84 s) a loop after two bars of the monitor and the pad. Original music. Pure data
+// (Node-loadable).
 (function () {
   'use strict';
   var SR = window.SR;
@@ -48,9 +50,16 @@
         bass: [root('C#2'), root('G#1'), root('A1'), root('E2'), root('F#1'), root('C#2'), root('A1'), root('B1')].join(' | '),
         monitor: rep(BEEP, 8),
       } },
+      // The lull: the monitor and the pad (I - IV - I - Vsus), two bells, no bass.
+      lull: { bars: 4, tracks: {
+        bells: '. . . . . . . . . . . . . . . . | . . . . C#6:8 . . . . . . . . . . . | ' +
+          '. . . . . . . . . . . . . . . . | . . . . F#5:8 . . . . . . . . . . .',
+        pad: [pad(E), pad(A), pad(E), pad(BSUS)].join(' | '),
+        monitor: rep(BEEP, 4),
+      } },
     },
-    // the monitor and the pad · A · B · A
-    order: ['intro', 'A', 'B', 'A'],
+    // the monitor and the pad · A · B · A · the lull
+    order: ['intro', 'A', 'B', 'A', 'lull'],
     loopFrom: 1,
   });
 })();

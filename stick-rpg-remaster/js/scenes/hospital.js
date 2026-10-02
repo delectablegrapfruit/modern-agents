@@ -89,7 +89,8 @@
     if (!H) return;
     var s = SR.state;
     startDay(H.down && H.down.report);
-    if (s && s.over && !s.mode.keepPlaying) {
+    // `over` alone (Keep playing clears it; docs/requests/W2-RulesE.md 7).
+    if (s && s.over) {
       SR.scenes.go(SR.reg.scene.results ? 'results' : 'title', { reason: (s.result && s.result.reason) || 'time', result: s.result }, { transition: 'fade' });
       return;
     }
@@ -97,11 +98,21 @@
     SR.scenes.go(SR.reg.scene.city ? 'city' : 'title', {}, { transition: 'fade' });
   }
 
+  /**
+   * Runs the discharge row (it marks leaving the ward; the rules have nothing left to do). Not when
+   * the hospital night ended the game: an ended game takes no actions (the pipeline would refuse
+   * with reason.gameOver), and the ward leads to the Final Edition instead.
+   */
+  function dischargeRow() {
+    var s = SR.state;
+    if (s && !s.over && typeof SR.act === 'function') SR.act('hospital.discharge', {});
+  }
+
   /** The card's button: hospital.discharge, then the Stick General edition of the report. */
   function discharge() {
     if (!H || H.discharged) return;
     H.discharged = true;
-    if (SR.state && typeof SR.act === 'function') SR.act('hospital.discharge', {});
+    dischargeRow();
     var rep = H.down && H.down.report;
     if (rep && SR.reg.scene.report && !fast()) {
       var me = H;
@@ -233,7 +244,7 @@
         // The tests' fast mode: no gag, no card, no report; the discharge at once.
         H.skipFast = false;
         H.discharged = true;
-        if (SR.state && typeof SR.act === 'function') SR.act('hospital.discharge', {});
+        dischargeRow();
         leave();
         return;
       }

@@ -57,6 +57,12 @@ const READY = { money: { cash: 800, bank: 0 }, items: { booze: 20, snow: 0, gun:
     T.ok(/Next red-eye in 9h 30m/.test(await K.text(t, 'card-greeting')), 'Tabby: "Next red-eye in 9h 30m" at 14:30', await K.text(t, 'card-greeting'));
     await K.settle(t);
     await t.shot(path.join(K.SHOTS, 'depot-1280.png'));
+    // The "TICKETS" plate over the ticket window (white letters, bld.bus.trim): the kit redraws the
+    // window every frame in front of Tabby, so the plate must be lettered again on top of it.
+    const px = await t.pixels(300, 240, 200, 22);
+    let white = 0;
+    for (let i = 0; i < px.data.length; i += 4) if (px.data[i] > 225 && px.data[i + 1] > 225 && px.data[i + 2] > 225) white++;
+    T.ok(white / (px.data.length / 4) > 0.04, 'the TICKETS plate is lettered over the ticket window (white letters show)', { white, of: px.data.length / 4 });
   }
 
   T.section('the destination board (bus.board): six cities, refused until 00:00');
@@ -142,16 +148,22 @@ const READY = { money: { cash: 800, bank: 0 }, items: { booze: 20, snow: 0, gun:
     await t.fast(false);
     await board('eraser');
     T.eq((await trip()).phase, 'ride', 'the ride plays');
+    // SR.act resolved the whole trip at boarding (the clock at 24:00, the cash after the trip): the
+    // HUD would give it away under the midnight-to-morning sky, so it comes with the event card.
+    T.eq([await K.visible(t, 'hud-time'), await K.visible(t, 'hud-cash')], [false, false], 'no HUD during the outbound ride (it would read 24:00 already)');
     await t.step(20);
     await t.press('confirm');
     await t.step(1);
     T.eq((await trip()).phase, 'ride', 'a press before 1 s does not skip');
     await t.step(60);
-    await K.settle(t, 30);
+    // The earlier sections' toasts (wall-clock timers under the paused loop) would sit over the sky.
+    await ev(() => window.SR.ui.toast.clear());
+    await K.settle(t, 450);   // the toasts' exit (wall clock); the ride itself moves only with t.step
     await t.shot(path.join(K.SHOTS, 'trip-ride-1280.png'));
     await t.press('confirm');
     await t.step(1);
     T.eq((await trip()).phase, 'card', 'after 1 s a press skips to the card');
+    T.eq([await K.visible(t, 'hud-time'), await K.visible(t, 'hud-pocket')], [true, false], 'the compact HUD comes with the card (no Pocket button)');
     await t.clickUI('trip-walk');
     await t.step(1);
     await t.clickUI('trip-next');

@@ -14,6 +14,14 @@
   function lienSources() { return T().default.lienSources; }
   // Retention, not balance: the rate board keeps 30 points (ARCHITECTURE §15).
   var RATE_HISTORY = 30;
+  // Floating point, not balance: the floors of B-09 (interest, loan interest, a CD's interest) are
+  // taken of products of decimal rates, which binary floats miss by ~1e-12 ($100,000 at 0.285 % is
+  // 284.99999999999994, not 285). The exact values are multiples of 1e-7 or coarser (r has at most
+  // 4 decimals, rateStep; a CD's rate r × 1.2 has 5), so nudging by 1e-8 restores the floor of the
+  // exact value without ever lifting a value that is truly below a whole dollar.
+  var FLOOR_EPS = 1e-8;
+  /** @returns {number} floor of a money amount computed with decimal rates (see FLOOR_EPS). */
+  function floorMoney(x) { return Math.floor(x + FLOOR_EPS); }
 
   /** @returns {boolean} the perk is owned and perks are on (P1). */
   function perk(s, id) { return !!(SR.features.perks && SR.rules.perks.has(s, id)); }
@@ -195,7 +203,7 @@
       var top1 = perk(s, 'taxWizard') ? t.taxWizardT1 : t.t1;
       var b1 = Math.max(0, top1 - cdPrincipal(s)), b2 = Math.max(b1, t.t2);
       var t1 = Math.min(bal, b1), t2 = Math.min(Math.max(bal - b1, 0), b2 - b1), t3 = Math.max(0, bal - b2);
-      var v = Math.floor(t1 * r / t.t1Div + t2 * r / t.t2Div + t3 * r / t.t3Div);
+      var v = floorMoney(t1 * r / t.t1Div + t2 * r / t.t2Div + t3 * r / t.t3Div);
       return Math.max(0, Math.min(T().interestCap, v));
     },
 
@@ -224,7 +232,7 @@
       var m = s.money, c = T().cd, out = [], keep = [];
       (m.cds || []).forEach(function (cd) {
         if (s.clock.day - cd.dayOpened + 1 >= c.days) {
-          var intr = Math.floor(cd.amount * cd.rate / 100 * c.days);
+          var intr = floorMoney(cd.amount * cd.rate / 100 * c.days);
           m.bank += cd.amount;
           var got = bank.income(s, intr, 'interest', 'bank');
           out.push({ amount: cd.amount, interest: intr, toLien: got.toLien });
@@ -242,7 +250,7 @@
     loanNight: function (s) {
       var m = s.money, l = T().loan;
       if (!m.loan || !(m.loan.amount > 0)) return null;
-      var intr = Math.floor(m.loan.amount * (m.rate + l.rateAdd) / 100);
+      var intr = floorMoney(m.loan.amount * (m.rate + l.rateAdd) / 100);
       m.loan.amount += intr;
       m.loan.daysLeft -= 1;
       var d = m.loan.daysLeft;

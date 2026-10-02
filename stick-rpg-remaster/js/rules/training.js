@@ -17,7 +17,9 @@
   function classTrack(id) { return (T()[id] && T()[id].track) || null; }
   // Sources whose daily count lives in state.daily.<field> (the TV channels share daily.tv), and
   // the weekly one in state.weekly.<field> (Open Mic, once a calendar week).
-  var DAILY_FIELD = { seminar: 'seminars', onlineCourse: 'online', paper: 'paper', chess: 'chess' };
+  // Beers have no daily limit (Buzz caps them), but the schema's daily.beers counts them all the same
+  // (GDD §4.7 step 9 resets it; nothing else counted it).
+  var DAILY_FIELD = { seminar: 'seminars', onlineCourse: 'online', paper: 'paper', chess: 'chess', beer: 'beers' };
   var WEEKLY_FIELD = { openMic: 'openMic' };
   var TV = ['tvNews', 'tvFitness', 'tvDating', 'tvMarket'];
 

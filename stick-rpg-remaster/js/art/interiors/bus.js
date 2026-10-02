@@ -4,7 +4,8 @@
 // and a poster for the six cities. The yard window is the custom fn's: its frame and sill and the
 // "TICKETS" plate over the ticket window are static; every frame repaints the live sky in the window,
 // the yard with the parked Sky Bus (its lamps lit from dusk to dawn) and then the window's bars, so
-// the bus stands behind the glass.
+// the bus stands behind the glass, and letters the plate again over the ticket window (which the kit
+// redraws in front of Tabby).
 // Colours are palette keys only (int.bus.*, bld.bus.*, kit.*, prop.*, light.*). Node-loadable:
 // nothing draws at load time.
 (function () {
@@ -89,7 +90,9 @@
     fns: {
       depot: {
         static: function (ctx, kit) { frame(ctx, kit); plate(ctx, kit); },
-        anim: function (ctx, kit, t, state) { glass(ctx, kit, t, state); },
+        // The ticket window stands in front of Tabby, so the kit redraws it over the static layer
+        // every frame (its trim band would hide the plate): the plate is lettered again on top.
+        anim: function (ctx, kit, t, state) { glass(ctx, kit, t, state); plate(ctx, kit); },
       },
     },
   });

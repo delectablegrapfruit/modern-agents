@@ -8,8 +8,9 @@
 //   5 reveal  (the scene: the real renderer pulls out of your apartment's roof to show the city
 //             floating in the sky, then the "Day 1" card).
 // BEATS / DURATION give the timeline the scene and the captions follow. opts: { still } (Reduced
-// Motion: no drift or spin), { look } (the player's look for the stick). Deterministic: layouts come
-// from a stream seeded with a fixed hash, never Math.random.
+// Motion: no drift or spin), { steady } (Flash reduction: the lamp does not flicker), { look } (the
+// player's look for the stick). Deterministic: layouts come from a stream seeded with a fixed hash,
+// never Math.random.
 // Load-time rule: defines functions only (no DOM, canvas or audio until draw is called).
 (function () {
   'use strict';
@@ -267,7 +268,8 @@
     ctx.save();
     if (b.id === 'desk' || b.id === 'doze') {
       var doze = b.id === 'doze';
-      var flicker = doze && !o.still ? 0.85 + 0.15 * Math.sin(t * 17) * Math.sin(t * 3.1) : 1;
+      // The dozing lamp flickers; Reduced Motion and Flash reduction keep it steady (UI §8).
+      var flicker = doze && !o.still && !o.steady ? 0.85 + 0.15 * Math.sin(t * 17) * Math.sin(t * 3.1) : 1;
       room(ctx, t, flicker);
       desk(ctx);
       lamp(ctx, flicker);

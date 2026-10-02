@@ -127,7 +127,15 @@
     if (!res || !res.ok) { render(); return; }
     J.pose = POSES[choice] || 'idle';
     J.poseChoice = choice;
-    if (res.report) { J.report = res.report; remember(res.report); startDay(res.report); electionNight(res.report); }
+    if (res.report) {
+      J.report = res.report;
+      remember(res.report);
+      startDay(res.report);
+      // A night that ended the game in death (a Hardcore loan default) has already replaced the cell
+      // with FLATLINED (js/scenes/death.js hears day:started): no paper over it, nothing to render.
+      if (!J) return;
+      electionNight(res.report);
+    }
     render();
   }
 

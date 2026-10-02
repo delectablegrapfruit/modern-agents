@@ -4,7 +4,9 @@ Each request names the file, the exact change, why, and the workaround used mean
 §1.3). Nothing here blocks W2-Music's files: every song and stinger of ART_AUDIO §13.4 is
 registered and passes the objective audio test. Item 1 is for the lead (`js/ui/stamp.js`, W1-D's
 file); item 2 is a record for the lead's CONTRACT / ART_AUDIO fold; item 3 records deviations from
-ART_AUDIO §13.2's instrument wording; the last section answers the requests addressed to W2-Music.
+ART_AUDIO §13.2's instrument wording; item 4 is for the lead (`js/scenes/building.js`, W1-D's: the
+interior ambience beds nobody plays); the next section answers the requests addressed to W2-Music,
+and the last one leaves a note for another package.
 
 ## 1. `js/ui/stamp.js` (lead; W1-D's): the stinger by the stamp's key
 
@@ -72,6 +74,23 @@ four instrument descriptions are approximated with the presets of §13.2 (each f
 If a later wave wants the real thing, the tracker would need a per-note `bend` or a `detune` field on
 `inst` (W1-S's files); nothing is requested now.
 
+## 4. `js/scenes/building.js` (lead; W1-D's): the interior ambience beds
+
+- **File:** `js/scenes/building.js`, the scene's `enter` and `exit`.
+- **Exact change:** a small table of the interior beds of ART_AUDIO §13.6 by building id, played
+  under the building's song: `var BED = { casino: 'casino', bar: 'bar', mcsticks: 'fryer', nli:
+  'office', bank: 'office', cityhall: 'office', uofs: 'campus' };` in `enter`, after the music,
+  `if (BED[id] && SR.audio && typeof SR.audio.ambience === 'function') SR.audio.ambience(BED[id], 1);`
+  (kept in `B.bed`), and in `exit` `SR.audio.ambience(B.bed, 0)` (the bed fades out over 1 s, as
+  ART_AUDIO §13.7 has the ambience do on scene changes; the city scene restarts its own beds).
+- **Why:** W1-S registered all twelve beds (CONTRACT §14.4), and the city scene plays `city` (with
+  its birds by day and crickets by night) and `wind`, but nothing plays the interiors' "casino
+  murmur, bar chatter, fryer sizzle, office hum, campus murmur" of ART_AUDIO §13.6: inside, only the
+  song sounds. A table in the scene keeps the building data's frozen fields (CONTRACT §3.1) as they
+  are; an `ambience` field on the building defs would do the same through the requests protocol.
+- **Workaround meanwhile:** none (no W2-Music file can start a bed); the interiors play their song
+  alone.
+
 ## Requests addressed to W2-Music, answered
 
 - **W2-Civic 2** (`hail_to_the_stick` → variant `dictator`): done; the B♭-minor arrangement is the
@@ -84,7 +103,17 @@ If a later wave wants the real thing, the tracker would need a per-note `bend` o
   `compound_interest`, `please_hold` and `tick_tock_trouble` are registered.
 - **Wave-1 deferred (W1-S 8: levels, render cost, `stingers.stamp`):** every song peaks between -10.9
   and -12 dBFS with RMS -23.6 to -28.2 dBFS; no song asks more voices a second than
-  `crossroads_strut` (the busiest W2-Music song, `brawl_hall`, 11.2 against 13.3), so the 3 %
-  render-cost budget stays measured on it (`tests/e2e/audio.test.cjs` passes: 2.0 % of real time
-  calibrated in the last run); `final_edition`'s anthem pad holds two notes to stay lighter than it;
+  `crossroads_strut` (the busiest W2-Music song, `brawl_hall`, 11.2 against 13.3), and none takes
+  longer to render a second of audio (measured by `tests/e2e/songs.test.cjs` over a whole pass: the
+  dearest, `final_edition` and `please_hold`, render at about 0.7-0.9 of its time), so the 3 %
+  render-cost budget stays measured on it (`tests/e2e/audio.test.cjs` passes: 2.0-2.4 % of real
+  time calibrated); `final_edition`'s anthem pad holds two notes to stay lighter than it;
   `stingers.stamp` is registered.
+
+## Notes for other packages (no change requested)
+
+- **W2-Night (darts):** ART_AUDIO §13.4 lists darts among `tick_tock_trouble`'s contexts (a P1 song,
+  registered now); `js/minigames/darts.js` names no `music`, so the frame ducks Sticky's
+  `last_call_shuffle` 6 dB under the board, which the adaptive rules ("minigames duck the song 6 dB")
+  also allow (CONTRACT §13's darts example names `last_call_shuffle` too). Adding `music: 'tick_tock_trouble'` to the darts engine would follow the table; either
+  is in spec, so nothing is asked.

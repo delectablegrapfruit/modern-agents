@@ -7,8 +7,9 @@
 // Back returns and Continue resumes), the profile with no game running, the credits, the Hall of Fame
 // (P1 flag), each overlay registered in its own file, the a11y audit of every screen, the pad's A
 // (interact + confirm) and touch taps that already acted (the boot card, the intro's hold) never
-// pressing the next screen, Hardcore's Quit keeping the last change, zero console errors.
-// Screenshots: shots/W2-Front/.
+// pressing the next screen, Hardcore's Quit keeping the last change, Retire over the cell, Continue
+// with an unreadable save, every screen at 150 % text (UI §8) and on a 667 × 375 phone (UI §2.2),
+// zero console errors. Screenshots: shots/W2-Front/.
 //   node tests/e2e/frontend.test.cjs
 'use strict';
 const path = require('path');
@@ -30,6 +31,41 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-Front');
   };
   const visible = (id) => ev((id) => { const el = document.querySelector('#ui [data-id="' + id + '"]'); return !!(el && el.getClientRects().length); }, id);
   const clearSaves = () => ev(() => { const S = window.SR.save; S.storage.keys('sr1.').forEach((k) => { if (k !== 'sr1.settings') S.storage.remove(k); }); });
+  /**
+   * UI §8 ("tested with no clipping at 150 %"; the touch-compact layout of UI §2.2): every control of
+   * a screen, and the named texts, can be scrolled into view, then lie inside the window and on top
+   * (not under a footer, not spilled out of their panel). @returns {Promise<string[]>} the problems
+   */
+  const reach = (tt, scope, extra) => tt.eval(([scope, extra]) => {
+    const root = document.querySelector(scope);
+    if (!root) return ['no ' + scope];
+    const els = Array.from(root.querySelectorAll('[data-nav]')).concat(extra.map((id) => root.querySelector('[data-id="' + id + '"]') || id));
+    const bad = [];
+    els.forEach((el) => {
+      if (typeof el === 'string') { bad.push(el + ': missing'); return; }
+      if (!el.getClientRects().length || el.closest('.vh')) return;
+      el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      const name = el.getAttribute('data-id') || el.textContent.trim().slice(0, 24);
+      // Only a box the player can scroll may have moved: one with overflow hidden (or #ui itself, or
+      // the page) scrolls for a script, never for a wheel, a finger or a scrollbar.
+      let stuck = null;
+      for (let a = el.parentElement; a; a = a.parentElement) {
+        if (!a.scrollTop && !a.scrollLeft) continue;
+        const cs = getComputedStyle(a);
+        if ((a.scrollTop && !/auto|scroll/.test(cs.overflowY)) || (a.scrollLeft && !/auto|scroll/.test(cs.overflowX))) {
+          stuck = stuck || (a.getAttribute('data-id') || a.id || a.className || a.tagName) + ' (overflow ' + cs.overflowY + ')';
+          a.scrollTop = 0; a.scrollLeft = 0;
+        }
+      }
+      if (window.scrollX || window.scrollY) { stuck = stuck || 'the page'; window.scrollTo(0, 0); }
+      if (stuck) { bad.push(name + ': only a script can scroll it into view (' + stuck + ')'); return; }
+      const r = el.getBoundingClientRect();
+      if (r.top < -1 || r.left < -1 || r.bottom > innerHeight + 1 || r.right > innerWidth + 1) { bad.push(name + ': outside the window'); return; }
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + Math.min(r.height / 2, 12));
+      if (!hit || !(hit === el || el.contains(hit))) bad.push(name + ': covered by ' + (hit ? hit.getAttribute('data-id') || hit.className || hit.tagName : 'nothing'));
+    });
+    return bad;
+  }, [scope, extra || []]);
 
   // ------------------------------------------------------------------------------------------------
   T.section('boot → the "Press any key or click" card → the title');
@@ -228,6 +264,23 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-Front');
   T.eq(ii.beat, 'desk', 'beat 1: the desk at night');
   T.ok(/doodle a little city/.test(await t.uiText()), 'with its caption');
   await shot('intro-1-desk');
+  // A release counts whatever the modifiers, and a window that loses focus holds nothing: neither may
+  // leave a key "held" that skips the intro by itself.
+  await page.keyboard.down('KeyA'); await t.step(2);
+  await page.keyboard.down('Control'); await page.keyboard.up('KeyA'); await page.keyboard.up('Control');
+  await t.step(50);
+  T.eq([await t.scenes(), ((await info('intro')) || {}).hold], [['intro'], 0], 'a key let go while Ctrl is down is no longer held (no skip)');
+  await page.keyboard.down('KeyB'); await t.step(2);
+  await ev(() => window.dispatchEvent(new Event('blur')));
+  await t.step(50);
+  T.eq([await t.scenes(), ((await info('intro')) || {}).hold], [['intro'], 0], 'nor a key that was down when the window lost focus');
+  await page.keyboard.up('KeyB');
+  const lampAt = await ev(() => {
+    // The dozing lamp's bulb (beat 2) at two moments: it flickers, but not with { steady } (Flash reduction).
+    const px = (tt, o) => { const c = document.createElement('canvas'); c.width = 1280; c.height = 720; const g = c.getContext('2d'); window.SR.art.intro.draw(g, tt, o); return Array.from(g.getImageData(930, 324, 1, 1).data).join(','); };
+    return { flickers: px(6, {}) !== px(6.13, {}), steady: px(6, { steady: true }) === px(6.13, { steady: true }) };
+  });
+  T.eq(lampAt, { flickers: true, steady: true }, 'the dozing lamp flickers, and Flash reduction keeps it steady (UI §8)');
   const beats = [];
   for (const until of [7, 12, 17, 23.5]) {
     await ev((u) => { const SR = window.SR; while (SR.reg.scene.intro.info() && SR.reg.scene.intro.info().t < u) SR.loop.step(10); }, until);
@@ -289,6 +342,15 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-Front');
   await t.step(3);
   const rs = await t.state();
   T.eq([await t.scenes(), rs.over, rs.result && rs.result.reason], [['results'], true, 'retire'], 'Retire ends the run with its results (reason retire)');
+  // The cell is the whole game while you serve, pause menu included (GDD §6.6): a Retire there is no
+  // jail night, so the cell does not present it; the results must still come.
+  await t.newGame({ name: 'Cellmate', length: 0, seed: 3 });
+  await ev(() => { const SR = window.SR; SR.state.jail = { daysLeft: 3, served: 0, reason: 'police' }; SR.scenes.go('jail', { resume: true }, { transition: false }); });
+  await t.step(2);
+  await t.press('pause'); await t.step(1);
+  await t.clickUI('pause-retire'); await t.step(1);
+  await t.clickUI('pause-retire-yes'); await t.step(3);
+  T.eq([await t.scenes(), await t.get('over')], [['results'], true], 'Retire from the pause menu over the cell reaches the results (not a cell with the game over)');
   // over a minigame: only Resume and Settings
   await t.newGame({ name: 'Gamer' });
   await t.goto('city');
@@ -340,6 +402,28 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-Front');
   await ev(() => window.__restoreRefresh());
 
   // ------------------------------------------------------------------------------------------------
+  T.section('Continue with a save that cannot be read');
+  await clearSaves();
+  await t.newGame({ name: 'Older', seed: 3 }); await ev(() => window.SR.save.write('slot2'));
+  await t.newGame({ name: 'Mangled', seed: 4 }); await ev(() => window.SR.save.write('slot1'));
+  await ev(() => {
+    // Its meta reads, its state does not (a broken value): the title offers it until the load fails.
+    const S = window.SR.save, env = JSON.parse(S.storage.get('sr1.slot1'));
+    env.state.clock = 'x';
+    S.storage.set('sr1.slot1', JSON.stringify(env));
+    window.SR.ui.toast.clear();
+    window.SR.state = null;
+  });
+  await t.goto('title');
+  T.ok(/MANGLED/i.test(await ev(() => document.querySelector('#ui [data-id="title-save-name"]').textContent)), 'the save card shows the latest save');
+  await t.clickUI('title-continue'); await t.step(2);
+  const toasts = await ev(() => window.SR.ui.toast.list().map((x) => x.text));
+  T.eq([await t.scenes(), toasts], [['title'], ['This save couldn\'t be read.']], 'Continue stays on the title with one "This save couldn\'t be read." (not one per listener)');
+  T.ok(/OLDER/i.test(await ev(() => document.querySelector('#ui [data-id="title-save-name"]').textContent)), 'and the menu and the save card move on to the next readable save (the broken one is quarantined)');
+  await clearSaves();
+  await ev(() => window.SR.ui.toast.clear());
+
+  // ------------------------------------------------------------------------------------------------
   T.section('the overlays register in their own files (BUILD_PLAN §4.11)');
   const files = await ev(() => ['pause', 'settings', 'saveload', 'halloffame', 'credits', 'profile', 'boot', 'title', 'newgame', 'intro', 'results']
     .map((id) => [id, window.SR.registry.file('scene', id), window.SR.reg.scene[id].kind || 'base']));
@@ -383,6 +467,46 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-Front');
   T.eq((await info('halloffame')).bucket, 'short', 'Q moves between lengths');
   await shot('halloffame');
   await t.debug('feature', 'achievements', false);
+
+  // ------------------------------------------------------------------------------------------------
+  T.section('150 % text (UI §8): every screen reflows or scrolls, nothing clipped');
+  await clearSaves();
+  await ev(() => window.SR.settings.set('access.textScale', 1.5));
+  await t.newGame({ name: 'Bartholomew Jr', seed: 41 });
+  await ev(() => { const SR = window.SR; SR.save.write('slot1'); SR.state = null; const p = SR.save.profile(); p.hintsSeen.whatsNew = false; SR.save.saveProfile(p); });
+  await t.debug('feature', 'achievements', true);
+  await t.goto('title');
+  T.eq(await reach(t, '#ui [data-scene="title"]', ['title-save-name', 'title-news-ok', 'title-version']), [], 'the title: the whole menu, the save card and the What\'s new card\'s Got it (not under the footer)');
+  await shot('title-text150');
+  for (const step of [1, 2, 3]) {
+    await t.goto('newgame', { seed: 5 });
+    for (let i = 1; i < step; i++) await t.clickUI('ng-next');
+    await t.step(1);
+    T.eq(await reach(t, '#ui [data-scene="newgame"]', ['ng-step-' + step]), [], 'the wizard, step ' + step);
+  }
+  for (const [scene, params, extra] of [['credits', null, ['credits-fan', 'credits-classic']], ['profile', { tab: 'totals' }, ['prof-best-unlimited']], ['halloffame', null, []]]) {
+    await t.goto(scene, params);
+    T.eq(await reach(t, '#ui [data-scene="' + scene + '"]', extra), [], 'the ' + scene + (params ? ' (' + params.tab + ')' : '') + ' panel scrolls instead of spilling over the city');
+  }
+  await shot('credits-text150');
+  await t.newGame({ name: 'Bartholomew Jr', seed: 41, length: 15 });
+  await t.goto('city');
+  await t.press('pause'); await t.step(1);
+  T.eq(await reach(t, '#ui [data-scene="pause"]'), [], 'the pause menu');
+  await t.press('back'); await t.step(1);
+  await ev(() => {
+    const SR = window.SR, s = SR.state;
+    s.clock.day = 16; s.money.cash = 2500000; s.stats.karma = 60; s.job.office = 'president'; s.flags.foldDone = true;
+    s.over = true; s.result = SR.rules.endgame.results(s, 'time');
+    SR.scenes.go('results', { reason: 'time', result: s.result }, { transition: false });
+  });
+  await t.step(1);
+  T.eq(await reach(t, '#ui [data-scene="results"]', ['results-masthead', 'results-edition', 'results-headline', 'results-networth', 'results-banners', 'results-rank', 'results-meta']), [],
+    'the Final Edition scrolls (the masthead and the headline are not cut off above the buttons)');
+  await shot('results-text150');
+  await ev(() => window.SR.settings.set('access.textScale', 1));
+  await t.debug('feature', 'achievements', false);
+  await clearSaves();
 
   // ------------------------------------------------------------------------------------------------
   T.section('Classic mode (GDD §5; ARCHITECTURE §15)');
@@ -447,10 +571,46 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W2-Front');
   const touchErrors = tt.errors();
   await tt.close();
 
+  // ------------------------------------------------------------------------------------------------
+  T.section('the touch-compact layout on a small phone (667 × 375; UI §2.2)');
+  const ct = await h.open({ fast: true, touch: true, width: 667, height: 375 });
+  T.eq(await ct.eval(() => document.getElementById('app').getAttribute('data-layout')), 'compact', 'the compact layout is on');
+  await ct.eval(() => window.SR.scenes.go('title', {}, { transition: false }));
+  T.eq(await reach(ct, '#ui [data-scene="title"]'), [], 'the title menu scrolls to its last item');
+  const overlaps = [];
+  for (const step of [1, 2, 3]) {
+    await ct.eval(() => window.SR.scenes.go('newgame', { seed: 5 }, { transition: false }));
+    for (let i = 1; i < step; i++) await ct.clickUI('ng-next');
+    await ct.step(1);
+    const bad = await ct.eval(() => {
+      // The card scrolls as one: Back and Next stay below the step's content, never over it.
+      document.querySelector('#ui .ng-card').scrollTop = 0;
+      const foot = document.querySelector('#ui .ng-foot').getBoundingClientRect();
+      return Array.from(document.querySelectorAll('#ui .ng-body [data-id]')).filter((el) => {
+        const r = el.getBoundingClientRect();
+        return r.width && r.height && r.left < foot.right && r.right > foot.left && r.top < foot.bottom && r.bottom > foot.top;
+      }).map((el) => el.getAttribute('data-id'));
+    });
+    overlaps.push(...bad.map((id) => step + ':' + id));
+    const r = await reach(ct, '#ui [data-scene="newgame"]');
+    overlaps.push(...r.map((x) => step + ':' + x));
+  }
+  T.eq(overlaps, [], 'every wizard step: the footer stays below the step (Fair start, the HP readout) and every control is reachable');
+  await ct.shot(path.join(SHOTS, 'compact-newgame-2.png'));
+  await ct.eval(() => { const SR = window.SR; SR.debug.newGame({ name: 'Pocket' }); SR.scenes.go('intro', null, { transition: false }); });
+  await ct.fast(false);
+  await ct.eval(() => { const SR = window.SR; while (SR.reg.scene.intro.info() && SR.reg.scene.intro.info().t < 15) SR.loop.step(10); });
+  const cap = await ct.eval(() => { const r = document.querySelector('#ui [data-id="intro-caption"]').getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth; });
+  T.ok(cap, 'the intro\'s longest caption stays inside a narrow window');
+  await ct.fast(true);
+  const compactErrors = ct.errors();
+  await ct.close();
+
   T.section('result');
   T.eq(await ev(() => window.SR.text.missing()), [], 'every text key the front end showed resolves');
   T.eq(ours, [], 'zero console errors in the remaster');
   T.eq(touchErrors, [], 'zero console errors in the touch session');
+  T.eq(compactErrors, [], 'zero console errors in the compact session');
   await t.close();
   T.done();
 })().catch((e) => { console.error(e); process.exit(1); });

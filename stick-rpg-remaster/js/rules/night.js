@@ -27,6 +27,9 @@
   // The weathers that get a morning weather alert (GDD §4.7 step 11, §3.12: gusts at the edges,
   // fog banks over them); a storm (15 % of rain days) gets one too.
   var WEATHER_ALERTS = ['windy', 'fog'];
+  // Floating point, not balance: hpMax × (0.25 + 0.10) is 62.99999999999999 at HP max 180, so the
+  // B-07 floor would lose 1 HP. The exact product is a multiple of 0.05; the error is < 1e-12.
+  var FLOOR_EPS = 1e-8;
 
   function weekdayOf(day) { return SR.rules.time.weekdayOf(day); }
   function decreeActive(s, id) { return ((s.election && s.election.decrees) || []).indexOf(id) >= 0; }
@@ -45,7 +48,7 @@
   function restoreHp(s, pill) {
     var T = SR.tuning.sleep, b = SR.rules.homes.sleepBonus(s);
     if (pill === undefined) pill = s.items.pills > 0 && s.clock.pillAuto !== false;
-    return Math.max(0, Math.floor(s.stats.hpMax * (T.base + b.total)) + T.flat - (pill ? T.pill : 0));
+    return Math.max(0, Math.floor(s.stats.hpMax * (T.base + b.total) + FLOOR_EPS) + T.flat - (pill ? T.pill : 0));
   }
 
   /** Adds a report line. */

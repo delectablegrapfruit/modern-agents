@@ -165,7 +165,7 @@
       'AFTER {days} DAYS, {rank} {name} HANGS UP THE HAT',
     ],
     'front.head.retire.good': [
-      '{name} RETIRES A {rank}; NEIGHBOURS PLAN A SURPRISE PARTY, TELL EVERYONE',
+      '{name} RETIRES, STAMPED {rank}; NEIGHBOURS PLAN A SURPRISE PARTY, TELL EVERYONE',
       'KINDLY {title} {name} STEPS BACK; CITY FORGETS TO STOP SMILING',
     ],
     'front.head.retire.evil': [

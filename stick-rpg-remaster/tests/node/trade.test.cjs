@@ -64,6 +64,24 @@ T.section('trip resolution in the original order: 14 scripted scenarios');
     [{ reason: 'bust', days: 6 }, 'trip', 'busted', true], 'a bust: the trip event, jail 5 + floor(30 / 25), the log entry');
 }
 
+T.section('the bus board\'s mugging chance (B-12 mugCheck; review 2)');
+{
+  // mugChance is the chip the destination board shows: P(STR < 100 + rand(0..range)) at step 4,
+  // checked against every roll of every city's range.
+  let worst = 0;
+  R.cityIds().forEach((id) => {
+    const range = B.cities[id].mug;
+    for (let str = 0; str <= 300; str++) {
+      let n = 0;
+      for (let roll = 0; roll <= range; roll++) if (str < B.mugCheck.base + roll) n++;
+      worst = Math.max(worst, Math.abs(n / (range + 1) - R.mugChance(base({ stats: { str } }), id)));
+    }
+  });
+  T.eq(worst, 0, 'mugChance is exact for every city and STR 0-300 (always at STR < 100, never at 100 + range)');
+  T.eq([R.mugChance(base({ stats: { str: 210 } }), 'pegas'), R.mugChance(base({ stats: { str: 209 } }), 'pegas'), R.mugChance(base(), 'atlantis')],
+    [0, 1 / 111, 0], 'Las Pegas is safe from STR 210; an unknown city reads 0');
+}
+
 T.section('draws per trip');
 {
   const count = (patch, city) => { const c = K.counting(SR.rng.create(9)); R.trip(base(patch), city, { rng: c }); return c.draws; };
@@ -248,6 +266,14 @@ T.section('speaking tours (P1 tours; B-12 tour)');
   const tm = R.tour(weak, 'gusty', { wins: 0, beats: [false] }, K.ctx(SR, 2));
   T.eq([weak.money.cash, weak.money.bank > 0, tm.trip.mugged, tm.events[0].payload.outcome], [0, true, true, 'toured'],
     'mugged on a tour: only the pocket cash; the fee is safe in the bank');
+  // Review 2 (W2-RulesC): CONTRACT §8.9 / §9.1 give the `trip` event a `mugged` extra (tours); the
+  // payload left it out, so an arc or achievement matching { mugged: true } never saw a tour mugging.
+  const safe = tourist();
+  R.tourStart(safe, 'gusty', K.ctx(SR, 1));
+  const ts = R.tour(safe, 'gusty', { wins: 1 }, K.ctx(SR, 2));
+  const mugTrip = R.smuggle(base({ items: { gun: 0 } }), 'gusty', K.ctx(SR, 3));
+  T.eq([tm.events[0].payload.mugged, ts.events[0].payload.mugged, mugTrip.events[0].payload.mugged, mugTrip.events[0].payload.outcome],
+    [true, false, true, 'mugged'], 'the trip event carries `mugged`: a tour mugged on the way home, a safe tour, a mugged red-eye');
   // The resolve ('trade.tour') pays only the tour booked today, once (review probes).
   const fn = SR.reg.fn['trade.tour'];
   const nb = tourist({ money: { cash: 300, bank: 0 } });

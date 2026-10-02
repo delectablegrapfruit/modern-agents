@@ -3,8 +3,8 @@
 // their own files and nothing else there; each passes the format validator (pattern lengths, the
 // order, the stinger rules) and loads alone after js/boot/* (the load-time rule, shuffled loading);
 // tempo, key, scale and metre follow the §13.4 table (final_edition's 84 → 100 as per-pattern bpm);
-// every loop lasts 60-120 s (ART_AUDIO §13.1; please_hold restarts every 30 s on purpose) and every
-// song has contrasting sections; the leitmotif (0, +4, +7, +9, +7) reads at every motif annotation of
+// every loop lasts 60-120 s (ART_AUDIO §13.1; please_hold restarts every 30 s on purpose), every
+// song has contrasting sections and a breakdown (a section whose texture thins); the leitmotif (0, +4, +7, +9, +7) reads at every motif annotation of
 // morning_edition, final_edition (each variant) and stingers.promotion; the variants the callers ask
 // for exist (the city's `rain`, the Dictator's `dictator`, the results' `stamp` and `minor`);
 // final_edition's `stamp` is the default a whole tone up in every pitched part and its `minor` covers
@@ -147,6 +147,18 @@ T.section('loops and sections (ART_AUDIO §13.1: 60-120 s, A/B sections, a break
   T.eq(bad, [], 'every loop lasts 60-120 s; please_hold restarts from the top every ~30 s (the joke)');
   const flat = SONGS.filter((id) => id !== 'morning_edition' && new Set(def(id).order.slice(def(id).loopFrom || 0)).size < 2);
   T.eq(flat, [], 'every loop has contrasting sections (at least an A and a B pattern, not one riff)');
+  // A breakdown: a section of the loop whose texture thins (its events a bar at most 85 % of the
+  // loop's busiest section's), so the loop opens up on repeat.
+  const density = (C, p) => { const P = C.patterns[p]; let n = 0; Object.keys(P.tracks).forEach((t) => P.tracks[t].ev.forEach((e) => { if (e) n++; })); return n / P.bars; };
+  const noBreak = [];
+  for (const id of SONGS) {
+    const d = def(id);
+    if (typeof d.loopFrom !== 'number') continue;
+    const C = K.compile(d), ds = d.order.slice(d.loopFrom).map((p) => density(C, p));
+    const ratio = Math.min.apply(null, ds) / Math.max.apply(null, ds);
+    if (!(ratio <= 0.85)) noBreak.push(id + ' (' + ratio.toFixed(2) + ')');
+  }
+  T.eq(noBreak, [], 'every loop has a breakdown (a section at most 85 % as busy as its busiest)');
   T.eq(SONGS.filter((id) => def(id).gain === undefined || def(id).gain > 1), [], 'every song sets its mix gain (0..1)');
 }
 

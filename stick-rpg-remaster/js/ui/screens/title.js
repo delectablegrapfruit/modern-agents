@@ -231,13 +231,17 @@
     var version = h('p', { class: 'title-ver', 'data-id': 'title-version' });
     var foot = h('footer', { class: 'title-foot' },
       h('p', { class: 'title-fan', 'data-id': 'title-fan' }, text('ui.fanNote')), padNote, version);
-    var main = h('div', { class: 'title-main', 'data-id': 'title-main' }, left, card, news, foot);
+    // The save card and the What's new card share a right-hand column that scrolls when the text is
+    // large (UI §8: nothing clipped at 150 %), so neither runs under the footer.
+    var right = h('div', { class: 'title-right' }, card, news);
+    var main = h('div', { class: 'title-main', 'data-id': 'title-main' }, left, right, foot);
     el.appendChild(main);
 
     function items() {
       var hasSave = !!(SR.ui.saveload && SR.ui.saveload.latest());
       var list = [];
-      if (hasSave) list.push({ id: 'continue', label: 'front.menu.continue', run: function () { SR.ui.saveload.continueLatest(); } });
+      // A save that cannot be read is quarantined by SR.save: the menu and the card then show what is left.
+      if (hasSave) list.push({ id: 'continue', label: 'front.menu.continue', run: function () { if (!SR.ui.saveload.continueLatest()) T.refresh(); } });
       list.push({ id: 'new', label: 'front.menu.new', run: function () { SR.scenes.go('newgame'); } });
       list.push({ id: 'load', label: 'front.menu.load', run: function () { SR.scenes.push('saveload', { mode: 'load' }); } });
       list.push({ id: 'classic', label: 'front.menu.classic', run: classic });
@@ -361,7 +365,7 @@
       if (T.keyOff) { T.keyOff(); T.keyOff = null; }
       if (T.gateScope) { SR.ui.focus.pop(T.gateScope); T.gateScope = null; }
       if (gateWrap && gateWrap.parentNode) gateWrap.parentNode.removeChild(gateWrap);
-      gate = null; gateWrap = null;
+      gate = null; gateWrap = null; gatePress = null; gateLogo = null;   // the card's line is no longer re-judged
       D().sfx('open');
       openMenu();
       D().announce(text('game.title') + '. ' + text('game.tag'));

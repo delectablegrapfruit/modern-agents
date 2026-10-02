@@ -81,7 +81,9 @@
       v.day = Math.min(v.days, (j.served || 0) + 1);
       v.daysLeft = Math.max(0, j.daysLeft);
     }
-    if (s && s.over && !(s.mode && s.mode.keepPlaying)) v.mode = 'over';
+    // An ended game is `over` alone: Keep playing clears it, so a Keep-playing run that ends again
+    // (a Retire, a Hardcore death) is over for good (docs/requests/W2-RulesE.md 7).
+    if (s && s.over) v.mode = 'over';
     else if (!j) v.mode = 'released';
     v.gag = { key: 'card.jail.gag', vars: { variant: s ? s.clock.day : 0 } };
     if (v.mode === 'day' && typeof SR.preview === 'function') {

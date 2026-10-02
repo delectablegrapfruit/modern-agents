@@ -11,6 +11,8 @@
   top: 48px;
   width: 960px;
   max-height: 624px;
+  overflow-y: auto;
+  touch-action: pan-y;
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);
@@ -65,6 +67,9 @@
   left: 48px;
   top: 32px;
   width: 520px;
+  max-height: calc(100% - 80px);
+  overflow-y: auto;
+  touch-action: pan-y;
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
@@ -78,6 +83,7 @@
 .title-menu { display: flex; flex-direction: column; gap: 2px; }
 .title-item.btn {
   justify-content: flex-start;
+  text-align: left;
   min-height: 44px;
   padding: 0 var(--sp-3);
   font-family: var(--font-display);
@@ -88,11 +94,20 @@
 }
 .title-item.btn::before { content: "▸"; width: 1.1em; opacity: 0; transition: opacity var(--dur-1) var(--ease-out); }
 .title-item.btn:focus::before, .title-item.btn:hover::before { opacity: 1; }
-.title-card {
+.title-right {
   position: absolute;
   right: 48px;
   top: 40px;
+  bottom: 56px;
   width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  overflow-y: auto;
+  touch-action: pan-y;
+}
+.title-right > * { flex: none; }
+.title-card {
   display: flex;
   flex-direction: column;
   gap: var(--sp-1);
@@ -107,10 +122,6 @@
 .title-card-name { font-weight: 900; font-size: var(--t16); text-transform: uppercase; }
 .title-card-line { font-size: var(--t14); color: var(--ink-700); }
 .title-news {
-  position: absolute;
-  right: 48px;
-  top: 320px;
-  width: 300px;
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
@@ -148,6 +159,9 @@
   top: 80px;
   width: 960px;
   min-height: 560px;
+  max-height: calc(100% - 96px);
+  overflow-y: auto;
+  touch-action: pan-y;
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);
@@ -157,6 +171,7 @@
   background: var(--paper-0);
   box-shadow: var(--e-3);
 }
+.ng-card > * { flex-shrink: 0; }
 .ng-steps { display: flex; gap: var(--sp-2); counter-reset: ng; }
 .ng-step {
   flex: 1;
@@ -169,7 +184,7 @@
 .ng-step::before { counter-increment: ng; content: counter(ng) "  "; font-weight: 900; }
 .ng-step.is-done { border-bottom-color: var(--primary-100); }
 .ng-step.is-current { border-bottom-color: var(--primary-600); color: var(--ink-900); }
-.ng-body { flex: 1 1 auto; display: flex; flex-direction: column; gap: var(--sp-4); min-height: 360px; }
+.ng-body { flex: 1 0 auto; display: flex; flex-direction: column; gap: var(--sp-4); min-height: 360px; }
 .ng-foot { display: flex; justify-content: space-between; gap: var(--sp-3); }
 .ng-field { display: flex; flex-direction: column; gap: var(--sp-2); }
 .ng-label { font-size: var(--t16); font-weight: 900; text-transform: uppercase; letter-spacing: .02em; }
@@ -200,7 +215,7 @@
   left: 50%;
   bottom: 40px;
   width: max-content;
-  max-width: 1000px;
+  max-width: min(1000px, calc(100% - 64px));
   transform: translateX(-50%);
   padding: var(--sp-2) var(--sp-4);
   border-radius: var(--r-s);
@@ -215,7 +230,7 @@
 .intro-skip {
   position: absolute;
   right: 32px;
-  bottom: 32px;
+  top: 32px;
   display: flex;
   align-items: center;
   gap: var(--sp-2);
@@ -235,7 +250,7 @@
   left: 50%;
   top: 50%;
   width: max-content;
-  max-width: 1100px;
+  max-width: min(1100px, calc(100% - 64px));
   transform: translate(-50%, -50%) rotate(-2deg);
   padding: var(--sp-5) var(--sp-6);
   border: var(--line);
@@ -369,8 +384,11 @@
   background: var(--newsprint);
   box-shadow: var(--e-3);
   color: var(--ink-900);
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  touch-action: pan-y;
 }
+.res > * { flex-shrink: 0; }
 .res-mast { display: flex; align-items: baseline; justify-content: space-between; border-bottom: 5px double var(--ink-900); padding-bottom: var(--sp-1); }
 .res-paper { font-size: calc(var(--fs-44) * var(--ui-scale)); font-weight: 900; letter-spacing: .08em; text-transform: uppercase; line-height: 1.1; }
 .res-ed { font-weight: 700; font-size: var(--t14); letter-spacing: .04em; }
@@ -418,7 +436,7 @@
 .rm .stamp.res-stamp.is-thump { animation: none; }
 .res-meta { font-weight: 700; font-size: var(--t14); }
 .res-actions { display: flex; justify-content: center; gap: var(--sp-3); margin-top: auto; }
-.res-none { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: var(--sp-5); background: var(--paper-0); border: var(--line); border-radius: var(--r-m); }
+.res-none { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: var(--sp-3); padding: var(--sp-5); background: var(--paper-0); border: var(--line); border-radius: var(--r-m); }
 
 /* ---------------------------------------------------------------- Hall of Fame, profile, credits (UI.md §5.18) */
 .hof-body, .prof-body { flex: 1 1 auto; min-height: 0; }
@@ -469,8 +487,8 @@
 /* ---------------------------------------------------------------- the touch-compact layout (UI.md §2.2) */
 /* #ui covers the whole window at uiK 0.92: panels anchor to its edges and scroll instead of the
    1280 × 720 grid; the side cards of the title give their room to the menu. */
-.touch-compact .title-left { left: 8px; top: 8px; bottom: 48px; width: min(520px, calc(100% - 16px)); overflow-y: auto; touch-action: pan-y; }
-.touch-compact .title-card, .touch-compact .title-news { display: none; }
+.touch-compact .title-left { left: 8px; top: 8px; bottom: 48px; width: min(520px, calc(100% - 16px)); max-height: none; overflow-y: auto; touch-action: pan-y; }
+.touch-compact .title-right { display: none; }
 .touch-compact .front-panel, .touch-compact .ng-card, .touch-compact .res {
   left: 8px;
   right: 8px;

@@ -412,6 +412,21 @@
     return bet * Mth.max(2, BJ().doubleAfterSplit ? 2 * hands : hands);
   }
 
+  /**
+   * Whether an engine-played round is one this table could have dealt on `bet`: it has hands, its
+   * own bet is `bet`, every hand stakes the bet (twice when doubled) and the whole round stays
+   * within maxStake. bjRound refuses anything else (reason.badBet).
+   * @returns {boolean}
+   */
+  function playedRound(r, bet, most) {
+    if (!r || !isArray(r.hands) || !r.hands.length || Number(r.bet) !== bet) return false;
+    for (var i = 0; i < r.hands.length; i++) {
+      var h = r.hands[i];
+      if (!h || !isArray(h.cards) || h.bet !== bet * (h.doubled ? 2 : 1)) return false;
+    }
+    return wagered(r) <= most;
+  }
+
   /** @returns {boolean} a shoe object has the expected shape (a saved or engine-returned shoe). */
   function validShoe(sh) {
     return !!(sh && isArray(sh.cards) && sh.cards.length >= 52 && typeof sh.pos === 'number' &&
@@ -765,8 +780,9 @@
    * the state's shoe; `wagered` is the round's total stake with doubles and splits, bj.wagered) or
    * { round, shoe, trueCount } (the net and the stake are settled here). Applies the round, the
    * day's hand count, the pit boss (P1) and keeps the shoe in state.casino.shoe. An echoed net and
-   * stake are held to what one round on that bet can do (maxStake), so a malformed result never
-   * pays more than the table could.
+   * stake, and a played round's settle, are held to what one round on that bet can do (maxStake),
+   * and a played round must agree with its bet (playedRound), so a malformed result never pays
+   * more than the table could.
    * @returns {object} a partial Result
    */
   function bjRound(s, p) {
@@ -777,8 +793,11 @@
     var lim = vip(s).bjBets;
     if (bet < lim[0] || bet > lim[1]) return { ok: false, reason: 'reason.badBet', vars: { n: bet } };
     var most = maxStake(bet);
-    if (p.round && !(isArray(p.round.hands) && p.round.hands.length && wagered(p.round) <= most)) return { ok: false, reason: 'reason.badBet', vars: { n: bet } };
-    var net = p.round ? settle(p.round) : SR.util.clamp(Number(p.net) || 0, -most, most);
+    if (p.round && !playedRound(p.round, bet, most)) return { ok: false, reason: 'reason.badBet', vars: { n: bet } };
+    // A played round's own settle is held to the same bound as an echoed net: settle reads the
+    // round's fields (a natural pays 1.5 × round.bet), which a malformed round may not keep in step
+    // with its hands.
+    var net = SR.util.clamp(p.round ? settle(p.round) : Number(p.net) || 0, -most, most);
     // The stake (VIP points, the gamble payload, the cash it needed): a played round's own, else the
     // engine's `wagered` (a double or a split stakes up to maxStake), else the bet or the loss.
     var told = Mth.floor(Number(p.wagered) || 0);
@@ -971,11 +990,23 @@
     return [-wagered, wagered * top];
   }
 
+  /** @returns {number} the most one round of a game can stake today (B-14a-c with the VIP limits, P1). */
+  function roundStake(s, game) {
+    var v = vip(s);
+    if (game === 'slots') return Mth.max.apply(null, v.slotBets);
+    if (game === 'blackjack') return maxStake(v.bjBets[1]);
+    return v.rouletteLimit;
+  }
+
   /**
    * A whole session's net in one go ('<id>:resolve' of an engine that did not apply its rounds):
    * params { game, net, rounds, wagered }; karma once per round (the daily cap still holds). The
-   * echoed net is held to what the stake could do (sessionRange), so a malformed result never pays
-   * more than the table could; a game other than slots, blackjack or roulette is refused.
+   * echoed net is held to what the stake could do (sessionRange), and the stake to what its rounds
+   * could stake (roundStake), so a malformed result never pays more than the table could; a game
+   * other than slots, blackjack or roulette is refused. A blackjack session is refused while you
+   * are backed off (P1) or when its hands would pass the day's 60 (B-14b), as played hands are
+   * (bjRound); the casino row's 'casino.sessionEnd' (W2-Night) then counts its hands and keeps its
+   * shoe. A sampled session carries no per-hand bets or counts, so the pit boss does not see it.
    */
   SR.def.fn('casino.settle', function (s, params) {
     var game = params.game || 'slots', rounds = Mth.max(0, Mth.floor(Number(params.rounds) || 0));
@@ -985,6 +1016,12 @@
     // Nothing staked, nothing played (a sampled session that could not afford its first bet): no
     // karma, no `gamble` event.
     if (!rounds && !wagered) return {};
+    if (wagered > rounds * roundStake(s, game)) return { ok: false, reason: 'reason.badBet', vars: { n: wagered } };
+    if (game === 'blackjack') {
+      var c = s.casino;
+      if (feat('nightlife') && s.clock.day < (c.barredUntil || 0)) return no('reason.barred', { day: c.barredUntil });
+      if ((s.daily.bjHands || 0) + rounds > BJ().handsPerDay) return no('reason.dailyLimit');
+    }
     var net = SR.util.clamp(Number(params.net) || 0, range[0], range[1]);
     var res = applyRound(s, game, wagered, net, { rounds: rounds });
     for (var i = 1; i < rounds && (s.daily.gambleKarma || 0) < C().karma.dailyMax; i++) {

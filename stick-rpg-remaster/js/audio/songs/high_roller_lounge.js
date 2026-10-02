@@ -1,10 +1,12 @@
 // js/audio/songs/high_roller_lounge.js — owner: W2-Music. The casino and its tables (ART_AUDIO §13.4):
 // 118 bpm, swung eighths (two steps a beat, the off-beat a third of a beat late), C major; lounge
 // jazz: a vibes melody, a walking bass (chromatic approaches into each chord), a ride pattern
-// (ding, ding-a) with brushes on 2 and 4, and soft Rhodes comping on the Charleston rhythm. AABA,
-// 32 bars (65 s) a loop after a two-bar ii-V: A (I - vi - ii - V, then iii - VI - ii - V), A (its
-// turnaround ending), B (the bridge: ii-V to IV, then vi - II - ii - V) and A. Original music. Pure
-// data (Node-loadable).
+// (ding, ding-a) with brushes on 2 and 4, and soft Rhodes comping on the Charleston rhythm. AABA
+// and a four-bar breakdown, 36 bars (73 s) a loop after a two-bar ii-V: A (I - vi - ii - V, then
+// iii - VI - ii - V), A (its turnaround ending), B (the bridge: ii-V to IV, then vi - II - ii - V),
+// A, and the breakdown (I - VI7 - ii - V: the walking bass and the brushes alone, the vibes
+// answering; ART_AUDIO §13.1, so the tables' long sessions hear the texture open up). Original
+// music. Pure data (Node-loadable).
 (function () {
   'use strict';
   var SR = window.SR;
@@ -84,9 +86,17 @@
         ride: rep(RIDE, 8),
         brush: rep(BRUSH, 8),
       } },
+      // The breakdown: the ride and the Rhodes drop out; the bass walks I - VI7 - ii - V under the
+      // brushes, the vibes answer twice, and a brush fill leads back to the top.
+      brk: { bars: 4, tracks: {
+        vibes: '. . . . . . . . | . . . . C#5 E5 G5:2 . | . . . . . . . . | . . . . B4 D5 F5:2 .',
+        bass: 'C2:2 . E2:2 . G2:2 . Bb1:2 . | A1:2 . C#2:2 . E2:2 . Eb2:2 . | D2:2 . F2:2 . A2:2 . Ab2:2 . | ' +
+          'G2:2 . F2:2 . D2:2 . B1:2 .',
+        brush: rep(BRUSH, 3) + ' | . . b . . b? b b?',
+      } },
     },
-    // ii-V pickup · A · A (to the bridge) · B · A (the turnaround home)
-    order: ['intro', 'A1', 'A2', 'B', 'A3'],
+    // ii-V pickup · A · A (to the bridge) · B · A (the turnaround home) · breakdown
+    order: ['intro', 'A1', 'A2', 'B', 'A3', 'brk'],
     loopFrom: 1,
   });
 })();

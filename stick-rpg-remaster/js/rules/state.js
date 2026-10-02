@@ -170,8 +170,29 @@
     var prices = {};
     T.stocks.tickers.forEach(function (t) { prices[t] = T.stocks[t].start + rng.int(-T.stocks[t].jitter, T.stocks[t].jitter); });
     s.stocks = stocks(prices);
+    firstMorning(s, rng);
     seedHistory(s);
     return s;
+  }
+
+  /**
+   * What a night's steps 8 and 10 would have set for day 1, which no night precedes (P1 only, so a
+   * P0 game draws exactly the numbers above): with `weather`, tomorrow is rolled on the chain and
+   * its forecast drawn (B-19: day 1 is Clear, day 2 is not always Clear); with `stockTips`, day 1
+   * (a Monday, a market day) has its one tip (B-10 tip.perDay: exactly 1 per market day). The
+   * draws come from the creation stream, never the rules stream.
+   */
+  function firstMorning(s, rng) {
+    var W = SR.tuning.weather, C = SR.rules.calendar, K = SR.rules.stocks;
+    if (SR.features.weather && C && typeof C.next === 'function') {
+      var w = s.world;
+      w.tomorrow = C.next(w.weather, rng);
+      var others = W.states.filter(function (x) { return x !== w.tomorrow; });
+      var right = rng.chance(W.forecastAccuracy);
+      var other = rng.pick(others);
+      w.forecast = right ? w.tomorrow : other;
+    }
+    if (SR.features.stockTips && K && typeof K.drawTip === 'function' && SR.rules.time.isMarketDay(s.clock.day)) K.drawTip(s, rng);
   }
 
   /**

@@ -249,6 +249,10 @@
   function debateStart(s, ctx) {
     var c = canDebate(s);
     if (!c.ok) return refuse(c);
+    // The debate opened today (daily.campaign.debate, zeroed by the night with the other campaign
+    // counters): its resolve, 'election.debate', pays only a debate that was started.
+    var daily = s.daily.campaign || (s.daily.campaign = {});
+    daily.debate = (daily.debate || 0) + 1;
     var res = partial();
     res.open = { minigame: 'debate', skin: 'debate', params: debateParams(s), resolve: ctx && ctx.id ? ctx.id + ':resolve' : null };
     return res;
@@ -490,7 +494,14 @@
   SR.def.fn('election.min', function (s, params, ctx) { var A = T()[actionOf(params, ctx)]; return A ? A.min || 0 : 0; });
   SR.def.fn('election.canDebate', function (s) { return canDebate(s); });
   SR.def.fn('election.debateStart', function (s, params, ctx) { return debateStart(s, ctx); });
-  SR.def.fn('election.debate', function (s, params) { return debate(s, params); });
+  // The debate's resolve counts only a debate opened today (debateStart, which took its 2 h), like the
+  // other resolve fns' "in progress" records (CONTRACT §8.9): a stray resolve on day 4 neither skips
+  // the no-show's -5 nor pays +9 for questions nobody asked. A repeat is refused by debateDone.
+  SR.def.fn('election.debate', function (s, params) {
+    var opened = s.daily && s.daily.campaign && s.daily.campaign.debate > 0;
+    if (!opened) { var c = canDebate(s); return c.ok ? no('reason.notNow') : refuse(c); }
+    return debate(s, params);
+  });
   SR.def.fn('election.decree', function (s, params, ctx) { return decree(s, params.id, params, ctx); });
 
   // Decree issue effects (js/data/decrees.js) and the Public Library's study gain.

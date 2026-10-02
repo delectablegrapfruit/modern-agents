@@ -49,13 +49,17 @@
   /** @returns {boolean} the intro is the top scene (a press in an overlay above it does not skip it). */
   function onTop() { var top = SR.scenes.top(); return !!(top && top.id === 'intro'); }
   function onKey(e) {
-    if (!I || e.repeat || e.ctrlKey || e.metaKey || e.altKey || e.key === 'Tab') return;
+    if (!I) return;
     var k = 'k:' + (e.code || e.key);
+    // A release always counts, modifiers or not: a key let go while Ctrl or Alt is down must not
+    // stay "held" and skip the intro on its own.
     if (e.type !== 'keydown') { delete I.held[k]; return; }
-    if (!onTop()) return;
+    if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || e.key === 'Tab' || !onTop()) return;
     I.held[k] = true;
     I.hint = 1.2;
   }
+  /** The window lost focus: its key and pointer releases go elsewhere, so nothing counts as held. */
+  function onBlur() { if (I) I.held = {}; }
   function onPointer(e) {
     if (!I) return;
     if (e.type === 'pointerdown') { if (onTop()) { I.held.pointer = true; I.hint = 1.2; } } else delete I.held.pointer;
@@ -101,7 +105,8 @@
       I = { t: 0, hold: 0, held: {}, hint: 0, done: false, cap: -1, beat: null, offs: [], view: false };
       window.addEventListener('keydown', onKey, true);
       window.addEventListener('keyup', onKey, true);
-      I.offs.push(function () { window.removeEventListener('keydown', onKey, true); window.removeEventListener('keyup', onKey, true); });
+      window.addEventListener('blur', onBlur);
+      I.offs.push(function () { window.removeEventListener('keydown', onKey, true); window.removeEventListener('keyup', onKey, true); window.removeEventListener('blur', onBlur); });
       if (SR.input && typeof SR.input.on === 'function') I.offs.push(SR.input.on('*', onInput));
       if (SR.render && SR.render.actors && typeof SR.render.actors.source === 'function') {
         SR.render.actors.source('front.hide', function () { return I && I.view ? [{ kind: 'player', x: 0, y: 0, visible: false }] : null; }, 'player');
@@ -140,7 +145,7 @@
       var b = I.beat || { i: 0, k: 0 };
       if (b.i >= 4) { I.view = true; renderReveal(ctx, alpha, b.k); return; }
       I.view = false;
-      if (art()) art().draw(ctx, I.t, { still: D().reduced() });
+      if (art()) art().draw(ctx, I.t, { still: D().reduced(), steady: !!D().setting('access.flashReduction') });
     },
     ui: {
       mount: function (root) {

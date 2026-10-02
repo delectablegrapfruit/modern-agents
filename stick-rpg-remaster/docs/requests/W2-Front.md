@@ -82,7 +82,9 @@ requests other packages addressed to W2-Front.
 - **The game:over routing** (ARCHITECTURE §5; answers W2-Transit 1): the results scene queues itself
   on `game:over` once the action is done, unless the report, death, hospital, jail or results scene
   is on the stack, the reason is `death` with the death scene registered, or a `player:down` / `jail`
-  came in the same turn; those scenes go to the results themselves.
+  came in the same turn; those scenes go to the results themselves. A `retire` always gets its
+  results (the pause menu also opens over the cell and the ward, which present only the endings of
+  their own nights; added in the review).
 - **Why:** the requests protocol (BUILD_PLAN §1.3) records public names here.
 - **Meanwhile:** implemented as listed.
 
@@ -97,6 +99,15 @@ requests other packages addressed to W2-Front.
   `shots/W2-Front/settings-controls.png` after the Tab walk of the Game tab).
 - **Meanwhile:** W2-Front's Settings (tab switch and close), the new-game wizard (step switch) and
   Save / Load (re-render) call `SR.ui.tooltip.hide()` before they clear their content.
+
+## 7. `js/data/tuning.js` (W2-RulesE; BALANCE B-02 by the lead): the Custom length bounds
+
+- **Change:** add `start.customLength: [7, 365]` (GDD §5: "Custom 7-365", P2 `customLength`) and record
+  it in B-02.
+- **Why:** BUILD_PLAN §1.7: a number BALANCE lacks lives in a named constant until the table has it;
+  the wizard's Custom NumberField needs the bounds.
+- **Meanwhile:** `CUSTOM_MIN` / `CUSTOM_MAX` in `js/ui/screens/newgame.js` (the field shows only with
+  the P2 flag).
 
 ## Requests addressed to W2-Front, answered
 
@@ -127,6 +138,10 @@ requests other packages addressed to W2-Front.
 - **W1-S 8** (the gamepad-only unlock line) → applied: the boot card reads "Press A to start. Sound
   begins after one click or key press." when a gamepad is connected, and the title shows "Sound
   begins after one click or key press." while the audio is locked and the last input was the pad.
+- **W2-RulesE 7** (`js/ui/screens/saveload.js`: an ended Keep-playing run is over) → applied in the
+  review: `resume()` reads `s.over` alone, so a saved Keep-playing run that was retired (or died on
+  Hardcore) resumes on its Final Edition, not in a city that refuses every action; tested in
+  `tests/e2e/results.test.cjs`.
 - **W2-Exterior 11** (`pause.js`, `results.js`: re-bake the building details on quitting to the
   title) → applied in the review: both leave through `SR.ui.saveload.quit()`, which nulls the state
   and then calls `SR.art.exteriorDetail.refresh()` (tested in `tests/e2e/frontend.test.cjs`).

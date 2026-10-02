@@ -10,7 +10,9 @@
 // queues the results unless another scene presents the end first: the report scene (a night's paper
 // comes first and queues the results itself), the death, hospital and jail scenes (FLATLINED, the
 // Stick General edition, the Jail Day card go to the results themselves), or a player:down or an
-// arrest in the same action (their scenes are queued already). It decides once the action is done.
+// arrest in the same action (their scenes are queued already). A Retire is never one of those (it
+// comes from the pause menu, also over the cell or the ward), so its results always come. It decides
+// once the action is done.
 // Load-time rule: registers the scene and a boot hook only.
 (function () {
   'use strict';
@@ -44,7 +46,7 @@
   }
 
   function finishCount() {
-    if (!R || R.phase === 'done') return;
+    if (!R || !R.result || R.phase === 'done') return;
     R.phase = 'done';
     R.shown = R.result.netWorth;
     if (R.page) {
@@ -115,7 +117,14 @@
     ui: {
       mount: function (root) {
         if (!R) return;
-        if (!R.result) { root.appendChild(D().h('p', { class: 'res-none', 'data-id': 'results-none' }, text('front.res.none'))); return; }
+        if (!R.result) {
+          // Nothing to print (no game and no result): say so, with the way back to the title.
+          var none = D().h('div', { class: 'res-none', 'data-id': 'results-none' }, D().h('p', null, text('front.res.none')),
+            SR.ui.button({ id: 'results-title', label: 'front.res.title', variant: 'primary', onClick: toTitle }));
+          root.appendChild(none);
+          R.scope = SR.ui.focus.push(none, { id: 'results' });
+          return;
+        }
         var s = SR.state;
         var r = R.result;
         var canKeep = !!(s && s.over && r.reason === 'time' && r.length > 0 && !s.mode.keepPlaying && s.result === r);
@@ -131,6 +140,11 @@
     onAction: function (action, ev) {
       if (!R || (ev && (ev.consumed || ev.down === false))) return false;
       if (action === 'pocket' && ev && ev.code === 'Tab') return false;
+      if (!R.result) {                                  // nothing to print: Back also leaves for the title
+        if (SR.ui.focus.handle(action, ev)) return true;
+        if (action === 'back' && !(ev && ev.repeat)) toTitle();
+        return true;
+      }
       if (R.phase !== 'done') {                         // a press skips the count-up and lands the stamp
         // UI scenes ignore `interact` (CONTRACT §15.5): Enter, Space, E and A fire it and then
         // `confirm`, so skipping on it would let that `confirm` press the button just focused.
@@ -151,7 +165,12 @@
   var presented = false;     // a player:down or an arrest in this turn queued its own scene
 
   function decide(p) {
-    if (!SR.reg.scene.results || p.took) return;
+    if (!SR.reg.scene.results) return;
+    // Retire (the pause menu, GDD §5) is never presented by another scene: it is no night, no arrest
+    // and no fall, so over the cell, the ward or a trip the results still come (else the run would
+    // sit in the cell with the game over and no way out).
+    if (p.reason === 'retire') { SR.scenes.queue('results', { reason: p.reason, result: p.result || (SR.state && SR.state.result) }, { transition: 'fade' }); return; }
+    if (p.took) return;
     if (p.reason === 'death' && SR.reg.scene.death) return;
     var st = SR.scenes.stack();
     for (var i = 0; i < st.length; i++) if (PRESENTERS[st[i]]) return;

@@ -21,6 +21,7 @@ not own, are named "not this desk".
 | 5 | after the pause (resumed) | nothing new for this desk: the items added since sweep 4 name other owners' files (`W2-Food.md` 6 and `W2-Money.md` 5b: the lead's `validate.cjs --selftest`; `W2-City.md` 5, `W2-Exterior.md` 10: the lead's render files; `W2-Goods.md` 4: W2-Front's `en-ui.js`, applied there; `W2-Home.md` 7-9: the lead's `card.js` / `components.js` and GDD; `W2-RulesC.md` 4: the lead's records); the wave-1 decision files' Deferred tables still name no rules desk |
 | 6 | before finishing (resumed run) | nothing new for this desk: `W2-Civic.md` 6 (the lead's `card.js`: re-pick a greeting after an action) and its W2-Home note (W2-Music's variant); `W2-Food.md` (a W2-Money note and a status line); `W2-Pocket.md` 3 (applied by W2-City) and 7 (records); `W2-RulesC.md` 5 (applied by W2-Pocket: `phone.boardInfo` reads `election.acceptBy`). This desk's own `W2-RulesE.md` 6 records an e2e observation for the lead (the world suite's fall samples meet the traffic) |
 | 7 | the adversarial review | two items addressed to this desk that sweeps 5 and 6 missed, both applied (below): `W2-City.md` 6 (`tuning.crowd.turnRange` / `scurry`) and `W2-Money.md` 7 (the loan's last day on the report); `W2-City.md` 7 is the lead's world suite |
+| 8 | the second adversarial review | nothing new for this desk: every item that names this desk's files (`W2-Food` 3, `W2-Home` 1, `W2-Money` 3 / 4 / 7, `W2-Night` 5, `W2-Pocket` 5, `W2-RulesC` 3, `W2-City` 6) is answered above; the rest name other owners |
 
 ## Requests from other wave-2 packages
 
@@ -195,6 +196,27 @@ Each is tested in `tests/node/rulese.test.cjs` ("review fixes" sections).
 - **`bank.charge` as a named-fn effect gave no write-off notice** (the `charge` effect does, B-09
   acceptance "reports the write-off") → the fn's result carries the same
   `toast.act.writtenOff`; its `paid` / `writtenOff` fields are unchanged.
+
+## Fixes from the second adversarial review
+
+Each is tested in `tests/node/rulese.test.cjs` ("review 2" sections). No public name changes.
+
+- **Floors of decimal products lost $1 / 1 HP.** Binary floats put some exact whole numbers a hair
+  below themselves, and the formulas floor them: the B-07 restore (`hpMax × 0.35` is 62.99… at HP max
+  180, so 37 HP-max / bed / freezer / home combinations restored 1 HP less; `night.restoreHp`, and so
+  `night.preview`), B-09 savings interest ($100,000 at 0.285 % paid $284), loan interest ($50,000 at
+  1.586 % charged $792) and a CD's interest (573 of 260,000 amount / rate pairs short by $1), and the
+  B-18 net worth of shares (100 × $0.29 counted $28). → the restore and the bank floor the exact value
+  (a nudge of 1e-8, far below the formulas' 1e-7 grid; `FLOOR_EPS` in `night.js` and `bank.js`), and
+  `SR.rules.stocks.value` returns whole cents. Pinned against the exact integer formulas (every HP max
+  16..1014 for six homes; 15,006 balance / rate pairs of the tiered interest).
+- **`daily.beers` was never counted** (the schema field GDD §4.7 step 9 resets): `training.apply('beer')`
+  now counts it like the TV's views; beer keeps no daily limit (Buzz caps it).
+- **Day 1 had no tomorrow and no tip** (P1 only): no night precedes day 1, so with `weather` on day 2
+  was always Clear and day 1's forecast always right, and with `stockTips` on Monday day 1 had no tip
+  (B-10 "exactly 1 per market day"). → `state.create` draws what night steps 8 and 10 would have
+  (tomorrow on the chain, its forecast, the tip with day 1's INT) from the creation stream when those
+  flags are on; a P0 game draws exactly the same numbers as before, and the rules stream is untouched.
 
 ## Named functions and rule helpers added for the wave-2 data (additive)
 

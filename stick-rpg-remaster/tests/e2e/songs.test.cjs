@@ -4,16 +4,19 @@
 //   SR.audio.renderOffline at 44.1 kHz for one pass of its order plus a bar (a stinger: plus 1 s):
 //   peak ≤ -10 dBFS, RMS in [-30, -16] dBFS, no sample jump over 0.25, ≤ 0.05 at the loop seam, no NaN
 //   or denormals, the format validator, and the leitmotif at every motif annotation
-//   (morning_edition, final_edition and each of its variants, stingers.promotion);
+//   (morning_edition, final_edition and each of its variants, stingers.promotion); every variant is
+//   rendered;
 // - the voice pool: no song or stinger steals a voice or needs more than 24; no song asks more voices a
 //   second than crossroads_strut, the song the render-cost budget is measured on (W1-S request 8);
 // - no stinger is louder than the Stamp (ART_AUDIO §13.1);
+// - the render cost measured, too: no song renders a second of audio slower than crossroads_strut;
 // - tempo holds on the live scheduler: every event of streetlights (swing), pawnbroker_blues (a
-//   triplet grid), morning_edition and final_edition on the step grid within 1 ms, and
-//   final_edition's `stamp` variant switches on a bar line (the results' key change);
+//   triplet grid), morning_edition and final_edition (through its 84 → 92 → 100 bpm into the
+//   anthem) on the step grid within 1 ms, and final_edition's `stamp` variant switches on a bar
+//   line (the results' key change);
 // - the sheet plays each one: every song and variant button starts its song, every stinger button
-//   its stinger; the sheet boots from disk with zero console errors; the cards are captured to
-//   shots/W2-Music/.
+//   its stinger; the sheet boots from disk with zero console errors; every card (W1-S's three songs
+//   too, for reference) is rendered once and captured to shots/W2-Music/.
 //   node tests/e2e/songs.test.cjs
 'use strict';
 const fs = require('fs');
@@ -51,17 +54,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   // ---- the objective audio test ----
   T.section('the objective audio test (ARCHITECTURE §18): every song, variant and stinger');
-  const res = await E(async (ids) => {
-    const out = [];
-    for (const id of ids) {
-      for (const v of [null].concat(Object.keys(SR.reg.song[id].variants || {}))) {
-        const info = await musicSheet.check(id, { variant: v || undefined });
-        out.push({ id, variant: v, fails: musicSheet.verdict(info), a: info.a, motif: info.motif, loops: info.loops,
-          vps: info.voicesPerSec, stats: info.stats });
-      }
-    }
-    return out;
-  }, SONGS.concat(STINGERS));
+  // One pass of the sheet's own check renders every card (W1-S's three songs too, drawn for reference):
+  // the contact sheet below shows these very renders.
+  const all = await E(async () => (await musicSheet.checkAll()).map((info) => ({ id: info.id, variant: info.variant,
+    fails: musicSheet.verdict(info), a: info.a, motif: info.motif, loops: info.loops, vps: info.voicesPerSec, stats: info.stats,
+    ms: info.ms })));
+  const res = all.filter((r) => SONGS.includes(r.id) || STINGERS.includes(r.id));
+  const want = await E((ids) => ids.reduce((o, id) => o.concat([id].concat(Object.keys(SR.reg.song[id].variants || {}).map((v) => id + '·' + v))), []),
+    SONGS.concat(STINGERS));
+  T.eq(want.filter((k) => !res.some((r) => r.id + (r.variant ? '·' + r.variant : '') === k)), [],
+    'every W2-Music song, each variant and every stinger is rendered (' + want.length + ')');
   for (const r of res) {
     const a = r.a;
     T.ok(!r.fails.length, r.id + (r.variant ? ' · ' + r.variant : '') + ': peak ' + a.peakDb.toFixed(1) + ' dBFS, RMS ' + a.rmsDb.toFixed(1) +
@@ -77,11 +79,41 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   T.section('the voice pool and the render cost');
   T.eq(res.filter((r) => r.stats.stolen > 0 || r.stats.peakVoices > 24).map((r) => r.id + ' (' + r.stats.peakVoices + ' voices, ' + r.stats.stolen + ' stolen)'), [],
     'no song or stinger steals a voice or needs more than 24 (peak ' + Math.max.apply(null, res.map((r) => r.stats.peakVoices)) + ')');
-  const ref = await E(async () => { const i = await musicSheet.check('crossroads_strut'); return i.voicesPerSec; });
+  const ref = all.find((r) => r.id === 'crossroads_strut' && !r.variant).vps;
   const songsOnly = res.filter((r) => r.loops);
   const busiest = songsOnly.slice().sort((x, y) => y.vps - x.vps)[0];
   T.ok(songsOnly.every((r) => r.vps <= ref), 'every song asks fewer voices a second than crossroads_strut (' + ref.toFixed(1) +
     '; busiest of W2-Music: ' + busiest.id + ' ' + busiest.vps.toFixed(1) + '), so the render-cost budget stays measured on it');
+  // The real cost, not only the voice count (a pad chord is three saws a note): the render time a
+  // second of audio over one pass of the order. A song that looks dearer than crossroads_strut in the
+  // sheet's single render is measured again (the best of three passes, crossroads_strut alongside)
+  // before it is judged: sections differ in cost, so a shorter window would not compare like with like.
+  const cost = (r) => r.ms / r.a.seconds;
+  const refCost = cost(all.find((r) => r.id === 'crossroads_strut' && !r.variant));
+  const dear = songsOnly.filter((r) => cost(r) > refCost);
+  let costs = {}, refBest = refCost;
+  if (dear.length) {
+    const jobs = [['crossroads_strut', null]].concat(dear.map((r) => [r.id, r.variant]));
+    costs = await E(async (jobs) => {
+      const out = {};
+      for (const [id, v] of jobs) {
+        let best = Infinity;
+        for (let k = 0; k < 3; k++) {
+          const t0 = performance.now();
+          const buf = await SR.audio.renderOffline('song', id, undefined, { variant: v || undefined });
+          best = Math.min(best, (performance.now() - t0) / buf.duration);
+        }
+        out[id + (v ? '·' + v : '')] = best;
+      }
+      return out;
+    }, jobs);
+    refBest = costs.crossroads_strut;
+  }
+  const over = dear.map((r) => r.id + (r.variant ? '·' + r.variant : '')).filter((k) => costs[k] > refBest * 1.1);
+  const dearest = songsOnly.slice().sort((x, y) => cost(y) - cost(x))[0];
+  T.eq(over, [], 'every song renders a second of audio no slower than crossroads_strut (+10 %: ' + refCost.toFixed(1) + ' ms/s; dearest of W2-Music ' +
+    dearest.id + (dearest.variant ? '·' + dearest.variant : '') + ' ' + cost(dearest).toFixed(1) + ' ms/s' +
+    (dear.length ? '; measured again: ' + Object.keys(costs).map((k) => k + ' ' + costs[k].toFixed(1)).join(', ') : '') + ')');
   const stamp = await E(async () => { const buf = await SR.audio.renderOffline('sfx', 'stamp'); return musicSheet.analyze(buf).peak; });
   const loudest = res.filter((r) => r.id.indexOf('stingers.') === 0).sort((x, y) => y.a.peak - x.a.peak)[0];
   T.ok(loudest.a.peak <= stamp, 'no stinger is louder than the Stamp (ART_AUDIO §13.1; loudest ' + loudest.id + ' ' + loudest.a.peakDb.toFixed(1) +
@@ -97,10 +129,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     T.ok(r.n > 10 && r.worst <= 0.001 && r.ahead > 0, id + ': ' + r.n + ' events on the step grid within 1 ms (worst ' + (r.worst * 1000).toFixed(4) +
       ' ms), each scheduled ahead (min lead ' + (r.ahead * 1000).toFixed(1) + ' ms)');
   }
-  const sw = await E(() => musicSheet.tempo('final_edition', { ms: 4200, switchTo: 'stamp', switchAt: 900 }));
+  // final_edition live through its intro (84 bpm), the lift (92) and into the anthem (100): the
+  // per-pattern tempo on the live scheduler, with the stamp's switch on the way.
+  const anthemAt = await E(() => { const C = SR.audio.tracker.compile(SR.reg.song.final_edition); let t = 0;
+    for (let i = 0; i < C.loopFrom; i++) { const P = C.patterns[C.order[i]]; t += P.steps * P.dur; } return t; });
+  const sw = await E((ms) => musicSheet.tempo('final_edition', { ms, switchTo: 'stamp', switchAt: 900 }), Math.ceil(anthemAt * 1000) + 1500);
   T.ok(sw.variant && sw.variant.name === 'stamp' && sw.variant.fromBarLine <= 1e-6 && sw.variant.time > 0.9,
     'final_edition: the stamp\'s key change lands on a bar line (' + (sw.variant ? sw.variant.time.toFixed(3) + ' s, ' + (sw.variant.fromBarLine * 1000).toFixed(4) + ' ms from it' : 'no switch') + ')');
-  T.ok(sw.n > 10 && sw.worst <= 0.001, 'final_edition, across the switch: ' + sw.n + ' events on the step grid within 1 ms (worst ' + (sw.worst * 1000).toFixed(4) + ' ms)');
+  T.ok(sw.n > 40 && sw.worst <= 0.001 && sw.pos.order === 0 && sw.pos.step === 0 && sw.last > anthemAt + 0.5,
+    'final_edition, across the switch and 84 → 92 → 100 bpm: ' + sw.n + ' events on the step grid within 1 ms (worst ' + (sw.worst * 1000).toFixed(4) +
+    ' ms), the last at ' + sw.last.toFixed(2) + ' s, past the anthem\'s start at ' + anthemAt.toFixed(2) + ' s');
   await E(() => SR.audio.music(null, { fade: 0 }));
 
   T.section('the sheet plays each one');
@@ -128,11 +166,18 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   T.eq(duck, 6, 'a stinger ducks the song 6 dB');
 
   T.section('contact sheet');
-  await E((ids) => musicSheet.checkAll((id) => ids.includes(id)), SONGS.concat(STINGERS));
   const bad = await E(() => Array.from(document.querySelectorAll('.card.fail')).map((c) => c.getAttribute('data-id')));
   T.eq(bad, [], 'no card shows a failure');
+  const unrendered = await E(() => Array.from(document.querySelectorAll('.verdict')).filter((v) => /not rendered/.test(v.textContent))
+    .map((v) => v.getAttribute('data-id')));
+  T.eq(unrendered, [], 'every card shows its render');
+  // The whole sheet in one viewport: a fullPage capture of this tall page left some cards unpainted
+  // (their canvases showed, their text and borders did not).
   await page.setViewportSize({ width: 1600, height: 1000 });
-  await page.screenshot({ path: path.join(SHOTS, 'music-sheet.png'), fullPage: true });
+  const tall = await E(() => document.documentElement.scrollHeight);
+  await page.setViewportSize({ width: 1600, height: tall });
+  await E(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  await page.screenshot({ path: path.join(SHOTS, 'music-sheet.png') });
   await page.locator('[data-id="stinger-cards"]').screenshot({ path: path.join(SHOTS, 'stingers.png') });
   T.ok(fs.existsSync(path.join(SHOTS, 'music-sheet.png')), 'shots/W2-Music/music-sheet.png, stingers.png');
   T.eq(t.errors(), [], 'zero console errors, page errors and failed requests');

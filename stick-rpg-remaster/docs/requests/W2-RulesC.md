@@ -64,7 +64,12 @@ Each request names the file, the exact change, why, and the workaround used mean
     none is open). `SR.rules.casino.scratchRound(s, ctx)` no longer credits the prize: it keeps the
     card in `casino.card` and opens the engine (a card left unpaid is paid before the next one,
     except in a preview's dry run, so the row never shows that unrevealed prize).
-  - §8.9 "The in progress records": add `casino.scratchResolve` / `casino.card` to the list.
+  - §8.9 "The in progress records": add `casino.scratchResolve` / `casino.card` to the list, and
+    `election.debate` / `daily.campaign.debate` (the debates opened today by `election.debateStart`;
+    added by the second review: a stray debate resolve no longer pays).
+  - §8.10 Casino: `casino.settle` with `apply` refuses a stake beyond its rounds × the largest
+    round the table allows (`reason.badBet`), and a blackjack session while backed off or past the
+    day's 60 hands (second review).
   - §8.9 `SR.rules.crime`: `jailDay` releases at once (no gain, no night) when `jail.daysLeft ≤ 0`.
   - §8.9 `SR.rules.election`: `acceptBy(s)` → the last day the nomination can be accepted
     (`nominatedDay + acceptWithin - 1`; `null` when no offer waits); the Board's voicemail's `day`.
@@ -87,3 +92,19 @@ Each request names the file, the exact change, why, and the workaround used mean
 - **Meanwhile:** nothing (P1 `phone`).
 - **Status:** applied by W2-Pocket in the wave (`phone.boardInfo` reads
   `SR.rules.election.acceptBy(s)`; recorded in `docs/requests/W2-Pocket.md`).
+
+## 6. `js/rules/state.js` (W2-RulesE) and ARCHITECTURE §6.1 (lead): two daily counters
+
+- **Change:** in `SR.rules.state.defaults()` and the `daily` line of ARCHITECTURE §6.1, add
+  `ring: 0` to `daily` (next to `dartsMatches`): today's Underground Ring bouts (B-13 `ring.perDay`,
+  P1 `nightlife`), counted by `SR.rules.fight.start(s, 'ring')` and read by `fight.canStart`; and
+  `debate: 0` to `daily.campaign`: the debates opened today by `election.debateStart`, which the
+  named fn `election.debate` (the debate's `:resolve`) requires (B-17 `debate.cap` 1).
+- **Why:** they are the only state fields the conflict rules write that the frozen v1 schema does
+  not list (found by the second review's sweep of every field this desk writes; `debate` is new in
+  that review). Additive and deep-filled; v1 stays.
+- **Meanwhile:** `js/rules/fight.js` and `js/rules/election.js` create them when first counted
+  (`(n || 0) + 1`), and the night's step 9 zeroes every key of `daily`, nested ones too, so both
+  rules already hold (probed: the Ring refused after a bout, open again the next Saturday; a stray
+  debate resolve refused). `js/ui/subscreens/campaign.js` lists only B-17's six actions, so the
+  extra campaign key shows nowhere.

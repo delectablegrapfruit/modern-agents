@@ -673,4 +673,80 @@ T.section('review fixes: a night\'s stat gains are announced once (CONTRACT §8.
   T.eq(rj.events.filter((e) => e.name === 'stat').map((e) => e.payload), [{ key: 'str', n: 2, total: 9 }], 'a Jail Day workout (no night gain) keeps its own `stat` event');
 }
 
+T.section('review 2: the floors of B-07, B-09 and B-18 are taken of the exact value, not a float a hair below it');
+{
+  // Each case was 1 short before: binary floats put the product just under a whole number.
+  const bed = H.state(SR, { stats: { str: 165, hpMax: 180, hp: 1 }, furniture: { owned: { bed: 1 } }, items: { pills: 0 } });
+  T.eq(SR.rules.night.restoreHp(bed), Math.floor(180 * 35 / 100) + 15, 'B-07: HP max 180 with a bed restores 63 + 15 (0.35 × 180 = 63, not 62.99…)');
+  let restoreOff = 0;
+  [[0, 0, 'apt'], [1, 0, 'apt'], [0, 1, 'apt2'], [1, 1, 'pent'], [2, 1, 'castle'], [0, 0, 'pent']].forEach(([b, f, h]) => {
+    const pct = 25 + [0, 10, 20][b] + (f ? 5 : 0) + { apt: 0, apt2: 5, pent: 10, mansion: 15, castle: 20 }[h];
+    for (let str = 1; str <= 999; str++) {
+      const own = {};
+      if (b) own.bed = b;
+      if (f) own.freezer = 1;
+      const t = H.state(SR, { stats: { str: str, hpMax: 15 + str }, homes: { owned: ['apt', h], living: h }, furniture: { owned: own } });
+      if (SR.rules.night.restoreHp(t, false) !== Math.floor((15 + str) * pct / 100) + 15) restoreOff++;
+    }
+  });
+  T.eq(restoreOff, 0, 'B-07 restore = floor(hpMax × the bonuses) + 15 for every HP max 16..1014 and six homes / beds / freezers');
+  const B = SR.rules.bank;
+  T.eq(B.interest(H.state(SR, { money: { bank: 100000, rate: 0.285 } })), 285, 'B-09 interest: $100,000 at 0.285 % is $285 (not 284)');
+  T.eq(B.interest(H.state(SR, { money: { bank: 25000, rate: 0.292 } })), 73, '… $25,000 at 0.292 % is $73');
+  const loan = H.state(SR, { money: { rate: 0.586, loan: { amount: 50000, daysLeft: 9 } } });
+  T.eq(B.loanNight(loan).interest, 793, 'B-09 loan interest: $50,000 at 0.586 + 1 % is $793 (not 792)');
+  const cd = H.state(SR, { clock: { day: 8 }, money: { bank: 0, cds: [{ amount: 2000, rate: 0.375 * 1.2, dayOpened: 1 }] } });
+  T.eq(B.maturities(cd)[0].interest, 63, 'a CD of $2,000 opened at 0.375 % (× 1.2) pays 7 × $9 = $63 (not 62)');
+  let exact = 0, of = 0;
+  for (let R = 2500; R <= 35000; R += 13) {
+    for (const bal of [1000, 25000, 99999, 100000, 250000, 2000000]) {
+      of++;
+      const want = Math.min(25000, Math.floor((Math.min(bal, 100000) * R * 4 + Math.max(0, Math.min(bal, 1000000) - 100000) * R * 2 + Math.max(0, bal - 1000000) * R) / 4e6));
+      if (B.interest(H.state(SR, { money: { bank: bal, rate: R / 10000 } })) === want) exact++;
+    }
+  }
+  T.eq(exact, of, 'B-09 tiered interest equals the exact integer formula at every rate 0.25-3.5 (' + of + ' cases)');
+  const nw = H.state(SR, { money: { cash: 0, bank: 0 } });
+  Object.keys(nw.stocks).forEach((t) => { nw.stocks[t].held = 0; });
+  nw.stocks.SKY.held = 100;
+  nw.stocks.SKY.price = 0.29;
+  T.eq([SR.rules.stocks.value(nw), SR.rules.endgame.breakdown(nw).stocks], [29, 29], 'B-18: 100 shares at $0.29 count $29 in net worth (not 28)');
+}
+
+T.section('review 2: the schema\'s daily.beers counts the beers (GDD §4.7 step 9 resets it)');
+{
+  const s = H.state(SR, { money: { cash: 100 }, clock: { min: 600 } });
+  [run(s, BEER, {}, 1), run(s, BEER, {}, 2)].forEach((r) => T.ok(r.ok, 'a beer'));
+  T.eq([s.daily.beers, SR.rules.training.left(s, 'beer'), SR.rules.training.can(s, 'beer').ok], [2, null, true], 'two beers counted; still no daily limit (Buzz caps them)');
+  SR.rules.night.run(s, H.ctx(SR, 4), { kind: 'sleep' });
+  T.eq(s.daily.beers, 0, 'the night resets it');
+}
+
+T.section('review 2: day 1 has the tomorrow and the tip a night would have drawn (P1 weather, stockTips; B-10, B-19)');
+{
+  const p0 = SR.rules.state.create({ seed: 31 });
+  T.eq([p0.world.weather, p0.world.tomorrow, p0.world.forecast, p0.tip], ['clear', 'clear', 'clear', null], 'P0: Clear all along and no tip (nothing drawn)');
+  const restore = H.features(SR, { weather: true, stockTips: true });
+  const tomorrow = {};
+  let right = 0;
+  const N = 2000;
+  for (let i = 0; i < N; i++) {
+    const s = SR.rules.state.create({ seed: 1000 + i });
+    tomorrow[s.world.tomorrow] = (tomorrow[s.world.tomorrow] || 0) + 1;
+    if (s.world.forecast === s.world.tomorrow) right++;
+    if (i === 0) {
+      T.eq([s.world.weather, s.tip && s.tip.day, s.tip && s.tip.reliability, s.rng.rules], ['clear', 1, SR.rules.stocks.reliability(s), SR.rng.create(1000).state()],
+        'day 1 is Clear, has its tip (drawn with day 1\'s INT) and the rules stream is untouched');
+    }
+  }
+  T.ok(Math.abs((tomorrow.clear || 0) / N - SR.tuning.weather.chain.clear.clear) < 0.04 && (tomorrow.rain || 0) > 0,
+    'day 2 is rolled on the chain from Clear (' + JSON.stringify(tomorrow) + ')');
+  T.ok(Math.abs(right / N - SR.tuning.weather.forecastAccuracy) < 0.04, 'day 1\'s forecast is right ' + (right / N * 100).toFixed(1) + ' % of the time (0.8)');
+  const s = SR.rules.state.create({ seed: 77 });
+  const tip = SR.util.clone(s.tip);
+  const R = SR.rules.night.run(s, H.ctx(SR, 3), { kind: 'sleep' });
+  T.ok(R.lines.some((l) => l.section === 'markets') && s.tip.day === 2 && tip.day === 1, 'the night after day 1 ticks with day 1\'s tip and draws day 2\'s');
+  restore();
+}
+
 T.done();

@@ -11,7 +11,9 @@
 // and vars) with its chips, or the buyer's offer with Take it · Haggle (P1) · Walk away (the trip.*
 // rows). A final outcome rides home (a short ride into the evening) to the city at 24:00 outside the
 // depot; a bust hands the Result (the arrest and its night) to the jail scene. A tour plays its hook
-// (the `tourhook` skin) on arrival and resolves with trip.tour:resolve.
+// (the `tourhook` skin) on arrival and resolves with trip.tour:resolve. The compact HUD (no Pocket)
+// comes with the event card: the boarding Result already holds the trip's end, which the outbound
+// ride must not show.
 // SR.debug.fast() (the tests) skips the rides; the cards still wait for their decision.
 // Load-time rule: defines functions and registers the scene only.
 (function () {
@@ -85,6 +87,19 @@
     return out;
   }
 
+  /**
+   * The compact HUD, without its Pocket button (the phone's cab would leave the Sky Bus, even a bust's
+   * card with the arrest already made). It comes with the event card: SR.act has resolved the whole
+   * trip at boarding, so during the outbound ride it would read the end already (24:00 late, the cash
+   * after a mugging, the next morning after a bust) under a sky still going from midnight to morning.
+   */
+  function mountHud() {
+    if (!Tr || !Tr.ui || Tr.hud) return;
+    Tr.hud = SR.ui.hud.mount(Tr.ui, { compact: true }) || true;
+    var pb = Tr.hud && Tr.hud.querySelector ? Tr.hud.querySelector('[data-id="hud-pocket"]') : null;
+    if (pb) pb.hidden = true;
+  }
+
   function button(id, label, variant, hotkey, onClick) {
     return SR.ui.button({ id: id, label: label, variant: variant, hotkey: hotkey, onClick: onClick });
   }
@@ -102,6 +117,7 @@
   function showCard() {
     if (!Tr || !Tr.ui) return;
     if (Tr.card) { if (Tr.scope) SR.ui.focus.pop(Tr.scope); Tr.card.parentNode.removeChild(Tr.card); Tr.card = null; Tr.scope = null; }
+    mountHud();
     var c = Tr.view = content();
     var el = SR.ui.card({ id: 'trip-card', title: c.head, brand: D().paint('bld.bus.walls'), portrait: null, onLeave: function () { primary(); } });
     el.leave.hidden = true;
@@ -490,7 +506,7 @@
       var s = SR.state;
       Tr = { params: params, city: params.city || null, kind: params.kind === 'tour' ? 'tour' : 'smuggle', phase: 'ride', t: 0, clock: 0,
         res: null, decided: null, view: null, card: null, scope: null, ui: null, buttons: [], cache: null, cacheScale: 0, done: false,
-        caption: null, skip: null, others: null, boardMin: OUT_MIN[0], arrived: false, skipping: false };
+        caption: null, skip: null, others: null, boardMin: OUT_MIN[0], arrived: false, skipping: false, hud: null };
       if (!s) return;
       Tr.boardMin = s.clock.min;
       if (params.resume) {
@@ -570,11 +586,8 @@
         if (!Tr) return;
         root.classList.add('scene-bustrip');
         Tr.ui = root;
-        // The trip is a presentation: no Pocket (the phone's cab would leave the Sky Bus, even a
-        // bust's card with the arrest already made), so the HUD's Pocket button goes.
-        var hud = SR.ui.hud.mount(root, { compact: true });
-        var pb = hud && hud.querySelector ? hud.querySelector('[data-id="hud-pocket"]') : null;
-        if (pb) pb.hidden = true;
+        Tr.hud = null;
+        // The HUD comes with the event card (mountHud): the ride shows only the sky and the bus.
         if (Tr.phase === 'ride') {
           Tr.caption = h('h2', { class: 't-h2', 'data-id': 'trip-caption', style: { position: 'absolute', left: '0', right: '0', top: '72px',
             textAlign: 'center', margin: '0', color: 'var(--paper-0)', textShadow: '0 3px 0 var(--ink-900)', pointerEvents: 'none' } },

@@ -172,6 +172,26 @@ T.section('hands a day, the round applier and the pit boss (B-14b)');
   const empty = K.act(SR, big, 'bjHand', { round: { bet: 10, hands: [] }, trueCount: 0 });
   T.eq([fr.reason, empty.reason, big.money.cash], ['reason.badBet', 'reason.badBet', 1000],
     'a played round staking more than the rules allow (three hands of a split-once table), or none, is refused');
+  // Review 2 (W2-RulesC): a played round whose own `bet` disagrees with its hands (a $5 hand in a
+  // round that claims $500, which settle's 3:2 natural reads) paid $750 on a $5 stake.
+  const liar = (patch) => {
+    const x = K.state(SR, { money: { cash: 1000 } });
+    const r = BJ.deal(BJ.shoe(SR.rng.create(8)), 5, SR.rng.create(8));
+    Object.assign(r, { playerBJ: true, dealerBJ: false, phase: 'over' }, patch);
+    const res = K.act(SR, x, 'bjHand', { round: r, trueCount: 0 });
+    return [res.ok, res.reason || null, x.money.cash];
+  };
+  T.eq([liar({ bet: 500 }), liar({ bet: 10 })], [[false, 'reason.badBet', 1000], [false, 'reason.badBet', 1000]],
+    'a played round whose bet disagrees with its hands is refused (no $750 natural on a $5 hand)');
+  const doubled = BJ.deal(BJ.shoe(SR.rng.create(9)), 10, SR.rng.create(9));
+  doubled.hands[0].bet = 40;
+  T.eq(K.act(SR, K.state(SR, { money: { cash: 1000 } }), 'bjHand', { round: doubled, trueCount: 0 }).reason, 'reason.badBet',
+    'a hand staking other than its bet (or twice it, doubled) is refused');
+  const honest = BJ.deal(BJ.shoe(SR.rng.create(8)), 5, SR.rng.create(8));
+  Object.assign(honest, { playerBJ: true, dealerBJ: false, phase: 'over' });
+  const natS = K.state(SR, { money: { cash: 1000 } });
+  const natR = K.act(SR, natS, 'bjHand', { round: honest, trueCount: 0 });
+  T.ok(natR.ok && (natS.money.cash === 1007 || natS.money.cash === 1008), 'a played $5 natural pays $7 or $8 (3:2 on average)');
 
   const sus = (seq, extra) => {
     const x = K.state(SR, Object.assign({ stats: { cha: 100 } }, extra || {}));
@@ -502,6 +522,27 @@ T.section('a whole session settled at once (casino.settle, apply: true)');
   }), cases.map((c) => c[1]), 'an echoed net is held to what the stake could do: the top slot line, a straight up, a natural; never below -wagered');
   T.eq(K.act(SR, K.state(SR, { money: { cash: 1000 } }), 'settle', { game: 'darts', net: 100, rounds: 1, wagered: 10, apply: true }, 5).reason,
     'reason.badBet', 'only slots, blackjack and roulette settle sessions');
+  // Review 2 (W2-RulesC): the stake is held to what its rounds could stake (the net's bound grew with
+  // any echoed `wagered`: one "pull" of $1,000,000 could pay $699,000,000), and a blackjack session
+  // obeys the 60-hand day and the back-off like played hands (casino.sessionEnd counts its hands).
+  const stake = (p) => { const t = K.state(SR, { money: { cash: 1000 } }); const res = K.act(SR, t, 'settle', Object.assign({ apply: true }, p), 6); return res.ok ? t.money.cash - 1000 : res.reason; };
+  T.eq([stake({ game: 'slots', net: 1e9, rounds: 1, wagered: 1e6 }), stake({ game: 'slots', net: -300, rounds: 3, wagered: 300 }),
+    stake({ game: 'slots', net: 0, rounds: 3, wagered: 301 }), stake({ game: 'roulette', net: -2000, rounds: 1, wagered: 2000 }),
+    stake({ game: 'roulette', net: 0, rounds: 1, wagered: 2001 }), stake({ game: 'blackjack', net: -1000, rounds: 1, wagered: 1000 }),
+    stake({ game: 'blackjack', net: 0, rounds: 1, wagered: 1001 }), stake({ game: 'slots', net: 50, rounds: 0, wagered: 5 })],
+    ['reason.badBet', -300, 'reason.badBet', -1000, 'reason.badBet', -1000, 'reason.badBet', 'reason.badBet'],
+    'a session stakes at most its rounds × the largest round (slots $100, roulette $2,000, blackjack 2 × $500; no rounds, no stake)');
+  const full = K.state(SR, { money: { cash: 1000 }, daily: { bjHands: 59 } });
+  const ok59 = K.act(SR, full, 'settle', { game: 'blackjack', net: 5, rounds: 1, wagered: 5, apply: true }, 7);
+  const two = K.act(SR, K.state(SR, { money: { cash: 1000 }, daily: { bjHands: 59 } }), 'settle', { game: 'blackjack', net: 5, rounds: 2, wagered: 10, apply: true }, 8);
+  full.daily.bjHands = 60;
+  const at60 = K.act(SR, full, 'settle', { game: 'blackjack', net: 5, rounds: 1, wagered: 5, apply: true }, 9);
+  T.eq([ok59.ok, two.reason, at60.reason], [true, 'reason.dailyLimit', 'reason.dailyLimit'], 'a sampled blackjack session fits in the day\'s 60 hands or is refused');
+  const rb = K.features(SR, { nightlife: true });
+  const barred = K.state(SR, { money: { cash: 1000 }, clock: { day: 10 }, casino: { barredUntil: 12 } });
+  T.eq(K.act(SR, barred, 'settle', { game: 'blackjack', net: 5, rounds: 1, wagered: 5, apply: true }, 10).reason, 'reason.barred',
+    'and is refused while backed off (P1 nightlife)');
+  rb();
 }
 
 T.done();

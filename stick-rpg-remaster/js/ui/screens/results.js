@@ -87,8 +87,8 @@
 
   /**
    * Files a run in the profile once: the Hall of Fame (ranked runs only: never the cheat name, a
-   * Keep-playing run only at its original end; B-18), the lifetime totals (days, falls, fights, best
-   * net worth per length) and the MET THE ARTIST badge.
+   * Keep-playing run only at its original end, any run only at its first end; B-18), the lifetime
+   * totals (days, falls, fights, best net worth per length) and the MET THE ARTIST badge.
    * @returns {{bucket: string, place: number|null}} the run's Hall of Fame place (1-based)
    */
   function file(r, s) {
@@ -102,6 +102,9 @@
     var mine = list.filter(function (e) { return e.run === ek; })[0];
     if (!p.totals.seen[ek]) {
       var seen = p.totals.seen;
+      // B-18: a run is entered once, at its first end. A later end of the same run (an Unlimited run
+      // retired, resumed from its autosave and retired again) adds its days but no second entry.
+      var firstEnd = !seen[rk];
       var prev = seen[rk] || { days: 0, falls: 0, fights: 0 };
       var rec = (s && s.records) || {};
       var days = dayShown(r), falls = rec.falls || 0, fights = (rec.fightsWon || 0) + (rec.ringWins || 0);
@@ -112,13 +115,13 @@
       p.totals.best = p.totals.best || {};
       // The best net worth of a length counts the runs the Hall of Fame would take (B-18): never the
       // cheat name, and a Keep-playing run only at its original end (not after 300 more days).
-      if (r.ranked && !has(r, 'unverified') && (p.totals.best[r.bucket] === undefined || r.netWorth > p.totals.best[r.bucket])) p.totals.best[r.bucket] = r.netWorth;
+      if (firstEnd && r.ranked && !has(r, 'unverified') && (p.totals.best[r.bucket] === undefined || r.netWorth > p.totals.best[r.bucket])) p.totals.best[r.bucket] = r.netWorth;
       seen[rk] = { days: days, falls: falls, fights: fights };
       seen[ek] = 1;
       var keys = Object.keys(seen);
       while (keys.length > RUNS_KEPT * 2) { delete seen[keys.shift()]; }
       if (has(r, 'metArtist') && !p.badges.metArtist) p.badges.metArtist = new Date().toISOString().slice(0, 10);
-      if (r.ranked && !mine) {
+      if (firstEnd && r.ranked && !mine) {
         mine = { run: ek, name: r.name, rank: r.rank, rankKey: r.rankKey, netWorth: r.netWorth, legacy: r.legacy || 0, day: dayShown(r),
           difficulty: r.difficulty, date: new Date().toISOString().slice(0, 10), banners: (r.banners || []).slice() };
         list.push(mine);

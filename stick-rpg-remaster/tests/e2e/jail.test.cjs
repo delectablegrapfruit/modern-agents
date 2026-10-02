@@ -242,6 +242,15 @@ const A = require('./a11y.test.cjs');
     const e = await t.state();
     T.eq([e.over, await t.scenes(), (await jail()).mode, /Read the Final Edition/.test(await K.text(t, 'card-leave'))], [true, ['jail'], 'over', true],
       'arrested on the last day: the arrest night ends the story in the cell');
+    // "Over" is `state.over` alone (docs/requests/W2-RulesE.md 7): Keep playing clears it, so a
+    // Keep-playing run that ends again (a Retire, a Hardcore death) is over for good, and a live
+    // Keep-playing run in the cell is a Jail Day.
+    const modes = await ev(() => {
+      const SR = window.SR, s = SR.state, view = (o) => SR.ui.jail.view(Object.assign({}, s, o), null, {}).mode;
+      const kp = Object.assign({}, s.mode, { keepPlaying: true });
+      return [view({ over: true, mode: kp }), view({ over: false, mode: kp })];
+    });
+    T.eq(modes, ['over', 'day'], 'a Keep-playing run that ended again reads over; a live one serves its day');
   }
 
   T.section('a resumed cell shows only its own game\'s night; one day and an unknown reason read well');
@@ -261,6 +270,28 @@ const A = require('./a11y.test.cjs');
     await t.goto('jail', { resume: true });
     await t.step(1);
     T.eq(await K.text(t, 'jail-reason'), 'Booked for 1 day: reasons the desk sergeant keeps to himself.', 'one day; a reason without its own line');
+  }
+
+  T.section('a jail night that ends in death (Hardcore loan default): FLATLINED, no paper over it');
+  {
+    await arrest(0, {}, { difficulty: 'hardcore' });
+    // The loan default's flag (js/rules/bank.js on Hardcore) makes tonight's step 13 end the game in
+    // death; the night is also made an election night, whose edition the cell would push over itself.
+    const scenes = await ev(() => {
+      const SR = window.SR, act = SR.act;
+      SR.state.flags.dead = 'loan';
+      SR.act = function (id, params, opts) {
+        const r = act.call(this, id, params, opts);
+        if (id === 'jail.day' && r && r.report) r.report.election = { won: false, poll: 40, roll: 0.9, path: 'any' };
+        return r;
+      };
+      try { document.querySelector('#ui [data-row="jail.str"] button, #ui [data-row="jail.str"] [data-nav]').click(); } finally { SR.act = act; }
+      return SR.scenes.stack();
+    });
+    T.eq([scenes, (await t.state()).over, (await t.state()).result.reason], [['death'], true, 'death'],
+      'the death scene takes the cell; the election paper is not pushed over FLATLINED');
+    await t.step(2);   // fast mode: FLATLINED goes straight on
+    T.eq(t.errors(), [], 'and nothing throws on the way out of the cell');
   }
 
   T.section('1920 × 1080: the Jail Day card');

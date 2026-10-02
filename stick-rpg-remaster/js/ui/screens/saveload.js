@@ -13,7 +13,7 @@
 //   slot, or the ironman slot on Hardcore), quit() (leaves the game for the title: a Hardcore run's
 //   pending ironman write lands first; the city's building details forget the game), hardcore(state),
 //   SLOTS.
-// Load-time rule: defines functions and registers the scene only.
+// Load-time rule: defines functions, registers the scene and a boot hook (it counts save:broken).
 (function () {
   'use strict';
   var SR = window.SR;
@@ -52,7 +52,9 @@
   function resume() {
     var s = SR.state;
     if (!s) { SR.scenes.go('title'); return; }
-    if (s.over && !s.mode.keepPlaying && SR.reg.scene.results) { SR.scenes.go('results', { reason: s.result && s.result.reason, result: s.result }); return; }
+    // A game that is over shows its Final Edition, a Keep-playing run's later Retire included (Keep
+    // playing clears `over`, so an over game never belongs in the city: every action would refuse).
+    if (s.over && SR.reg.scene.results) { SR.scenes.go('results', { reason: s.result && s.result.reason, result: s.result }); return; }
     if (s.jail && SR.reg.scene.jail) { SR.scenes.go('jail', { resume: true }); return; }
     var T = SR.rules.trade, off = T && typeof T.pending === 'function' ? T.pending(s) : null;
     if (off && off.kind === 'smuggle' && SR.reg.scene.bustrip) { SR.scenes.go('bustrip', { resume: true }); return; }
@@ -65,14 +67,17 @@
     toast(e && e.reason === 'newer' ? 'ui.save.newer' : 'ui.save.broken', null, 'warning');
   }
 
+  var brokenSeen = 0;   // save:broken events so far (the boot scene's listener already says "couldn't be read" for each)
+
   /**
    * Makes a slot or a state the live game (SR.save.load) and resumes it.
    * @returns {boolean} loaded
    */
   function load(x) {
-    var s = null;
+    var s = null, before = brokenSeen;
     try { s = SR.save.load(x); } catch (e) { s = null; }
-    if (!s) { readFailed(); return false; }
+    // A quarantined slot raised save:broken, whose toast is up already: one message, not two.
+    if (!s) { if (brokenSeen === before) readFailed(); return false; }
     resume();
     return true;
   }
@@ -354,6 +359,10 @@
     info: function () {
       return V ? { mode: V.mode, more: V.moreOpen, slots: Array.prototype.map.call(V.list.querySelectorAll('[data-id^="slot-"]'), function (c) { return c.getAttribute('data-id').slice(5); }) } : null;
     },
+  });
+
+  SR.onBoot(50, function () {
+    if (SR.events) SR.events.on('save:broken', function () { brokenSeen++; });
   });
 
   SR.ui.saveload = {

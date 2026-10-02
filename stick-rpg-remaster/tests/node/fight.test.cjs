@@ -69,6 +69,22 @@ T.section('AP and the damage ranges at STR 10 / 100 / 300 / 999 (B-13, orig form
   rb();
   const { f: nb } = fightFor({ str: 100, buzz: 5 });
   T.eq(F.range(nb, 'punch').min, 1, 'no Buzz bonus while nightlife is off');
+  // Review 2 (W2-RulesC): moves(f) is what the fight engine draws (js/minigames/fight.js): the AP
+  // costs of B-13, the same min / max as every roll can do, and `ok` by the AP left this turn.
+  const { f: mv } = fightFor({ str: 100, cha: 7 });
+  mv.me.ap = 3;
+  const list = F.moves(mv);
+  T.eq(list.map((m) => [m.id, m.ap, m.ok]), [['punch', 1, true], ['kick', 2, true], ['fireball', 3, true], ['inkBeam', 4, false]],
+    'moves(): B-13 AP costs; a move needs the AP left this turn; no Guard while nightlife is off');
+  T.ok(list.every((m) => { const d = damages(mv, m.id); return m.min === d[0] && m.max === d[1] && m.ev >= m.min && m.ev <= m.max; }),
+    'each chip\'s range is exactly what the rolls can do, its expected damage inside it');
+  const rg = K.features(SR, { nightlife: true });
+  const gf = fightFor({ str: 100 }).f;
+  const gm = F.moves(gf).filter((m) => m.id === 'guard')[0];
+  T.eq(gm && [gm.ap, gm.min, gm.max, gm.ev, gm.ok], [1, 0, 0, 0, true], 'with nightlife: Guard, 1 AP, no damage');
+  gf.phase = 'enemy';
+  T.ok(F.moves(gf).every((m) => !m.ok), 'nothing is allowed outside your turn');
+  rg();
 }
 
 T.section('the crit (10 %, 15 % at CHA ≥ 300, ×1.5) and Heavy Hitter');
@@ -196,6 +212,12 @@ T.section('the Underground Ring scales with you (P1; B-13 ring)');
   const cash = s.money.cash;
   const fr = F.finish(s, { kind: 'ring', k: 1, outcome: 'win', hpLeft: 10 }, null, K.ctx(SR, 1));
   T.eq([s.money.cash - cash, s.records.ringWins, fr.log[0].kind], [750, 1, 'ringWin'], 'purse 500 + 250k');
+  // Review 2: daily.ring is created by the first bout (not in the v1 schema; docs/requests/W2-RulesC.md
+  // 6); the night zeroes it with the rest of `daily`, so the next Saturday opens again.
+  SR.rules.night.run(s, K.ctx(SR, 2), {});
+  s.clock.day = 13;
+  T.eq([s.daily.ring, F.canStart(s, 'ring').ok, F.start(s, 'ring', K.ctx(SR, 3)).open.params.k], [0, true, 2],
+    'the next Saturday: the counter was reset overnight, bout 2');
   rn();
 }
 

@@ -376,6 +376,12 @@ T.section('a debug-assisted run from the Board\'s call to office (BUILD_PLAN §4
     'the jail night counts: released (the `release` event) on campaign day 4 at 08:00');
   const pv = SR.rules.act.preview(s, 'testc.debate', {}, K.ctx(SR));
   T.eq([pv.ok, pv.cost.min], [true, 120], 'the debate row is open on day 4 (2 h)');
+  // Review 2 (W2-RulesC): the resolve counts only a debate opened today (debateStart took its 2 h),
+  // like the other resolve fns' "in progress" records; a stray one paid +9 without the debate.
+  const pollBefore = s.election.poll, minBefore = s.clock.min;
+  const stray = K.act(SR, s, 'debate:resolve', { beats: [true, true, true], wins: 3, losses: 0 }, seed++);
+  T.eq([stray.reason, s.election.poll, s.election.debateDone, s.clock.min], ['reason.notNow', pollBefore, false, minBefore],
+    'a resolve with no debate opened today is refused: no +9, the no-show still stands');
   const db = K.act(SR, s, 'debate', {}, seed++);
   T.eq([db.ok, db.open.skin, db.open.resolve, s.clock.min], [true, 'debate', 'testc.debate:resolve', 600], 'the debate opens its Duel skin');
   const before = s.election.poll;

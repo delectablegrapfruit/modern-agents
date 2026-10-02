@@ -240,6 +240,7 @@ const A = require('./a11y.test.cjs');
     await t.fast(false);
     const r = await fall({ clock: { day: 3, min: 900 }, money: { cash: 300, bank: 0 } }, { length: 3 });
     T.eq([r.down.outcome, (await t.state()).over], ['hospital', true], 'day 3 of 3: the hospital night ends the game');
+    await K.events(t);
     await skipToCard();
     await t.press('confirm');
     await t.step(1);
@@ -248,6 +249,8 @@ const A = require('./a11y.test.cjs');
     await t.step(1);
     const hasResults = await ev(() => !!window.SR.reg.scene.results);
     T.eq((await t.scenes())[0], hasResults ? 'results' : 'title', 'then the Final Edition (the title until W2-Front\'s results land)');
+    T.eq((await K.events(t, ['action:done'])).filter((e) => !e.p.ok).map((e) => e.p.id), [],
+      'an ended game takes no actions: the discharge row is not run (no refused action on the way out)');
   }
 
   T.section('Hardcore: FLATLINED over the greyed frame, then the results');

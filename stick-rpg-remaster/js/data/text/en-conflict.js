@@ -92,7 +92,7 @@
 
     // ---------------------------------------------------------------------------------------------
     // Crime (GDD §4.10; js/rules/crime.js)
-    'crime.rob.confirm.store': 'Rob the store? Win or lose, this costs karma and brings Heat.',
+    'crime.rob.confirm.store': 'Rob the store? Win or lose, this costs karma, brings Heat and uses up the day.',
     'crime.rob.confirm.bank': 'Rob the bank? Win or lose, this costs karma, brings a lot of Heat and uses up the day.',
     'crime.jail.reason.store': 'Armed robbery (convenience)',
     'crime.jail.reason.bank': 'Armed robbery (financial)',

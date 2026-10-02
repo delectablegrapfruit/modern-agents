@@ -38,9 +38,14 @@
     /** @returns {number} the spread (0.5 %; 0 with Market Sense). */
     spread: function (s) { return perk(s, 'marketSense') ? SR.tuning.perks.marketSense.spread : T().spread; },
 
-    /** @returns {number} the holdings at market price (net worth). */
+    /**
+     * @returns {number} the holdings at market price (net worth), to the cent: prices have 2
+     *   decimals, so the exact value is whole cents, which binary floats miss (100 × $0.29 is
+     *   28.999999999999996, and net worth floors it).
+     */
     value: function (s) {
-      return tickers().reduce(function (a, t) { var st = s.stocks[t]; return a + (st ? st.held * st.price : 0); }, 0);
+      var v = tickers().reduce(function (a, t) { var st = s.stocks[t]; return a + (st ? st.held * st.price : 0); }, 0);
+      return Math.round(v * 100) / 100;
     },
 
     /**
