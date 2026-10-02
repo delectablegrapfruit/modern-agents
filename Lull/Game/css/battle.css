@@ -1,0 +1,38 @@
+/* Lull — Battle (js/battleview.js): its achievements' place colour (a soft rose, 4.5:1 on its own tint in both themes,
+   as the other places'), its bar under the board (Send with its cooldown ring and filler dots, Start over, Pause) and
+   its cards (Ready, the countdown, Paused, the End card with the opponent picker). */
+:root { --area-battle: #e79bb0; }
+:root[data-theme="light"] { --area-battle: #8a3550; }
+[data-area="battle"] { --area: var(--area-battle); }
+
+.itembar.bt-bar { display: flex; flex-wrap: nowrap; gap: 6px; justify-content: center; align-items: center; }
+.itembar.bt-bar .btn { height: 44px; min-width: 44px; padding: 0 12px; border-radius: 12px; white-space: nowrap; }
+.itembar.bt-bar .btn[aria-disabled="true"] { opacity: 0.55; }
+.itembar.bt-bar .btn.armed { color: var(--accent-ink); border-color: var(--accent); }
+.bt-send { gap: 6px; }
+.bt-send .bt-ic { position: relative; width: 28px; height: 28px; flex: none; display: inline-grid; place-items: center; }
+.bt-send .bt-ic .bt-ring { position: absolute; inset: 0; width: 28px; height: 28px; }
+.bt-send .bt-ic > svg:not(.bt-ring) { width: 13px; height: 13px; }
+.bt-ring circle.off { stroke: var(--line); }
+.bt-ring circle.on { stroke: var(--muted); }
+.bt-send.ready .bt-ring circle.on { stroke: var(--accent); }
+.bt-send.ready { color: var(--fg); border-color: var(--accent); }
+.bt-dots { display: inline-flex; gap: 3px; }
+.bt-dots i { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--muted); box-sizing: border-box; }
+.bt-dots i.on { background: #9ccfd8; border-color: #9ccfd8; }
+:root[data-theme="light"] .bt-dots i.on { background: #3f7f8c; border-color: #3f7f8c; }
+@media (max-width: 380px) {
+  .itembar.bt-bar { gap: 4px; }
+  .itembar.bt-bar .btn { padding: 0 9px; }
+  .itembar.bt-bar .btn .ico { display: none; }
+}
+
+.card .bt-sub { color: var(--muted); }
+.overlay .card.bt-counting { min-width: 120px; background: transparent; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.card .bt-count { margin: 0; font-size: 64px; line-height: 1; font-weight: 750; color: var(--fg); font-variant-numeric: tabular-nums; text-shadow: 0 2px 18px var(--bg); }
+.card .bt-opp { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 10px; margin-top: 10px; }
+.card .bt-opp-l { color: var(--muted); font-size: var(--fs-sm); }
+.card .bt-pick { display: flex; }
+.card .bt-pick button { min-width: 0; height: 32px; padding: 0 10px; white-space: nowrap; }
+@media (pointer: coarse) { .card .bt-pick button { height: 44px; } }
+@media (max-width: 380px) { .card .bt-pick button { padding: 0 7px; } }

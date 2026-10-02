@@ -75,11 +75,12 @@
   const pieceEntry = (x) => isObj(x) && typeof x.id === 'string' && x.id.length > 0 && x.id.length <= 40 && rotOk(x.rot);
   /**
    * A saved game that can be resumed: a size in range with a stack to match, a queue, a bag, a random stream, stats;
-   * and a board recipe every part accepts (Recipe.valid), a height its recipe allows, and every piece in the queue, in
+   * and a board recipe every part accepts (Recipe.valid), a height its recipe allows (less a buffer it keeps on top:
+   * R.k, Battle's), and every piece in the queue, in
    * hold and in play one the pieces know (Pieces.get).
    */
   const playable = (g) => isObj(g) && validSize(g.w, g.h) && Array.isArray(g.cells) && g.cells.length === g.w * g.h && Array.isArray(g.queue) && Array.isArray(g.bag) && g.rng != null && isObj(g.s)
-    && (!L.Recipe || (L.Recipe.valid(g) && L.Recipe.sizeOk(g.w, g.h, g.recipe)))
+    && (!L.Recipe || (L.Recipe.valid(g) && L.Recipe.sizeOk(g.w, g.h - (L.Recipe.rules(g.recipe, g.w).k || 0), g.recipe)))
     && g.queue.every(idOk) && (g.hold == null || idOk(g.hold)) && (g.piece == null || (isObj(g.piece) && idOk(g.piece.entry)));
 
   /**

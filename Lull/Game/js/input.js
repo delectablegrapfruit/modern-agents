@@ -21,7 +21,7 @@
     ['C / Shift', 'Hold · again: swap back'],
     ['Backspace / U', 'Undo (Puzzles)'],
     ['R', 'Retry puzzle'],
-    ['P', 'Pause a Classic board'],
+    ['P', 'Pause (Classic, Battle)'],
     ['M', 'Mute'],
     ['N', 'Next puzzle'],
     ['H', 'Hint (Puzzles)'],

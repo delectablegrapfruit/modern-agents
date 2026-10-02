@@ -2850,7 +2850,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   // "No power-ups on the board" is in each Free Play description; what it means exactly is said once, on the header.
   const rule = await ev(() => {
     const play = [...document.querySelectorAll('.ach-group[data-group="play"] .ach .d')].map((d) => d.textContent);
-    const info = document.querySelector('.ach-group[data-group="play"] > summary .ach-info'), others = document.querySelectorAll('.ach-group:not([data-group="play"]) .ach-info').length;
+    const info = document.querySelector('.ach-group[data-group="play"] > summary .ach-info'), others = [...document.querySelectorAll('.ach-group:not([data-group="play"]) .ach-info')].filter((e) => /power-ups/i.test(e.dataset.tip || '')).length;
     return { said: play.filter((t) => /no (other )?power-ups on the board/i.test(t)).length, byHand: document.getElementById('ach-body').textContent.includes('by hand'), info: info && info.dataset.tip, others };
   });
   check('Free Play skill ones say "no power-ups on the board", defined once on the header (never "by hand")', rule.said >= 20 && !rule.byHand && /last empty/.test(rule.info || '') && rule.others === 0, JSON.stringify(rule));
@@ -4327,6 +4327,8 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await require('./mirror-test.cjs')({ browser, check, PAGE, OUT });
   // ---- Protect: made, played, wilted and undone, reloaded, retired; the window at 320 × 568; screenshots (protect-test.cjs)
   await require('./protect-test.cjs')({ browser, check, PAGE, OUT });
+  // ---- Battle: made, the Ready card and 3-2-1, Send, pausing, the End card, both boards' cells, slices (battle-test.cjs)
+  await require('./battle-test.cjs')({ browser, check, PAGE, OUT });
   // ---- touch: an emulated phone, played with gestures (scripts/touch-test.cjs) -----------------------------------------
   await require('./touch-test.cjs')({ browser, check, PAGE, OUT });
   // ---- what the device can do: a phone, a desktop browser, the app, a tablet with a trackpad (device-test.cjs) -------
