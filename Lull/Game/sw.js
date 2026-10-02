@@ -55,7 +55,9 @@ const FILES = [
   "js/guardview.js",
   "js/classic.js",
   "js/classicview.js",
-  // part:battle
+  "css/battle.css",
+  "js/battle.js",
+  "js/battleview.js",
   "js/app.js",
   "js/webapp.js",
   "icons/icon-32.png",

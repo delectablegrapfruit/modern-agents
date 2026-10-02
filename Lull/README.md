@@ -899,7 +899,68 @@ Not enough lines and nothing changes. Pay stays fair: an edit only costs, and ev
 own rules, never faster than Standard.
 
 ### Battle
-<!-- part:battle -->
+A mode (`js/battle.js`, its controller, view and window `js/battleview.js`): your board against an opponent's, the
+first to fill every cell of its board wins the round. No row ever clears. A board is 6–12 wide and 6–12 rows (the
+Height stepper is named Rows; presets Quick 8 × 8, Standard 10 × 10, Long 10 × 12), and over its rows sits a buffer of
+k rows (4 for Normal shapes, 3 Tiny, 5 Frantic and Pentominoes; `R.k`), where pieces come in, move and turn. A piece
+must touch the board to set ("Set it on your board"); what it leaves in the buffer is trimmed away (and fades). Big,
+Custom with groups over 5 blocks or Clusters, Mirror and Physics are not in Battle; Classic and Protect are other modes.
+A Battle board keeps its rules (no Edit rules); the opponent can be changed between rounds.
+
+*Send* — S sends the piece in play to the opponent; Shift+S, or a tap or click on the first Next slot, sends the first
+Next piece. Send is ready once every six pieces you set (a ring of six on the Send button fills as they go), and a piece
+sent to you goes to the front of your queue, after any sent before it, ringed in Next and outlined in play; it can be
+neither held nor sent on. (Shift alone holds when it is let go, so Shift+S never holds.)
+
+*Sealed gaps and Gap fillers* — an empty cell of the board that no piece of the set can reach (every turn of every
+shape, from the top, sideways and down, as the engine moves: `Battle.cover`, on bit rows, 0.05 ms typical) is a sealed
+gap, drawn with a soft hatch. A piece you sent that seals a new gap as the opponent sets it earns you a Gap filler (two
+at most, the dots on Send); a filler held fills your own sealed gaps at once, one region each, lowest first, with stone
+(`FOREIGN | FILL`: never yours, never paid). A board that cannot be finished (closed: every empty cell sealed and no
+filler held), or whose next piece cannot be set anywhere (in play, held, or sent on), starts over: a short fade, then
+empty, the queue kept. Start over does the same on purpose (press twice: "Start over?" waits 3 s).
+
+*The opponent* — four levels, apart mostly in pace:
+
+| | Easy | Steady | Brisk | Swift |
+|---|---|---|---|---|
+| Seconds a piece (±30%) | 4.5 | 3.2 | 2.3 | 1.6 |
+| Judgement (noise) | 8 | 4 | 1 | 0 |
+| A piece that seals a gap on purpose (on one sent to it) | 1.2% (10%) | 0.6% (6%) | 0.2% (3%) | 0 (1%) |
+| Looks at the next piece | no | no | its best 5 | its best 8 |
+| Sends a piece that | costs it 100 | costs it 70 | costs it 50, or hurts you | costs it 35, or hurts you |
+| Starts over with a gap below | 35% full | 45% | 50% | 50% |
+| Moves a second | 8 | 10 | 12 | 14 |
+
+Every piece it considers every spot it can reach (a search over turn, column and row with the engine's own kicks), scores
+the board each would leave (sealed cells, covered cells, bumps, deep pits, cells left in the buffer, height), judges its
+best five again by the cover, and plays the chosen spot's path move by move at its pace, so it tucks under overhangs
+where you can see it (with reduced motion it jumps there). It holds like you do. It thinks in slices of under a
+millisecond a frame (a generator), so the page never stutters. Measured (`scripts/battle-unit.cjs`, 20 rounds each):
+Swift beats Easy 20 of 20; a player setting a piece every 3 s with Steady's judgement beats Easy 17 of 20.
+
+*In Free Play* — the opponent's board is on top, turned 180° as if seen across the table (its pieces keep their
+shape), a little fainter, with no trays; the two buffers meet at a line in the middle; your board and its trays are
+below. The opponent is drawn at your scale while your cells stay 16 px or more, and shrinks to half yours at the least
+(on a 320 × 568 phone a Long board of Pentominoes is 11 px yours, 5.5 px theirs). A round starts at the Ready card
+(Battle, vs Steady; Start or Space) with 3-2-1; away from the board (another tab, window or app, the page hidden, a
+window over it, the window losing focus, rolled up) it pauses at the Paused card, and Resume counts down again; a board
+reloaded comes back paused. Battle is the only Relaxed board with a clock. The status bar reads You 64% · Steady 58%
+(the tally in its tip); the bar under the board is Send, Start over and Pause (P). No power-ups, Undo, Luck, control
+hints, shake or red rim. The End card says You win or Opponent wins, both boards' fill, the tally, the time and what it
+paid, with Rematch (Space), Boards, Retire and the opponent for the next round. The library row reads "10 × 10 · Battle"
+and "vs Steady 3–2"; its summary adds the tally and rounds; Stats ▸ Free Play has a Battle section (rounds, won, lost,
+most in a row, sent, Gap fillers, started over, by opponent, time).
+
+*Pay* — once a round, for your board as the round ends: a tenth of a line for each of your own cells on it, times the
+set's `f` (min(1, 4/E)), times the opponent's D (Easy 0.4, Steady 0.55, Brisk 0.7, Swift 0.85), half for a loss. Cells
+lost to a start over never pay, nor do fillers. A perfect round against Swift is 0.34 a piece at most (Standard pays
+0.37–0.39); measured in simulated rounds it is 0.11–0.21. It counts toward lifetime lines and the power-ups earned by
+lines (counted from the board's first round), never toward the Free Play board records. *Achievements* (their own
+group; wins count against Steady or harder, on boards of 64 cells or more): **Return to Sender** (30) earn a Gap filler;
+**Across the Middle** (40) win a round; **Second Wind** (80) win after starting over in that round; **Head to Head**
+(100) beat Brisk; **Seamless** (120) win with no gap sealed and no start over; **Three Straight** (150) win 3 rounds in
+a row on one board; **Swifter Still** (250, legend) beat Swift.
 
 ## Keys
 
@@ -913,7 +974,8 @@ own rules, never faster than Standard.
 | ⌫ / U, R, N, H | undo, retry, next puzzle, hint |
 | ⌘1–⌘6, ⌘, | tabs (⌘6 the Shop), settings |
 | ⌘J | collapse into the title bar, or expand (so does a double-click on the empty bar) |
-| P | pause a Classic board (Space or P starts and resumes it) |
+| P | pause a Classic or Battle board (Space or P starts and resumes it) |
+| S, Shift+S | Battle: send the piece in play, or the first Next piece (a Battle board holds with Shift when it is let go alone) |
 | M | mute everything, on any tab (again to unmute) |
 | mouse: point | slide the piece left and right (at its height; slightly sticky at column edges: the pointer goes 0.15 of a cell past one before the piece follows; mirrored under Inverted Controls; keys keep working while the pointer rests there) |
 | left click | drop it straight down — anywhere on the board side (a slip into the next column in the last 0.06 s before the click is ignored) |

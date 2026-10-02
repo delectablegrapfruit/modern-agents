@@ -13,7 +13,7 @@ const L = load([
   'physics.js',
   'guard.js',
   'classic.js',
-  // part:battle
+  'battle.js',
 ]);
 const { Pieces, Board, Game, Puzzles, Factory, RNG } = L;
 
@@ -4832,6 +4832,10 @@ require('./protect-unit.cjs')({ L, test });
 
 // Classic, a board mode, and editing a board's rules (scripts/classic-unit.cjs).
 require('./classic-unit.cjs')({ L, test });
+
+// Battle, a board mode, and its AI (scripts/battle-unit.cjs).
+console.log('battle');
+require('./battle-unit.cjs')({ L, test });
 
 // The Home Screen web app: the offline copy, the manifest and icons, the deployed build (scripts/web-test.cjs).
 require('./web-test.cjs')(test).then(() => {

@@ -856,7 +856,7 @@
       const st = this.app.store, now = Date.now();
       Library.ensure(st.state, now);
       this.syncCounters();
-      const s = this.game.s, size = { w: this.game.w, h: this.game.h }, recipe = this.game.recipe;
+      const s = this.game.s, recipe = this.game.recipe, size = { w: this.game.w, h: this.game.h - this.bufferRows(recipe, this.game.w) };
       if (s.pieces) {
         this.logBoard(s, reason);
         Library.retire(st.state, st.state.boards.cur, this.game.toJSON(), now, reason);
@@ -923,7 +923,7 @@
       const st = this.app.store, now = Date.now(), r = recipe || st.state.boards.recipe || (L.Recipe && L.Recipe.DEFAULT), z = Library.clampSize(size || st.state.boards.size, r);
       if (this.untouched()) {
         // An untouched board of another recipe is made again with it, as one of another size is.
-        if (!size && z.w === this.game.w && z.h === this.game.h && this.sameRecipe(r)) return false;
+        if (!size && z.w === this.game.w && z.h === this.game.h - this.bufferRows(r, z.w) && this.sameRecipe(r)) return false;
         this.setGame(new Game({ w: z.w, h: z.h, recipe: r, previewCount: this.settings.preview }));
         this.app.sound.play('hold');
         this.persist();
@@ -1232,6 +1232,8 @@
       if (!rec) return null;
       const cur = id === B.cur, json = cur ? this.boardJSON() : rec.game;
       if (!json || json.over || json.ended) { toast('A board that ended keeps its rules', 'bad'); return null; }
+      const keeps = this.keepsRules(json.recipe);
+      if (keeps) { toast(keeps, 'bad'); return null; }
       const R = L.Recipe;
       return this.openNewBoard(done, { id, recipe: R.normalize(json.recipe), size: { w: json.w, h: json.h }, json });
     }
@@ -1262,6 +1264,17 @@
       this.persist();
       if (done) done(true);
       return true;
+    }
+
+    /** The rows a board keeps on top of its own as a buffer (R.k: Battle's), left out of the size it is shown at. */
+    bufferRows(recipe, w) { return L.Recipe && recipe ? L.Recipe.rules(recipe, w).k || 0 : 0; }
+    /** Why a board of this recipe offers no Edit rules (a part's noEdit: Battle), or null. */
+    keepsRules(recipe) {
+      const R = L.Recipe;
+      if (!R || !recipe) return null;
+      const r = R.normalize(recipe);
+      for (const p of R.parts()) { const t = typeof p.noEdit === 'function' ? p.noEdit(r) : null; if (t) return t; }
+      return null;
     }
 
     /** Resumes a shelved board exactly as it was left; the one in play is shelved as it stands. */
@@ -1319,7 +1332,7 @@
       if (Library.findRetired(B, id)) { Library.removeRetired(B, id); this.persist(); return; }
       if (id === B.cur) {
         // The board that takes its place is its size and recipe.
-        const size = { w: this.game.w, h: this.game.h }, recipe = this.game.recipe;
+        const recipe = this.game.recipe, size = { w: this.game.w, h: this.game.h - this.bufferRows(recipe, this.game.w) };
         this.syncCounters();
         Library.remove(st.state, id);
         Library.newCurrent(st.state, now);
@@ -1451,12 +1464,12 @@
           h('div', { class: 'd' + (short ? ' labelled' : '') }, this.rowTags(recipe, cur ? () => this.game.toJSON().x : g && g.x, { cur, over: full, ended: cur ? this.game.endKind || null : (g && g.ended) || null, retired: false }),
             // The size, when, then the board's recipe in short (Recipe.label: nothing on a default board; in full as its
             // tip), so an ellipsis only ever takes the label.
-            h('span', { class: 'sz', title: label || null }, [Library.sizeLabel(w, hh), cur ? null : when(rec.touched), short].filter(Boolean).join(' · ')),
+            h('span', { class: 'sz', title: label || null }, [Library.sizeLabel(w, hh - this.bufferRows(recipe, w)), cur ? null : when(rec.touched), short].filter(Boolean).join(' · ')),
             h('span', { class: 'st' }, ['Lines ' + fmtInt(s.lines || 0), 'Score ' + fmtInt(s.score || 0)].join(' · ')))));
         return h('div', { class: 'lib-row' + (cur ? ' current' : ''), 'data-id': rec.id }, open,
           h('div', { class: 'lib-acts' },
             act('rename', 'Rename', () => { editing = rec.id; draw(); }),
-            full || (g && g.ended) ? gap() : act('settings', 'Edit rules', () => this.openEditRules(rec.id, (made) => { if (made && handle && handle.el.isConnected) draw(rec.id); })),
+            full || (g && g.ended) || this.keepsRules(recipe) ? gap() : act('settings', 'Edit rules', () => this.openEditRules(rec.id, (made) => { if (made && handle && handle.el.isConnected) draw(rec.id); })),
             s.pieces ? act('retire', 'Retire', () => this.confirmRetire(rec.id, afterGone(rec.id))) : gap(),
             act('trash', 'Delete', () => this.confirmDelete(rec.id, afterGone(rec.id)), 'del')));
       };
@@ -1468,7 +1481,7 @@
           this.thumb(e.id, e.cells, e.w, e.h, e.recipe, 'View'),
           h('div', { class: 'grow' }, h('div', { class: 't' }, e.name),
             h('div', { class: 'd' + (short ? ' labelled' : '') }, this.rowTags(e.recipe, e.sum && e.sum.ext, { cur: false, over: e.reason !== 'manual', ended: e.reason !== 'manual' && e.reason !== 'full' ? e.reason : null, reason: e.reason, retired: true }),
-              h('span', { class: 'sz', title: label || null }, [when(e.at), Library.sizeLabel(e.w, e.h), short].filter(Boolean).join(' · ')),
+              h('span', { class: 'sz', title: label || null }, [when(e.at), Library.sizeLabel(e.w, e.h - this.bufferRows(e.recipe, e.w)), short].filter(Boolean).join(' · ')),
               h('span', { class: 'st' }, ['Lines ' + fmtInt(e.sum.lines || 0), 'Score ' + fmtInt(e.sum.score || 0)].join(' · '))))),
         h('div', { class: 'lib-acts' },
           h('button', { class: 'icon-btn fv-open', 'aria-label': 'View', 'data-tip': 'View', html: L.Icons.icon('expand'), onclick: (ev) => { ev.stopPropagation(); this.openRetiredView(e.id, ev.currentTarget); } }),
