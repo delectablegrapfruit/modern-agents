@@ -1742,8 +1742,8 @@
         path: !menu && fx.path > 0 && this.pathLine ? { pts: this.pathLine.pts, a: Math.min(1, (ITEMS.path.dur - fx.path) * 4, fx.path * 1.5) } : null,
         boxes: boxesOn ? this.boxes.filter((x) => x.takenAt == null || this.runT - x.takenAt >= BOX_BACK) : null,
         boxAge: (x) => (x.takenAt == null ? 9 : this.runT - x.takenAt - BOX_BACK),
-        shards: (boxesOn ? this.boxes.filter((x) => x.takenAt != null && this.runT - x.takenAt < SHATTER).map((x) => ({ x: x.x, y: x.y, k: (this.runT - x.takenAt) / SHATTER })) : [])
-          .concat(!menu && maze && maze.gboxes ? maze.gboxes.filter((x) => x.gotAt != null && this.runT - x.gotAt < SHATTER).map((x) => ({ x: x.x, y: x.y, k: (this.runT - x.gotAt) / SHATTER, gold: true })) : []),
+        shards: (boxesOn ? this.boxes.filter((x) => x.takenAt != null && this.runT - x.takenAt < SHATTER).map((x) => ({ x: x.x, y: x.y, k: (this.runT - x.takenAt) / SHATTER, dur: SHATTER })) : [])
+          .concat(!menu && maze && maze.gboxes ? maze.gboxes.filter((x) => x.gotAt != null && this.runT - x.gotAt < SHATTER).map((x) => ({ x: x.x, y: x.y, k: (this.runT - x.gotAt) / SHATTER, dur: SHATTER, gold: true })) : []),
         runT: this.runT,
         // Under the player: a Launch's shadow on the ground, the magic carpet (flickering as it runs out), the Bullet.
         under: showPlayer && this.state !== 'menu' ? {

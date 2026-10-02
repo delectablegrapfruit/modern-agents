@@ -70,8 +70,10 @@ No build step, no dependencies: plain HTML/CSS/JS, plus an optional Python serve
 
 ### Mystery boxes
 
-Colour-cycling **?** boxes sit on junctions and dead ends (about one per 1500 units of corridor; in Endless up to one
-per chunk). Touching one shatters it; with an empty item slot you also get an item (the slot spins first), with a full
+**?** boxes sit on junctions and dead ends (about one per 1500 units of corridor; in Endless up to one per chunk):
+see-through rainbow glass cubes with bright dots, tumbling in space with a **?** turning inside, after Mario Kart Wii's
+(a puzzle's item box is the same cube in gold, with its item inside). Touching one shatters it like glass, shards
+tumbling apart; with an empty item slot you also get an item (the slot spins first), with a full
 one you get nothing. A shattered box is back 25 seconds later. Use the item
 with **right click**, **Space**, **E**, the slot button (bottom left) or gamepad **A**/**X**. Settings: *Mystery boxes* turns them off;
 Time Trial never has them.

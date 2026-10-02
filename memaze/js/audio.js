@@ -5,7 +5,10 @@
 
   const A = {
     ctx: null, master: null, sfx: null, music: null, vol: { master: 0.8, sfx: 0.8, music: 0.5, media: 0.8 },
+    // Sound can only start from a tap, click or key (on phones a tap counts once the finger lifts), so this is offered
+    // on every one until it's running (main.js); iPhones also keep it playing with the ringer switch on silent.
     unlock() {
+      try { if (navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback'; } catch (e) { /* not here */ }
       if (!this.ctx) {
         const AC = window.AudioContext || window.webkitAudioContext;
         if (!AC) return;
@@ -18,8 +21,17 @@
         this.music.connect(this.master);
         this.applyVolumes();
       }
-      if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
+      if (this.ctx.state !== 'running') { // (suspended, or interrupted: a call, the app in the background)
+        try { const r = this.ctx.resume(); if (r && r.catch) r.catch(() => {}); } catch (e) { /* not now */ }
+        try { // a moment of silence, started right here in the tap: older iPhones only wake up for that
+          const s = this.ctx.createBufferSource();
+          s.buffer = this.ctx.createBuffer(1, 1, 22050);
+          s.connect(this.ctx.destination);
+          s.start(0);
+        } catch (e) { /* fine */ }
+      }
     },
+    running() { return !!this.ctx && this.ctx.state === 'running'; },
     setVolumes(v) { Object.assign(this.vol, v); this.applyVolumes(); Music.applyVolume(); },
     applyVolumes() {
       if (!this.ctx) return;

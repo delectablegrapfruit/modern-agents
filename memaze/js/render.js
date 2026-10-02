@@ -19,6 +19,89 @@
     for (let i = 1; i < e.pts.length; i++) p.lineTo(e.pts[i].x, e.pts[i].y);
     return p;
   }
+  // ---------- item boxes: see-through cubes turning in space (after Mario Kart Wii's) ----------
+  // Rainbow glass (gold for a puzzle's item box) with bright dots, glassy white rims, and what it holds floating inside,
+  // drawn as a cube tumbling in 3D (an orthographic view: x right, y down, z toward you): the far faces first, faint
+  // through the glass, then what's inside, then the near faces. Broken, it bursts into glass shards that tumble apart.
+  const CUBE_V = [[-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1], [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]];
+  const CUBE_F = [[0, 1, 2, 3], [4, 5, 6, 7], [0, 1, 5, 4], [3, 2, 6, 7], [0, 3, 7, 4], [1, 2, 6, 5]]; // corners in order round each face
+  const DOTS = [[-0.62, -0.62], [0, -0.62], [0.62, -0.62], [-0.62, 0], [0, 0], [0.62, 0], [-0.62, 0.62], [0, 0.62], [0.62, 0.62], [-0.31, -0.31], [0.31, -0.31], [-0.31, 0.31], [0.31, 0.31]];
+  function rot3(ax, ay, az) { // Rz . Ry . Rx
+    const cx = Math.cos(ax), sx = Math.sin(ax), cy = Math.cos(ay), sy = Math.sin(ay), cz = Math.cos(az), sz = Math.sin(az);
+    return [cz * cy, cz * sy * sx - sz * cx, cz * sy * cx + sz * sx, sz * cy, sz * sy * sx + cz * cx, sz * sy * cx - cz * sx, -sy, cy * sx, cy * cx];
+  }
+  const mul3 = (M, v) => [M[0] * v[0] + M[1] * v[1] + M[2] * v[2], M[3] * v[0] + M[4] * v[1] + M[5] * v[2], M[6] * v[0] + M[7] * v[1] + M[8] * v[2]];
+  const hash1 = (n) => { const h = Math.sin(n * 12.9898 + 4.1414) * 43758.5453; return h - Math.floor(h); };
+  // How a box is turned at time t (each its own way, from where it sits).
+  function cubeTurn(b, t) {
+    const p = hash1(b.x * 0.071 + b.y * 0.113) * TAU;
+    return rot3(t * 0.95 + p, t * 0.62 + p * 1.7, 0.35 * Math.sin(t * 0.4 + p));
+  }
+  // A face's glass colour (k: which face; gold for a puzzle's box).
+  function glassHue(gold, t, k, seed) { return gold ? 40 + 6 * Math.sin(t * 1.3 + k) : (t * 45 + seed * 360 + k * 55) % 360; }
+  // One face, in the face's own square (-1..1 both ways, mapped onto the screen by the transform already set).
+  function glassFace(g, h, gold, front, lit, n, k) {
+    const L = gold ? 52 + 12 * lit : 48 + 14 * lit, a = front ? 0.55 : 0.3;
+    const gr = g.createLinearGradient(-1, -1, 1, 1);
+    gr.addColorStop(0, 'hsla(' + h.toFixed(0) + ',92%,' + L.toFixed(0) + '%,' + a + ')');
+    gr.addColorStop(1, 'hsla(' + ((h + (gold ? 14 : 75)) % 360).toFixed(0) + ',92%,' + (L - 6).toFixed(0) + '%,' + a + ')');
+    g.fillStyle = gr; g.fillRect(-1, -1, 2, 2);
+    for (let i = 0; i < (front ? DOTS.length : 9); i++) { // the bright dots
+      const [u, v] = DOTS[i], r = i < 9 ? 0.14 : 0.1;
+      g.fillStyle = gold ? 'rgba(255,250,215,' + (front ? 0.75 : 0.35) + ')' : 'hsla(' + ((h + 150 + i * 47) % 360).toFixed(0) + ',100%,84%,' + (front ? 0.8 : 0.4) + ')';
+      g.beginPath(); g.arc(u, v, r, 0, TAU); g.fill();
+    }
+    if (front) { // a glint sliding across as the face turns
+      const p = Math.max(0.15, Math.min(0.85, 0.5 + 0.4 * (n[0] - n[1]))), s = g.createLinearGradient(-1, -1, 1, 1);
+      s.addColorStop(0, 'rgba(255,255,255,0)'); s.addColorStop(Math.max(0, p - 0.14), 'rgba(255,255,255,0)');
+      s.addColorStop(p, 'rgba(255,255,255,' + (0.25 + 0.35 * lit).toFixed(2) + ')');
+      s.addColorStop(Math.min(1, p + 0.14), 'rgba(255,255,255,0)'); s.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = s; g.fillRect(-1, -1, 2, 2);
+    }
+  }
+  // The whole cube at (x, y), half-size r, turned by M. inside(g): draws what it holds, centred, facing you.
+  function drawCube(g, x, y, r, M, t, gold, seed, px, inside) {
+    const P = CUBE_V.map((v) => { const q = mul3(M, v); return [x + q[0] * r, y + q[1] * r, q[2]]; });
+    const faces = CUBE_F.map((f, k) => {
+      const n = mul3(M, [0, 1, 2].map((i) => (CUBE_V[f[0]][i] + CUBE_V[f[2]][i]) / 2)); // its centre: the way it faces
+      return { f, k, n, front: n[2] > 0 };
+    });
+    g.save();
+    g.fillStyle = 'rgba(10,6,30,0.18)'; // its shadow on the floor, below it
+    g.beginPath(); g.ellipse(x + r * 0.2, y + r * 1.25, r * 1.25, r * 0.55, 0, 0, TAU); g.fill();
+    const face = (F) => {
+      const [a, b2, , d] = F.f.map((i) => P[i]), ux = (b2[0] - a[0]) / 2, uy = (b2[1] - a[1]) / 2, vx = (d[0] - a[0]) / 2, vy = (d[1] - a[1]) / 2;
+      if (Math.abs(ux * vy - uy * vx) < 0.02 * r * r) return; // edge on
+      const cx = a[0] + ux + vx, cy = a[1] + uy + vy, lit = Math.max(0, F.n[2] * 0.7 - F.n[0] * 0.2 - F.n[1] * 0.3);
+      g.save(); g.transform(ux, uy, vx, vy, cx, cy);
+      glassFace(g, glassHue(gold, t, F.k, seed), gold, F.front, lit, F.n, F.k);
+      g.restore();
+    };
+    const rims = (list, w, al) => {
+      g.beginPath();
+      for (const F of list) { F.f.forEach((i, j) => (j ? g.lineTo(P[i][0], P[i][1]) : g.moveTo(P[i][0], P[i][1]))); g.closePath(); }
+      g.lineJoin = 'round';
+      g.strokeStyle = 'rgba(255,255,255,' + (al * 0.3).toFixed(2) + ')'; g.lineWidth = w * 2.2 * px; g.stroke();
+      g.strokeStyle = gold ? 'rgba(255,246,200,' + al + ')' : 'rgba(255,255,255,' + al + ')'; g.lineWidth = w * px; g.stroke();
+    };
+    const back = faces.filter((F) => !F.front), near = faces.filter((F) => F.front);
+    back.forEach(face); rims(back, 1.4, 0.35);
+    if (inside) { g.save(); g.translate(x, y); inside(g); g.restore(); }
+    near.forEach(face);
+    if (inside) { g.save(); g.globalAlpha = 0.6; g.translate(x, y); inside(g); g.restore(); } // (seen through the glass)
+    rims(near, 2.4, 0.9);
+    g.restore();
+  }
+  // What a mystery box holds: a big glowing "?", turning on its own.
+  function questionMark(g, r, t, seed, px) {
+    const sx = Math.cos(t * 2.1 + seed * 9);
+    if (Math.abs(sx) < 0.06) return;
+    g.scale(sx, 1);
+    g.font = '900 ' + (r * 1.65).toFixed(1) + 'px system-ui, sans-serif';
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+    g.strokeStyle = 'rgba(70,180,255,0.85)'; g.lineWidth = 6 * px; g.strokeText('?', 0, r * 0.08);
+    g.fillStyle = '#fff'; g.fillText('?', 0, r * 0.08);
+  }
   // Item puzzles: each item's colour, and its HUD icon as an image for the canvas (the SVGs live in ui.js).
   const ITEM_TINT = { carpet: '#ffc53d', launch: '#7cf0ff', shrink: '#b8ff6a' };
   const iconImgs = {};
@@ -276,6 +359,7 @@
       const parts = s.world.visibleParts(cam.x - hw, cam.y - hh, cam.x + hw, cam.y + hh);
       const th = theme(s.floor, s.hue, s.rgb), px = 1 / z;
       this.px = px; this.world = s.world; this.runT = s.runT; this.th = th;
+      this.vis = { x0: cam.x - hw, y0: cam.y - hh, x1: cam.x + hw, y1: cam.y + hh }; // (what's on screen, and a margin)
 
       // One union path per frame: every pass paints each pixel once, even where tiles overlap.
       const union = new Path2D(), blinks = [];
@@ -598,24 +682,22 @@
       for (const [x, y, r] of puffs) { ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); }
       ctx.restore();
     }
-    // An item box (for a puzzle): a steady gold-framed crate showing the item it always gives, with a glow; not the
-    // colour-cycling "?" of a mystery box.
+    // An item box (for a puzzle): the same glass cube in gold, with a glow, the item it always gives turning inside
+    // where a mystery box has its "?".
     drawItemBox(b, t, age) {
-      const ctx = this.ctx, px = this.px, pop = age < 0.35 ? Math.max(0, age / 0.35) : 1, r = 17 * pop, c = ITEM_TINT[b.item] || '#ffd84a';
-      if (r <= 0.5) return;
+      const ctx = this.ctx, px = this.px, pop = age < 0.35 ? Math.max(0, age / 0.35) : 1, r = 12.5 * pop, c = ITEM_TINT[b.item] || '#ffd84a';
+      if (r <= 0.5 || !this.onScreen(b, 50)) return;
       ctx.save();
-      ctx.translate(b.x, b.y);
-      const glow = 0.3 + 0.15 * Math.sin(t * 3);
-      ctx.globalAlpha = glow; ctx.fillStyle = c; ctx.beginPath(); ctx.arc(0, 0, r * 1.75, 0, TAU); ctx.fill(); ctx.globalAlpha = 1;
-      const k = r * 0.32;
-      ctx.beginPath();
-      ctx.moveTo(-r + k, -r); ctx.lineTo(r - k, -r); ctx.quadraticCurveTo(r, -r, r, -r + k); ctx.lineTo(r, r - k); ctx.quadraticCurveTo(r, r, r - k, r);
-      ctx.lineTo(-r + k, r); ctx.quadraticCurveTo(-r, r, -r, r - k); ctx.lineTo(-r, -r + k); ctx.quadraticCurveTo(-r, -r, -r + k, -r); ctx.closePath();
-      ctx.fillStyle = '#1f1a3a'; ctx.fill();
-      ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 7 * px; ctx.stroke();
-      ctx.strokeStyle = '#ffd84a'; ctx.lineWidth = 3.5 * px; ctx.stroke();
-      drawIcon(ctx, b.item, 0, 0, r * 1.5);
+      ctx.globalAlpha = 0.3 + 0.15 * Math.sin(t * 3); ctx.fillStyle = c;
+      ctx.beginPath(); ctx.arc(b.x, b.y, r * 2.3, 0, TAU); ctx.fill();
       ctx.restore();
+      const seed = hash1(b.x * 0.071 + b.y * 0.113);
+      drawCube(ctx, b.x, b.y, r, cubeTurn(b, t), t, true, seed, px, (g) => {
+        const sx = Math.cos(t * 1.8 + seed * 9);
+        if (Math.abs(sx) < 0.06) return;
+        g.scale(sx, 1);
+        drawIcon(g, b.item, 0, 0, r * 1.7);
+      });
     }
     // A key, bobbing and rocking a little on its spot (it's picked up within Levels.KEY_R of it).
     drawKey(k, t) {
@@ -686,53 +768,48 @@
       ctx.lineWidth = 2.5 * px; ctx.stroke();
       ctx.restore();
     }
-    // A mystery box: a rocking, colour-cycling "?" block. It pops back in when it returns.
+    // A mystery box: a rainbow glass cube tumbling in space, a "?" turning inside. It pops back in when it returns.
+    onScreen(b, r) { const v = this.vis; return !v || (b.x + r > v.x0 && b.x - r < v.x1 && b.y + r > v.y0 && b.y - r < v.y1); }
     drawBox(b, t, age) {
-      const ctx = this.ctx, px = this.px, pop = age < 0.35 ? Math.max(0, age / 0.35) : 1;
-      const r = 14 * pop * (1 + 0.06 * Math.sin(t * 4 + b.x * 0.1)), hue = (t * 70 + b.x * 0.05 + b.y * 0.03) % 360;
-      if (r <= 0.5) return;
-      ctx.save();
-      ctx.translate(b.x, b.y);
-      ctx.rotate(Math.sin(t * 1.6 + b.y * 0.01) * 0.2);
-      const c = r * 0.32;
-      ctx.beginPath();
-      ctx.moveTo(-r + c, -r); ctx.lineTo(r - c, -r); ctx.quadraticCurveTo(r, -r, r, -r + c); ctx.lineTo(r, r - c); ctx.quadraticCurveTo(r, r, r - c, r);
-      ctx.lineTo(-r + c, r); ctx.quadraticCurveTo(-r, r, -r, r - c); ctx.lineTo(-r, -r + c); ctx.quadraticCurveTo(-r, -r, -r + c, -r); ctx.closePath();
-      const g = ctx.createLinearGradient(-r, -r, r, r);
-      g.addColorStop(0, 'hsl(' + hue + ',95%,64%)');
-      g.addColorStop(1, 'hsl(' + ((hue + 110) % 360) + ',90%,52%)');
-      ctx.fillStyle = g;
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 6 * px; ctx.stroke();
-      ctx.strokeStyle = '#fff'; ctx.lineWidth = 3 * px; ctx.stroke();
-      ctx.font = '900 ' + (r * 1.45).toFixed(1) + 'px system-ui, sans-serif';
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.lineJoin = 'round';
-      ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 4 * px; ctx.strokeText('?', 0, r * 0.08);
-      ctx.fillStyle = '#fff'; ctx.fillText('?', 0, r * 0.08);
-      ctx.restore();
+      const pop = age < 0.35 ? Math.max(0, age / 0.35) : 1, r = 10.5 * pop * (1 + 0.04 * Math.sin(t * 2.6 + b.x * 0.1)), px = this.px;
+      if (r <= 0.5 || !this.onScreen(b, 40)) return;
+      const seed = hash1(b.x * 0.071 + b.y * 0.113);
+      drawCube(this.ctx, b.x, b.y, r, cubeTurn(b, t), t, false, seed, px, (g) => questionMark(g, r, t, seed, px));
     }
-    // A shattered box: its pieces fly apart, spinning, and fade (k: 0 to 1 over the shatter).
+    // A broken box shatters like glass: every face splits into shards that burst outward from where the cube was turned
+    // when it broke, tumbling, dropping away and fading, with a flash and a spray of glints (k: 0 to 1 over the shatter).
     drawShards(b, t) {
-      const ctx = this.ctx, px = this.px, k = b.k, e = 1 - (1 - k) * (1 - k), hue = (t * 70 + b.x * 0.05 + b.y * 0.03) % 360;
+      if (!this.onScreen(b, 90)) return;
+      const ctx = this.ctx, px = this.px, k = b.k, dur = b.dur || 0.7, e = 1 - (1 - k) * (1 - k), r = b.gold ? 12.5 : 10.5;
+      const seed = hash1(b.x * 0.071 + b.y * 0.113), M = cubeTurn(b, t - k * dur), fade = Math.max(0, 1 - k * 1.15), sink = 1 - 0.35 * k;
       ctx.save();
-      ctx.translate(b.x, b.y);
-      ctx.globalAlpha = Math.max(0, 1 - k);
       ctx.lineJoin = 'round';
-      for (let i = 0; i < 9; i++) {
-        const a = i * 2.39996 + b.x * 0.01, d = 6 + e * (26 + (i % 3) * 9), s = 5.5 * (1 - 0.4 * k) * (1 + (i % 2) * 0.4);
-        ctx.save();
-        ctx.translate(Math.cos(a) * d, Math.sin(a) * d);
-        ctx.rotate(a + k * (i % 2 ? 7 : -6));
-        ctx.beginPath(); ctx.moveTo(-s, -s * 0.7); ctx.lineTo(s, -s * 0.4); ctx.lineTo(s * 0.2, s * 0.9); ctx.closePath();
-        ctx.fillStyle = b.gold ? (i % 2 ? '#ffd84a' : '#1f1a3a') : 'hsl(' + ((hue + i * 25) % 360) + ',95%,62%)'; ctx.fill();
-        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2 * px; ctx.stroke();
-        ctx.restore();
+      if (k < 0.3) { // the flash
+        const f = 1 - k / 0.3, gr = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, r * (1.6 + 3 * k));
+        gr.addColorStop(0, 'rgba(255,255,255,' + (0.85 * f).toFixed(2) + ')'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(b.x, b.y, r * (1.6 + 3 * k), 0, TAU); ctx.fill();
       }
-      if (k < 0.35) { // the burst
-        ctx.globalAlpha = 1 - k / 0.35;
-        ctx.strokeStyle = '#fff'; ctx.lineWidth = 3 * px;
-        ctx.beginPath(); ctx.arc(0, 0, 10 + 40 * k, 0, TAU); ctx.stroke();
+      CUBE_F.forEach((f, fk) => {
+        const h = glassHue(b.gold, t, fk, seed), c = [0, 1, 2].map((i) => (CUBE_V[f[0]][i] + CUBE_V[f[2]][i]) / 2);
+        for (let j = 0; j < 4; j++) { // four shards a face: its centre and one side
+          const n = fk * 4 + j, A = CUBE_V[f[j]], B = CUBE_V[f[(j + 1) % 4]], tri = [c, A, B];
+          const m = [0, 1, 2].map((i) => (c[i] + A[i] + B[i]) / 3); // its middle
+          const ml = Math.hypot(m[0], m[1], m[2]) || 1, sp = (1.6 + 1.6 * hash1(n + seed * 50)) * e; // out it goes...
+          const off = [0, 1, 2].map((i) => (m[i] / ml) * sp + (hash1(n * 3 + i + seed * 70) - 0.5) * 0.9 * e);
+          const ax = (hash1(n * 7 + 1) - 0.5) * 9 * k, ay = (hash1(n * 7 + 2) - 0.5) * 9 * k, R = rot3(ax, ay, 0); // ...tumbling
+          const Q = tri.map((v) => { const l = mul3(R, [v[0] - m[0], v[1] - m[1], v[2] - m[2]]), w = mul3(M, [m[0] + off[0] + l[0] * 0.92, m[1] + off[1] + l[1] * 0.92, m[2] + off[2] + l[2] * 0.92]); return [b.x + w[0] * r * sink, b.y + w[1] * r * sink]; });
+          ctx.globalAlpha = fade;
+          ctx.beginPath(); ctx.moveTo(Q[0][0], Q[0][1]); ctx.lineTo(Q[1][0], Q[1][1]); ctx.lineTo(Q[2][0], Q[2][1]); ctx.closePath();
+          ctx.fillStyle = 'hsla(' + ((h + j * 20) % 360).toFixed(0) + ',92%,' + (b.gold ? 60 : 62) + '%,0.55)'; ctx.fill();
+          ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 1.4 * px; ctx.stroke();
+        }
+      });
+      ctx.globalAlpha = fade; ctx.fillStyle = '#fff'; // glints
+      for (let i = 0; i < 10; i++) {
+        const a = i * 2.39996 + seed * 6, d = r * (0.4 + e * (2.4 + 1.4 * hash1(i + seed * 30))), s = r * 0.22 * (1 - k);
+        const gx = b.x + Math.cos(a) * d, gy = b.y + Math.sin(a) * d;
+        ctx.beginPath(); ctx.moveTo(gx, gy - s); ctx.lineTo(gx + s * 0.25, gy); ctx.lineTo(gx, gy + s); ctx.lineTo(gx - s * 0.25, gy); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(gx - s, gy); ctx.lineTo(gx, gy + s * 0.25); ctx.lineTo(gx + s, gy); ctx.lineTo(gx, gy - s * 0.25); ctx.closePath(); ctx.fill();
       }
       ctx.restore();
     }
