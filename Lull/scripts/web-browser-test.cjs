@@ -175,6 +175,14 @@ async function run({ browser, check, OUT }) {
       check(`Home Screen (${theme}): the theme's ground around it; the browser colour follows the theme`, box.ground === (theme === 'dark' ? 'rgb(13, 16, 23)' : 'rgb(240, 242, 246)') && box.color === (theme === 'dark' ? '#0d1017' : '#f0f2f6'), JSON.stringify(box));
       check(`Home Screen (${theme}): the status bar's white words ${theme === 'light' ? 'on a dark band' : 'on the dark ground'}`, theme === 'light' ? /^rgb\(57, 66, 85\) 59px$/.test(box.band) : box.band === 'none', box.band);
       check(`Home Screen (${theme}): asks that the save be kept`, box.persisted !== null, String(box.persisted));
+      // The tab bar along the bottom of the window, so above the home indicator, its buttons 44 px or more.
+      const bar = await p.evaluate(() => {
+        const app = document.getElementById('app').getBoundingClientRect(), t = document.getElementById('tabs').getBoundingClientRect();
+        const bs = Array.from(document.querySelectorAll('#tabs button')).map((b) => b.getBoundingClientRect());
+        return { barBottom: Math.round(innerHeight - t.bottom), appBottom: Math.round(innerHeight - app.bottom), btnBottom: Math.round(innerHeight - Math.max(...bs.map((b) => b.bottom))),
+          minH: Math.round(Math.min(...bs.map((b) => b.height))), minW: Math.round(Math.min(...bs.map((b) => b.width))), mainEnd: Math.round(document.getElementById('main').getBoundingClientRect().bottom - t.top) };
+      });
+      check(`Home Screen (${theme}): the tab bar is at the bottom, clear of the home indicator`, bar.barBottom === 34 && bar.appBottom === 34 && bar.btnBottom >= 34 && bar.minH >= 44 && bar.minW >= 44 && bar.mainEnd <= 0, JSON.stringify(bar));
       check(`Home Screen (${theme}): no page errors`, perrors.length === 0, perrors.join('\n'));
       if (OUT) {
         // The phone's own status bar, drawn over the picture to judge it by (white, as black-translucent makes it).
@@ -191,6 +199,24 @@ async function run({ browser, check, OUT }) {
         await shot('w30-home-screen-' + theme, p);
       }
       await home.close();
+    }
+
+    // ---- in a Safari tab: the tab bar reaches the screen's bottom edge, its buttons above the home indicator --------
+    {
+      const tab = await browser.newContext(IPHONE);
+      const p = await tab.newPage();
+      await p.goto(url);
+      await p.addStyleTag({ content: ':root { --in-bottom: 34px; }' });
+      await p.waitForSelector('.modal');
+      await p.keyboard.press('Enter');
+      await p.waitForTimeout(300);
+      const bar = await p.evaluate(() => {
+        const t = document.getElementById('tabs').getBoundingClientRect(), bs = Array.from(document.querySelectorAll('#tabs button')).map((b) => b.getBoundingClientRect());
+        return { webapp: document.body.classList.contains('webapp'), barBottom: Math.round(innerHeight - t.bottom), btnBottom: Math.round(innerHeight - Math.max(...bs.map((b) => b.bottom))),
+          minH: Math.round(Math.min(...bs.map((b) => b.height))), mainEnd: Math.round(document.getElementById('main').getBoundingClientRect().bottom - t.top) };
+      });
+      check('a Safari tab: the tab bar runs to the bottom edge, its buttons clear of the home indicator', !bar.webapp && bar.barBottom === 0 && bar.btnBottom >= 34 && bar.minH >= 44 && bar.mainEnd <= 0, JSON.stringify(bar));
+      await tab.close();
     }
   } finally {
     await srv.stop().catch(() => {});

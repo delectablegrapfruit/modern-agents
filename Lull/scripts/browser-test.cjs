@@ -2761,7 +2761,8 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await page.keyboard.press('KeyM');
   const m5b = await muteState();
   check('M typed into a text field does not toggle mute', typed && m5b.set && await ev(() => { const i = document.querySelector('body > input'); const v = i.value; i.remove(); return v === 'm'; }), JSON.stringify(m5b));
-  // Every control in the title bar keeps its size, in order, without overlapping, in the browser and in the app.
+  // Every control in the title bar keeps its size, in order, without overlapping, in the browser and in the app (the
+  // places to play are in the tab bar at the bottom at 500 px and under: only what is in the bar's row counts).
   const crowd = [];
   for (const w of [300, 380, 400, 460, 520, 900]) {
     await page.setViewportSize({ width: w, height: 760 });
@@ -2772,8 +2773,9 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
       // The app's panel is never narrower than 400 px; a browser window can be.
       for (const nat of width >= 400 ? [false, true] : [false]) {
         document.body.classList.toggle('native', nat); document.body.classList.toggle('browser', !nat);
-        const els = Array.from(bar.querySelectorAll('.tabs button, #wallet, .icon-btn')).filter((el) => el.offsetParent && getComputedStyle(el).display !== 'none');
-        const rs = els.map((el) => el.getBoundingClientRect()), br = bar.getBoundingClientRect();
+        const br = bar.getBoundingClientRect();
+        const els = Array.from(bar.querySelectorAll('.tabs button, #wallet, .icon-btn')).filter((el) => el.offsetParent && getComputedStyle(el).display !== 'none' && el.getBoundingClientRect().top < br.bottom);
+        const rs = els.map((el) => el.getBoundingClientRect());
         const mute = document.getElementById('btn-mute').getBoundingClientRect(), gear = document.getElementById('btn-settings').getBoundingClientRect();
         if (bar.scrollWidth > bar.clientWidth + 1) bad.push(width + (nat ? ' app' : ' browser') + ': overflows');
         if (mute.width < 23.5 || Math.abs(mute.width - gear.width) > 0.5 || mute.right > br.right) bad.push(width + (nat ? ' app' : ' browser') + ': mute squeezed');
@@ -2786,13 +2788,14 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   }
   await page.setViewportSize({ width: 520, height: 760 });
   check('the title bar holds the mute button without crowding (300 to 900 px; the app from its 400 px minimum)', crowd.length === 0, crowd.join('; '));
-  // Its order: the places to play in one track, room to drag, the places to look by the wallet, sound, Settings.
+  // Its order: the places to play in one track, room to drag, the places to look by the wallet, sound, Settings (the
+  // track in the tab bar at the bottom at 500 px and under: left to right there, and the rest left to right in the bar).
   const bar = await ev(() => {
     const ids = (sel) => Array.from(document.querySelectorAll(sel)).map((b) => b.dataset.tab).join();
-    const all = Array.from(document.querySelectorAll('#titlebar .tabs button'));
-    const xs = all.map((b) => b.getBoundingClientRect().left);
+    const all = Array.from(document.querySelectorAll('#titlebar .tabs button')), bottom = document.getElementById('titlebar').getBoundingClientRect().bottom;
+    const row = (list) => list.map((b) => b.getBoundingClientRect().left).every((x, i, xs) => !i || x > xs[i - 1]);
     const kids = Array.from(document.getElementById('titlebar').children).map((e) => e.id || e.className);
-    return { wallet: document.getElementById('wallet').dataset.tipFoot, modes: ids('#tabs button'), meta: ids('#tabs-meta button'), feet: all.map((b) => b.dataset.tipFoot).join(), ltr: xs.every((x, i) => !i || x > xs[i - 1]), tips: all.every((b) => b.dataset.tip === b.getAttribute('aria-label') && !b.dataset.tipTitle && !b.title), kids: kids.join() };
+    return { wallet: document.getElementById('wallet').dataset.tipFoot, modes: ids('#tabs button'), meta: ids('#tabs-meta button'), feet: all.map((b) => b.dataset.tipFoot).join(), ltr: row(all.filter((b) => b.getBoundingClientRect().top < bottom)) && row(all.filter((b) => b.closest('#tabs'))), tips: all.every((b) => b.dataset.tip === b.getAttribute('aria-label') && !b.dataset.tipTitle && !b.title), kids: kids.join() };
   });
   check('title bar: Play, Puzzles, Factory together (no Classic: it is a board mode); Stats, Achievements by the wallet (the Shop); ⌘1–⌘6 left to right, each in its tooltip',
     bar.modes === 'play,puzzle,factory' && bar.meta === 'stats,achievements' && bar.ltr && bar.tips && bar.feet === '⌘1,⌘2,⌘3,⌘4,⌘5' && bar.wallet === '⌘6'
@@ -2800,9 +2803,10 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   const shortcut = [];
   for (let n = 1; n <= 6; n++) { await page.keyboard.press('Control+Digit' + n); shortcut.push(await ev(() => { const on = document.querySelector('#titlebar .tabs button[aria-selected="true"], #wallet.active'); return Lull.app.tab + ':' + (on && (on.dataset.tab || on.id)); })); }
   check('⌘1–⌘6 open the tabs (and the Shop, by the wallet) in the order they sit, and light them', shortcut.join() === 'play:play,puzzle:puzzle,factory:factory,stats:stats,achievements:achievements,shop:wallet', shortcut.join());
-  // Labels: every play tab named when wide; only the tab you are on when narrower; icons alone when narrow; the bar keeps room to drag.
+  // Labels: every play tab named when wide; only the tab you are on when narrower; at 500 px and under the places to play
+  // are in the tab bar at the bottom, each named; the bar keeps room to drag.
   const labels = [];
-  for (const [w, nat, want] of [[1100, false, 'Play,Puzzles,Factory|Stats,Achievements'], [900, false, 'Play,Puzzles,Factory|'], [900, true, 'Play,Puzzles,Factory|'], [560, false, 'Puzzles|'], [520, true, '|'], [460, false, '|'], [400, true, '|']]) {
+  for (const [w, nat, want] of [[1100, false, 'Play,Puzzles,Factory|Stats,Achievements'], [900, false, 'Play,Puzzles,Factory|'], [900, true, 'Play,Puzzles,Factory|'], [560, false, 'Puzzles|'], [520, true, '|'], [501, false, '|'], [500, false, 'Play,Puzzles,Factory|'], [460, false, 'Play,Puzzles,Factory|'], [400, true, 'Play,Puzzles,Factory|']]) {
     await page.setViewportSize({ width: w, height: 760 });
     await ev(() => Lull.app.setTab('puzzle'));
     const got = await ev((nat) => {
@@ -2817,7 +2821,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   }
   await page.setViewportSize({ width: 520, height: 760 });
   await ev(() => Lull.app.setTab('play'));
-  check('title bar labels give way as the window narrows (all, then the tab you are on, then icons), always leaving room to drag', labels.length === 0, labels.join('; '));
+  check('title bar labels give way as the window narrows (all, then the tab you are on); at 500 px and under the tab bar at the bottom names all three; always room to drag', labels.length === 0, labels.join('; '));
   await page.hover('#tabs button[data-tab="factory"]');
   await page.waitForTimeout(450);
   const tip = await ev(() => { const t = document.querySelector('.tip'); return t.classList.contains('hidden') ? '' : t.textContent; });
@@ -3729,6 +3733,8 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await require('./shapes-browser-test.cjs')({ browser, check, PAGE, OUT });
   // ---- Physics: the window, live bodies, knocks, a clear, Rewind 5 s, the full card, a phone (physics-browser-test.cjs)
   await require('./physics-browser-test.cjs')({ browser, check, PAGE, OUT });
+  // ---- the tab bar at the bottom in a narrow window: every place fits above it, the menu and toasts too (tabbar-test.cjs)
+  await require('./tabbar-test.cjs')({ browser, check, PAGE, OUT });
   // The Home Screen web app, served over http as it is deployed: offline, updates, full screen (web-browser-test.cjs).
   console.log('web app');
   await require('./web-browser-test.cjs')({ browser, check, OUT });

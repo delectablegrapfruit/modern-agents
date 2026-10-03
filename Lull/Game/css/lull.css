@@ -1585,8 +1585,8 @@ body.browser.away #app { opacity: 0.6; }
    indicator (env(safe-area-inset-*); the page asks for viewport-fit=cover), every control a finger uses is at least
    44 × 44 px. By touch alone (body.touch-only and body.keyless, from js/touch.js: no mouse, trackpad or keyboard, so
    whatever the main pointer) there is no window to roll up and no key caps (the tooltips name gestures instead:
-   js/ui.js). A phone held upright gets a title bar of two rows: Lull, the wallet, sound and Settings; then the places to play
-   as one full-width track, with Stats and Achievements beside it. */
+   js/ui.js). A phone held upright gets one row: Lull, Stats and Achievements, the wallet, sound and Settings; the places
+   to play are in the tab bar at the bottom (the end of this file). */
 @media (hover: none) and (pointer: coarse) {
   :root { --radius: 0px; }
   html, body { height: 100%; height: 100dvh; }
@@ -1652,8 +1652,19 @@ body.keyless .btn kbd, body.keyless .overlay kbd { display: none; }
 /* By touch alone the window never rolls up (js/collapse.js), so its chevron never shows, whatever the main pointer. */
 body.touch-only #btn-collapse { display: none; }
 
-/* A phone held upright: two rows. */
-@media (hover: none) and (pointer: coarse) and (max-width: 600px) {
+/* A phone held upright, 500 px or narrower: one row, Lull at the left, then Stats, Achievements, the wallet, sound and
+   Settings (the places to play are in the tab bar at the bottom: the end of this file). */
+@media (hover: none) and (pointer: coarse) and (max-width: 500px) {
+  header#titlebar { column-gap: 2px; padding-left: max(14px, var(--in-left)); }
+  header#titlebar .brand { display: flex; height: 44px; font-size: var(--fs-lg); gap: 9px; }
+  header#titlebar .brand .name { display: inline; }
+  header#titlebar .tabs.meta { gap: 0; }
+  header#titlebar .tb-sep { display: none; }
+  .wallet .lg svg { width: 20px; }
+}
+/* A touch screen a little wider (501–600 px): two rows. Lull, the wallet, sound and Settings; then the places to play
+   as one full-width track, with Stats and Achievements beside it. */
+@media (hover: none) and (pointer: coarse) and (min-width: 501px) and (max-width: 600px) {
   header#titlebar {
     flex-wrap: wrap; align-content: flex-start; height: auto; row-gap: 0; column-gap: 2px;
     padding-bottom: 6px; padding-left: max(14px, var(--in-left));
@@ -1670,11 +1681,6 @@ body.touch-only #btn-collapse { display: none; }
   header#titlebar .tabs.modes button { flex: 1 1 0; min-width: 44px; padding: 0 6px; }
   header#titlebar .tabs.modes button .lbl { display: inline; }
   .wallet .lg svg { width: 20px; }
-}
-/* Under 390 px the names give way to the icons, but the place you are on keeps its name. */
-@media (hover: none) and (pointer: coarse) and (max-width: 389px) {
-  header#titlebar .tabs.modes button:not([aria-selected="true"]) .lbl { display: none; }
-  header#titlebar .tabs.modes button[aria-selected="true"] { flex: 0 0 auto; padding: 0 12px 0 10px; }
 }
 /* A phone on its side: the board takes the height, its bars stand in a column beside it. */
 @media (hover: none) and (pointer: coarse) and (orientation: landscape) and (max-height: 520px) {
@@ -1722,3 +1728,37 @@ body.webapp #app { inset: var(--safe-top) var(--safe-right) var(--safe-bottom) v
 :root[data-theme="light"] body.webapp::before { content: ""; position: fixed; left: 0; right: 0; top: 0; height: var(--safe-top); background: #394255; }
 /* On a touch screen there is no pointer to rest on it first: the update toast takes a tap even over a live board. */
 @media (hover: none) and (pointer: coarse) { #toasts.through .toast.link.update:not(.out) { pointer-events: auto; } }
+/* ==== the tab bar at the bottom ============================================================================================ */
+/* At 500 px and under the places to play leave the title bar for a bar along the bottom of the window, where a thumb
+   reaches them: Play, Puzzles and Factory side by side, each its icon over its name. 500 is where this file already
+   gives up naming them up top (the narrow tiers above: icons alone from 500 down), and every phone held upright is
+   narrower; a window a little wider (520) keeps the bar at the top and its board's height. The views end above it
+   (#main), and so do the Play menu's page and toasts; in a Safari tab it stands clear of the home indicator
+   (--in-bottom), and from the Home Screen the whole window already does. Rolled up, it goes with everything else but the
+   title bar. */
+@media (max-width: 500px) {
+  :root { --tabbar-h: 52px; }
+  #app #tabs {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; margin: 0; gap: 4px; align-items: stretch;
+    height: calc(var(--tabbar-h) + var(--in-bottom));
+    padding: 4px max(8px, var(--in-right)) calc(4px + var(--in-bottom)) max(8px, var(--in-left));
+    border-radius: 0; border-top: 1px solid var(--line); box-shadow: none;
+    background: linear-gradient(to top, var(--panel), transparent);
+  }
+  #app #tabs button { flex: 1 1 0; min-width: 44px; height: auto; flex-direction: column; gap: 3px; padding: 0 4px; border-radius: 10px; font-size: var(--fs-xs); }
+  #app #tabs button .lbl { display: inline; }
+  #app #tabs button svg { width: 18px; height: 18px; }
+  #app #tabs button .badge { top: 5px; right: calc(50% - 17px); }
+  /* The title bar's left end is free again: Lull's name is back in it. */
+  header#titlebar .brand { display: flex; }
+  header#titlebar .brand .name { display: inline; }
+  #main { margin-bottom: calc(var(--tabbar-h) + var(--in-bottom)); }
+  #main > .view { bottom: 0; }
+  #modal-root .scrim.mn-scrim { bottom: calc(var(--tabbar-h) + var(--in-bottom)); border-radius: 0; }
+  .modal.modal-menu { border-radius: 0; }
+}
+/* By touch: 44 px targets in a taller bar. */
+@media (hover: none) and (pointer: coarse) and (max-width: 500px) {
+  :root { --tabbar-h: 58px; }
+  #app #tabs { padding-top: 6px; padding-bottom: calc(6px + var(--in-bottom)); }
+}

@@ -54,7 +54,9 @@
     const main = document.getElementById('main');
     box.classList.toggle('top', top);
     box.style.top = top && main && holder ? Math.round(main.getBoundingClientRect().top - holder.getBoundingClientRect().top + 8) + 'px' : '';
-    box.style.bottom = !top && bar && holder ? Math.max(14, Math.round(holder.getBoundingClientRect().bottom - bar.getBoundingClientRect().top + 8)) + 'px' : '';
+    // Never over the tab bar either, when it is at the bottom (a narrow window): the views end above it.
+    const floor = main && holder ? Math.max(0, Math.round(holder.getBoundingClientRect().bottom - main.getBoundingClientRect().bottom)) : 0;
+    box.style.bottom = top || !holder ? '' : bar ? Math.max(floor + 14, Math.round(holder.getBoundingClientRect().bottom - bar.getBoundingClientRect().top + 8)) + 'px' : floor ? floor + 14 + 'px' : '';
     const go = opts && opts.onClick;
     const el = h('div', { class: 'toast ' + (kind || '') + (go ? ' link' : ''), 'data-area': (opts && opts.area) || null }, ico ? icon(ico) : null, h('span', { class: 'toast-t' }, msg), go ? icon('chevRight', 'toast-go') : null);
     let timer = 0;
