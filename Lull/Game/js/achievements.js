@@ -144,22 +144,22 @@
     { id: 'lu_1m', group: 'lull', name: 'Line Baron', desc: 'Earn ' + fmtN(LU_BARON) + ' lines.', pay: 750, tier: 'legend', on: 'any', test: (s) => earned(s) >= LU_BARON, progress: (s) => [earned(s), LU_BARON] },
     { id: 'lu_all', group: 'lull', name: 'Lull', desc: 'Earn every other achievement.', pay: 1000, tier: 'legend', on: 'any', test: (s) => earnedOthers(s) >= others().length, progress: (s) => [earnedOthers(s), others().length] },
 
-    // Factory — the line runs slowly, so these take weeks; the shape sets need patience (or a pinned mold).
-    { id: 'fac_twelve', group: 'factory', name: 'Twelve Tiles', desc: 'Press all 12 pentominoes.', pay: 30, on: 'factory', test: (s) => fseen(s, 5) >= 12, progress: (s) => [fseen(s, 5), 12] },
-    { id: 'fac_sweep', group: 'factory', name: 'Empty Crate', desc: 'Collect 40+ lines at once, no loose minos left.', pay: 40, on: 'factory', test: (s, e) => e.collected >= 40 && e.loose === 0 },
-    { id: 'fac_1k', group: 'factory', name: 'A Thousand Lines', desc: 'Collect 1,000 lines.', pay: 50, on: 'factory', test: (s) => s.factory.stats.lines >= 1000, progress: (s) => [s.factory.stats.lines, 1000] },
-    { id: 'fac_keyhole', group: 'factory', name: 'Keyhole', desc: 'Press the heptomino with a hole on a press set to Any.', pay: 55, on: 'factory', test: (s) => !!s.factory.stats.holeFree },
-    { id: 'fac_line', group: 'factory', name: 'Full Line', desc: 'Build all 4 presses.', pay: 60, on: 'factory', test: (s) => s.factory.presses >= 4, progress: (s) => [s.factory.presses, 4] },
-    { id: 'fac_stamp', group: 'factory', name: 'Four Stampers', desc: 'Build all 4 stampers.', pay: 60, on: 'factory', test: (s) => s.factory.stampers >= 4, progress: (s) => [s.factory.stampers, 4] },
-    { id: 'fac_silo', group: 'factory', name: 'Deep Crate', desc: 'Build the biggest crate.', pay: 60, on: 'factory', test: (s) => s.factory.crateLevel >= 4, progress: (s) => [s.factory.crateLevel, 4] },
-    { id: 'fac_35', group: 'factory', name: 'Thirty-Five', desc: 'Press all 35 hexominoes.', pay: 60, on: 'factory', test: (s) => fseen(s, 6) >= 35, progress: (s) => [fseen(s, 6), 35] },
-    { id: 'fac_10k', group: 'factory', name: 'Ten Thousand Minos', desc: 'Ship 10,000 minos.', pay: 60, on: 'factory', test: (s) => s.factory.stats.minos >= 10000, progress: (s) => [s.factory.stats.minos, 10000] },
-    { id: 'fac_days30', group: 'factory', name: 'Shift Worker', desc: 'Collect on 30 days.', pay: 60, on: 'factory', test: (s) => s.factory.stats.days >= 30, progress: (s) => [s.factory.stats.days, 30] },
-    { id: 'fac_hundred', group: 'factory', name: 'Exactly Fifty', desc: 'Collect exactly 50 lines at once.', pay: 75, on: 'factory', test: (s, e) => e.collected === 50 },
+    // Factory — building it out takes a few hours of play; the counts take weeks.
+    { id: 'fac_first', group: 'factory', name: 'First Delivery', desc: 'Deliver a piece at the drop-off.', pay: 15, on: 'factory', test: (s) => fst(s).delivered >= 1 },
+    { id: 'fac_hand', group: 'factory', name: 'By Hand', desc: 'Collect 100 lines from the store.', pay: 20, on: 'factory', test: (s) => fst(s).collected >= 100, progress: (s) => [fst(s).collected, 100] },
+    { id: 'fac_store', group: 'factory', name: 'Deep Store', desc: 'Build the biggest store.', pay: 30, on: 'factory', test: (s) => s.factory.storeLevel >= ftop('store'), progress: (s) => [s.factory.storeLevel, ftop('store')] },
+    { id: 'fac_three', group: 'factory', name: 'Three Droppers', desc: 'Build all 3 droppers.', pay: 40, on: 'factory', test: (s) => s.factory.droppers >= 3, progress: (s) => [s.factory.droppers, 3] },
+    { id: 'fac_penta', group: 'factory', name: 'Five Up', desc: 'Deliver a pentomino.', pay: 40, on: 'factory', test: (s) => fst(s).bySize[3] >= 1 },
+    { id: 'fac_belt', group: 'factory', name: 'The Long Way', desc: 'Build the longest conveyor.', pay: 40, on: 'factory', test: (s) => s.factory.beltLen >= ftop('beltLen'), progress: (s) => [s.factory.beltLen, ftop('beltLen')] },
+    { id: 'fac_crew', group: 'factory', name: 'Full Crew', desc: 'Build all 3 assemblers.', pay: 55, on: 'factory', test: (s) => s.factory.asm.length >= 3, progress: (s) => [s.factory.asm.length, 3] },
+    { id: 'fac_1k', group: 'factory', name: 'A Thousand Pieces', desc: 'Deliver 1,000 pieces.', pay: 60, on: 'factory', test: (s) => fst(s).delivered >= 1000, progress: (s) => [fst(s).delivered, 1000] },
+    { id: 'fac_days30', group: 'factory', name: 'Shift Worker', desc: 'Collect on 30 days.', pay: 60, on: 'factory', test: (s) => fst(s).days >= 30, progress: (s) => [fst(s).days, 30] },
+    { id: 'fac_smooth', group: 'factory', name: 'Smooth Running', desc: 'Keep the factory running smoothly for an hour in all.', pay: 75, on: 'factory', test: (s) => fst(s).smoothMs >= 3600e3, progress: (s) => [Math.floor(fst(s).smoothMs / 60e3), 60] },
+    { id: 'fac_all', group: 'factory', name: 'Fully Built', desc: 'Build every factory upgrade.', pay: 175, on: 'factory', test: (s) => !!L.Factory && L.Factory.maxed(s.factory) },
 
-    { id: 'fac_days100', group: 'factory', name: 'Old Hand', desc: 'Collect on 100 days.', pay: 325, tier: 'legend', on: 'factory', test: (s) => s.factory.stats.days >= 100, progress: (s) => [s.factory.stats.days, 100] },
-    { id: 'fac_108', group: 'factory', name: 'Hundred and Eight', desc: 'Press all 108 heptominoes.', pay: 350, tier: 'legend', on: 'factory', test: (s) => fseen(s, 7) >= 108, progress: (s) => [fseen(s, 7), 108] },
-    { id: 'fac_mountain', group: 'factory', name: 'Mino Mountain', desc: 'Ship 100,000 minos.', pay: 450, tier: 'legend', on: 'factory', test: (s) => s.factory.stats.minos >= 100000, progress: (s) => [s.factory.stats.minos, 100000] },
+    { id: 'fac_days100', group: 'factory', name: 'Old Hand', desc: 'Collect on 100 days.', pay: 325, tier: 'legend', on: 'factory', test: (s) => fst(s).days >= 100, progress: (s) => [fst(s).days, 100] },
+    { id: 'fac_10k', group: 'factory', name: 'Ten Thousand Pieces', desc: 'Deliver 10,000 pieces.', pay: 350, tier: 'legend', on: 'factory', test: (s) => fst(s).delivered >= 10000, progress: (s) => [fst(s).delivered, 10000] },
+    { id: 'fac_mountain', group: 'factory', name: 'Mino Mountain', desc: 'Drop 50,000 minos.', pay: 450, tier: 'legend', on: 'factory', test: (s) => fst(s).made >= 50000, progress: (s) => [fst(s).made, 50000] },
   ];
 
   /** The board's numbers after this lock (its hand counts: see freshStats in js/engine.js). */
@@ -200,7 +200,8 @@
   /** Lines earned for the Lifetime ones, less what an Undo took back (replaying a clear would count it twice). */
   const earned = (s) => Math.max(0, s.stats.lines.earned - s.stats.lines.rewound);
 
-  function fseen(s, n) { return L.Factory ? L.Factory.seenCount(s.factory, n) : 0; }
+  const fst = (s) => s.factory.stats;
+  const ftop = (kind) => (L.Factory ? L.Factory.topOf(kind) : 99);
   function wildIds() { return L.Puzzles ? Object.keys(L.Puzzles.MODS) : []; }
   const usedItems = (g) => Object.values(g.s.items || {}).some((n) => n > 0);
   const itemsTried = (s) => L.ITEM_ORDER.filter((id) => (s.stats.items.used[id] || 0) > 0).length;

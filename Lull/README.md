@@ -268,90 +268,67 @@ both ways, solved, which Daily) and refuses a bad one in place; History has coun
 play. History, and Stats ▸ Puzzles, end with one quiet line — "37 of 12,884,901,888 puzzles solved" (doubled with
 Counter-clockwise puzzles on); each difficulty button's tooltip gives its own share of 4,294,967,296.
 
-**Factory** — a slow production chain: minos are stamped, stored, assembled, shipped and collected. Up to four
-stamp heads each stamp a raw grey mino every 100 s (36 an hour) onto a top belt, which rolls them into the store (27
-minos wide, 2, 4 or 8 rows: 54, 108, 216). Up to four presses (tetromino, pentomino, hexomino, heptomino) each
-assemble one piece every ten minutes, a mino at a time: each mino is fed from the store down the press's own tube
-(first come, first served; a press waits while the store is empty), then set in the piece's colour. A finished piece
-drops onto the belt, which carries it to the shipping corridor on the right; there it slides onto the conveyor, rides up
-it lying flat to the station at the top (a slow ride, 80 s, so the conveyor mostly carries something), and its minos
-go one by one up the chute and into the crate (the collector) that hangs across the top of the corridor. Every eight
-minos in the crate are one ⦵ line — an eighth of a line per mino shipped, never more. The line runs as fast as its
-slower end: 3 lines an hour with one head and one press; building in the natural order (a press, a head, a press …)
-gives 4.5, 6.75, 9, 11.25, 13.5 and 16.5 with four of each (every factory figure is a decimal, to the quarter line
-below; Lines / hour's tooltip gives both ends, "Stampers make 36 minos an hour" and "Presses use 54 minos an hour").
-The crate is 4 columns by 12 rows (48 minos, 6 lines); each bigger crate adds two columns and some rows: 6 × 16 (12
-lines), 8 × 24 (24), 10 × 32 (40), 12 × 40 (60). A new factory's crate starts with four minos, so its first line is
-ready when its first piece ships, in under five minutes. Nothing is ever lost: when the crate cannot take the next
-piece, the lift stops, the belt backs up behind it, the presses hold their finished pieces, the store fills, the top
-belt packs and the heads hold — calmly, all the way back — until you Collect (the button, a click on the crate, or C),
-which banks every whole line (the first minos in, eight at a time, so where the width is not a multiple of eight a
-line can end partway along a row) and leaves the last 0–7 loose (every crate holds whole lines, so a crate filled to
-the brim empties); a ship follows within the minute, and what stood backed up — the lift, the belt, the presses'
-held pieces, some 60 minos (seven and a half lines) with the whole line built — follows it into the crate over the next few
-minutes, so a second Collect a quarter of an hour later takes that and the quarter hour's making, a few lines more
-(`econ-test.cjs` bounds it, and holds the line collected that way to 0.32 of a casual day's play, against 0.2–0.3 once). Four things to build, in the chain's order: stamp heads (350,
-450, 900 ⦵), a bigger store (150, 280 ⦵), presses (300, 400, 800 ⦵) and bigger crates (30, 100, 250, 500 ⦵), priced
-so the cheapest way to more lines an hour is always the next one in the natural order. Each row says what it adds (a
-press or a head in lines an hour, a crate in lines); the store's row says how long a bigger store feeds the presses
-("Feeds the presses 6 h"; its tooltip: a full store keeps them going that long while the stampers fall behind), or, when the stampers keep up, only its sizes
-(then it just holds more, and its tooltip says so). The line is never slowed to make
-it pay less: a press makes a piece every ten minutes and a head a mino every 100 s, whatever the rebalance (a test
-holds that floor). Every number lives in one frozen block, `Factory.TUNE` in `js/factory.js`.
+**Factory** — two stages and a conveyor, laid out as sketched: the stages stacked on the left, the store and the sign
+down the right, the conveyor across the bottom. A new factory has one mino dropper and a small store; everything else is
+bought with lines, at rising prices.
 
-The model moves in quarter-second ticks on an integer clock (whole milliseconds), downstream first — the lift, the
-belt, the presses, the top belt, the heads — so a place freed early in a tick is taken in the same tick. On screen and
-for time away it is the same run: any slicing of the same time gives exactly the same line. Time away is replayed on
-return (up to 30 days; once a tick changes nothing the chain is at rest, and the rest of the time is only counted as
-time the crate was full). On the Factory tab the new minos just fade into the store and the crate; elsewhere a toast
-gives the lines made ("While you were away: 6.25 lines · Crate full").
+- **Stage 1, droppers** (one to three): each drops a single raw grey mino into the store every 12 s (10, 8 and 6.5 s
+  as they are sped up). The store holds 20 minos (40, 60, 80 as it grows); when it is full the droppers pause, their
+  hoppers dim and the store's rim warms.
+- **Collect** cashes the store in by hand: twenty loose minos a ⦵ line, the 0–19 over stay (the button, a click on the
+  store, or C). A full store is always whole lines.
+- **Stage 2, assemblers** (one to three, bought): each takes minos from the store one at a time (8 s a mino, then 2 s to
+  finish) and builds a piece — dominoes at first, trominoes, tetrominoes and pentominoes as the piece size is upgraded
+  (a size change starts with each assembler's next piece). An assembler short of minos, or holding a finished piece
+  while the conveyor's entry is taken, dims. A finished piece drops down the chute onto the conveyor.
+- **Conveyor**: a serpentine of slots, a piece to a slot, that steps one slot every 20 s (13, 8 and 5 s as it is sped
+  up); a piece moves up where the slot ahead is free. Its length grows backwards from the drop-off: the last run alone
+  (8 slots), then half of the first two runs (16), then all three runs as drawn (24); a longer belt holds more in
+  transit (pieces already on it keep their distance from the drop-off).
+- **Drop-off**: pays each piece as it arrives, straight into the wallet (whole lines; the drop-off keeps the fraction
+  for the next piece): a domino an eighth of a line, a tromino 0.225, a tetromino 0.35, a pentomino half a line — 1.25,
+  1.5, 1.75 and 2 times what its minos fetch by hand, so building pays better than collecting.
 
-The tab reads like Play: the floor on the board's own plate, a bar under it (Lines / hour, Lines in crate, Full in, and
-Collect at the right), and the things to build below, from the top of the window like the other tabs. The plate's cell
-size follows its width, and the scene takes the room the bar and the list leave: as many cells high as fit (a quarter
-cell at a time, 23 to 84), so it fills the window at every stage, and each purchase that takes an entry off the list
-gives the scene that entry's height at once (the plate never animates its size). The list is a column of rows where the
-room holds its rows beside a scene at least 27 cells high, else a grid of two by two cards; a window too short for a
-scene 23 cells high at the width's cell size takes a smaller cell, with a plate its own width, centred, rather than
-empty strips either side. A phone on its side shows the whole plate at the height it has and scrolls the rest. What a
-taller scene gains goes to real parts, never to empty floor: on the left the store's slots grow while its rack stays
-within a fifth of the plate (so an empty store is never the biggest thing on it), and the machinery takes the rest —
-the stamp heads hang lower (a cell and a half at most), the drop to the belt grows (a cell at most) and the presses hang
-lower from the gantry on longer tubes — up to twelve cells, past which the store's slots grow again (three floor cells
-at most); on the right the collector takes about a third of the column (bigger slots) and the conveyor the rest
-(longer). The floor is a small scene in the board's materials, your skin and palette, with no text on
-it. Down the left, three tiers: the stamp heads on their beam over the top belt, each die filling with its next raw
-mino; the store below it, a tray between two walls, its minos landing row by row from the floor, left to right; under
-the store's floor — which is the gantry beam — the presses, each in a bay sized to its pieces (a mold window one cell
-wider than its longest shape), a raw mino dropping down its tube from a hatch in the beam as the store's last cell
-shrinks away, and taking the piece's colour from its bottom up as the ram sets it; a piece drops straight down onto a
-belt of 28 cells. On the right, the shipping corridor: a broad conveyor from the belt's end up to its head rail, the
-pieces riding up it lying flat on cleats, its treads shallow chevrons pointing up the way it runs (they run while it
-is empty too, and stop only while its head waits under a full collector); the collector hung across the corridor's
-top, standing on the head rail; and at the station under it, each piece's minos leave one by one (0.3 s apart), along
-their row into the mouth of the chute cut into the corridor's right post, up it at a steady pace (about nine cells a
-second, its dots moving with them) and over the collector's rim into their slots. The store and the
-collector keep their room at every size: a bigger size packs its minos into smaller slots (the biggest slot in whole
-device pixels that fits, never over three floor cells in the store or one and a half in the collector, and of those the
-packing with the fewest empty slots, then the widest; one that would leave a lone slot or two in its top row gives way to
-a tidy one a pixel or two smaller), so neither ever takes the other parts' room; the store's grid fills its tray from
-its rim to the beam (a bigger store takes more of the column, and the machinery under it hangs shorter). Every tray is
-a rack: a pale shelf with a faint square for every slot it has (in dark, a shelf lighter than the plate with a lighter
-hairline square for each slot, never a darker hole), a slim line over its top row of slots, and a dark well under the rows that hold minos (a row begun counts), so a
-nearly empty store or a collector just emptied reads as shelving waiting to be filled, never a dark hole, and what it
-holds is plain at a glance. They always show every mino they hold as a mino — never a bar, never panned: slots in
-whole device pixels, at least 3 (under 8 device pixels a mino is a flat square with a pixel's gap; only a 1x screen at
-the smallest scenes goes under 3). Waiting is shown calmly, nothing blinks: warm means backed up (a full crate's rim and the piece at the station,
-the head of the belt, a press holding its piece, a full store's rim and the top belt's head, a head holding its mino; these stay warm while presses draw on the full
-store, rather than lifting for the moment each next mino rolls in),
-muted means short of minos (a press's lamp dims, the next mino it waits for is a dashed outline, and its hatch has a
-dim ring). Pointing at the crate (or Collect) washes what it takes, a step where a line ends partway along a row.
-Collected lines lift out of the crate's open top and clear away, the loose minos riding up on them and then dropping to
-the bottom; the lines fly to the wallet, which counts them (and any achievement the collect earned) as they land. The
-floor's parts are buttons (in the chain's order): a head or the store points to its entry in the list, the next head
-or bay builds, a press opens its mold — pin it to one shape (free; pay never changes) and fill in Stats ▸ Factory's
-shape sets — and the crate collects. Stats ▸ Factory counts minos shipped and stamped, the time the crate was full and
-the time the presses were short of minos.
+Pay is counted in points, forty to a line: a loose mino is 2, pieces 5, 9, 14 and 20. Prices (⦵, each kind in order):
+dropper 8, 45; dropper speed 30, 100, 200; store 10, 25, 40; assembler 5, 25, 90; piece size 10, 60, 160; conveyor
+speed 30, 60, 100; conveyor length 25, 60 — 1,083 in all. Every number lives in one frozen block, `Factory.TUNE` in
+`js/factory.js`.
+
+**Nobody around**: the drop-off pays while you are around. While Lull is hidden, or left untouched for ten minutes, it
+is closed: the line keeps running, finished pieces wait at the end of the belt and back up along it, then the
+assemblers hold their pieces, the store fills and the droppers pause, and the line rests. Back, the drop-off pays the
+backlog as it rolls in. Time away is replayed on return with the same ticks as on screen (quarter-second ticks on an
+integer clock; any slicing of the same time gives exactly the same line; once a tick changes nothing the line is at
+rest and the replay stops). On the Factory tab the replay is simply there; elsewhere a toast says how many pieces were
+built.
+
+**Balance** (`scripts/test.cjs` and `scripts/econ-test.cjs` measure it on the real line): a new factory makes about 12
+lines an open hour when tended (a look every five minutes); a full one about 140, and tended every minute about 147 an
+hour — about a third of casual Standard play (≈460), never more than half (a test). The first upgrades pay back in under
+an hour (an assembler for 5, a second dropper for 8), the last ones over many hours; a buffer (a bigger store, a longer
+belt) pays mostly in what waits for you after time away. A full factory on a casual day (half an hour open, the rest
+away) brings about 80 lines, about a third of that day's play; over a casual career the factory is about a quarter of
+all income.
+
+**The sign**: under the store, a tiny dot-matrix panel like a roadside sign, 16 × 7 round LEDs on a dark housing (dark
+in both themes, the unlit dots faintly visible), with no words or numbers. It shows how busy the line is — the share of
+machines at work (droppers not paused; assemblers neither short of minos nor holding a piece; the conveyor moving, once
+there is an assembler): green chevrons flowing to the right when four fifths or more are at work; amber dots marching
+along when it is working; a warm blinking block when something is full or backed up; a dim amber pause sign, blinking
+slowly, when nothing works. A mood is held a moment before it changes, so a passing state never flickers; under
+reduced motion each mood is one still frame. A screen reader hears its name ("Factory running smoothly", "Factory
+working", "Factory held up: something is full", "Factory idle"); the panel itself has no text.
+
+The tab: the floor on the board's own plate, drawn in the board's materials with your skin and palette and no text;
+Collect under it (44 px); then the things to build as cards, two to a row (a card says what it does, "12 s → 10 s a
+mino", and its price; it goes once its kind is built out). The plate takes the height the rest leaves, 240 px at least
+(the view scrolls below it when even that does not fit, as at 320 × 568). Things on their way are drawn on their way: a
+mino dropping from its hopper and sliding along the rail into the store, a mino carried from the store into an
+assembler, a finished piece down the chute onto the entry, pieces gliding slot to slot along the belt and into the
+drop-off, which glows softly as it pays. Building the first assembler, the third dropper, the third assembler and the
+longest conveyor, and delivering 500 pieces, unlock the factory's cosmetics. Stats ▸ Factory counts lines delivered and
+collected, pieces delivered (by size), minos dropped, collects, the pieces built while away and the time the line ran
+smoothly.
 
 **Power-ups** (items, in the code) — single-use, in five types on the bar under the Relaxed board. A type's button
 (with how many you hold) opens its tray; click one to use it (Esc closes the tray). There are no number keys for them.
@@ -452,8 +429,8 @@ chime stirring, soft sine plucks that darken as they ring, round bell tones, slo
 clears, a warm felt note and soft sub when a piece sets and a low thoom for booms; no clicks on the way in, never
 brighter than the music, all in its A minor (and anything played that has no sound of its own yet gets a quiet pluck)
 — Chiptune coins and power-ups, rolling Marimba, Analog Synth stabs, ringing Glass, Wind Chimes — all synthesized,
-each with its own clears; its preview is a Listen button); a few are factory rewards (a second, third and fourth
-press, the biggest crate, 500 lines collected), marked with a lock and what earns them on hover. A tile says In use, Use (click it, or the tile) or its price, dimmed when you cannot afford it. Buying
+each with its own clears; its preview is a Listen button); a few are factory rewards (the first assembler, the third
+dropper, the third assembler, the longest conveyor, 500 pieces delivered), marked with a lock and what earns them on hover. A tile says In use, Use (click it, or the tile) or its price, dimmed when you cannot afford it. Buying
 is two clicks on the same spot — the price turns into Confirm for three seconds — and a new cosmetic goes straight on.
 
 **Look** — one small design system (`css/lull.css`, its tokens at the top): a midnight-ink dark and a porcelain light
@@ -509,9 +486,8 @@ one board (Showman), a board of 60 blocks or more emptied by one power-up (Clean
 
 Medium ones (50–100 ⦵): a perfect clear with no power-ups on the board, a T-spin Mini double, a 10-combo, a T-spin triple on gold, four quads in a row, Allegro,
 the perfect-clear opener (within a fresh board's first ten pieces, no items), Showman; a Hard puzzle first try
-without hints or undo, all three Dailies on their day, or a quad, a tetris and a Hard puzzle in one day; every
-hexomino, 1,000 lines off the factory line, or exactly 50 lines collected at once (Exactly Fifty; Empty Crate, 40 or
-more at once with none left loose, is easier). Hard ones (100–200 ⦵): eight back-to-back, three perfect clears,
+without hints or undo, all three Dailies on their day, or a quad, a tetris and a Hard puzzle in one day; 1,000
+pieces delivered by the factory, or an hour of it running smoothly. Hard ones (100–200 ⦵): eight back-to-back, three perfect clears,
 100 line-clearing T-spins (all with no power-ups on the board), 250,000 points never using a power-up, Clean Sweep, Tinkerer, forty lines in a
 fresh board's first hundred pieces with nothing left over, every item used; in Classic a perfect clear, a T-spin
 triple, a 10-combo, eight back-to-back, level 10 without hold, 40 lines in 90 s or 40 lines of tetrises alone; a Hard
@@ -521,8 +497,8 @@ quads in a row, five gold clears on a chain of 20, ten perfect clears or 5,000 l
 without items; Classic level 25, a 15-combo, 40 lines in 50 s, level 20 without hold, a Classic million; every
 wildcard on Hard, a Daily thirty days in a row, a hundred first-try solves in a row; a hundred hours or a hundred days
 with Lull, everything the shop sells, half a million lines earned (undone lines aside, since an undone clear replayed would count
-twice); all 108 heptominoes or 100,000 minos
-pressed — and *Lull*, every other one. They read the stats below plus a few kept for them: the
+twice); 10,000 factory pieces delivered or 50,000 minos
+dropped, a hundred days collecting — and *Lull*, every other one. They read the stats below plus a few kept for them: the
 board's hand counts (`freshStats` in `js/engine.js`: whether there are power-ups on the board, and the back-to-back,
 combo, quads in a row, chain, line-clearing T-spins, T-spin triples and perfect clears without them, gold clears on a
 chain of 20, and the last 101 such pieces' times), Classic's own clock (running time only), undos per puzzle, runs of first-try solves (a retry, hint,
@@ -1216,7 +1192,7 @@ murals finished, pieces placed, by level, from photos.
 | ↓ | lower one row; on the stack, a fresh press sets the piece (holding never does) |
 | Space | hard drop (for 0.18 s after a piece is set, Space, a click and the ↓ that sets are ignored, so a double press never drops the next piece unseen; moving and turning still work, and Classic's gravity never waits) |
 | ↑ / X, Z, A | turn clockwise, counter-clockwise, 180° |
-| C / Shift | hold; again to swap back (Free Play and Puzzles: as often as you like). On the Factory tab, C collects the crate |
+| C / Shift | hold; again to swap back (Free Play and Puzzles: as often as you like). On the Factory tab, C collects the store |
 | ⌫ / U, R, N, H | undo, retry, next puzzle, hint |
 | ⌘1–⌘6, ⌘, | tabs (⌘6 the Shop), settings |
 | ⌘J | collapse into the title bar, or expand (so does a double-click on the empty bar) |
@@ -1420,7 +1396,7 @@ The address is shown on the `pages` job and under Settings ▸ Pages.
 
 | Path | |
 |---|---|
-| `Game/` | the game: `index.html`, `manifest.webmanifest`, `sw.js` (the offline copy), `icons/` (the Home Screen icons), `css/`, and `js/` — `webapp` (the Home Screen app: the worker, its updates, lasting storage), `icons` (the one SVG icon set), `pieces` (SRS tetrominoes, pentominoes, big and custom shapes, polyomino enumeration, ids that rebuild themselves), `board` (the grid and the one table of cell bits), `recipe` (the board recipe: its parts, rules and limits), `engine` (the floating-piece rules, every item and the recipe's hooks), `items` (the chain multiplier, combos, Luck, the daily gift, power-ups earned in play), `library` (the Relaxed board library: shelved and retired boards, names, caps), `puzzlegen` (seeds, wildcards, reverse construction, reachability search, forward verification), `factory` (the chain: stamp heads, the store, presses, belts, the lift and the crate, in ticks for play and time away alike; `Factory.TUNE`; save repair), `store` (save, catalog, stats), `achievements`, `fxphysics` (the item effects' blocks, debris and dust: gravity, bounces, spirals, fixed pools), `render` (canvas: skins, frames, effects, item animations, rotated views), `factoryview` (the factory floor, drawn like the board), `hints` (control hints: the struggle signals, their limits and retirement), `touch` (the touch gestures: a pure reader of fingers, and the page's touch helpers), `webapp` (the Home Screen web app: the offline copy's registration and updates), `collapse` (the window rolled up into its title bar, and the parade of pieces along it), `modes`, `retiredview` (a retired board in full view), `ui`, `app` |
+| `Game/` | the game: `index.html`, `manifest.webmanifest`, `sw.js` (the offline copy), `icons/` (the Home Screen icons), `css/`, and `js/` — `webapp` (the Home Screen app: the worker, its updates, lasting storage), `icons` (the one SVG icon set), `pieces` (SRS tetrominoes, pentominoes, big and custom shapes, polyomino enumeration, ids that rebuild themselves), `board` (the grid and the one table of cell bits), `recipe` (the board recipe: its parts, rules and limits), `engine` (the floating-piece rules, every item and the recipe's hooks), `items` (the chain multiplier, combos, Luck, the daily gift, power-ups earned in play), `library` (the Relaxed board library: shelved and retired boards, names, caps), `puzzlegen` (seeds, wildcards, reverse construction, reachability search, forward verification), `factory` (the line: droppers, the store, assemblers, the conveyor and the drop-off, in ticks for play and time away alike; the sign's moods; `Factory.TUNE`; save repair), `store` (save, catalog, stats), `achievements`, `fxphysics` (the item effects' blocks, debris and dust: gravity, bounces, spirals, fixed pools), `render` (canvas: skins, frames, effects, item animations, rotated views), `factoryview` (the factory floor, drawn like the board, and its dot-matrix sign), `hints` (control hints: the struggle signals, their limits and retirement), `touch` (the touch gestures: a pure reader of fingers, and the page's touch helpers), `webapp` (the Home Screen web app: the offline copy's registration and updates), `collapse` (the window rolled up into its title bar, and the parade of pieces along it), `modes`, `retiredview` (a retired board in full view), `ui`, `app` |
 | `Sources/Lull/` | the macOS shell: a borderless `NSPanel` (floating, all Spaces, edge-resizable, draggable by the page's title bar) around a transparent `WKWebView`, a blur for the Glass background, the save file, the ⌥⌘L hot key, and a self-test CI runs |
 | `scripts/` | `make-app.sh`, `icon.swift`, `line-glyph.py` (builds the line glyph's font into `lull.css`), `test.cjs`, `browser-test.cjs`, `audio-render.cjs` (renders and measures the synthesized audio offline), `pitch.cjs` (finds the notes in a render, to check sound effects are in the music's key), `splice-voice.py` (cuts the announcer's lines from a recording), `web-build.cjs` (the site as deployed), `web-icons.cjs` (the Home Screen icons), `web-test.cjs` and `web-browser-test.cjs` (the web app's tests, run by the two above), `touch-test.cjs` (an emulated phone played with gestures, run by browser-test), `device-test.cjs` (what each device is offered in Settings and the bar, and live changes; run by browser-test), `econ-test.cjs` (the economy against models of play: placement bots on the real engine, a puzzle model, the factory measured, a career that spends what it earns; every assumption about players in its one MODEL block; run by test.cjs), `golden.cjs` and `golden.json` (the golden identity run, and its record), `sizes-test.cjs` (board sizes: the New board window, every extreme size, pay by width, layout; run by browser-test), `undo-test.cjs` (every way of buying an Undo, and the cards that offer it at every size; run by browser-test), `retired-test.cjs` (a retired board in full view at every size, by keys and by touch; run by browser-test), `recipe-test.cjs` and `recipe-pixels.json` (the board recipe in the page: the New board window, labels, the controller, and the board drawn pixel for pixel as recorded; run by browser-test) |
 

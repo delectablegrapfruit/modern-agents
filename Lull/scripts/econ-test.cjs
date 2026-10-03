@@ -330,45 +330,34 @@ module.exports = function econTests(test, L) {
     console.log('       a gift ' + gift.toFixed(1) + ', one free draw ' + draw.toFixed(2));
   });
 
-  // The factory: the real line, collected at fixed hours; one warm day, then two measured.
-  const HOUR = 3600e3, DAY = 24 * HOUR, COLLECT = { 1: [8], '1+': [8, 8.25], 2: [8, 20], 3: [8, 14, 20], 6: [8, 11, 14, 17, 20, 23] };
-  const measuredDay = (built, collects) => {
-    const f = Factory.create();
-    f.seed = 777;
-    for (const [kind, n] of Object.entries(built)) for (let i = 0; i < n; i++) Factory.upgrade(f, kind);
-    let t = 0, got = 0;
-    for (let d = 0; d < 3; d++) for (const h of COLLECT[collects]) {
-      const at = d * DAY + h * HOUR;
-      Factory.run(f, at - t); t = at;
-      const c = Factory.collect(f, 'd' + d);
-      if (d >= 1 && c) got += c.collected;
+  // The factory: the real line, tended as a player would. A session open (a look every five minutes, collecting when
+  // the store is full or when there is no assembler to feed it), the rest of the day away (the drop-off closed).
+  const MIN = 60e3, HOUR = 60 * MIN, DAY = 24 * HOUR;
+  function factorySession(f, minutes, day, every) {
+    let got = 0;
+    for (let m = 0; m < minutes; m += every) {
+      Factory.run(f, every * MIN, null, false);
+      got += Factory.takeLines(f);
+      if (f.store >= Factory.storeCap(f) || !f.asm.length || every === 1) { const c = Factory.collect(f, 'd' + day); if (c) got += c.collected; }
     }
-    return got / 2;
-  };
-  const FULL = { stamp: 3, store: 2, press: 3, crate: 4 };
-  test('the factory is a supporting income: the whole line, collected once a day, is a fifth to three tenths of casual daily play', () => {
-    const r = rates(), full = measuredDay(FULL, 1), day = MODEL.career.casual.hoursPerDay * r.relaxed.casual;
-    assert(full >= 0.2 * day && full <= 0.3 * day, full + ' lines a day against ' + day.toFixed(1));
+    return got;
+  }
+  const fullFactory = (seed) => { const f = Factory.create(); f.seed = seed; for (const k of Factory.KINDS) while (Factory.upgrade(f, k)); return f; };
+  test('the factory never pays faster than Standard: fully built and tended every minute, under half of casual Relaxed play', () => {
+    const r = rates(), f = fullFactory(777);
+    factorySession(f, 30, 0, 1);
+    const hour = factorySession(f, 120, 0, 1) / 2;
+    assert(hour < 0.5 * r.relaxed.casual, hour + ' an hour against ' + r.relaxed.casual.toFixed(0));
+    console.log('       a full factory tended every minute ' + hour.toFixed(0) + ' lines an hour (' + (hour / r.relaxed.casual).toFixed(2) + '× casual Standard)');
   });
-  // Nothing is lost at a full crate: the line backs up behind it (the lift, the belt, the finished pieces the presses
-  // hold), and Collect lets all of it ship within minutes. So a second Collect a quarter of an hour after the first takes
-  // that backlog as well as the quarter hour's making: a few lines, never a second crate. Bounded here, so a retune
-  // that lengthened the belt or the lift, or let the presses run on into a full crate, would show.
-  test('a second Collect a quarter of an hour after the day\'s one takes only what stood backed up and the quarter hour\'s making: at most 0.32× casual daily play in all', () => {
-    const r = rates(), day = MODEL.career.casual.hoursPerDay * r.relaxed.casual, once = measuredDay(FULL, 1), twice = measuredDay(FULL, '1+');
-    // What stands behind a full crate, in the real line: every mino fed to a press, on the belt or on the lift.
-    const f = Factory.create();
-    f.seed = 777;
-    for (const [kind, n] of Object.entries(FULL)) for (let i = 0; i < n; i++) Factory.upgrade(f, kind);
-    Factory.run(f, 2 * DAY);
-    assert(Factory.isFull(f), 'the crate is full after two days');
-    let backed = 0;
-    for (const m of f.molds) backed += m.got;
-    for (const it of f.belt.concat(f.lift)) backed += it.n;
-    const quarter = Factory.perHour(f) / 4, bound = Math.ceil((backed + quarter) / Factory.MPL) + 1;
-    assert(twice - once <= bound, 'the second Collect took ' + (twice - once) + ' lines; backed up ' + backed + ' minos, a quarter hour ' + quarter + ': at most ' + bound);
-    assert(twice <= 0.32 * day, twice + ' lines a day against ' + day.toFixed(1));
-    console.log('       the whole line collected once a day ' + once + ' lines (' + (once / day).toFixed(2) + '× casual play), again a quarter hour later ' + twice + ' (' + (twice / day).toFixed(2) + '×; ' + backed + ' minos stood backed up)');
+  test('the factory is a supporting income: a casual day (half an hour open, the rest away) is a fifth to two fifths of casual daily play', () => {
+    const r = rates(), day = MODEL.career.casual.hoursPerDay * r.relaxed.casual;
+    const f = fullFactory(778);
+    let got = 0;
+    for (let d = 0; d < 4; d++) { const g = factorySession(f, 30, d, 5); Factory.run(f, DAY - 30 * MIN, null, true); if (d) got += g; }
+    const per = got / 3;
+    assert(per >= 0.2 * day && per <= 0.4 * day, per + ' lines a day against ' + day.toFixed(1));
+    console.log('       a full factory on a casual day ' + per.toFixed(0) + ' lines (' + (per / day).toFixed(2) + '× casual play)');
   });
 
   // ---- the career ---------------------------------------------------------------------------------------------------
@@ -386,18 +375,11 @@ module.exports = function econTests(test, L) {
     const rate = { relaxed: r.relaxed[name === 'skilled' ? 'skilled' : 'casual'], classic: r.classic[name === 'skilled' ? 'skilled' : 'casual'], puzzle: (r.puzzle[P.puzzle].E + r.puzzle[P.puzzle].M + r.puzzle[P.puzzle].H) / 3 };
     const hourly = Object.entries(P.mix).reduce((a, [m, s]) => a + s * rate[m], 0);
     const dailies = P.dailies.reduce((a, d) => a + Puzzles.pay(d, { try: 1, daily: true }).pay, 0);
-    // The factory, in closed form: each collect takes what the line made since the last, at most a crate (less one).
-    const f = { stamp: 1, press: 1, crate: 0, store: 0 };
-    let carry = 0, facLines = 0, facDays = 0;
-    const factoryDay = () => {
-      const hours = COLLECT[P.collects];
-      const make = Math.min(f.stamp * 3600 / T.STAMP_T, T.MOLDS.slice(0, f.press).reduce((a, m) => a + m * 3600 / T.CYCLE, 0));
-      let minos = carry;
-      for (let i = 0; i < hours.length; i++) { const gap = ((hours[(i + 1) % hours.length] - hours[i]) + 24) % 24 || 24; minos += Math.min(make * gap, Factory.crateMinos(f.crate) - 1); }
-      const lines = Math.floor(minos / Factory.MPL);
-      carry = minos - lines * Factory.MPL;
-      return lines;
-    };
+    // The factory: the real line, open while the day's play lasts, away the rest of the day.
+    const f = Factory.create();
+    f.seed = 777;
+    let facDays = 0;
+    const factoryDay = (d) => { const g = factorySession(f, Math.round(P.hoursPerDay * 60), d, 5); Factory.run(f, DAY - P.hoursPerDay * HOUR, null, true); return g; };
     const st = { wallet: 0, earned: { play: 0, factory: 0, achievements: 0, dailies: 0 }, got: {}, owned: new Set(), log: [] };
     const earn = (a, h) => { if (!a || st.got[a.id]) return; st.got[a.id] = h; st.wallet += a.pay; st.earned.achievements += a.pay; };
     const total = () => Object.values(st.earned).reduce((a, b) => a + b, 0);
@@ -405,8 +387,8 @@ module.exports = function econTests(test, L) {
     let hours = 0, day = 0;
     while (hours < maxH - 1e-9) {
       day++;
-      const got = factoryDay();
-      st.wallet += got + dailies; st.earned.factory += got; st.earned.dailies += dailies; facLines += got; facDays++;
+      const got = factoryDay(day);
+      st.wallet += got + dailies; st.earned.factory += got; st.earned.dailies += dailies; facDays++;
       for (let t = 0; t < P.hoursPerDay - 1e-9 && hours < maxH - 1e-9; t += 0.25) {
         hours += 0.25;
         st.wallet += (hourly - P.powerUpsPerHour) * 0.25; st.earned.play += hourly * 0.25;
@@ -414,12 +396,8 @@ module.exports = function econTests(test, L) {
           const v = when[idx];
           if (v != null && !st.got[id] && (typeof v === 'string' ? day >= +v.slice(1) : hours >= v)) earn(byId[id], hours);
         }
-        const at = (id, ok) => ok && earn(byId[id], hours), minos = facLines * Factory.MPL;
-        at('fac_twelve', f.press >= 2 && facDays > 3); at('fac_1k', facLines >= need('fac_1k')); at('fac_keyhole', f.press >= 4 && facDays > 5);
-        at('fac_line', f.press >= 4); at('fac_silo', f.crate >= 4); at('fac_stamp', f.stamp >= 4); at('fac_35', f.press >= 3 && facDays > 8);
-        at('fac_10k', minos >= need('fac_10k')); at('fac_days30', facDays >= 30); at('fac_days100', facDays >= 100);
-        at('fac_108', f.press >= 4 && facDays > 20 && name !== 'casual'); at('fac_mountain', minos >= need('fac_mountain'));
-        at('fac_sweep', Factory.crateLines(f.crate) >= 40 && facDays > 10); at('fac_hundred', Factory.crateLines(f.crate) >= 50 && facDays > 20 && name !== 'casual');
+        const at = (id, ok) => ok && earn(byId[id], hours), fs = { factory: f };
+        for (const a of A) if (a.group === 'factory' && !st.got[a.id] && a.test(fs, {})) earn(a, hours);
         at('lu_hours10', hours >= 10); at('lu_hours100', hours >= 100); at('lu_days30', day >= 30); at('lu_days100', day >= 100);
         at('lu_100k', total() >= need('lu_100k')); at('lu_1m', total() >= need('lu_1m'));
         at('lu_curator', forSale.every((c) => st.owned.has(c.key)));
@@ -428,16 +406,13 @@ module.exports = function econTests(test, L) {
         for (;;) {
           const pool = [];
           const up = (kind, cost) => cost != null && pool.push({ kind, cost });
-          if (f.crate < T.CRATE_COST.length) up('crate', T.CRATE_COST[f.crate]);
-          if (f.stamp < T.STAMP_COST.length) up('stamp', T.STAMP_COST[f.stamp]);
-          if (f.press < T.PRESS_COST.length) up('press', T.PRESS_COST[f.press]);
-          if (f.store < T.STORE_COST.length - 1) up('store', T.STORE_COST[f.store + 1]);
+          for (const k of Factory.KINDS) { const u = Factory.nextUpgrade(f, k); if (u) up(k, u.cost); }
           for (const c of forSale) if (!st.owned.has(c.key)) pool.push({ c, cost: c.price });
           pool.sort((a, b) => a.cost - b.cost);
           if (!pool.length || st.wallet < pool[0].cost) break;
           const x = pool[0];
           st.wallet -= x.cost;
-          if (x.c) st.owned.add(x.c.key); else f[x.kind]++;
+          if (x.c) st.owned.add(x.c.key); else Factory.upgrade(f, x.kind);
           st.log.push([hours, x.c ? 'cosmetic' : 'factory']);
         }
       }
@@ -447,7 +422,7 @@ module.exports = function econTests(test, L) {
     const gap = (a, b) => { const n = st.log.filter((x) => x[0] > a && x[0] <= b).length; return n ? (b - a) / n * 60 : Infinity; };
     return { hourly, allCosmeticsAt: cos.length === forSale.length ? cos[cos.length - 1][0] : null, snaps, gap05: gap(0, 5) };
   }
-  test('career: every cosmetic owned in 50–80 h casually, 25–45 h skilled, 40–70 h puzzle-focused; purchases come often early', () => {
+  test('career: every cosmetic owned in 50–80 h casually, 25–45 h skilled, 40–70 h puzzle-focused; purchases come often early; the factory a sixth to three tenths of casual income', () => {
     const c = career('casual', 400), s = career('skilled', 400), p = career('puzzle', 400);
     const within = (x, a, b, what) => assert(x != null && x >= a && x <= b, what + ': ' + x);
     within(c.allCosmeticsAt, 50, 80, 'casual');
@@ -458,7 +433,7 @@ module.exports = function econTests(test, L) {
     assert(share(s.snaps[10], 'achievements') <= 0.35, 'skilled achievements at 10 h: ' + share(s.snaps[10], 'achievements').toFixed(3));
     assert(share(s.snaps[50], 'achievements') <= 0.15, 'skilled achievements at 50 h: ' + share(s.snaps[50], 'achievements').toFixed(3));
     const fac = share(c.snaps[200], 'factory');
-    assert(fac >= 0.15 && fac <= 0.25, 'casual factory share at 200 h: ' + fac.toFixed(3));
+    assert(fac >= 0.15 && fac <= 0.3, 'casual factory share at 200 h: ' + fac.toFixed(3));
     console.log('       every cosmetic at ' + [c, s, p].map((x) => x.allCosmeticsAt + ' h').join(' / ') + ' (casual / skilled / puzzle); skilled achievements ' +
       Math.round(100 * share(s.snaps[10], 'achievements')) + '% at 10 h, ' + Math.round(100 * share(s.snaps[50], 'achievements')) + '% at 50 h; casual factory ' + Math.round(100 * fac) + '% at 200 h; casual buys every ' + c.gap05.toFixed(0) + ' min (0–5 h)');
     void round;

@@ -2601,54 +2601,40 @@
   // ---- factory ------------------------------------------------------------------------------------------------------
 
   const REWARD_UNLOCKS = [
-    { kind: 'palette', id: 'assembly', test: (f) => f.presses >= 2 },
-    { kind: 'frame', id: 'hazard', test: (f) => f.presses >= 3 },
-    { kind: 'skin', id: 'steel', test: (f) => f.presses >= 4 },
-    { kind: 'backdrop', id: 'belt', test: (f) => f.stats.lines >= 500 },
-    { kind: 'effect', id: 'sparks', test: (f) => f.crateLevel >= 4 },
+    { kind: 'palette', id: 'assembly', test: (f) => f.asm.length >= 1 },
+    { kind: 'frame', id: 'hazard', test: (f) => f.droppers >= 3 },
+    { kind: 'skin', id: 'steel', test: (f) => f.asm.length >= 3 },
+    { kind: 'backdrop', id: 'belt', test: (f) => f.stats.delivered >= 500 },
+    { kind: 'effect', id: 'sparks', test: (f) => f.beltLen >= Factory.BELT_LEN.length - 1 },
   ];
 
-  // What the line sounds like (existing ids only; each at most every 0.4 s, and only with the window in front). Feeds
-  // are silent.
-  const LINE_SOUNDS = { stamp: 'stamp', mino: 'stamp', drop: 'pack', ship: 'land', full: 'bell' };
-  // The four things to build, in the chain's order.
-  const FAC_KINDS = ['stamp', 'store', 'press', 'crate'];
-  const ORDINAL = ['First', 'Second', 'Third', 'Fourth'];
-
-  /** A calm "how long": <1m, 12m, 1h 12m, 2d 3h (held together: a wrap never splits one). */
-  function soon(sec) {
-    if (!isFinite(sec)) return '—';
-    const m = Math.ceil(sec / 60);
-    if (m <= 1) return sec < 45 ? '<1m' : '1m';
-    if (m < 60) return m + 'm';
-    if (m < 48 * 60) return Math.floor(m / 60) + 'h' + (m % 60 ? ' ' + (m % 60) + 'm' : '');
-    const d = Math.floor(m / 1440), hr = Math.floor((m % 1440) / 60);
-    return d + 'd' + (hr ? ' ' + hr + 'h' : '');
-  }
+  // What the line sounds like (existing ids only; each at most every 0.4 s, and only with the window in front).
+  const LINE_SOUNDS = { drop: 'stamp', build: 'pack', pay: 'land', full: 'bell' };
+  // Nobody around: Lull hidden, or untouched this long. The drop-off closes and pieces wait on the conveyor.
+  const AWAY_IDLE_MS = 10 * 60e3;
+  // The sign's name for a screen reader (the sign itself has no words).
+  const SIGN_SAYS = { smooth: 'Factory running smoothly', working: 'Factory working', full: 'Factory held up: something is full', idle: 'Factory idle' };
+  const PLURAL = { 2: 'dominoes', 3: 'trominoes', 4: 'tetrominoes', 5: 'pentominoes' };
 
   // The things to build, drawn in the icon set's manner (js/icons.js: a 16-unit grid, a 1.5 stroke, round caps and
   // joins, currentColor), kept here since only the Factory uses them.
   const facSvg = (body) => '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + body + '</svg>';
+  const MINO = (x, y) => '<rect x="' + x + '" y="' + y + '" width="3.5" height="3.5" rx="0.8" fill="currentColor" stroke="none"/>';
   const FAC_ICONS = {
-    // A head on its beam, its ram, and a single mino under it.
-    'fac-stamp': facSvg('<path d="M2.25 2.25h11.5M8 2.25v2.5"/><rect x="5.25" y="4.75" width="5.5" height="2" rx="0.8"/><rect x="6.25" y="9.5" width="3.5" height="3.5" rx="0.8" fill="currentColor" stroke="none"/>'),
-    // A shallow tray with one row of minos.
-    'fac-store': facSvg('<path d="M2.25 7.5v5.25h11.5V7.5"/><rect x="4" y="10" width="2.25" height="1.75" rx="0.5" fill="currentColor" stroke="none"/><rect x="6.9" y="10" width="2.25" height="1.75" rx="0.5" fill="currentColor" stroke="none"/><rect x="9.8" y="10" width="2.25" height="1.75" rx="0.5" fill="currentColor" stroke="none"/>'),
-    // A housing, its rod, and the ram over an open mold.
-    'fac-press': facSvg('<rect x="4.75" y="1.75" width="6.5" height="2.75" rx="1"/><path d="M8 4.5v2.25M5 7.75h6M2.75 10v3.25h10.5V10"/>'),
-    // A crate hung from its rail, with two full rows.
-    'fac-crate': facSvg('<path d="M2.25 2.25h11.5M4.25 2.25v2M11.75 2.25v2M3.25 4.75v9h9.5v-9"/><rect x="5" y="10.25" width="6" height="1.75" rx="0.6" fill="currentColor" stroke="none"/><rect x="5" y="7.5" width="6" height="1.75" rx="0.6" fill="currentColor" stroke="none"/>'),
+    dropper: facSvg('<path d="M4.5 2.25h7l-1.5 3.5h-4z"/>' + MINO(6.25, 9.5)),
+    speed: facSvg('<circle cx="8" cy="8.5" r="5.25"/><path d="M8 8.5l2.25-2.25M8 1.75v1.5"/>'),
+    store: facSvg('<path d="M3.25 2.25v11.5h9.5V2.25"/>' + MINO(4.75, 9.25) + MINO(8.25, 9.25)),
+    assembler: facSvg('<rect x="2.25" y="4.25" width="11.5" height="7.5" rx="1.5"/>' + MINO(4.5, 6.25) + MINO(8, 6.25)),
+    size: facSvg(MINO(2.25, 9.5) + MINO(6.25, 9.5) + MINO(10.25, 9.5) + MINO(6.25, 5.5) + '<path d="M2.25 3h11.5"/>'),
+    beltSpeed: facSvg('<path d="M2.25 10.75h11.5M2.25 13.25h11.5"/><path d="M5 4.25l2.5 2.25L5 8.75M9 4.25l2.5 2.25L9 8.75"/>'),
+    beltLen: facSvg('<path d="M2.75 3.5h9a2 2 0 0 1 0 4.5h-7.5a2 2 0 0 0 0 4.5h9"/>'),
   };
   const facIcon = (name) => h('span', { class: 'fac-ico', html: FAC_ICONS[name] });
 
-  const easeOut3 = (k) => 1 - Math.pow(1 - k, 3);
-
   /**
-   * The Factory: a production chain. The floor on its plate (stamp heads, the top belt, the store, the presses, the
-   * belt, the lift and the crate), a bar of figures under it with Collect at the right, and the things to build at the
-   * bottom, in the chain's order. The floor's parts are buttons too: a head or the store points to its entry, a press
-   * opens its mold, the next head or bay builds, the crate collects. Everything it makes is minos; every four in the
-   * crate are a line.
+   * The Factory: the floor on its plate (the two stages, the store and the sign, the conveyor and the drop-off),
+   * Collect under it, and the things to build as cards. The store is a button too (it collects). Lines from the
+   * drop-off go straight into the wallet; the store's minos are cashed in by hand.
    */
   class FactoryMode {
     constructor(app) {
@@ -2656,17 +2642,14 @@
       this.el = document.getElementById('view-factory');
       this.canvas = document.getElementById('cv-floor');
       this.view = new L.FloorView(this.canvas);
-      this.top = document.getElementById('fac-top');
+      this.plate = document.getElementById('fac-plate');
       this.collectEl = document.getElementById('fac-collect');
       this.list = document.getElementById('fac-list');
       this.hots = document.getElementById('fac-hots');
       this.visible = false;
-      this.form = 'rows'; // the list: a row for each thing to build, or (a short window) a grid of cards
-      this.panelAt = 0; this.tipAt = 0; this.achAt = 0; this.soundAt = {}; this.etaAt = -Infinity; this.etaV = Infinity;
-      this.away = null;  // time away not yet announced: { seconds, minos }
-      this.count = null; // Lines in crate counting to a new value: { from, to, t0, dur }
-      this.fly = null;   // collected lines on their way to the wallet
-      this.hotKey = ''; this.hotEls = []; this.buildEls = {};
+      this.panelAt = 0; this.achAt = 0; this.soundAt = {};
+      this.away = null;   // time away not yet told: { seconds, built }
+      this.hotKey = ''; this.buildEls = {}; this.signSaid = '';
       this.build();
     }
 
@@ -2676,136 +2659,93 @@
 
     // ---- time ---------------------------------------------------------------------------------------------------------
 
-    /**
-     * Time away (more than five seconds since the line last ran): replayed in one go, never banked for you. Timers run
-     * slowly or not at all while Lull is hidden, so quiet catch-ups add up until the next return announces them. On the
-     * Factory tab nothing is announced: the new minos fade into the store and the crate, and its figure counts up.
-     */
+    /** Nobody around: Lull hidden, or nothing touched for ten minutes. */
+    closed() {
+      return !!(document.hidden || performance.now() - (this.app.lastActivity || 0) > AWAY_IDLE_MS);
+    }
+
+    /** Time away (more than five seconds since the line last ran): replayed in one go with the drop-off closed. */
     catchUp(announce) {
       const f = this.f, now = Date.now();
       let res = null;
       if (now - f.lastTick > 5000 || now < f.lastTick) {
-        if (this.visible) this.view.flushAll();
-        const crate0 = this.view.landed(f), store0 = this.view.storeLanded(f);
         res = Factory.catchUp(f, now);
         if (res) {
-          if (res.minos) this.addDayMinos(res.minos);
-          if (this.visible) {
-            this.away = null;
-            this.view.caughtUp(store0, crate0, f);
-            if (f.crate.length > crate0 && !this.reduced) this.count = { from: crate0 * Factory.TUNE.PAY, to: f.crate.length * Factory.TUNE.PAY, t0: performance.now(), dur: 800 };
-          } else this.away = { seconds: (this.away ? this.away.seconds : 0) + res.seconds, minos: (this.away ? this.away.minos : 0) + res.minos };
+          if (this.visible) { this.view.settle(); this.away = null; }
+          else this.away = { seconds: (this.away ? this.away.seconds : 0) + res.seconds, built: (this.away ? this.away.built : 0) + res.built };
           this.afterChange();
-          this.app.setBadge('factory', Factory.isFull(f));
         }
       }
       if (announce && this.away && !this.visible) {
         const a = this.away;
         this.away = null;
-        if (a.seconds > 90 && a.minos >= Factory.MPL) {
-          const lines = Factory.quarters(a.minos * Factory.TUNE.PAY);
-          toast('While you were away: ' + lines + (lines === '1' ? ' line' : ' lines') + (Factory.isFull(f) ? ' · Crate full' : ''), 'good', 5000);
-        }
+        if (a.seconds > 90 && a.built > 0) toast('While you were away the factory built ' + fmtInt(a.built) + (a.built === 1 ? ' piece' : ' pieces'), 'good', 5000);
       }
       return res;
     }
 
-    /** Runs the line up to now: a catch-up after a gap, otherwise the ticks the time since the last frame holds. */
+    /** Runs the line up to now; pays what the drop-off took. */
     advance() {
       const f = this.f, now = Date.now();
-      // A gap found with the floor on screen (a sleep, a hide that sent no event) is caught up now.
       if (now - f.lastTick > 5000 || now < f.lastTick) { this.catchUp(this.visible && !document.hidden); return []; }
-      const evs = Factory.step(f, (now - f.lastTick) / 1000);
+      const evs = Factory.step(f, (now - f.lastTick) / 1000, this.closed());
       f.lastTick = now;
+      this.bank();
       return evs;
+    }
+
+    /** Whole lines the drop-off has paid go into the wallet. */
+    bank() {
+      const n = Factory.takeLines(this.f);
+      if (!n) return 0;
+      this.store.addLines(n, 'factory');
+      this.app.refreshWallet(this.visible);
+      return n;
     }
 
     show() {
       this.visible = true;
       this.view.settle();
       this.catchUp(false);
-      this.away = null; // the floor shows what happened
-      this.relayout();
+      this.away = null;
       this.build();
+      this.relayout();
     }
 
     hide() {
       this.visible = false;
-      this.view.hover = null; this.view.preview = false;
-      this.view.settle(); // its clock stops while hidden: nothing half-played resumes on return
-      this.count = null;
-      this.flushFly();
+      this.view.settle();
+      this.view.preview = false;
     }
 
-    /**
-     * The room the plate may take: the view's height, less its padding and the bar (left), and what the list takes in
-     * each form (listH: as it is now, or with n entries): the scene grows into whatever the list leaves, so when an
-     * entry goes, the scene takes its room.
-     */
-    plateRoom() {
-      const el = this.el, plate = this.view.plate, stage = plate && plate.parentElement;
-      if (!plate || !el.clientHeight) return null;
-      if (this.padW !== el.clientWidth) {
-        const st = getComputedStyle(el), ls = getComputedStyle(this.list);
-        this.padW = el.clientWidth; this.pad = parseFloat(st.paddingTop) + parseFloat(st.paddingBottom); this.listM = parseFloat(ls.marginTop) || 0;
-      }
-      const inner = el.clientHeight - this.pad, left = inner - (stage.offsetHeight - plate.offsetHeight);
-      const now = FAC_KINDS.filter((k) => Factory.nextUpgrade(this.f, k)).length;
-      // Rows: 48 each and the group's hairlines; cards: two to a row, 48 high with a 2 px gap (n entries: those left now,
-      // unless given).
-      const listH = (form, n = now) => (!n ? 0 : this.listM + (form === 'rows' ? n * 48 + 2 : Math.ceil(n / 2) * 48 + (n > 2 ? 2 : 0)));
-      // A phone on its side (the stylesheet's own test for one): the plate takes the height, the rest scrolls.
-      const sideways = !!(root.matchMedia && root.matchMedia('(hover: none) and (pointer: coarse) and (orientation: landscape) and (max-height: 520px)').matches);
-      return { left, listH, innerH: inner, sideways };
-    }
-
-    /** Fits the floor to the view: on show, on a resize (app.onResize), after the list changes, and once more if the
-     *  view was not laid out. */
-    relayout() {
-      const room = this.plateRoom();
-      this.roomDirty = !room;
-      if (!room) return;
-      const lay = L.FactoryArt.fit(this.view.boxWidth(), room);
-      this.view.resize(lay);
-      if (lay.form !== this.form) {
-        this.form = lay.form;
-        this.list.classList.toggle('cards', lay.form === 'cards');
-        this.build();
-      }
-    }
-
-    /** Every second while the factory is not on screen: the line keeps running, quietly. */
+    /** Every second while the factory is not on screen (and Lull is not hidden): the line runs on. */
     tick() {
-      if (this.visible) return;
+      if (this.visible || document.hidden) return;
       this.onEvents(this.advance(), false);
-      this.app.setBadge('factory', Factory.isFull(this.f));
       const now = Date.now();
       if (now - this.achAt > 10000) { this.achAt = now; this.afterChange(false); }
     }
 
     frame(t, dt) {
       const evs = this.advance(), reduced = this.reduced;
-      // The layout is read only when the window changes (a moved window's pixel ratio included), not every frame.
       if (this.roomDirty || (root.devicePixelRatio || 1) !== this.dprSeen) { this.dprSeen = root.devicePixelRatio || 1; this.relayout(); }
       this.view.events(evs, this.f, reduced);
       this.onEvents(evs, true);
       this.view.render(dt, this.f, this.app.look());
       this.placeHots();
-      this.updateCrate();
+      this.sayMood();
       if (this.el.classList.contains('fac-still') !== reduced) this.el.classList.toggle('fac-still', reduced);
       if (t - this.panelAt > 250) { this.panelAt = t; this.update(); }
-      if (t - this.tipAt > 1000) { this.tipAt = t; this.refreshTips(); }
     }
 
     onEvents(evs, audible) {
       if (!evs.length) return;
-      let shipped = false;
+      let paid = false;
       for (const e of evs) {
-        if (e.kind === 'ship') { this.addDayMinos(e.item.n); shipped = true; }
+        if (e.kind === 'pay') paid = true;
         if (audible) this.lineSound(LINE_SOUNDS[e.kind]);
       }
-      if (shipped) this.afterChange();
-      if (shipped || evs.some((e) => e.kind === 'full')) this.app.setBadge('factory', Factory.isFull(this.f));
+      if (paid) this.afterChange();
     }
 
     lineSound(id) {
@@ -2816,8 +2756,6 @@
       this.app.sound.play(id);
     }
 
-    addDayMinos(n) { const d = this.store.day(); d.minos = (d.minos || 0) + n; }
-
     /** Rewards and achievements after anything changed on the line (and a save, unless it is only the quiet check). */
     afterChange(touch) {
       for (const u of REWARD_UNLOCKS) {
@@ -2826,50 +2764,32 @@
           toast('Unlocked: ' + L.COSMETICS[u.kind][u.id].name, 'good', 4000);
         }
       }
-      // While collected lines are still on their way to the wallet, achievements wait for them to land (an
-      // achievement counts into the wallet at once, which would give the flight's total away early).
-      if (this.fly) this.fly.ach = true;
-      else this.app.achieve({ mode: 'factory' });
+      this.app.achieve({ mode: 'factory' });
       if (touch !== false) this.store.touch();
     }
 
     // ---- verbs --------------------------------------------------------------------------------------------------------
 
-    /** Banks every eight minos in the crate as a line; the 0–7 loose ones stay. Minos still on their way land first. */
+    /** Cashes the store's loose minos in, twenty to a line (the rest stay). */
     collect() {
-      const f = this.f;
-      this.view.flushLift();
-      if (f.crate.length < Factory.MPL) { this.app.sound.play('blocked'); return false; }
-      const look = this.app.look(), reduced = this.reduced, shown = this.visible ? this.displayed() : 0;
-      const snap = this.visible ? this.view.snapshot(f, look) : null;
-      const res = Factory.collect(f);
+      const res = Factory.collect(this.f);
       if (!res) { this.app.sound.play('blocked'); return false; }
+      this.view.settle();
       this.store.addLines(res.collected, 'factory');
       this.app.sound.play('golden');
-      if (snap) {
-        this.view.collected(snap, look, reduced);
-        this.count = reduced ? null : { from: shown, to: res.loose * Factory.TUNE.PAY, t0: performance.now(), dur: 450 };
-        this.flyLines(res.collected, reduced);
-      } else this.app.refreshWallet(true);
-      const ev = { mode: 'factory', collected: res.collected, loose: res.loose };
-      if (this.fly) this.fly.events.push(ev); else this.app.achieve(ev);
+      this.app.refreshWallet(true);
+      this.app.achieve({ mode: 'factory', collected: res.collected, left: res.left });
       this.afterChange();
-      this.app.setBadge('factory', false);
-      this.etaAt = -Infinity;
       this.update();
       return true;
     }
 
-    /** Builds the next of a kind; short of lines, it says so (a soft no, and the entry's flash). */
+    /** Builds the next of a kind; short of lines, it says so (a soft no, and the card's flash). */
     upgrade(kind) {
       const u = Factory.nextUpgrade(this.f, kind);
       if (!u) return false;
       if (this.store.state.lines < u.cost || !this.store.spend(u.cost)) { this.app.sound.play('blocked'); this.flashBuild(kind); return false; }
-      this.flushFly();
-      if (kind === 'crate') this.view.flushLift();
       Factory.upgrade(this.f, kind);
-      if (kind === 'press') this.view.builtPress(this.f.presses - 1);
-      if (kind === 'stamp') this.view.builtHead(this.f.stampers - 1);
       this.app.refreshWallet();
       this.app.sound.play('buy');
       this.afterChange();
@@ -2884,54 +2804,6 @@
       b.addEventListener('animationend', () => b.classList.remove('flash'), { once: true });
     }
 
-    /** Keyboard focus to a kind's entry in the list (a head or the store on the floor points there). */
-    focusEntry(kind) {
-      const b = this.buildEls[kind];
-      if (!b) { this.app.sound.play('blocked'); return; }
-      b.focus({ preventScroll: true });
-      if (b.scrollIntoView) b.scrollIntoView({ block: 'nearest' });
-    }
-
-    /** The mold picker: any shape each time, or one chosen shape (it never changes what a press pays). */
-    openMold(k) {
-      const f = this.f, m = f.molds[k];
-      if (!m) return;
-      const n = Factory.MOLDS[k], look = this.app.look(), list = Factory.shapes(n), seen = f.stats.seen[n];
-      let modal = null;
-      const current = () => (m.pin < 0 ? 'Any' : Factory.shapeName(n, m.pin));
-      const cap = h('div', { class: 'mold-cap' }, current());
-      const say = (s) => () => { cap.textContent = s == null ? current() : s; };
-      const pick = (s) => { Factory.setPin(f, k, s); this.app.sound.play('land'); this.store.touch(); if (modal) modal.close(); this.build(); };
-      const tiles = list.map((_, s) => {
-        const name = Factory.shapeName(n, s);
-        return h('button', { class: 'mold' + (m.pin === s ? ' on' : ''), 'data-s': s, 'aria-label': name, 'aria-pressed': String(m.pin === s), onclick: () => pick(s), onmouseenter: say(name), onmouseleave: say(null), onfocus: say(name), onblur: say(null) });
-      });
-      const any = h('button', { class: 'chip' + (m.pin < 0 ? ' on' : ''), 'aria-pressed': String(m.pin < 0), onclick: () => pick(-1), onmouseenter: say('Any'), onmouseleave: say(null), onfocus: say('Any'), onblur: say(null) }, 'Any');
-      const grid = h('div', { class: 'catalog molds' + (n === 7 ? ' n7' : '') }, tiles);
-      const body = h('div', { class: 'mold-pick' },
-        h('div', { class: 'mold-top' }, any, seen ? h('span', { class: 'mold-count' }, 'Pressed ' + Factory.seenCount(f, n) + ' / ' + list.length) : null),
-        grid, cap);
-      modal = UI.openModal({ title: Factory.NAMES[n] + ' mold', width: 380, body });
-      // The shapes fill their tiles, and the grid shows six whole rows at most (it scrolls a row at a time). The rows
-      // are measured once laid out, and again once the cap brings in a scrollbar (which narrows the tiles), so the
-      // sixth row always ends exactly at the grid's bottom edge.
-      // (Layout sizes, not getBoundingClientRect: the modal opens with a scale, which that would include.)
-      const tileSize = () => parseFloat(getComputedStyle(tiles[0]).height) || tiles[0].offsetHeight;
-      const size = Math.max(18, Math.floor(tileSize() - 6));
-      tiles.forEach((t, s) => t.appendChild(L.FactoryArt.shapeCanvas(look, list[s], size, look.colors[1 + (s % 7)], !seen || seen[s] === '1')));
-      const fit = () => {
-        if (!grid.isConnected || tiles.length <= 6) return;
-        const ts = tileSize(), gs = getComputedStyle(grid), gap = parseFloat(gs.rowGap) || 0;
-        const tops = new Set(tiles.map((t) => Math.round(t.offsetTop)));
-        if (tops.size <= 6) { grid.style.maxHeight = ''; return; }
-        const pad = (parseFloat(gs.paddingTop) || 0) + (parseFloat(gs.paddingBottom) || 0);
-        grid.style.maxHeight = Math.ceil(6 * ts + 5 * gap + pad) + 'px';
-      };
-      fit(); fit();
-      requestAnimationFrame(() => { fit(); if (m.pin >= 0) tiles[m.pin].scrollIntoView({ block: 'nearest' }); });
-      if (m.pin >= 0) tiles[m.pin].scrollIntoView({ block: 'nearest' });
-    }
-
     /** C collects, on the Factory tab (app.js skips it while a dialog or a text field has the keys). */
     key(e) {
       if (e.code !== 'KeyC' || e.metaKey || e.ctrlKey || e.altKey || e.repeat) return false;
@@ -2939,329 +2811,119 @@
       return true;
     }
 
-    // ---- collected lines, on their way to the wallet ----------------------------------------------------------------
-
-    /** One label, "+11 ⦵", rises over the crate, holds, then flies into the wallet, which counts it on arrival. */
-    flyLines(n, reduced) {
-      const app = document.getElementById('app'), icon = document.getElementById('wallet-icon'), plate = this.view.plate;
-      const wr = icon && icon.getBoundingClientRect();
-      const again = !!this.fly;
-      if (this.fly && this.fly.anim) this.fly.anim.cancel();
-      if (!this.fly) { this.fly = { el: h('div', { class: 'fac-fly', 'aria-hidden': 'true' }), n: 0, anim: null, events: [], ach: false, key: '' }; app.appendChild(this.fly.el); }
-      const fly = this.fly;
-      fly.n += n;
-      fly.key = this.view.layoutKey(this.f);
-      fly.el.textContent = '+' + fmtInt(fly.n) + ' ' + LINE;
-      const a = app.getBoundingClientRect(), p = plate.getBoundingClientRect(), crate = this.view.rect('crate', 0, this.f);
-      const w = fly.el.offsetWidth, hgt = fly.el.offsetHeight;
-      let x = p.left + 1 + crate.x + crate.w / 2 - w / 2 - a.left;
-      x = Math.max(p.left - a.left + 8, Math.min(p.right - a.left - w - 8, x));
-      const y = Math.max(p.top - a.top + 6, p.top + 1 + crate.y + 0.5 * this.view.cs - hgt - 10 - a.top);
-      const at = (dx, dy, s) => 'translate(' + Math.round(dx) + 'px,' + Math.round(dy) + 'px) scale(' + s + ')';
-      const hidden = !wr || !wr.width || L.Collapse.on || document.hidden;
-      const done = () => { if (this.fly === fly) this.landFly(); };
-      if (reduced || hidden) {
-        // In place: the label fades in and out over the crate; the wallet (and any achievement) counts at once.
-        this.fly = null;
-        this.app.refreshWallet(true);
-        this.landAchievements(fly);
-        fly.anim = fly.el.animate([{ opacity: 0, transform: at(x, y, 1) }, { opacity: 1, offset: 0.3 }, { opacity: 1, offset: 0.6 }, { opacity: 0, transform: at(x, y, 1) }], { duration: 800, fill: 'both' });
-        fly.anim.onfinish = () => fly.el.remove();
-        return;
-      }
-      const tx = wr.left + wr.width / 2 - a.left - w / 2, ty = wr.top + wr.height / 2 - a.top - hgt / 2;
-      const frames = again
-        ? [{ opacity: 1, transform: at(x, y, 1), offset: 0 }, { opacity: 1, transform: at(x, y, 1), offset: 550 / 1150, easing: 'cubic-bezier(.5,0,.3,1)' }]
-        : [{ opacity: 0, transform: at(x, y + 8, 1), offset: 0, easing: 'ease-out' }, { opacity: 1, transform: at(x, y, 1), offset: 300 / 1150 }, { opacity: 1, transform: at(x, y, 1), offset: 550 / 1150, easing: 'cubic-bezier(.5,0,.3,1)' }];
-      frames.push({ opacity: 0.3, transform: at(tx, ty, 0.6), offset: 1 });
-      fly.anim = fly.el.animate(frames, { duration: 1150, delay: again ? 0 : 150, fill: 'both' });
-      fly.anim.onfinish = done;
-    }
-
-    /** The label lands at once (a tab change, a purchase, a collapsed window, a resize that moves the wallet). */
-    flushFly() {
-      if (this.fly) this.landFly();
-    }
-
-    /** The label is in: gone, the wallet counts it, and the achievements the collect earned are paid after it. */
-    landFly() {
-      const fly = this.fly;
-      this.fly = null;
-      if (fly.anim) { fly.anim.onfinish = null; fly.anim.cancel(); }
-      fly.el.remove();
-      this.app.refreshWallet(true);
-      this.landAchievements(fly);
-    }
-
-    landAchievements(fly) {
-      for (const ev of fly.events) this.app.achieve(ev);
-      if (fly.ach || fly.events.length) this.app.achieve({ mode: 'factory' });
-    }
-
     // ---- the page -----------------------------------------------------------------------------------------------------
 
-    /** What building the next of a kind changes, in plain words: its title, a short one for a card, and the line under
-     *  it (lines an hour, where the rate would rise). */
+    /** What building the next of a kind does, in plain words: its title and the line under it. */
     describe(kind, u) {
-      const f = this.f, ph = Factory.perHour(f), gain = (to) => '+' + Factory.quarters((to - ph) * Factory.TUNE.PAY) + ' lines / hour';
-      if (kind === 'stamp') {
-        const to = Math.min(u.to, Factory.demand(f));
-        return { title: ORDINAL[f.stampers] + ' stamper', short: 'Stamper', icon: 'fac-stamp', meta: to > ph ? gain(to) : u.from + ' → ' + u.to + ' minos / hour' };
+      switch (kind) {
+        case 'dropper': return { title: 'Dropper', meta: u.from + ' → ' + u.to + ' droppers' };
+        case 'speed': return { title: 'Faster droppers', meta: u.from + ' s → ' + u.to + ' s a mino' };
+        case 'store': return { title: 'Bigger store', meta: u.from + ' → ' + u.to + ' minos' };
+        case 'assembler': return { title: u.from ? 'Assembler' : 'First assembler', meta: u.from ? u.from + ' → ' + u.to + ' assemblers' : 'Builds ' + PLURAL[Factory.SIZES[this.f.size]] };
+        case 'size': return { title: 'Bigger pieces', meta: cap(PLURAL[u.from]) + ' → ' + PLURAL[u.to] };
+        case 'beltSpeed': return { title: 'Faster conveyor', meta: u.from + ' s → ' + u.to + ' s a slot' };
+        default: return { title: 'Longer conveyor', meta: u.from + ' → ' + u.to + ' pieces' };
       }
-      if (kind === 'store') {
-        // A bigger store only matters while the presses use more than the stampers make: then it is how long it feeds
-        // them from full (to the nearest half hour) while the stampers fall behind (the store only drains then: it
-        // refills when the presses stop). The row keeps it short (a phone's row has room for little more); its tooltip
-        // says it whole.
-        const S = Factory.supply(f), D = Factory.demand(f), hrs = Math.max(0.5, Math.round((u.to / (D - S)) * 2) / 2);
-        const sizes = fmtInt(u.from) + ' → ' + fmtInt(u.to) + ' minos';
-        return D > S ? { title: 'Bigger store', short: 'Store', icon: 'fac-store', meta: 'Feeds the presses ' + hrs + ' h', tip: 'A full store keeps the presses going ' + hrs + ' h while the stampers fall behind\n' + sizes }
-          : { title: 'Bigger store', short: 'Store', icon: 'fac-store', meta: sizes, tip: 'Stampers keep up · ' + sizes };
-      }
-      if (kind === 'press') {
-        const to = Math.min(Factory.supply(f), u.to);
-        return { title: Factory.NAMES[u.n] + ' press', short: 'Press', icon: 'fac-press', meta: to > ph ? gain(to) : 'Uses ' + (u.to - u.from) + ' minos / hour' };
-      }
-      return { title: 'Bigger crate', short: 'Crate', icon: 'fac-crate', meta: u.from + ' → ' + u.to + ' lines' };
     }
 
-    /** Builds the bar, the hotspots and the list (on show, and after a purchase); update() keeps them fresh. */
+    /** Builds Collect, the hotspots and the cards (on show, and after a purchase); update() keeps them fresh. */
     build() {
-      const f = this.f, cards = this.form === 'cards';
-      // Keyboard focus survives the rebuild: the same part of the floor, the same entry (or the next thing).
-      const a = document.activeElement, upEl = a && a.closest ? a.closest('.fac-up') : null;
-      let keep = null;
-      if (a && this.el.contains(a)) {
-        if (a.classList.contains('fac-hot')) keep = '.fac-hot[data-id="' + a.dataset.id + '"]';
-        else if (upEl) keep = '.fac-up[data-up="' + upEl.dataset.up + '"]' + (cards ? '' : ' .btn');
-        else if (a === this.cBtn) keep = '#fac-collect .btn';
-      }
-      // The bar: three figures, and Collect.
-      const stat = (label, short) => { const b = h('b'), el = h('span', { class: 'fac-stat' }, h('i', { 'data-short': short }, label), b); return { el, b }; };
-      this.sRate = stat('Lines / hour', 'Per hour'); this.sCrate = stat('Lines in crate', 'In crate'); this.sFull = stat('Full in', 'Full in');
-      this.crateV = document.createTextNode(''); this.crateOf = h('span', { class: 'of' });
-      this.sCrate.b.append(this.crateV, this.crateOf);
-      this.crateQ = -1; this.crateCap = -1; this.fullTxt = null; this.rateTxt = null; this.rateTip = null;
-      this.top.replaceChildren(this.sRate.el, this.sCrate.el, this.sFull.el);
+      const f = this.f;
+      const a = document.activeElement, keepUp = a && a.closest && a.closest('.fac-up') ? a.closest('.fac-up').dataset.up : null, keepC = a === this.cBtn;
       const preview = (on) => () => { this.view.preview = on; };
-      // No tooltip: the label already says Collect, and a tip above it would sit over the rows its hover lights up
-      // (the crate's own tooltip gives the key).
       this.cBtn = h('button', { class: 'btn primary', 'aria-keyshortcuts': 'C', onclick: () => this.collect(),
         onmouseenter: preview(true), onmouseleave: preview(false), onfocus: preview(true), onblur: preview(false) });
       this.cKey = null;
       this.collectEl.replaceChildren(this.cBtn);
-      // The things to build, in the chain's order (an entry goes once its kind is built out): a row each, with its Build
-      // button; or, in a short window, a card each, the card itself the button.
       const buy = (kind) => (e) => { if (e.currentTarget.getAttribute('aria-disabled') === 'true') { this.app.sound.play('blocked'); this.flashBuild(kind); return; } this.upgrade(kind); };
-      const entries = [];
+      const cards = [];
       this.buildEls = {};
-      for (const kind of FAC_KINDS) {
+      for (const kind of Factory.KINDS) {
         const u = Factory.nextUpgrade(f, kind);
         if (!u) continue;
         const d = this.describe(kind, u), price = fmtInt(u.cost) + ' ' + LINE;
-        if (cards) {
-          const words = 'Build ' + d.title + ', ' + (d.tip || d.meta).replace(/\n/g, ', ').replace(' → ', ' to ').replace(' / hour', ' an hour') + ', ' + fmtInt(u.cost) + ' lines';
-          const el = h('button', { class: 'fac-up', 'data-up': kind, 'aria-label': words, 'data-tip': words, onclick: buy(kind) },
-            facIcon(d.icon), h('span', { class: 'txt' }, h('span', { class: 't' }, d.short), h('span', { class: 'p' }, price)));
-          this.buildEls[kind] = el;
-          entries.push(el);
-        } else {
-          const btn = h('button', { class: 'btn sm', onclick: buy(kind) }, 'Build · ' + price);
-          this.buildEls[kind] = btn;
-          entries.push(h('div', { class: 'fac-up', 'data-up': kind }, facIcon(d.icon), h('div', { class: 'txt' }, h('div', { class: 't' }, d.title), h('div', Object.assign({ class: 'd' }, d.tip ? { 'data-tip': d.tip } : null), d.meta)), btn));
-        }
+        const words = 'Build ' + d.title.toLowerCase() + ': ' + d.meta.replace(' → ', ' to ') + ', ' + fmtInt(u.cost) + ' lines';
+        const el = h('button', { class: 'fac-up', 'data-up': kind, 'aria-label': words, onclick: buy(kind) },
+          facIcon(kind), h('span', { class: 'txt' }, h('span', { class: 't' }, d.title), h('span', { class: 'd' }, d.meta)), h('span', { class: 'p' }, price));
+        this.buildEls[kind] = el;
+        cards.push(el);
       }
-      this.list.classList.toggle('cards', cards);
-      this.list.replaceChildren(...(entries.length ? [h('div', { class: 'fac-group' }, entries)] : []));
-      this.list.classList.toggle('hidden', !entries.length);
-      if (this.visible && !this.inBuild) { this.inBuild = true; try { this.relayout(); } finally { this.inBuild = false; } }
+      this.list.replaceChildren(...cards);
+      this.list.classList.toggle('hidden', !cards.length);
       this.buildHots();
       this.update();
-      this.updateCrate();
-      if (keep) {
-        const to = this.el.querySelector(keep) || this.el.querySelector(cards ? '.fac-up' : '.fac-up .btn') || this.cBtn;
-        if (to && to.focus) to.focus({ preventScroll: true });
-      }
+      if (this.visible) this.relayout();
+      if (keepUp) { const to = this.list.querySelector('.fac-up[data-up="' + keepUp + '"]') || this.list.querySelector('.fac-up') || this.cBtn; to.focus({ preventScroll: true }); }
+      else if (keepC) this.cBtn.focus({ preventScroll: true });
     }
 
-    /** The floor's hotspots, in the chain's order: the four stamp heads (built, the next to build, or later), the store,
-     *  the four bays (a press, the next to build, or later), and the crate. */
+    /** The floor's hotspots: the store (it collects) and the sign (its name, for a screen reader). */
     buildHots() {
-      const f = this.f, els = [];
-      const hover = (kind, k) => (e) => { this.view.hover = { kind, k }; if (e.type === 'mouseenter') this.tipHot = e.currentTarget; };
-      const leave = (e) => { this.view.hover = null; if (this.tipHot === e.currentTarget) this.tipHot = null; };
-      const hot = (id, kind, k, attrs, onclick) => h('button', Object.assign({ class: 'fac-hot', 'data-id': id, 'data-hot': kind, 'data-k': k,
-        onmouseenter: hover(kind, k), onmouseleave: leave, onfocus: hover(kind, k), onblur: leave, onclick }, attrs));
-      for (let j = 0; j < 4; j++) {
-        const kind = j < f.stampers ? 'head' : 'headBay';
-        els.push(hot('head' + j, kind, j, { 'aria-disabled': j > f.stampers ? 'true' : null }, () => {
-          if (j < this.f.stampers) this.focusEntry('stamp');
-          else if (j === this.f.stampers) this.upgrade('stamp');
-          else this.app.sound.play('blocked');
-        }));
-      }
-      els.push(hot('store', 'store', 0, null, () => this.focusEntry('store')));
-      for (let k = 0; k < 4; k++) {
-        const kind = k < f.presses ? 'press' : 'bay';
-        els.push(hot('press' + k, kind, k, { 'aria-disabled': k > f.presses ? 'true' : null }, () => {
-          if (k < this.f.presses) this.openMold(k);
-          else if (k === this.f.presses) this.upgrade('press');
-          else this.app.sound.play('blocked');
-        }));
-      }
-      els.push(hot('crate', 'crate', 0, { 'aria-label': 'Collect', 'data-tip': 'Collect', 'data-tip-foot': 'C' }, () => this.collect()));
-      this.hotEls = els;
-      this.hots.replaceChildren(...els);
+      const preview = (on) => () => { this.view.preview = on; };
+      this.storeHot = h('button', { class: 'fac-hot', 'data-hot': 'store', 'aria-label': 'Store: collect', 'data-tip': 'Collect', 'data-tip-foot': 'C', onclick: () => this.collect(),
+        onmouseenter: preview(true), onmouseleave: preview(false), onfocus: preview(true), onblur: preview(false) });
+      this.signEl = h('div', { class: 'fac-sign', 'data-hot': 'sign', role: 'img', 'aria-label': SIGN_SAYS[this.view.signMood] || SIGN_SAYS.working });
+      this.signSaid = '';
+      this.hots.replaceChildren(this.storeHot, this.signEl);
       this.hotKey = '';
-      this.view.hover = null;
       this.placeHots();
-      this.refreshTips();
     }
 
-    /** Hotspots follow the scene whenever its layout changes (checked every frame; moved only then). Under a finger each
-     *  is at least 32 px square, never over its neighbours. */
     placeHots() {
       const key = this.view.layoutKey(this.f);
       if (key === this.hotKey) return;
       this.hotKey = key;
-      // A label on its way to the wallet was aimed before the window changed: it lands now instead.
-      if (this.fly && this.fly.key !== key) this.flushFly();
-      const coarse = !!(root.matchMedia && root.matchMedia('(hover: none) and (pointer: coarse)').matches), MIN = 32;
-      const rects = this.hotEls.map((b) => this.view.rect(b.dataset.hot, +b.dataset.k || 0, this.f));
-      if (coarse) {
-        const grow = (r) => {
-          if (r.w < MIN) { r.x -= (MIN - r.w) / 2; r.w = MIN; }
-          if (r.h < MIN) { r.y -= (MIN - r.h) / 2; r.h = MIN; }
-        };
-        rects.forEach(grow);
-        // Side by side (the heads, the bays): each keeps to its half of the space between it and the next.
-        for (const [a, b] of [[0, 1], [1, 2], [2, 3], [5, 6], [6, 7], [7, 8]]) {
-          const ra = rects[a], rb = rects[b];
-          if (ra.x + ra.w > rb.x) { const mid = (ra.x + ra.w + rb.x) / 2; ra.w = mid - ra.x; rb.w -= mid - rb.x; rb.x = mid; }
-        }
-        // One above the other: the heads over the store, and the store over the bays (split halfway between them).
-        const rs = rects[4];
-        for (let j = 0; j < 4; j++) { const ra = rects[j]; if (ra.y + ra.h > rs.y) ra.h = rs.y - ra.y; }
-        const bayTop = Math.min(...[5, 6, 7, 8].map((k) => rects[k].y));
-        if (rs.y + rs.h > bayTop) {
-          const mid = (rs.y + rs.h + bayTop) / 2;
-          rs.h = mid - rs.y;
-          for (const k of [5, 6, 7, 8]) { const rb = rects[k]; if (rb.y < mid) { rb.h -= mid - rb.y; rb.y = mid; } }
-        }
-        const w = this.view.w, hgt = this.view.h;
-        for (const r of rects) { if (r.x < 0) { r.w += r.x; r.x = 0; } if (r.y < 0) { r.h += r.y; r.y = 0; } r.w = Math.min(r.w, w - r.x); r.h = Math.min(r.h, hgt - r.y); }
-      }
-      this.hotEls.forEach((b, i) => {
-        // Edges rounded, not sizes, so neighbours that meet stay met and never overlap by a pixel.
-        const r = rects[i], x0 = Math.round(r.x), y0 = Math.round(r.y);
-        b.style.left = x0 + 'px'; b.style.top = y0 + 'px';
-        b.style.width = Math.round(r.x + r.w) - x0 + 'px'; b.style.height = Math.round(r.y + r.h) - y0 + 'px';
-      });
-    }
-
-    /** The hotspots' names and tooltips (once a second: a next mino counts down). */
-    refreshTips() {
-      const f = this.f, w = Factory.waits(f), msLeft = (ticks) => ticks * Factory.TICK_MS - f.acc + 999;
-      const set = (el, k, v) => { if (v == null) { if (k in el.dataset) delete el.dataset[k]; } else if (el.dataset[k] !== v) el.dataset[k] = v; };
-      const tipOf = (b, title, tip, label) => {
-        set(b, 'tipTitle', title); set(b, 'tipFoot', null);
-        if (b.dataset.tip !== tip) {
-          set(b, 'tip', tip);
-          // The app's tooltip copies its text when it opens: an open one over this part counts down with it.
-          const t = this.tipHot === b && document.querySelector('#app > .tip:not(.hidden) .tip-body');
-          if (t) t.textContent = tip;
-        }
-        if (b.getAttribute('aria-label') !== label) b.setAttribute('aria-label', label);
-      };
-      for (const b of this.hotEls) {
-        const kind = b.dataset.hot, k = +b.dataset.k;
-        if (kind === 'crate') continue;
-        if (kind === 'head') {
-          const s = f.stamps[k];
-          if (!s) continue;
-          const name = ORDINAL[k] + ' stamper';
-          const tip = s.held ? (w.storeFull || this.view.flags.storeWarm ? 'Waiting: store full' : 'Waiting for room on the belt') : 'Next mino in ' + fmtClock(msLeft(Factory.STAMP_TT - s.t));
-          tipOf(b, name, tip, name + ', ' + tip.charAt(0).toLowerCase() + tip.slice(1));
-        } else if (kind === 'headBay') {
-          const name = ORDINAL[k] + ' stamper', cost = fmtInt(Factory.STAMP_COST[k]) + ' ' + LINE;
-          if (k === f.stampers) tipOf(b, name, 'Build · ' + cost, 'Build ' + name);
-          else tipOf(b, name, cost, name);
-        } else if (kind === 'store') {
-          const cap = Factory.storeCap(f), tip = fmtInt(f.store) + ' of ' + fmtInt(cap) + ' minos' + (f.store === 0 ? '\nEmpty' : f.store >= cap ? '\nFull' : '');
-          tipOf(b, 'Store', tip, 'Store, ' + fmtInt(f.store) + ' of ' + fmtInt(cap) + ' minos');
-        } else if (kind === 'press') {
-          const m = f.molds[k];
-          if (!m) continue;
-          const n = Factory.MOLDS[k], name = Factory.NAMES[n] + ' press', mold = m.pin < 0 ? 'Any' : Factory.shapeName(n, m.pin);
-          const next = m.got < n ? Factory.B(n, m.got) : Factory.CYCLE_T;
-          // Two plain lines (the tooltip's foot is for keys): the mold, and the next mino's countdown or what it waits for.
-          const tip = 'Mold: ' + mold + '\n' + (m.held ? 'Waiting' : w.starving.indexOf(k) >= 0 ? 'Waiting for minos' : 'Next mino in ' + fmtClock(msLeft(next - m.t)));
-          tipOf(b, name, tip, name + ', mold ' + mold);
-        } else {
-          const name = Factory.NAMES[Factory.MOLDS[k]] + ' press', cost = fmtInt(Factory.PRESS_COST[k]) + ' ' + LINE;
-          if (k === f.presses) tipOf(b, name, 'Build · ' + cost, 'Build ' + name);
-          else tipOf(b, name, cost, name);
-        }
+      for (const el of [this.storeHot, this.signEl]) {
+        const r = this.view.rect(el.dataset.hot, this.f), x0 = Math.round(r.x), y0 = Math.round(r.y);
+        el.style.left = x0 + 'px'; el.style.top = y0 + 'px';
+        el.style.width = Math.round(r.x + r.w) - x0 + 'px'; el.style.height = Math.round(r.y + r.h) - y0 + 'px';
       }
     }
 
-    /** What the crate figure shows: the minos drawn in it, or a count on its way to a new value. */
-    displayed() {
-      const c = this.count;
-      if (!c) return this.view.landed(this.f) * Factory.TUNE.PAY;
-      const k = c.dur ? Math.min(1, (performance.now() - c.t0) / c.dur) : 1;
-      if (k >= 1) { this.count = null; return this.view.landed(this.f) * Factory.TUNE.PAY; }
-      return c.from + (c.to - c.from) * easeOut3(k);
+    /** The sign's name follows its mood. */
+    sayMood() {
+      const m = this.view.signMood;
+      if (m === this.signSaid || !this.signEl) return;
+      this.signSaid = m;
+      this.signEl.setAttribute('aria-label', SIGN_SAYS[m]);
+      this.signEl.dataset.mood = m;
     }
 
-    /** Lines in crate, every frame (only written when it changes, so it follows the minos as they land). */
-    updateCrate() {
-      // To the quarter line below (a mino is an eighth: one alone never shows as a quarter).
-      const q = Math.floor(this.displayed() * 4 + 1e-9), cap = Factory.crateLines(this.f.crateLevel);
-      if (q === this.crateQ && cap === this.crateCap) return;
-      this.crateQ = q; this.crateCap = cap;
-      this.crateV.nodeValue = Factory.quarters(q / 4);
-      this.crateOf.textContent = ' / ' + cap;
+    /** Fits the plate to the view: whatever the column leaves above Collect and the cards, within sensible bounds. */
+    relayout() {
+      const el = this.el;
+      if (!el.clientHeight || !el.clientWidth) { this.roomDirty = true; return; }
+      this.roomDirty = false;
+      const st = getComputedStyle(el), inner = el.clientHeight - parseFloat(st.paddingTop) - parseFloat(st.paddingBottom);
+      const col = this.plate.parentElement, w = col.clientWidth;
+      const rest = this.collectEl.offsetHeight + (this.list.classList.contains('hidden') ? 0 : this.list.offsetHeight) + 2 * 10;
+      const hgt = Math.round(Math.max(240, Math.min(w * 1.6, 700, inner - rest)));
+      this.plate.style.height = hgt + 'px';
+      this.view.resize(this.plate.clientWidth, this.plate.clientHeight);
+      this.hotKey = '';
+      this.placeHots();
     }
 
     update() {
-      const f = this.f, st = Factory.status(f), wallet = this.store.state.lines;
-      const rate = Factory.quarters(st.perHour * Factory.TUNE.PAY);
-      if (rate !== this.rateTxt) { this.rateTxt = rate; this.sRate.b.textContent = rate; }
-      // The rate's tooltip: both ends of the chain, in minos, so a line short of minos says why.
-      const tip = 'Stampers make ' + st.supply + ' minos an hour\nPresses use ' + st.demand + ' minos an hour';
-      if (tip !== this.rateTip) { this.rateTip = tip; this.sRate.el.dataset.tip = tip; }
-      const full = st.full, fullTxt = full ? 'Now' : soon(st.toFull);
-      if (fullTxt !== this.fullTxt) { this.fullTxt = fullTxt; this.sFull.b.textContent = fullTxt; }
-      this.sFull.el.classList.toggle('warn', full);
-      this.sCrate.el.classList.toggle('warn', full);
-      // Collect: what it pays now (every whole line, those still on their way too: it lands them first), or when the
-      // first line will be ready.
-      const lines = st.lines;
-      let key;
-      if (lines) key = 'c' + lines;
-      else {
-        if (performance.now() - this.etaAt > 2000) { this.etaAt = performance.now(); this.etaV = Factory.eta(f, Factory.MPL, 4 * 3600); }
-        key = 'n' + (isFinite(this.etaV) ? soon(this.etaV) : '');
-      }
+      const f = this.f, wallet = this.store.state.lines, lines = Math.floor(f.store / Factory.MPL);
+      const key = lines + '|' + (f.store >= Factory.storeCap(f));
       if (key !== this.cKey) {
         this.cKey = key;
         this.cBtn.disabled = !lines;
-        this.cBtn.textContent = lines ? 'Collect ' + fmtInt(lines) + ' ' + LINE : isFinite(this.etaV) ? 'Collect in ' + soon(this.etaV) : 'Collect';
+        this.cBtn.textContent = lines ? 'Collect ' + fmtInt(lines) + ' ' + LINE : 'Collect';
+        this.cBtn.classList.toggle('full', f.store >= Factory.storeCap(f));
       }
-      this.cBtn.classList.toggle('full', full && lines > 0);
-      if (this.cBtn.disabled && this.view.preview) this.view.preview = this.cBtn.matches(':hover, :focus-visible');
-      // Build: lit when it can be afforded, otherwise a quiet "not yet".
-      for (const kind of FAC_KINDS) {
+      for (const kind of Factory.KINDS) {
         const b = this.buildEls[kind], u = b && Factory.nextUpgrade(f, kind);
         if (!u) continue;
         const ok = wallet >= u.cost;
         b.classList.toggle('go', ok);
         if (ok) b.removeAttribute('aria-disabled'); else b.setAttribute('aria-disabled', 'true');
       }
-      this.app.setBadge('factory', Factory.isFull(f));
+      this.app.setBadge('factory', f.store >= Factory.storeCap(f));
     }
   }
+  const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
   L.Modes = { BoardMode, playLockSound, PlayMode, PuzzleMode, FactoryMode, AIM_STICK, CLICK_GRACE_MS, SET_GRACE_MS };
   void CELL;

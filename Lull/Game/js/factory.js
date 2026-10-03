@@ -1,74 +1,64 @@
-// Lull — the Factory: a slow production chain. Stamp heads stamp single minos onto a top belt, which carries them into
-// a store of raw minos; up to four presses draw minos from the store, one at a time, and assemble a polyomino each
-// (a tetromino, a pentomino, a hexomino, a heptomino); a belt carries every piece to a lift, which carries it up the
-// shipping corridor into a crate, and every eight minos in the crate are one line — an eighth of a line per mino,
-// nothing more. Every stage waits, and nothing is lost, when the next one is full or the one before is empty. The
-// model runs in whole ticks (a quarter second each) on an integer clock, so the line on screen and the line replayed
-// for time away are the same line, whatever slices the time comes in.
+// Lull — the Factory: two stages and a conveyor. Droppers (one to three) each drop a single mino every few seconds into
+// the store; Collect cashes the store's minos in by hand, twenty to a line, and a full store pauses the droppers.
+// Assemblers (bought, one to three) take minos from the store one at a time and build a piece (a domino, up to a
+// pentomino as they are upgraded), which drops onto the conveyor's entry; the conveyor, a serpentine of up to three
+// runs, carries it to the drop-off, which pays it straight into the wallet, more than its minos would fetch by hand.
+// While nobody is around (Lull hidden, in the background, or left untouched) the drop-off is closed: pieces wait at the
+// end of the belt and back up along it, then the assemblers and the store fill, and the line rests until you return
+// and the drop-off pays the backlog. The model runs in whole ticks (a quarter second each) on an integer clock, so the
+// line on screen and the line replayed for time away are the same line, whatever slices the time comes in.
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
   const { Pieces, RNG } = L;
 
-  const VERSION = 7;
+  const VERSION = 8;
   const deep = (o) => { for (const k of Object.keys(o)) if (o[k] && typeof o[k] === 'object') deep(o[k]); return Object.freeze(o); };
 
-  /**
-   * Every number of the factory, in one place. The first group is bound to the scene (js/factoryview.js draws belts,
-   * stores and crates of exactly these sizes): a rebalance may lower STORE_ROWS (never above 12) but leave the rest.
-   * The second group is the economy, free to retune.
-   */
+  /** Every number of the factory, in one place. Prices are lines; times are seconds. */
   const TUNE = deep({
-    // ---- geometry-bound
-    TICK: 0.25,                             // seconds a tick; the clock itself is integer milliseconds (f.acc)
-    MOLDS: [4, 5, 6, 7],                    // press k assembles (4 + k)-ominoes
-    BELT: { len: 28, speed: 0.5, gap: 1 },  // the assembly belt (cells, cells a second): 0.125 a tick
-    TOP: { len: 26, speed: 0.5, gap: 1 },   // the top belt, carrying raw minos (one cell wide)
-    STAMP_X: [2, 8, 15, 23],                // where each stamp head sets its mino on the top belt (over the bays)
-    STORE_COLS: 27,
-    STORE_ROWS: [2, 4, 8],                  // the store's sizes: 54, 108, 216 minos
-    LIFT: { len: 10, speed: 0.125, gap: 1.5 },// the corridor lift, in model rows; a piece rides flat: its spacing is its flat width + gap.
-                                            // A slow ride (80 s), so the conveyor mostly carries something: its pace, not the line's
-    CRATE_COLS: [4, 6, 8, 10, 12],
-    CRATE_ROWS: [12, 16, 24, 32, 40],       // 48, 96, 192, 320, 480 minos: 6, 12, 24, 40, 60 lines
-    // ---- the economy
-    CYCLE: 600,                             // seconds a press takes to assemble one piece, whatever its size
-    STAMP_T: 100,                           // seconds a stamp head takes per mino (36 an hour)
-    // Prices rise in the order a player builds (press, stamper, press, stamper …: each the cheapest thing that adds
-    // lines an hour), and each crate costs more per line it adds than the one before.
-    STAMP_COST: [0, 350, 450, 900],         // stamp heads 2–4 (the first comes built)
-    STORE_COST: [0, 150, 280],              // store sizes 2–3
-    PRESS_COST: [0, 300, 400, 800],         // presses 2–4
-    CRATE_COST: [30, 100, 250, 500],        // crate sizes 2–5
-    PAY: 0.125,                             // lines a mino shipped (Collect pays whole lines of eight)
-    START_STORE: 8,                         // raw minos a new factory's store holds
-    START_CRATE: 4,                         // minos a new factory's crate holds (its first line is ready at its first ship)
-    START_STAMP_T: 200,                     // ticks into its first mino, a new factory's stamp head
-    START_PRESS: { got: 3, t: 1800 },       // a new factory's first piece: minos fed, ticks along (three quarters)
-    MAX_AWAY: 30 * 86400,                   // seconds of time away replayed at most
-    RAW: 8,                                 // the palette slot raw minos are drawn in (the well's garbage grey)
+    TICK: 0.25,
+    // ---- stage 1: droppers and the store
+    DROPPERS: 3,
+    DROP_T: [12, 10, 8, 6.5],                 // seconds a mino, each dropper, by speed level
+    STORE_CAP: [20, 40, 60, 80],              // minos the store holds, by level
+    MPL: 20,                                  // loose minos a line (Collect)
+    // ---- stage 2: assemblers
+    ASSEMBLERS: 3,
+    SIZES: [2, 3, 4, 5],                      // the piece an assembler builds, by size level
+    FEED_T: 8,                               // seconds an assembler takes to set each mino
+    SET_T: 2,                                 // and to finish a piece once its last mino is in
+    // ---- the conveyor
+    BELT_T: [20, 13, 8, 5],                   // seconds a slot, by speed level
+    BELT_LEN: [8, 16, 24],                    // slots, by length level (the last run; half runs; three full runs)
+    RUN: 8,                                   // slots a full run
+    // ---- pay: points, forty to a line. A loose mino is 2 (a twentieth of a line); a piece is worth more than its minos.
+    PTS: 40,
+    LOOSE_PTS: 2,
+    PIECE_PTS: { 2: 5, 3: 9, 4: 14, 5: 20 }, // ×1.25, ×1.5, ×1.75, ×2 its loose minos
+    // ---- prices (each list: the next level's price)
+    COST: {
+      dropper: [8, 45],                       // the second and third dropper
+      speed: [30, 100, 200],                  // dropper speed levels 1–3
+      store: [10, 25, 40],                    // store sizes 2–4
+      assembler: [5, 25, 90],                 // the first, second and third assembler
+      size: [10, 60, 160],                    // trominoes, tetrominoes, pentominoes
+      beltSpeed: [30, 60, 100],                // conveyor speed levels 1–3
+      beltLen: [25, 60],                       // conveyor lengths 2–3
+    },
+    START_STORE: 6,                           // a new factory's store
+    START_DROP: 24,                           // ticks into its first mino, a new factory's dropper
+    RAW: 8,                                   // the palette slot loose minos are drawn in (the well's garbage grey)
   });
-  const { TICK, MOLDS, BELT, TOP, STAMP_X, STORE_COLS, STORE_ROWS, LIFT, CRATE_COLS, CRATE_ROWS, CYCLE, STAMP_T, STAMP_COST,
-    STORE_COST, PRESS_COST, CRATE_COST, PAY, START_STORE, START_CRATE, START_STAMP_T, START_PRESS, MAX_AWAY } = TUNE;
-  const MPL = Math.round(1 / PAY);                    // minos a line: 8
+  const { TICK, DROPPERS, DROP_T, STORE_CAP, MPL, ASSEMBLERS, SIZES, FEED_T, SET_T, BELT_T, BELT_LEN, PTS, PIECE_PTS, COST } = TUNE;
+  const TICK_MS = Math.round(TICK * 1000);
+  const T = (s) => Math.round(s / TICK);
+  const DROP_TT = DROP_T.map(T), FEED_TT = T(FEED_T), SET_TT = T(SET_T), BELT_TT = BELT_T.map(T);
+  const NAMES = { 2: 'Domino', 3: 'Tromino', 4: 'Tetromino', 5: 'Pentomino' };
+  /** The upgrades, in the order the list shows them. */
+  const KINDS = ['dropper', 'speed', 'store', 'assembler', 'size', 'beltSpeed', 'beltLen'];
 
-  const TICK_MS = Math.round(TICK * 1000);            // 250
-  const CYCLE_T = Math.round(CYCLE / TICK);           // 2400 ticks a piece
-  const STAMP_TT = Math.round(STAMP_T / TICK);        // 400 ticks a raw mino
-  const BELT_STEP = BELT.speed * TICK, TOP_STEP = TOP.speed * TICK, LIFT_STEP = LIFT.speed * TICK; // 0.125, 0.125, 0.03125: exact
-  // Each press has a bay sized to its pieces (a mold one cell wider than its longest shape): where the bays start on
-  // the belt, and how wide each is. A piece drops straight down from its mold, whole cells in from the bay's edge.
-  const BAY_X = [0, 5.5, 12, 19.5];
-  const BAYS = [5.5, 6.5, 7.5, 8.5];
-  const dropX = (k, w) => BAY_X[k] + 0.25 + Math.floor((MOLDS[k] + 1 - w) / 2);
-  const NAMES = { 4: 'Tetromino', 5: 'Pentomino', 6: 'Hexomino', 7: 'Heptomino' };
-
-  /** The tick at which mino i of an n-mino piece is fed (and mino i - 1 is set): the minos spread evenly over a cycle. */
-  const BT = {};
-  for (const n of MOLDS) { BT[n] = []; for (let i = 0; i <= n; i++) BT[n].push(Math.floor((CYCLE_T * i) / n)); }
-  const B = (n, i) => BT[n][i];
-
-  // ---- shapes ---------------------------------------------------------------------------------------------------
+  // ---- shapes -------------------------------------------------------------------------------------------------------
 
   /** A shape lying flat: turned so it is at least as wide as tall, then normalised. */
   function flat(cells) {
@@ -76,501 +66,320 @@
     if (b.h > b.w) cells = cells.map(([x, y]) => [y, -x]);
     return Pieces.normalize(cells);
   }
-
   const shapeCache = {};
-  /** Every free n-omino, lying flat, in a fixed order (5, 12, 35, 108 for n = 4…7). Each carries its w and h. */
+  /** Every free n-omino, lying flat, in a fixed order (1, 2, 5, 12 for n = 2…5); each carries its w and h. */
   function shapes(n) {
     if (!shapeCache[n]) shapeCache[n] = Pieces.freePolyominoes(n).map(flat).map((c) => { const b = Pieces.boundsOf(c); c.w = b.w; c.h = b.h; return c; });
     return shapeCache[n];
   }
 
-  /** Whether a shape encloses an empty cell: flood the outside of its box (plus a margin) and see what is left. */
-  function hasHole(cells) {
-    const b = Pieces.boundsOf(cells), W = b.w + 2, H = b.h + 2;
-    const solid = new Set(cells.map(([x, y]) => (x - b.minX + 1) + ',' + (y - b.minY + 1)));
-    const seen = new Set(['0,0']), stack = [[0, 0]];
-    while (stack.length) {
-      const [x, y] = stack.pop();
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const nx = x + dx, ny = y + dy, k = nx + ',' + ny;
-        if (nx < 0 || ny < 0 || nx >= W || ny >= H || seen.has(k) || solid.has(k)) continue;
-        seen.add(k); stack.push([nx, ny]);
-      }
-    }
-    return seen.size + solid.size < W * H;
-  }
-  const HOLE = shapes(7).findIndex(hasHole);
-
-  // Conventional names for the tetrominoes and pentominoes; the bigger ones go by number.
-  const LETTERS = {};
-  for (const id of ['I', 'O', 'T', 'S', 'L']) LETTERS[Pieces.freeKey(Pieces.TYPES[id].rots[0])] = id + '-tetromino';
-  for (const id of Pieces.PENTOMINOES) LETTERS[Pieces.freeKey(Pieces.TYPES[id].rots[0])] = id.replace(/\d/, '') + '-pentomino';
-  function shapeName(n, s) {
-    const c = shapes(n)[s];
-    if (!c) return NAMES[n] || '';
-    return LETTERS[Pieces.freeKey(c)] || NAMES[n] + ' #' + (s + 1);
-  }
-  /** A piece's flat width: its length on the belt, and the room (with the gap) it takes on the lift. */
-  const widthOf = (it) => shapes(it.n)[it.s].w;
-
-  // ---- the factory ------------------------------------------------------------------------------------------------
+  // ---- the factory --------------------------------------------------------------------------------------------------
 
   function freshStats() {
     return {
-      minos: 0, made: 0, fed: 0, pieces: 0, byPress: [0, 0, 0, 0], lines: 0, collects: 0, best: 0,
-      days: 0, lastDay: '', away: 0, fullMs: 0, starveMs: 0, spent: 0, holeFree: false,
-      seen: { 5: '0'.repeat(12), 6: '0'.repeat(35), 7: '0'.repeat(108) },
+      made: 0, collected: 0, collects: 0, best: 0, days: 0, lastDay: '',
+      built: 0, delivered: 0, bySize: [0, 0, 0, 0], paid: 0, spent: 0, smoothMs: 0, backlog: 0,
     };
   }
 
-  /** The next piece a press assembles: its pinned mold, or any shape (seeded by the factory and a serial number). */
-  function startPiece(f, k, m) {
-    const n = MOLDS[k];
+  /** The next piece an assembler builds: its size, and a shape and colour seeded by the factory and a serial. */
+  function startPiece(f, a) {
+    const n = SIZES[f.size];
     f.serial++;
-    m.s = m.pin >= 0 ? m.pin : new RNG(f.seed + ':' + f.serial).int(shapes(n).length);
-    m.c = 1 + (m.s % 7); // one colour per shape, so the crate's strata mean something
-    m.u = m.pin < 0 ? 1 : 0; // chosen freely (not pinned): read when the shape is chosen, not when it drops
-    m.got = 0; m.t = 0; m.held = false;
-    return m;
+    a.n = n;
+    a.s = new RNG(f.seed + ':' + f.serial).int(shapes(n).length);
+    a.c = 1 + ((f.serial * 3) % 7);
+    a.got = 0; a.t = 0; a.held = false;
+    return a;
   }
 
   function create() {
     const f = {
       v: VERSION, seed: (Math.random() * 4294967296) >>> 0, serial: 0, acc: 0, lastTick: Date.now(),
-      stampers: 1, storeLevel: 0, presses: 1, crateLevel: 0,
-      stamps: [{ t: START_STAMP_T, held: false }], top: [], store: START_STORE, q: [],
-      molds: [], belt: [], lift: [], crate: '', stats: freshStats(),
+      droppers: 1, speed: 0, storeLevel: 0, size: 0, beltSpeed: 0, beltLen: 0,
+      drops: [{ t: TUNE.START_DROP, held: false }], store: TUNE.START_STORE, asm: [], belt: [], bt: 0, moved: false, bank: 0,
+      stats: freshStats(),
     };
-    const m = startPiece(f, 0, { pin: -1 });
-    m.got = START_PRESS.got; m.t = START_PRESS.t;
-    f.molds.push(m);
-    // A few minos already in the crate (in the first piece's colour), so the first line is ready when the first piece
-    // ships, a few minutes in.
-    f.crate = m.c.toString(16).repeat(START_CRATE);
-    // The minos a new factory comes with count as stamped (those in its first mold as fed, those in its crate as fed
-    // and shipped), so every mino made is always somewhere along the chain, or collected.
-    f.stats.made = START_STORE + START_PRESS.got + START_CRATE; f.stats.fed = START_PRESS.got + START_CRATE;
-    f.stats.minos = START_CRATE;
+    f.stats.made = TUNE.START_STORE;
     return f;
   }
 
-  const storeCapAt = (l) => STORE_COLS * STORE_ROWS[l];
-  const storeCap = (f) => storeCapAt(f.storeLevel);
-  /** A crate size's capacity, in minos (columns by rows), and in lines. */
-  const crateMinos = (l) => CRATE_COLS[l] * CRATE_ROWS[l];
-  const crateLines = (l) => crateMinos(l) * PAY;
-  const capacity = (f) => crateMinos(f.crateLevel);
-  /** Raw minos an hour the stamp heads make, and the presses use (every press uses its size a cycle). */
-  const supply = (f) => f.stampers * (3600 / STAMP_T);
-  function demand(f) { let m = 0; for (let k = 0; k < f.presses; k++) m += (3600 / CYCLE) * MOLDS[k]; return m; }
-  /** Minos an hour shipped, running freely: the slower of the two ends. */
-  const perHour = (f) => Math.min(supply(f), demand(f));
+  const storeCap = (f) => STORE_CAP[f.storeLevel];
+  const beltLen = (f) => BELT_LEN[f.beltLen];
+  const dropTicks = (f) => DROP_TT[f.speed];
+  const beltTicks = (f) => BELT_TT[f.beltSpeed];
+  const pieceLines = (n) => PIECE_PTS[n] / PTS;
 
-  /** The head of the lift waits at the station and does not fit in the crate. */
-  function isFull(f) {
-    const h = f.lift[0];
-    return !!h && h.y >= LIFT.len && f.crate.length + h.n > capacity(f);
-  }
-  /** The top belt's head waits at the end of the belt, and the store is full. */
-  function storeWaits(f) {
-    const h = f.top[0];
-    return !!h && h.x + 1 >= TOP.len && f.store >= storeCap(f);
-  }
-
-  // ---- one tick ---------------------------------------------------------------------------------------------------
-
-  /** Tries to drop a press's finished piece onto the belt (below its mold, a cell clear either side). Returns whether
-   *  anything changed. */
-  function tryDrop(f, k, m, out) {
-    const n = MOLDS[k], c = shapes(n)[m.s], x0 = dropX(k, c.w), belt = f.belt;
-    for (let i = 0; i < belt.length; i++) {
-      const it = belt[i];
-      if (it.x < x0 + c.w + 1 && it.x + widthOf(it) > x0 - 1) {
-        if (m.held) return false;
-        m.held = true;
-        if (out) out.push({ kind: 'hold', k });
-        return true;
-      }
-    }
-    const item = { n, s: m.s, c: m.c, x: x0, px: x0, u: m.u ? 1 : 0 };
-    let i = 0;
-    while (i < belt.length && belt[i].x > x0) i++;
-    belt.splice(i, 0, item);
-    if (out) out.push({ kind: 'drop', k, item, x: x0 });
-    startPiece(f, k, m);
-    return true;
-  }
+  // ---- one tick -----------------------------------------------------------------------------------------------------
 
   /**
-   * One tick, downstream first (so a place freed early in a tick is taken later in the same one): the lift, the belt,
-   * the presses, the top belt, the stamp heads. Events go to `out` when given; `away` marks minos shipped in catch-up.
-   * Returns whether anything changed (the time-kept statistics aside): a tick that changes nothing is a fixed point.
+   * One tick, downstream first: the conveyor (a step every BELT_T: the head pays at the end if the drop-off is open,
+   * then every piece moves up a slot where there is room), the assemblers, the droppers. `closed`: the drop-off is
+   * closed (nobody around). Events go to `out` when given. Returns whether anything changed but the conveyor's clock: a
+   * tick that changes nothing is a fixed point (everything waits).
    */
-  function tick(f, out, away) {
-    const st = f.stats, lift = f.lift, belt = f.belt, top = f.top, q = f.q, cap = capacity(f);
-    const wasFull = out ? isFull(f) : false, wasStore = out ? storeWaits(f) : false;
+  function tick(f, out, closed) {
+    const st = f.stats, belt = f.belt, len = beltLen(f);
     let ch = false;
-    // 1. The lift: head first, each piece a gap under the one above, never backwards. The head ships at the top.
-    let limit = LIFT.len;
-    for (let i = 0; i < lift.length; i++) {
-      const it = lift[i];
-      it.py = it.y;
-      const to = Math.min(it.y + LIFT_STEP, limit);
-      if (to > it.y) { it.y = to; ch = true; }
-      if (i + 1 < lift.length) limit = it.y - widthOf(lift[i + 1]) - LIFT.gap;
-    }
-    const lh = lift[0];
-    if (lh && lh.y >= LIFT.len && f.crate.length + lh.n <= cap) {
-      lift.shift();
-      f.crate += lh.c.toString(16).repeat(lh.n);
-      st.minos += lh.n; st.pieces++; st.byPress[lh.n - 4]++;
-      if (st.seen[lh.n]) st.seen[lh.n] = st.seen[lh.n].slice(0, lh.s) + '1' + st.seen[lh.n].slice(lh.s + 1);
-      if (lh.n === 7 && lh.s === HOLE && lh.u) st.holeFree = true;
-      if (away) st.away += lh.n;
-      ch = true;
-      if (out) out.push({ kind: 'ship', item: lh });
-    }
-    // 2. The belt: head first, a gap behind the piece ahead. The head slides onto the lift once there is room.
-    limit = BELT.len;
-    for (let i = 0; i < belt.length; i++) {
-      const it = belt[i];
-      it.px = it.x;
-      const to = Math.min(it.x + BELT_STEP, limit - widthOf(it));
-      if (to > it.x) { it.x = to; ch = true; }
-      limit = it.x - BELT.gap;
-    }
-    const bh = belt[0];
-    if (bh) {
-      const w = widthOf(bh), last = lift[lift.length - 1];
-      if (bh.x + w >= BELT.len && (!last || last.y >= w + LIFT.gap)) {
+    // 1. The conveyor.
+    if (++f.bt >= beltTicks(f)) {
+      f.bt = 0;
+      let moved = false;
+      const h = belt[0];
+      if (h && h.p >= len - 1 && !closed) {
         belt.shift();
-        const item = { n: bh.n, s: bh.s, c: bh.c, u: bh.u, y: 0, py: 0 };
-        lift.push(item);
+        const pts = PIECE_PTS[h.n];
+        f.bank += pts; st.paid += pts; st.delivered++; st.bySize[h.n - 2]++;
+        moved = true;
+        if (out) out.push({ kind: 'pay', item: h, pts });
+      }
+      let limit = len;
+      for (const it of belt) {
+        const to = Math.min(it.p + 1, limit - 1);
+        if (it.pp !== it.p) { it.pp = it.p; ch = true; }
+        if (to > it.p) { it.p = to; moved = true; }
+        limit = it.p;
+      }
+      if (moved || moved !== f.moved) ch = true;
+      f.moved = moved;
+    }
+    // 2. The assemblers: a mino every FEED_T from the store (waiting while it is empty), SET_T to finish, then the piece
+    // drops onto the conveyor's entry (waiting while a piece is there).
+    for (let k = 0; k < f.asm.length; k++) {
+      const a = f.asm[k];
+      if (a.got < a.n) {
+        if (a.t < FEED_TT) { a.t++; ch = true; }
+        if (a.t >= FEED_TT && f.store > 0) {
+          f.store--; a.got++; a.t = 0; ch = true;
+          if (out) out.push({ kind: 'feed', k });
+        }
+      } else if (a.t < SET_TT) { a.t++; ch = true; }
+      else if (!belt.length || belt[belt.length - 1].p > 0) {
+        const item = { n: a.n, s: a.s, c: a.c, p: 0, pp: 0 };
+        belt.push(item);
+        st.built++;
+        if (closed) st.backlog++;
         ch = true;
-        if (out) out.push({ kind: 'lift', item });
+        if (out) out.push({ kind: 'build', k, item });
+        startPiece(f, a);
+      } else if (!a.held) { a.held = true; ch = true; }
+    }
+    // 3. The droppers: a mino every DROP_T into the store, or paused while it is full.
+    const cap = storeCap(f), dt = dropTicks(f);
+    for (let j = 0; j < f.drops.length; j++) {
+      const d = f.drops[j];
+      if (d.t < dt) { d.t++; ch = true; }
+      if (d.t >= dt) {
+        if (f.store < cap) {
+          f.store++; d.t = 0; d.held = false; st.made++; ch = true;
+          if (out) { out.push({ kind: 'drop', j }); if (f.store === cap) out.push({ kind: 'full' }); }
+        } else if (!d.held) { d.held = true; ch = true; }
       }
     }
-    // 3. The presses. (a) One at the start of a mino joins the queue for one; (b) the store feeds the queue, first come
-    // first served; (c) the rest assemble: a mino is set at each boundary, and a finished piece drops (or waits).
-    const joined0 = q.length;
-    for (let k = 0; k < f.presses; k++) {
-      const m = f.molds[k], n = MOLDS[k];
-      if (!m.held && m.got < n && m.t === B(n, m.got) && q.indexOf(k) < 0) { q.push(k); ch = true; }
+    // The conveyor's clock only counts as waiting when its next step can change nothing: an empty belt, or one packed
+    // to a closed drop-off.
+    if (!ch && belt.length) {
+      let packed = true;
+      for (let i = 0; i < belt.length; i++) if (belt[i].p !== len - 1 - i) { packed = false; break; }
+      if (!packed || !closed) ch = true;
     }
-    const joined = out && q.length > joined0 ? q.slice(joined0) : null;
-    while (q.length && f.store > 0) {
-      const k = q.shift();
-      f.store--; f.molds[k].got++; st.fed++;
-      ch = true;
-      if (out) out.push({ kind: 'feed', k });
-    }
-    if (joined) for (let i = 0; i < joined.length; i++) if (q.indexOf(joined[i]) >= 0) out.push({ kind: 'starve', k: joined[i] });
-    for (let k = 0; k < f.presses; k++) {
-      const m = f.molds[k], n = MOLDS[k];
-      if (m.held) { if (tryDrop(f, k, m, out)) ch = true; continue; }
-      if (q.indexOf(k) >= 0) continue;
-      m.t++; ch = true;
-      if (m.t === (m.got < n ? B(n, m.got) : CYCLE_T)) {
-        if (out) out.push({ kind: 'mino', k });
-        if (m.got === n) tryDrop(f, k, m, out);
-      }
-    }
-    if (q.length && f.store === 0) st.starveMs += TICK_MS;
-    // 4. The top belt: head first, a cell between minos. The head rolls into the store while it has room.
-    limit = TOP.len;
-    for (let i = 0; i < top.length; i++) {
-      const it = top[i];
-      it.px = it.x;
-      const to = Math.min(it.x + TOP_STEP, limit - 1);
-      if (to > it.x) { it.x = to; ch = true; }
-      limit = it.x - TOP.gap;
-    }
-    const th = top[0];
-    if (th && th.x + 1 >= TOP.len && f.store < storeCap(f)) {
-      top.shift();
-      f.store++;
-      ch = true;
-      if (out) out.push({ kind: 'store' });
-    }
-    // 5. The stamp heads, in order: each sets a mino on the top belt every STAMP_T, with a cell clear either side of it,
-    // or holds it until there is room.
-    for (let j = 0; j < f.stampers; j++) {
-      const s = f.stamps[j];
-      if (!s.held) { s.t++; ch = true; }
-      if (s.t < STAMP_TT) continue;
-      const sx = STAMP_X[j];
-      let clear = true;
-      for (let i = 0; i < top.length; i++) if (top[i].x < sx + 2 && top[i].x + 1 > sx - 1) { clear = false; break; }
-      if (clear) {
-        const item = { x: sx, px: sx };
-        let i = 0;
-        while (i < top.length && top[i].x > sx) i++;
-        top.splice(i, 0, item);
-        s.t = 0; s.held = false; st.made++;
-        ch = true;
-        if (out) out.push({ kind: 'stamp', j, item });
-      } else if (!s.held) {
-        s.held = true; ch = true;
-        if (out) out.push({ kind: 'stampHold', j });
-      }
-    }
-    const full = isFull(f);
-    if (full) st.fullMs += TICK_MS;
-    if (out) {
-      if (full && !wasFull) out.push({ kind: 'full' });
-      if (!wasStore && storeWaits(f)) out.push({ kind: 'storeFull' });
-    }
+    if (!closed && ch && mood(f).mood === 'smooth') st.smoothMs += TICK_MS;
     return ch;
   }
 
-  // ---- running time -----------------------------------------------------------------------------------------------
+  // ---- running time -------------------------------------------------------------------------------------------------
 
   /**
-   * Adds ms (whole milliseconds) to the factory's clock and runs every whole tick it now holds. Once a tick changes
-   * nothing, the line is at a fixed point (it waits at a full crate, all the way back): the rest is only waiting, so
-   * its time is counted and the run stops there — exactly what running on would have given.
+   * Adds ms to the factory's clock and runs every whole tick it now holds. Once a tick changes nothing, the line waits
+   * all the way back: the rest is only waiting, so the run stops there, its conveyor clock moved on exactly as ticking
+   * would have moved it.
    */
-  function run(f, ms, out, away) {
+  function run(f, ms, out, closed) {
     ms = ms > 0 ? Math.round(ms) : 0;
     f.acc += ms;
     let n = Math.floor(f.acc / TICK_MS);
     f.acc -= n * TICK_MS;
     while (n > 0) {
       n--;
-      if (!tick(f, out, away)) {
-        if (n > 0) {
-          if (isFull(f)) f.stats.fullMs += n * TICK_MS;
-          if (f.q.length && f.store === 0) f.stats.starveMs += n * TICK_MS;
-        }
-        break;
-      }
+      if (!tick(f, out, closed)) { f.bt = (f.bt + n) % beltTicks(f); break; }
     }
     return out;
   }
 
-  /** Runs the line for dt seconds (on screen); returns what happened, for sounds and pictures. */
-  function step(f, dt) { return run(f, Math.round((dt > 0 ? dt : 0) * 1000), []); }
+  /** Runs the line for dt seconds (closed: nobody around); returns what happened, for sounds and pictures. */
+  function step(f, dt, closed) { return run(f, Math.round((dt > 0 ? dt : 0) * 1000), [], !!closed); }
 
-  /** Time away: replayed with the same ticks as on screen, up to MAX_AWAY. A clock set back starts over from now. */
+  /** Time away: replayed with the same ticks, the drop-off closed. A clock set back starts over from now. */
   function catchUp(f, now) {
     if (!(now >= f.lastTick)) { f.lastTick = now; return null; }
-    const ms = Math.min(MAX_AWAY * 1000, Math.round(now - f.lastTick));
+    const ms = Math.round(now - f.lastTick);
     f.lastTick = now;
     if (ms <= 0) return null;
-    const st = f.stats, m0 = st.minos, made0 = st.made;
+    const st = f.stats, made0 = st.made, built0 = st.built;
     run(f, ms, null, true);
-    return { seconds: ms / 1000, made: st.made - made0, minos: st.minos - m0, lines: Math.floor(f.crate.length / MPL), full: isFull(f) };
+    return { seconds: ms / 1000, made: st.made - made0, built: st.built - built0, waiting: f.belt.length, store: f.store };
   }
 
-  /** Seconds until the crate holds `minos`, found by running a copy of the line tick by tick (Infinity past maxS, or
-   *  at a fixed point). */
-  function eta(f, minos, maxS) {
-    if (f.crate.length >= minos) return 0;
-    const g = JSON.parse(JSON.stringify(f)), n = Math.round((maxS || 7200) / TICK);
-    for (let i = 1; i <= n; i++) {
-      if (!tick(g, null, false)) return Infinity;
-      if (g.crate.length >= minos) return i * TICK;
+  /** Whole lines the drop-off has paid, taken from its bank (the rest stays, in points). */
+  function takeLines(f) {
+    const n = Math.floor(f.bank / PTS);
+    if (n > 0) f.bank -= n * PTS;
+    return n;
+  }
+
+  // ---- how the line is doing ----------------------------------------------------------------------------------------
+
+  /**
+   * How busy the line is, for the sign on the floor: the share of its machines at work (a dropper not paused; an
+   * assembler neither short of minos nor waiting at the entry; the conveyor, while it carries anything, moving), whether something is full or backed up, and one of four moods: smooth (four fifths or more at work), full
+   * (something full holds the line up), idle (nothing at work) or working.
+   */
+  function mood(f) {
+    let on = 0, all = 0, held = 0, starved = 0;
+    const storeFull = f.store >= storeCap(f);
+    for (const d of f.drops) { all++; if (!d.held) on++; }
+    for (const a of f.asm) {
+      all++;
+      if (a.held) held++;
+      else if (a.got < a.n && a.t >= FEED_TT && f.store === 0) starved++;
+      else on++;
     }
-    return Infinity;
+    if (f.asm.length && f.belt.length) { all++; if (f.moved) on++; }
+    const busy = all ? on / all : 0;
+    const full = (storeFull && f.drops.some((d) => d.held)) || held > 0;
+    const m = busy >= 0.8 ? 'smooth' : full ? 'full' : on === 0 ? 'idle' : 'working';
+    return { mood: m, busy, full, storeFull, backed: held > 0, starved };
   }
 
-  /** Seconds until the crate is full, in closed form (0 while it is): what is left to fill arrives at the presses' rate
-   *  while the store and the top belt last, and at the stamp heads' rate after that. */
-  function timeToFull(f) {
-    if (isFull(f)) return 0;
-    let pipe = 0;
-    for (let k = 0; k < f.presses; k++) pipe += f.molds[k].got;
-    for (const it of f.belt) pipe += it.n;
-    for (const it of f.lift) pipe += it.n;
-    const R = capacity(f) - f.crate.length - pipe, S = supply(f), D = demand(f);
-    if (R <= 0) return 0;
-    if (!D) return Infinity;
-    const stock = f.store + f.top.length;
-    let hrs = R / D;
-    if (D > S) {
-      const t1 = stock / (D - S);
-      if (R > D * t1) hrs = S > 0 ? t1 + (R - D * t1) / S : Infinity;
-    }
-    return hrs * 3600;
+  /** What the line makes running freely: minos an hour from the droppers, pieces an hour (the slowest of assemblers,
+   *  minos and conveyor), the lines an hour those pay at the drop-off, and the loose minos left over, in lines. */
+  function rates(f) {
+    const make = f.drops.length * 3600 / DROP_T[f.speed];
+    const n = SIZES[f.size], per = n * FEED_T + SET_T;
+    const pieces = f.asm.length ? Math.min(f.asm.length * 3600 / per, make / n, 3600 / BELT_T[f.beltSpeed]) : 0;
+    return { make, pieces, auto: pieces * pieceLines(n), loose: (make - pieces * n) / MPL };
   }
 
-  /** Where the line waits, stage by stage (what the floor shows, and the tooltips say). */
-  function waits(f) {
-    return {
-      stamps: f.stamps.map((s) => !!s.held), storeFull: storeWaits(f), storeEmpty: f.store === 0 && f.q.length > 0,
-      starving: f.store === 0 ? f.q.slice() : [], pressHeld: f.molds.map((m) => !!m.held), crateFull: isFull(f),
-    };
-  }
+  // ---- collecting and building --------------------------------------------------------------------------------------
 
-  /** What the tiles show. `full` is the looser, on-screen sense: the head waits, or not even a tetromino fits. */
-  function status(f) {
-    const cap = capacity(f), len = f.crate.length, full = isFull(f);
-    return {
-      cap, len, lines: Math.floor(len / MPL), loose: len % MPL, waiting: full, full: full || len > cap - MOLDS[0], perHour: perHour(f), toFull: timeToFull(f),
-      store: f.store, storeCap: storeCap(f), supply: supply(f), demand: demand(f), waits: waits(f),
-    };
-  }
-
-  // ---- collecting and building ------------------------------------------------------------------------------------
-
-  /** Takes every whole line: the first minos in, eight to a line, whatever the crate's width (so a line is not a row,
-   *  and pay stays exactly an eighth of a line a mino). The last 0–7 minos stay behind, loose, at the start of the
-   *  bottom row. */
+  /** Cashes the store's loose minos in, twenty to a line; the 0–19 left over stay. */
   function collect(f, today) {
-    const n = Math.floor(f.crate.length / MPL);
+    const n = Math.floor(f.store / MPL);
     if (!n) return null;
-    const taken = f.crate.slice(0, n * MPL);
-    f.crate = f.crate.slice(n * MPL);
+    f.store -= n * MPL;
     const st = f.stats;
-    st.lines += n; st.collects++; st.best = Math.max(st.best, n);
+    st.collected += n; st.collects++; st.best = Math.max(st.best, n);
     const day = today || L.dateKey();
     if (day !== st.lastDay) { st.days++; st.lastDay = day; }
-    return { collected: n, loose: f.crate.length, taken };
+    return { collected: n, left: f.store };
   }
 
-  /** What the next of a kind costs and what it changes ({ cost, from, to }: minos an hour for a stamper and a press, the
-   *  press's size as n; minos for a store; lines for a crate), or null at the top. */
+  const LEVEL = { dropper: (f) => f.droppers - 1, speed: (f) => f.speed, store: (f) => f.storeLevel, assembler: (f) => f.asm.length, size: (f) => f.size, beltSpeed: (f) => f.beltSpeed, beltLen: (f) => f.beltLen };
+  /** A kind's level now, and its top. */
+  const levelOf = (f, kind) => LEVEL[kind](f);
+  const topOf = (kind) => COST[kind].length;
+
+  /** The next of a kind: { cost, from, to } in its own terms (droppers, seconds a mino, minos, assemblers, piece size,
+   *  seconds a slot, slots), or null at the top. */
   function nextUpgrade(f, kind) {
-    if (kind === 'stamp') return f.stampers < STAMP_X.length ? { cost: STAMP_COST[f.stampers], from: supply(f), to: supply(f) + 3600 / STAMP_T } : null;
-    if (kind === 'store') return f.storeLevel < STORE_ROWS.length - 1 ? { cost: STORE_COST[f.storeLevel + 1], from: storeCapAt(f.storeLevel), to: storeCapAt(f.storeLevel + 1) } : null;
-    if (kind === 'press') {
-      if (f.presses >= MOLDS.length) return null;
-      const n = MOLDS[f.presses], d = demand(f);
-      return { cost: PRESS_COST[f.presses], from: d, to: d + (3600 / CYCLE) * n, n };
+    if (!LEVEL[kind]) return null;
+    const l = levelOf(f, kind);
+    if (l >= topOf(kind)) return null;
+    const cost = COST[kind][l];
+    switch (kind) {
+      case 'dropper': return { cost, from: f.droppers, to: f.droppers + 1 };
+      case 'speed': return { cost, from: DROP_T[l], to: DROP_T[l + 1] };
+      case 'store': return { cost, from: STORE_CAP[l], to: STORE_CAP[l + 1] };
+      case 'assembler': return { cost, from: l, to: l + 1 };
+      case 'size': return { cost, from: SIZES[l], to: SIZES[l + 1] };
+      case 'beltSpeed': return { cost, from: BELT_T[l], to: BELT_T[l + 1] };
+      default: return { cost, from: BELT_LEN[l], to: BELT_LEN[l + 1] };
     }
-    if (kind === 'crate') return f.crateLevel < CRATE_ROWS.length - 1 ? { cost: CRATE_COST[f.crateLevel], from: crateLines(f.crateLevel), to: crateLines(f.crateLevel + 1) } : null;
-    return null;
   }
 
-  /** Builds the next of a kind (the caller has already taken the lines). */
+  /** Builds the next of a kind (the caller has already taken the lines). A longer conveyor keeps every piece the same
+   *  distance from the drop-off; a new size is built from each assembler's next piece. */
   function upgrade(f, kind) {
     const u = nextUpgrade(f, kind);
     if (!u) return false;
-    if (kind === 'stamp') { f.stamps.push({ t: 0, held: false }); f.stampers++; }
+    if (kind === 'dropper') { f.drops.push({ t: 0, held: false }); f.droppers++; }
+    else if (kind === 'speed') f.speed++;
     else if (kind === 'store') f.storeLevel++;
-    else if (kind === 'press') { f.molds.push(startPiece(f, f.presses, { pin: -1 })); f.presses++; }
-    else f.crateLevel++;
+    else if (kind === 'assembler') f.asm.push(startPiece(f, {}));
+    else if (kind === 'size') { f.size++; for (const a of f.asm) if (a.got === 0) startPiece(f, a); }
+    else if (kind === 'beltSpeed') { f.beltSpeed++; f.bt = Math.min(f.bt, beltTicks(f) - 1); }
+    else { const add = u.to - u.from; f.beltLen++; for (const it of f.belt) { it.p += add; it.pp += add; } }
+    for (const d of f.drops) if (d.t > dropTicks(f)) d.t = dropTicks(f);
     f.stats.spent += u.cost;
     return true;
   }
 
-  /** Pins a press's mold to one shape (or -1 for any). The piece in progress keeps its shape; pay never changes. */
-  function setPin(f, k, s) {
-    const m = f.molds[k];
-    if (!m || !(s === -1 || (Number.isInteger(s) && s >= 0 && s < shapes(MOLDS[k]).length))) return false;
-    m.pin = s;
-    return true;
-  }
+  const maxed = (f) => KINDS.every((k) => !nextUpgrade(f, k));
 
-  const seenCount = (f, n) => (f.stats.seen[n] || '').split('1').length - 1;
+  // ---- saves --------------------------------------------------------------------------------------------------------
 
-  /** Lines to the nearest quarter, as a decimal with no trailing zeros: 13.5 → "13.5", 0.75 → "0.75", 1200 → "1,200". */
-  function quarters(x) {
-    const q = Math.round(x * 4), w = Math.floor(q / 4), r = ['', '.25', '.5', '.75'][q % 4];
-    return String(w).replace(/\B(?=(\d{3})+(?!\d))/g, ',') + r;
-  }
+  const KEYS = ['v', 'seed', 'serial', 'acc', 'lastTick', 'droppers', 'speed', 'storeLevel', 'size', 'beltSpeed', 'beltLen', 'drops', 'store', 'asm', 'belt', 'bt', 'moved', 'bank', 'stats'];
 
-  // ---- saves ------------------------------------------------------------------------------------------------------
-
-  /** A saved factory put right: every count in range, every invariant of the chain held, every stat present. A save of
-   *  any other version starts a new factory (there are no migrations). */
+  /** A saved factory put right: every count in range, every invariant held, every stat present. A save of any other
+   *  version starts a new factory (there are no migrations). */
   function repair(f) {
     if (!f || typeof f !== 'object' || Array.isArray(f) || f.v !== VERSION) return create();
     const int = (v, lo, hi, dflt) => (Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v))) : dflt);
-    const on8 = (v) => Math.round(v * 8) / 8; // positions stay on the belts' eighth-cell grid
-    const onLift = (v) => Math.round(v / LIFT_STEP) * LIFT_STEP; // and on the lift's own (a tick's step)
-    const okShape = (it) => it && typeof it === 'object' && MOLDS.indexOf(it.n) >= 0 && Number.isInteger(it.s) && it.s >= 0 && it.s < shapes(it.n).length;
+    const okShape = (it) => it && typeof it === 'object' && SIZES.indexOf(it.n) >= 0 && Number.isInteger(it.s) && it.s >= 0 && it.s < shapes(it.n).length;
     f.seed = Number.isFinite(f.seed) ? f.seed >>> 0 : (Math.random() * 4294967296) >>> 0;
     f.serial = int(f.serial, 0, 1e12, 0);
     f.acc = int(f.acc, 0, TICK_MS - 1, 0);
-    f.stampers = int(f.stampers, 1, STAMP_X.length, 1);
-    f.storeLevel = int(f.storeLevel, 0, STORE_ROWS.length - 1, 0);
-    f.presses = int(f.presses, 1, MOLDS.length, 1);
-    f.crateLevel = int(f.crateLevel, 0, CRATE_ROWS.length - 1, 0);
-    const stamps = Array.isArray(f.stamps) ? f.stamps : [];
-    f.stamps = [];
-    for (let j = 0; j < f.stampers; j++) {
-      const s = stamps[j] && typeof stamps[j] === 'object' ? stamps[j] : {};
-      const t = int(s.t, 0, STAMP_TT, 0);
-      f.stamps.push({ t, held: t === STAMP_TT }); // a finished mino waits for room (and retries every tick)
-    }
-    // The top belt: on the belt, a cell apart.
-    const top = (Array.isArray(f.top) ? f.top : []).filter((it) => it && Number.isFinite(it.x)).sort((a, b) => b.x - a.x);
-    f.top = [];
-    let limit = TOP.len;
-    for (const it of top) {
-      const x = on8(Math.min(Math.max(0, it.x), limit - 1));
-      if (x < 0) continue;
-      f.top.push({ x, px: x });
-      limit = x - TOP.gap;
-    }
+    f.droppers = int(f.droppers, 1, DROPPERS, 1);
+    f.speed = int(f.speed, 0, DROP_T.length - 1, 0);
+    f.storeLevel = int(f.storeLevel, 0, STORE_CAP.length - 1, 0);
+    f.size = int(f.size, 0, SIZES.length - 1, 0);
+    f.beltSpeed = int(f.beltSpeed, 0, BELT_T.length - 1, 0);
+    f.beltLen = int(f.beltLen, 0, BELT_LEN.length - 1, 0);
     f.store = int(f.store, 0, storeCap(f), 0);
-    const molds = Array.isArray(f.molds) ? f.molds : [];
-    f.molds = [];
-    for (let k = 0; k < f.presses; k++) {
-      const n = MOLDS[k], m = molds[k] && typeof molds[k] === 'object' ? molds[k] : {};
-      if (!(Number.isInteger(m.pin) && m.pin >= 0 && m.pin < shapes(n).length)) m.pin = -1;
-      if (Number.isInteger(m.s) && m.s >= 0 && m.s < shapes(n).length) {
-        m.c = 1 + (m.s % 7);
-        m.got = int(m.got, 0, n, 0);
-        m.t = int(m.t, 0, m.got < n ? B(n, m.got) : CYCLE_T, 0);
-        // A finished piece waits to drop (and retries every tick); only a finished piece can wait.
-        m.held = m.got === n && m.t === CYCLE_T;
-        m.u = m.u === 1 ? 1 : 0; // only a shape the press chose freely counts as unpinned
-      } else startPiece(f, k, m);
-      f.molds.push({ pin: m.pin, s: m.s, c: m.c, u: m.u, got: m.got, t: m.t, held: m.held });
+    const drops = Array.isArray(f.drops) ? f.drops : [];
+    f.drops = [];
+    for (let j = 0; j < f.droppers; j++) {
+      const d = drops[j] && typeof drops[j] === 'object' ? drops[j] : {};
+      const t = int(d.t, 0, dropTicks(f), 0);
+      f.drops.push({ t, held: t === dropTicks(f) && f.store >= storeCap(f) });
     }
-    // The queue: each press once, and only one that waits for a mino.
-    const q = Array.isArray(f.q) ? f.q : [];
-    f.q = [];
-    for (const k of q) {
-      const m = Number.isInteger(k) && k >= 0 && k < f.presses ? f.molds[k] : null;
-      if (m && !m.held && m.got < MOLDS[k] && m.t === B(MOLDS[k], m.got) && f.q.indexOf(k) < 0) f.q.push(k);
-    }
-    const belt = (Array.isArray(f.belt) ? f.belt : []).filter((it) => okShape(it) && Number.isFinite(it.x)).sort((a, b) => b.x - a.x);
+    f.asm = (Array.isArray(f.asm) ? f.asm.slice(0, ASSEMBLERS) : []).map((a) => {
+      if (!okShape(a)) return startPiece(f, {});
+      const got = int(a.got, 0, a.n, 0), t = int(a.t, 0, got < a.n ? FEED_TT : SET_TT, 0);
+      return { n: a.n, s: a.s, c: int(a.c, 1, 7, 1), got, t, held: got === a.n && t === SET_TT && !!a.held };
+    });
+    f.bt = int(f.bt, 0, beltTicks(f) - 1, 0);
+    f.moved = !!f.moved;
+    const belt = (Array.isArray(f.belt) ? f.belt : []).filter((it) => okShape(it) && Number.isFinite(it.p)).sort((a, b) => b.p - a.p);
     f.belt = [];
-    limit = BELT.len;
+    let limit = beltLen(f);
     for (const it of belt) {
-      const x = on8(Math.min(Math.max(0, it.x), limit - widthOf(it)));
-      if (x < 0) continue; // no room left on the belt: that piece is gone
-      f.belt.push({ n: it.n, s: it.s, c: 1 + (it.s % 7), x, px: x, u: it.u ? 1 : 0 });
-      limit = x - BELT.gap;
+      const p = Math.min(Math.max(0, Math.round(it.p)), limit - 1);
+      if (p < 0 || p >= limit) break; // no room left: that piece is gone
+      const pp = Number.isFinite(it.pp) ? Math.max(0, Math.min(p, Math.round(it.pp))) : p;
+      f.belt.push({ n: it.n, s: it.s, c: int(it.c, 1, 7, 1), p, pp });
+      limit = p;
     }
-    // The lift: on it, each piece a gap under the one above (a piece with no room left is gone).
-    const lift = (Array.isArray(f.lift) ? f.lift : []).filter((it) => okShape(it) && Number.isFinite(it.y)).sort((a, b) => b.y - a.y);
-    f.lift = [];
-    limit = LIFT.len;
-    for (const it of lift) {
-      const y = onLift(Math.min(Math.max(0, it.y), limit));
-      if (y < 0) break;
-      f.lift.push({ n: it.n, s: it.s, c: 1 + (it.s % 7), u: it.u ? 1 : 0, y, py: y });
-      const next = lift[f.lift.length];
-      if (next) limit = y - widthOf(next) - LIFT.gap;
-    }
-    f.crate = (typeof f.crate === 'string' ? f.crate.toLowerCase().replace(/[^0-9a-f]/g, '') : '').slice(0, capacity(f));
-    const st = f.stats && typeof f.stats === 'object' ? f.stats : {};
+    // Only a piece waiting at a taken entry waits.
+    for (const a of f.asm) if (a.held && !(f.belt.length && f.belt[f.belt.length - 1].p === 0)) a.held = false;
+    f.bank = int(f.bank, 0, 1e12, 0);
+    const st = f.stats && typeof f.stats === 'object' && !Array.isArray(f.stats) ? f.stats : {};
     const fresh = freshStats();
     for (const k of Object.keys(fresh)) {
-      if (k === 'seen' || k === 'byPress') continue;
+      if (k === 'bySize') continue;
       if (typeof st[k] !== typeof fresh[k] || (typeof st[k] === 'number' && !(Number.isFinite(st[k]) && st[k] >= 0))) st[k] = fresh[k];
     }
-    st.byPress = [0, 1, 2, 3].map((i) => (Array.isArray(st.byPress) && Number.isFinite(st.byPress[i]) ? st.byPress[i] : 0));
-    const seen = st.seen && typeof st.seen === 'object' ? st.seen : {};
-    st.seen = {};
-    for (const n of [5, 6, 7]) {
-      const len = shapes(n).length, s = typeof seen[n] === 'string' ? seen[n].replace(/[^01]/g, '0') : '';
-      st.seen[n] = (s + '0'.repeat(len)).slice(0, len);
-    }
+    st.bySize = [0, 1, 2, 3].map((i) => (Array.isArray(st.bySize) && Number.isFinite(st.bySize[i]) && st.bySize[i] >= 0 ? st.bySize[i] : 0));
+    for (const k of Object.keys(st)) if (!(k in fresh)) delete st[k];
     f.stats = st;
     f.lastTick = Number.isFinite(f.lastTick) ? f.lastTick : Date.now();
-    f.v = VERSION;
+    for (const k of Object.keys(f)) if (!KEYS.includes(k)) delete f[k];
     return f;
   }
 
   L.Factory = Object.assign({
-    VERSION, TUNE, MPL, TICK_MS, CYCLE_T, STAMP_TT, B, BAY_X, BAYS, dropX, NAMES, HOLE,
-    create, repair, shapes, flat, hasHole, capacity, crateMinos, crateLines, storeCap, storeCapAt, supply, demand, perHour,
-    timeToFull, isFull, storeWaits, waits, status, collect, upgrade, nextUpgrade, setPin, tick, run, step, catchUp, eta,
-    shapeName, seenCount, quarters, widthOf,
+    VERSION, TUNE, TICK_MS, DROP_TT, FEED_TT, SET_TT, BELT_TT, NAMES, KINDS,
+    create, repair, shapes, flat, storeCap, beltLen, dropTicks, beltTicks, pieceLines, tick, run, step, catchUp, takeLines,
+    mood, rates, collect, nextUpgrade, upgrade, levelOf, topOf, maxed,
   }, TUNE);
 })(typeof globalThis !== 'undefined' ? globalThis : this);

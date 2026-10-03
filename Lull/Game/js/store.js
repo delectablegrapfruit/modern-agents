@@ -71,7 +71,7 @@
     aurora:   { name: 'Aurora', price: 850, colors: ['#000', '#56e0c6', '#c9ee78', '#9d7cf4', '#44c98f', '#e66fb2', '#5a96f0', '#f2b766', '#3c4660', '#c285f0', '#86e3b8', '#58c9e0', '#7d86f2', '#ef8fa0', '#8e9cc0', '#e9f6ff'] },
     ink:      { name: 'Ink', price: 1100, colors: ['#000', '#f2f2f0', '#c9c9c6', '#8e8e8b', '#adadaa', '#6f6f6c', '#dcdcd9', '#b9b9b6', '#4b4b4b', '#c2c2c2', '#a9a9a9', '#909090', '#777777', '#5f5f5f', '#b0b0b0', '#ffffff'] },
     handheld: { name: 'Handheld', price: 1400, colors: ['#000', '#9bbc0f', '#c4d66a', '#306230', '#8bac0f', '#4d7a2a', '#1e4a1e', '#b0c94a', '#0f380f', '#8bac0f', '#306230', '#9bbc0f', '#306230', '#8bac0f', '#0f380f', '#cadc9f'] },
-    assembly: { name: 'Assembly Line', price: 0, reward: 'Build a second press in the factory', colors: ['#000', '#f2c14e', '#f78154', '#4d9078', '#b4436c', '#5fad56', '#2e86ab', '#f2a541', '#3d4451', '#e0a458', '#8bb174', '#5b8e7d', '#a1869e', '#d1495b', '#8d99ae', '#edf2f4'] },
+    assembly: { name: 'Assembly Line', price: 0, reward: 'Build the first factory assembler', colors: ['#000', '#f2c14e', '#f78154', '#4d9078', '#b4436c', '#5fad56', '#2e86ab', '#f2a541', '#3d4451', '#e0a458', '#8bb174', '#5b8e7d', '#a1869e', '#d1495b', '#8d99ae', '#edf2f4'] },
     gold:     { name: 'Gold Leaf', price: 2800, colors: ['#000', '#f9e79f', '#f4d03f', '#c99a2e', '#efd27a', '#a8801c', '#e2b650', '#fcecc0', '#5a4a1f', '#f5cba7', '#e59866', '#dc7633', '#f0b27a', '#ca6f1e', '#b9a37a', '#fffaf0'] },
     prism:    { name: 'Prism', price: 5000, animated: true, colors: null },
   };
@@ -86,7 +86,7 @@
     neon:    { name: 'Neon Tube', price: 1600 },
     gem:     { name: 'Gem', price: 2100 },
     lantern: { name: 'Lantern', price: 2800 },
-    steel:   { name: 'Steel', price: 0, reward: 'Build all four factory presses' },
+    steel:   { name: 'Steel', price: 0, reward: 'Build all three factory assemblers' },
   };
 
   const FRAMES = {
@@ -95,7 +95,7 @@
     glow:     { name: 'Glow', price: 650 },
     brass:    { name: 'Brass', price: 1200 },
     rainbow:  { name: 'Rainbow', price: 2500, animated: true },
-    hazard:   { name: 'Hazard Tape', price: 0, reward: 'Build a third press in the factory' },
+    hazard:   { name: 'Hazard Tape', price: 0, reward: 'Build the third factory dropper' },
   };
 
   const BACKDROPS = {
@@ -105,7 +105,7 @@
     dusk:      { name: 'Dusk', price: 700 },
     aurora:    { name: 'Aurora', price: 1200 },
     stars:     { name: 'Starfield', price: 1700 },
-    belt:      { name: 'Conveyor', price: 0, reward: 'Collect 500 lines from the factory' },
+    belt:      { name: 'Conveyor', price: 0, reward: 'Deliver 500 pieces from the factory' },
   };
 
   const EFFECTS = {
@@ -113,7 +113,7 @@
     sparkle:  { name: 'Sparkle', price: 450 },
     ripple:   { name: 'Ripple', price: 850 },
     bloom:    { name: 'Bloom', price: 1300 },
-    sparks:   { name: 'Welding Sparks', price: 0, reward: 'Build the biggest factory crate' },
+    sparks:   { name: 'Welding Sparks', price: 0, reward: 'Build the longest factory conveyor' },
   };
 
   const GHOSTS = {
