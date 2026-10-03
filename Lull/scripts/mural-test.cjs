@@ -252,7 +252,7 @@ module.exports = async function muralTests({ browser, check, PAGE, OUT }) {
   await page.waitForTimeout(80);
   const moved = await ev((b) => ({ changed: Lull.MuralView.lastCrop.mural.own.px !== b, cx: Lull.MuralView.photo.cx, z: Lull.MuralView.photo.z }), before);
   await D.shot('mural-photo-zoomed-520x760');
-  check('Photo: the file picker opens; the photo in the Photo window (crop frame, Zoom), previewed as a level 4 mural (28 × 44 quarters, 8 colours at most); a drag and Zoom change it', crop.open && crop.title === 'Photo' && crop.own && crop.own.w === 28 && crop.own.h === 44 && crop.own.k <= 8 && crop.zoom && crop.cv > 150 && moved.changed && moved.cx < 0.5 && moved.z === 1.6, JSON.stringify({ crop, moved }));
+  check('Photo: the file picker opens; the photo in the Photo window (crop frame, Zoom), previewed as a level 4 mural (28 × 44 quarters, 13 colours at most: a photo\'s own); a drag and Zoom change it', crop.open && crop.title === 'Photo' && crop.own && crop.own.w === 28 && crop.own.h === 44 && crop.own.k <= 13 && crop.zoom && crop.cv > 150 && moved.changed && moved.cx < 0.5 && moved.z === 1.6, JSON.stringify({ crop, moved }));
   await ev(() => [...document.querySelectorAll('.modal-mural-photo .btn')].find((b) => b.textContent.trim() === 'Use photo').click());
   await page.waitForTimeout(120);
   const used = await ev(() => { const nb = Lull.app.modes.play.lastNB.nb, r = nb.recipe; return { pic: r.mural.pic, w: r.mural.own && r.mural.own.w, pressed: (document.querySelector('.mu-pic[aria-pressed="true"]') || {}).dataset.value, size: nb.size, json: JSON.stringify(r).length }; });
@@ -269,7 +269,7 @@ module.exports = async function muralTests({ browser, check, PAGE, OUT }) {
   await ev(() => document.querySelector('.mu-lv .nb-level[data-value="2"]').click());
   await page.waitForTimeout(150);
   const relevel = await ev(() => { const r = Lull.app.modes.play.lastNB.nb.recipe; return { pic: r.mural.pic, w: r.mural.own.w, h: r.mural.own.h, k: r.mural.own.pal.length }; });
-  check('another level with the photo at hand: cropped again for it (20 × 28 quarters, 4 colours at most)', relevel.pic === 'own' && relevel.w === 20 && relevel.h === 28 && relevel.k <= 4, JSON.stringify(relevel));
+  check('another level with the photo at hand: cropped again for it (20 × 28 quarters, 7 colours at most)', relevel.pic === 'own' && relevel.w === 20 && relevel.h === 28 && relevel.k <= 7, JSON.stringify(relevel));
   await ev(() => { while (Lull.UI.modalOpen()) Lull.UI.closeTopModal(); });
 
   // ---- Stats and the achievements' group ----------------------------------------------------------------------------------------

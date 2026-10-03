@@ -25,11 +25,11 @@
   const { Recipe, Pieces, RNG } = L;
 
   const LEVELS = [null,
-    { w: 8, h: 10, k: 3, mix: [0.24, 0.34, 0.28, 0.14] },
-    { w: 10, h: 14, k: 4, mix: [0.14, 0.28, 0.32, 0.26] },
-    { w: 12, h: 18, k: 6, mix: [0.08, 0.2, 0.32, 0.4] },
-    { w: 14, h: 22, k: 8, mix: [0.05, 0.14, 0.28, 0.53] },
-    { w: 16, h: 26, k: 10, mix: [0.03, 0.1, 0.22, 0.65] },
+    { w: 8, h: 10, k: 3, pk: 5, mix: [0.24, 0.34, 0.28, 0.14] },
+    { w: 10, h: 14, k: 4, pk: 7, mix: [0.14, 0.28, 0.32, 0.26] },
+    { w: 12, h: 18, k: 6, pk: 10, mix: [0.08, 0.2, 0.32, 0.4] },
+    { w: 14, h: 22, k: 8, pk: 13, mix: [0.05, 0.14, 0.28, 0.53] },
+    { w: 16, h: 26, k: 10, pk: 16, mix: [0.03, 0.1, 0.22, 0.65] },
   ];
   const LEVEL_IDS = [1, 2, 3, 4, 5];
   const PICS = ['coast', 'still', 'soft'];
@@ -37,7 +37,7 @@
   const PIC_NAMES = { coast: 'Coast', still: 'Still life', soft: 'Abstract', own: 'Photo' };
   const PAY_CELL = 0.04;
   /** The most quarters an imported picture keeps each way (level 5's grid, with room), and its colours. */
-  const OWN_MAX = { w: 40, h: 60, k: 12 };
+  const OWN_MAX = { w: 40, h: 60, k: 16 };
 
   const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
   const clone = (v) => JSON.parse(JSON.stringify(v));
@@ -60,73 +60,87 @@
     out[i + 2] = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s;
   }
 
+  const gam = (v) => 255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(v, 1 / 2.4) - 0.055);
+  /** OKLab to sRGB (0-255, kept in gamut by clipping each channel). */
+  function fromLab(L0, A, B) {
+    const l = (L0 + 0.3963377774 * A + 0.2158037573 * B) ** 3, m = (L0 - 0.1055613458 * A - 0.0638541728 * B) ** 3, s = (L0 - 0.0894841775 * A - 1.291485548 * B) ** 3;
+    const R = 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, G = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, Bl = -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s;
+    return [R, G, Bl].map((v) => gam(Math.max(0, Math.min(1, v))));
+  }
+
   /**
-   * Quantises n pixels (rgb: r, g, b 0-255 each) to at most K colours, the same way every time. The pixels' colours are
-   * gathered (5 bits a channel) and each weighed by the square root of how many pixels have it, so a small bright shape
-   * (a sun, a bowl) keeps a colour of its own beside the wide ones; then, in OKLab, a median cut gives the first colours
-   * and k-means settles them. Each pixel takes its nearest. Returns { pal: ['#rrggbb'] (darkest first), idx: Uint8Array(n) }.
+   * Quantises n pixels (rgb: r, g, b 0-255 each) to at most K colours, the same way every time, keeping the picture's
+   * own colours: in OKLab, the pixels are gathered in small boxes, each weighed by the root of how many pixels it holds
+   * (so a wide sky does not take every colour) and by how vivid it is (so a small red flower or a blue door keeps a colour
+   * of its own beside the wide dull ones). The first colours are picked farthest first (the heaviest, then each time the
+   * box worst served by those so far), and k-means settles them. Each pixel takes its nearest, and each colour is then
+   * its pixels' mean lightness and hue at their mean chroma (an average of a few hues would grey out). Returns
+   * { pal: ['#rrggbb'] (darkest first), idx: Uint8Array(n) }.
    */
   function quantise(rgb, n, K) {
     K = Math.max(1, Math.min(16, K | 0));
+    const lab = new Float64Array(n * 3);
+    for (let i = 0; i < n; i++) oklab(rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2], lab, i * 3);
     const bins = new Map(), binOf = new Int32Array(n);
     for (let i = 0; i < n; i++) {
-      const k = ((rgb[i * 3] >> 3) << 10) | ((rgb[i * 3 + 1] >> 3) << 5) | (rgb[i * 3 + 2] >> 3);
+      const k = (Math.round(lab[i * 3] * 40) * 128 + Math.round(lab[i * 3 + 1] * 50) + 64) * 128 + Math.round(lab[i * 3 + 2] * 50) + 64;
       let b = bins.get(k);
-      if (!b) { b = { k, n: 0, r: 0, g: 0, b: 0 }; bins.set(k, b); }
-      b.n++; b.r += rgb[i * 3]; b.g += rgb[i * 3 + 1]; b.b += rgb[i * 3 + 2];
+      if (!b) { b = { k, n: 0, l: 0, a: 0, b: 0 }; bins.set(k, b); }
+      b.n++; b.l += lab[i * 3]; b.a += lab[i * 3 + 1]; b.b += lab[i * 3 + 2];
       binOf[i] = k;
     }
     const pts = Array.from(bins.values()).sort((p, q) => p.k - q.k), m = pts.length;
-    const lab = new Float64Array(m * 3), wt = new Float64Array(m), at = new Map();
-    pts.forEach((p, j) => { oklab(p.r / p.n, p.g / p.n, p.b / p.n, lab, j * 3); wt[j] = Math.sqrt(p.n); at.set(p.k, j); });
-    // Median cut (by weight): the box with the most spread (its widest side by the root of its weight) is split.
-    let boxes = [Array.from({ length: m }, (_, j) => j)];
-    const spread = (box) => {
-      let best = 0, ch = 0;
-      for (let c = 0; c < 3; c++) {
-        let lo = Infinity, hi = -Infinity;
-        for (const j of box) { const v = lab[j * 3 + c]; if (v < lo) lo = v; if (v > hi) hi = v; }
-        if (hi - lo > best) { best = hi - lo; ch = c; }
-      }
-      return { w: best, ch };
-    };
-    const weightOf = (box) => box.reduce((a, j) => a + wt[j], 0);
-    while (boxes.length < K) {
-      let pick = -1, score = 1e-9, ch = 0;
-      boxes.forEach((b, j) => { const s = spread(b), v = s.w * Math.sqrt(weightOf(b)); if (b.length > 1 && v > score) { score = v; pick = j; ch = s.ch; } });
+    const pl = new Float64Array(m * 3), wt = new Float64Array(m), at = new Map();
+    pts.forEach((p, j) => {
+      pl[j * 3] = p.l / p.n; pl[j * 3 + 1] = p.a / p.n; pl[j * 3 + 2] = p.b / p.n;
+      wt[j] = Math.sqrt(p.n) * (1 + 6 * Math.hypot(pl[j * 3 + 1], pl[j * 3 + 2]));
+      at.set(p.k, j);
+    });
+    const d2 = (P, j, c) => { const d0 = P[j * 3] - c[0], d1 = P[j * 3 + 1] - c[1], d2_ = P[j * 3 + 2] - c[2]; return d0 * d0 + d1 * d1 + d2_ * d2_; };
+    const near = (P, j, cen) => { let best = 0, bd = Infinity; for (let c = 0; c < cen.length; c++) { const d = d2(P, j, cen[c]); if (d < bd - 1e-12) { bd = d; best = c; } } return best; };
+    // Farthest first: the heaviest box, then each time the box worst served (its weight by its distance squared).
+    const box = (j) => [pl[j * 3], pl[j * 3 + 1], pl[j * 3 + 2]];
+    let first = 0;
+    for (let j = 1; j < m; j++) if (wt[j] > wt[first]) first = j;
+    let cen = [box(first)];
+    const dist = new Float64Array(m).fill(Infinity);
+    while (cen.length < K) {
+      let pick = -1, score = 1e-7;
+      for (let j = 0; j < m; j++) { dist[j] = Math.min(dist[j], d2(pl, j, cen[cen.length - 1])); const v = wt[j] * dist[j]; if (v > score) { score = v; pick = j; } }
       if (pick < 0) break;
-      const b = boxes[pick].slice().sort((p, q) => lab[p * 3 + ch] - lab[q * 3 + ch] || p - q);
-      const half = weightOf(b) / 2;
-      let acc = 0, cut = 1;
-      for (let i = 0; i < b.length - 1; i++) { acc += wt[b[i]]; cut = i + 1; if (acc >= half) break; }
-      boxes.splice(pick, 1, b.slice(0, cut), b.slice(cut));
+      cen.push(box(pick));
     }
-    let cen = boxes.map((b) => { const c = [0, 0, 0]; let w = 0; for (const j of b) { for (let k = 0; k < 3; k++) c[k] += lab[j * 3 + k] * wt[j]; w += wt[j]; } return c.map((v) => v / w); });
-    const near = (j) => {
-      let best = 0, bd = Infinity;
-      for (let c = 0; c < cen.length; c++) {
-        const d0 = lab[j * 3] - cen[c][0], d1 = lab[j * 3 + 1] - cen[c][1], d2 = lab[j * 3 + 2] - cen[c][2], d = d0 * d0 + d1 * d1 + d2 * d2;
-        if (d < bd - 1e-12) { bd = d; best = c; }
-      }
-      return best;
-    };
     const own = new Int32Array(m);
-    for (let it = 0; it < 16; it++) {
+    for (let it = 0; it < 24; it++) {
       let moved = 0;
-      for (let j = 0; j < m; j++) { const c = near(j); if (c !== own[j]) moved++; own[j] = c; }
+      for (let j = 0; j < m; j++) { const c = near(pl, j, cen); if (c !== own[j]) moved++; own[j] = c; }
       const sum = cen.map(() => [0, 0, 0, 0]);
-      for (let j = 0; j < m; j++) { const s = sum[own[j]]; s[0] += lab[j * 3] * wt[j]; s[1] += lab[j * 3 + 1] * wt[j]; s[2] += lab[j * 3 + 2] * wt[j]; s[3] += wt[j]; }
+      for (let j = 0; j < m; j++) { const s = sum[own[j]]; s[0] += pl[j * 3] * wt[j]; s[1] += pl[j * 3 + 1] * wt[j]; s[2] += pl[j * 3 + 2] * wt[j]; s[3] += wt[j]; }
       cen = cen.map((c, j) => (sum[j][3] ? [sum[j][0] / sum[j][3], sum[j][1] / sum[j][3], sum[j][2] / sum[j][3]] : c));
       if (it && !moved) break;
     }
-    // Each colour is the mean of its pixels (in sRGB); unused ones go, and the rest are ordered darkest first.
-    const idx = new Uint8Array(n), acc = cen.map(() => [0, 0, 0, 0]);
-    for (let i = 0; i < n; i++) { const c = own[at.get(binOf[i])]; idx[i] = c; const a = acc[c]; a[0] += rgb[i * 3]; a[1] += rgb[i * 3 + 1]; a[2] += rgb[i * 3 + 2]; a[3]++; }
-    const used = acc.map((a, j) => ({ j, a, l: cen[j][0] })).filter((x) => x.a[3] > 0).sort((p, q) => p.l - q.l || p.j - q.j);
+    // Each pixel its nearest; each colour its pixels' mean lightness and hue, at their mean chroma (twice: the pixels
+    // then go to the nearest of those).
+    const idx = new Uint8Array(n);
+    let reps = null;
+    for (let pass = 0; pass < 2; pass++) {
+      const acc = cen.map(() => [0, 0, 0, 0, 0]);
+      for (let i = 0; i < n; i++) {
+        const c = near(lab, i, cen), a = acc[c];
+        idx[i] = c; a[0] += lab[i * 3]; a[1] += lab[i * 3 + 1]; a[2] += lab[i * 3 + 2]; a[3] += Math.hypot(lab[i * 3 + 1], lab[i * 3 + 2]); a[4]++;
+      }
+      reps = acc.map((a, j) => {
+        if (!a[4]) return null;
+        const L0 = a[0] / a[4], A = a[1] / a[4], B = a[2] / a[4], C0 = Math.hypot(A, B), C = a[3] / a[4], k = C0 > 1e-4 ? C / C0 : 1;
+        return { j, l: L0, lab: [L0, A * k, B * k] };
+      });
+      cen = reps.map((x, j) => (x ? x.lab : cen[j]));
+    }
+    const used = reps.filter(Boolean).map((x) => Object.assign(x, { rgb: fromLab(x.lab[0], x.lab[1], x.lab[2]) })).sort((p, q) => p.l - q.l || p.j - q.j);
     const remap = new Uint8Array(cen.length);
     used.forEach((x, k) => { remap[x.j] = k; });
     for (let i = 0; i < n; i++) idx[i] = remap[idx[i]];
-    return { pal: used.map((x) => rgbHex(x.a[0] / x.a[3], x.a[1] / x.a[3], x.a[2] / x.a[3])), idx };
+    return { pal: used.map((x) => rgbHex(x.rgb[0], x.rgb[1], x.rgb[2])), idx };
   }
 
   // ---- the built-in pictures: drawn by hand as functions of the point (X across, 0 to the aspect a; Y down, 0 to 1) ----
@@ -297,20 +311,32 @@
     }
     return out;
   }
+  const LIN = new Float64Array(256);
+  for (let i = 0; i < 256; i++) LIN[i] = lin(i);
   /**
-   * An imported picture from pixels (rgba or rgb, w × h, the crop already taken), box-averaged down to the grid of
-   * quarters of a board W × H and quantised to K colours: { w, h, pal, px }.
+   * An imported picture from pixels (rgba or rgb, w × h, the crop already taken), area-averaged down to the grid of
+   * quarters of a board W × H in linear light (as light mixes: a fine red and green pattern averages to the yellow-brown
+   * the eye sees, never a muddy dark one; each pixel counted by how much of it falls in the quarter) and quantised to K
+   * colours: { w, h, pal, px }.
    */
   function fromPixels(px, w, h, W, H, K, stride) {
     stride = stride || 4;
     const QW = W * 2, QH = H * 2, rgb = new Float64Array(QW * QH * 3);
-    for (let qy = 0; qy < QH; qy++) for (let qx = 0; qx < QW; qx++) {
-      const x0 = Math.floor((qx * w) / QW), x1 = Math.max(x0 + 1, Math.floor(((qx + 1) * w) / QW));
-      const y0 = Math.floor((qy * h) / QH), y1 = Math.max(y0 + 1, Math.floor(((qy + 1) * h) / QH));
-      let r = 0, g = 0, b = 0, n = 0;
-      for (let y = y0; y < y1 && y < h; y++) for (let x = x0; x < x1 && x < w; x++) { const i = (y * w + x) * stride; r += px[i]; g += px[i + 1]; b += px[i + 2]; n++; }
-      const o = (qy * QW + qx) * 3;
-      rgb[o] = n ? r / n : 0; rgb[o + 1] = n ? g / n : 0; rgb[o + 2] = n ? b / n : 0;
+    for (let qy = 0; qy < QH; qy++) {
+      const y0 = (qy * h) / QH, y1 = ((qy + 1) * h) / QH;
+      for (let qx = 0; qx < QW; qx++) {
+        const x0 = (qx * w) / QW, x1 = ((qx + 1) * w) / QW;
+        let r = 0, g = 0, b = 0, n = 0;
+        for (let y = Math.floor(y0); y < Math.min(h, Math.ceil(y1)); y++) {
+          const fy = Math.min(y + 1, y1) - Math.max(y, y0);
+          for (let x = Math.floor(x0); x < Math.min(w, Math.ceil(x1)); x++) {
+            const f = fy * (Math.min(x + 1, x1) - Math.max(x, x0)), i = (y * w + x) * stride;
+            r += LIN[px[i] | 0] * f; g += LIN[px[i + 1] | 0] * f; b += LIN[px[i + 2] | 0] * f; n += f;
+          }
+        }
+        const o = (qy * QW + qx) * 3;
+        rgb[o] = n ? gam(r / n) : 0; rgb[o + 1] = n ? gam(g / n) : 0; rgb[o + 2] = n ? gam(b / n) : 0;
+      }
     }
     const q = quantise(rgb, QW * QH, K);
     let s = '';
@@ -329,12 +355,12 @@
     const key = m.pic === 'own' ? 'own:' + m.level + ':' + m.own.w + 'x' + m.own.h + ':' + m.own.pal.join() + ':' + m.own.px : m.pic + ':' + m.level;
     let p = PIC_CACHE.get(key);
     if (p) return p;
-    if (m.pic === 'own' && m.own.w === QW && m.own.h === QH && m.own.pal.length <= lv.k) {
+    if (m.pic === 'own' && m.own.w === QW && m.own.h === QH && m.own.pal.length <= lv.pk) {
       const q = new Uint8Array(QW * QH);
       for (let i = 0; i < q.length; i++) q[i] = B36.indexOf(m.own.px[i]);
       p = { QW, QH, pal: m.own.pal.slice(), q };
     } else {
-      const z = m.pic === 'own' ? quantise(resample(ownRgb(m.own), m.own.w, m.own.h, QW, QH), QW * QH, lv.k) : toKeys(render(m.pic, QW, QH), QW * QH, KEYS[m.pic], lv.k);
+      const z = m.pic === 'own' ? quantise(resample(ownRgb(m.own), m.own.w, m.own.h, QW, QH), QW * QH, lv.pk) : toKeys(render(m.pic, QW, QH), QW * QH, KEYS[m.pic], lv.k);
       p = { QW, QH, pal: z.pal, q: z.idx };
     }
     PIC_CACHE.set(key, p);
@@ -677,7 +703,7 @@
   L.Mural = {
     LEVELS, LEVEL_IDS, PICS, PIC_IDS, PIC_NAMES, PAY_CELL, OWN_MAX, B36,
     on, levelOf, quantise, toKeys, KEYS, render, picture, quartersAt, turnQ, tile, plan, exactAt, cellQ, reach, spawnSpot, typeOf,
-    ownOk, ownRgb, resample, fromPixels, valid, summaryOf, extOf, bot, hexRgb, rgbHex, PART,
+    ownOk, ownRgb, resample, fromPixels, valid, summaryOf, extOf, bot, hexRgb, rgbHex, oklab, fromLab, PART,
     of: (game) => { const e = extOf(game); return e ? e.M : null; },
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

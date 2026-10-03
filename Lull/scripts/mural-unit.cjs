@@ -90,8 +90,9 @@ module.exports = function muralUnit({ L, test }) {
     const q1 = M.quantise(px, n, 6), q2 = M.quantise(px.slice(), n, 6);
     assert.deepStrictEqual(q1.pal, q2.pal); assert.deepStrictEqual(Array.from(q1.idx), Array.from(q2.idx));
     assert(q1.pal.length === 6);
-    const lum = (h) => { const [r, g, b] = M.hexRgb(h); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
-    for (let i = 1; i < q1.pal.length; i++) assert(lum(q1.pal[i]) >= lum(q1.pal[i - 1]) - 12, q1.pal.join());
+    // Darkest first (by OKLab lightness).
+    const lum = (h) => { const o = [0, 0, 0], [r, g, b] = M.hexRgb(h); M.oklab(r, g, b, o, 0); return o[0]; };
+    for (let i = 1; i < q1.pal.length; i++) assert(lum(q1.pal[i]) >= lum(q1.pal[i - 1]) - 0.005, q1.pal.join());
     // A picture of two colours keeps exactly those.
     const two = new Float64Array(n * 3); for (let i = 0; i < n; i++) { const c = i % 3 ? [200, 40, 40] : [20, 60, 200]; two.set(c, i * 3); }
     assert.deepStrictEqual(M.quantise(two, n, 5).pal.sort(), ['#143cc8', '#c82828']);
@@ -210,10 +211,10 @@ module.exports = function muralUnit({ L, test }) {
       const c = sun ? [220, 50, 40] : y < 70 ? [90, 150, 230] : [60, 160, 70];
       px[i] = c[0]; px[i + 1] = c[1]; px[i + 2] = c[2]; px[i + 3] = 255;
     }
-    const lv = M.LEVELS[3], own = M.fromPixels(px, w, hh, lv.w, lv.h, lv.k);
+    const lv = M.LEVELS[3], own = M.fromPixels(px, w, hh, lv.w, lv.h, lv.pk);
     assert.strictEqual(own.w, 24); assert.strictEqual(own.h, 36); assert.strictEqual(own.px.length, 24 * 36);
-    assert(M.ownOk(own) && own.pal.length >= 3 && own.pal.length <= lv.k);
-    assert.deepStrictEqual(M.fromPixels(px, w, hh, lv.w, lv.h, lv.k), own, 'the same every time');
+    assert(M.ownOk(own) && own.pal.length >= 3 && own.pal.length <= lv.pk);
+    assert.deepStrictEqual(M.fromPixels(px, w, hh, lv.w, lv.h, lv.pk), own, 'the same every time');
     const r = R('own', 3, own);
     assert.strictEqual(r.mural.pic, 'own');
     assert(JSON.stringify(r).length < 2400, 'small');
@@ -222,10 +223,28 @@ module.exports = function muralUnit({ L, test }) {
     assert(tb > tr && bg > br, top + ' ' + bottom);
     // At another level it is resampled and, with fewer colours, quantised again.
     const r1 = R('own', 1, own), p1 = M.picture(r1);
-    assert(p1.QW === 16 && p1.QH === 20 && p1.pal.length <= 3);
+    assert(p1.QW === 16 && p1.QH === 20 && p1.pal.length <= M.LEVELS[1].pk);
     const g = mk('own', 3, 2, own);
     while (!g.over) assert(setIt(g));
     assert.strictEqual(g.endKind, 'finished');
+  });
+
+  test('mural: a photo keeps its own colours — on generated photos (primaries, skin tones, a face, a street, a small vivid flower on a dull field) the error, the chroma kept and every feature colour meet their marks at levels 1, 3 and 5', () => {
+    const PH = require('./mural-photos.cjs');
+    // Per level: the most mean OKLab error a quarter, the least chroma kept on vivid quarters (and never oversaturated),
+    // the farthest any feature colour (a primary, the flower, the door, the car, the wall) may be from the palette.
+    const MARK = { 1: { err: 0.055, chroma: 0.84, feat: 0.11 }, 3: { err: 0.018, chroma: 0.89, feat: 0.07 }, 5: { err: 0.013, chroma: 0.95, feat: 0.03 } };
+    const seen = [];
+    for (const name of Object.keys(PH.PHOTOS)) for (const level of [1, 3, 5]) {
+      const lv = M.LEVELS[level], w = lv.w * 24, hh = lv.h * 24, px = PH.photo(name, w, hh);
+      const own = M.fromPixels(px, w, hh, lv.w, lv.h, lv.pk), m = PH.measure(own, px, w, hh, PH.FEATS[name]), k = MARK[level];
+      seen.push(name + level + ' ' + m.err.toFixed(4) + ' ' + m.chroma.toFixed(3) + ' ' + m.worst.toFixed(3));
+      assert(M.ownOk(own) && own.pal.length <= lv.pk, name + level);
+      assert(m.err <= k.err && m.chroma >= k.chroma && m.chroma <= 1.05 && m.worst <= k.feat, seen[seen.length - 1]);
+    }
+    // A colour is drawn exactly as kept: the picture's palette is the grid's own.
+    const lv = M.LEVELS[3], own = M.fromPixels(PH.photo('small', 288, 432), 288, 432, lv.w, lv.h, lv.pk);
+    assert.deepStrictEqual(M.picture(R('own', 3, own)).pal, own.pal);
   });
 
   test('mural: pay — a little for each block set, never more per piece or per action than a careful bot on a Standard board', () => {

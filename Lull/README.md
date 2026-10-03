@@ -1096,13 +1096,13 @@ up) only into a cell whose cell below is already taken. So every cell under a pi
 floor) and every cell over it to a later one: the order made is the order dealt, each piece drops straight down into its
 place and rests there, and no order can cycle. Seeded by the board's seed (kept in the save, `x.mural = { v, seed, i }`).
 
-| Level | Board | Colours | Pieces (1 / 2 / 3 / 4 blocks aimed for) |
+| Level | Board | Colours (a photo) | Pieces (1 / 2 / 3 / 4 blocks aimed for) |
 |---|---|---|---|
-| 1 | 8 × 10 | 3 | 24 / 34 / 28 / 14 % |
-| 2 | 10 × 14 | 4 | 14 / 28 / 32 / 26 % |
-| 3 | 12 × 18 | 6 | 8 / 20 / 32 / 40 % |
-| 4 | 14 × 22 | 8 | 5 / 14 / 28 / 53 % |
-| 5 | 16 × 26 | 10 | 3 / 10 / 22 / 65 % |
+| 1 | 8 × 10 | 3 (5) | 24 / 34 / 28 / 14 % |
+| 2 | 10 × 14 | 4 (7) | 14 / 28 / 32 / 26 % |
+| 3 | 12 × 18 | 6 (10) | 8 / 20 / 32 / 40 % |
+| 4 | 14 × 22 | 8 (13) | 5 / 14 / 28 / 53 % |
+| 5 | 16 × 26 | 10 (16) | 3 / 10 / 22 / 65 % |
 
 Level 5 keeps a quarter at 5 px or more at 320 × 568. No pentominoes.
 
@@ -1113,8 +1113,15 @@ the first K (OKLab), each then the mean of its quarters, so a bowl stays blue at
 opens the system's file picker (the macOS app answers the page's file input with an open panel for images,
 `Sources/Lull/PhotoPicker.swift`; the Home Screen web app and browsers their own), then the Photo window: the photo with a
 frame of the board's shape (drag it, or the arrows; Zoom), the frame showing the mural it makes. On the device, the crop
-is box-averaged to quarters and quantised (colours gathered at 5 bits a channel, each weighed by the root of its count, a
-median cut then k-means in OKLab: the same every time). Use photo keeps only the small grid in the recipe
+is read at the photo's own pixels and area-averaged to quarters in linear light (as light mixes, so edges and fine
+patterns never go muddy), then quantised to the level's photo colours (more than a built-in picture's: the table) in
+OKLab, the same every time: the quarters gathered in small boxes, each weighed by the root of its count and by how vivid
+it is (a small red flower on a dull field keeps a colour of its own), the first colours picked farthest first, k-means
+settling them, and each colour its quarters' mean lightness and hue at their mean chroma (so averaging never greys a
+colour out). The colours are drawn exactly as kept: no theme, palette or skin touches them. Measured on generated photos
+(vivid primaries, skin tones, a face, a street at dusk, a small flower and door on a dull field: `scripts/mural-photos.cjs`),
+the mean OKLab error a quarter, the chroma kept on vivid quarters and the distance of each feature colour from the
+palette each meet a mark at levels 1, 3 and 5 (`scripts/mural-unit.cjs`). Use photo keeps only the small grid in the recipe
 (`mural.own = { w, h, pal, px }`, one base-36 digit a quarter: about 1-2 KB), never the photo. Another level with the
 photo still at hand crops it again; without it, the grid is resampled and quantised again.
 

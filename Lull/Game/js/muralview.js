@@ -336,20 +336,23 @@
     ph.cx = (x + cw / 2) / ph.w; ph.cy = (y + ch / 2) / ph.h;
     return { x, y, w: cw, h: ch };
   }
-  /** The photo, as cropped, made a mural's grid at a level: { w, h, pal, px }. */
+  /**
+   * The photo, as cropped, made a mural's grid at a level: { w, h, pal, px }. The crop is read at the photo's own pixels
+   * (no canvas scaling, which mixes colours in gamma and dulls them) and area-averaged to quarters in linear light.
+   */
   function ownFrom(ph, level) {
-    const lv = Mural.LEVELS[level], c = cropOf(ph, lv.w / lv.h), S = 4, W = lv.w * 2 * S, H = lv.h * 2 * S;
+    const lv = Mural.LEVELS[level], c = cropOf(ph, lv.w / lv.h), W = Math.max(lv.w * 2, Math.round(c.w)), H = Math.max(lv.h * 2, Math.round(c.h));
     const cv = document.createElement('canvas');
     cv.width = W; cv.height = H;
-    const ctx = cv.getContext('2d');
-    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+    const ctx = cv.getContext('2d', { willReadFrequently: true });
+    ctx.imageSmoothingEnabled = W > Math.round(c.w);
     ctx.drawImage(ph.cv, c.x, c.y, c.w, c.h, 0, 0, W, H);
-    return Mural.fromPixels(ctx.getImageData(0, 0, W, H).data, W, H, lv.w, lv.h, lv.k);
+    return Mural.fromPixels(ctx.getImageData(0, 0, W, H).data, W, H, lv.w, lv.h, lv.pk);
   }
 
   /**
    * The Photo window: the photo with the crop frame (drag it; Zoom), the frame showing the mural it makes in the level's
-   * colours; Use photo makes it the picture. api: the New board window's.
+   * colours (a photo has more than a built-in picture: LEVELS pk); Use photo makes it the picture. api: the New board window's.
    */
   function openCrop(api) {
     const r = api.recipe, level = r.mural.level, lv = Mural.LEVELS[level], a = lv.w / lv.h, ph = PHOTO;
