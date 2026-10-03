@@ -307,7 +307,8 @@ lines an open hour when tended (a look every five minutes); a full one about 140
 hour — about a third of casual Standard play (≈460), never more than half (a test). The first upgrades pay back in under
 an hour (an assembler for 5, a second dropper for 8), the last ones over many hours; a buffer (a bigger store, a longer
 belt) pays mostly in what waits for you after time away. A full factory on a casual day (half an hour open, the rest
-away) brings about 70 lines, three tenths of that day's play.
+away) brings about 80 lines, about a third of that day's play; over a casual career the factory is about a quarter of
+all income.
 
 **The sign**: under the store, a tiny dot-matrix panel like a roadside sign, 16 × 7 round LEDs on a dark housing (dark
 in both themes, the unlit dots faintly visible), with no words or numbers. It shows how busy the line is — the share of
