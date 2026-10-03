@@ -14,6 +14,7 @@ const L = load([
   'descent.js',
   'classic.js',
   'battle.js',
+  'mural.js',
 ]);
 const { Pieces, Board, Game, Puzzles, Factory, RNG } = L;
 
@@ -4826,6 +4827,9 @@ require('./shapes-test.cjs')(test, L);
 // Physics, a board modifier (scripts/physics-test.cjs).
 console.log('physics');
 require('./physics-test.cjs')(test, L);
+
+// Mural, a board mode (scripts/mural-unit.cjs).
+require('./mural-unit.cjs')({ L, test });
 
 // Descent, a board mode (scripts/descent-unit.cjs).
 require('./descent-unit.cjs')({ L, test });

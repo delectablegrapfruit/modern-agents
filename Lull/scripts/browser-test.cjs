@@ -4329,6 +4329,8 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await require('./descent-test.cjs')({ browser, check, PAGE, OUT });
   // ---- Battle: made, the Ready card and 3-2-1, Send, pausing, the End card, both boards' cells, slices (battle-test.cjs)
   await require('./battle-test.cjs')({ browser, check, PAGE, OUT });
+  // ---- Mural: made (picture, level, a photo), the place outlined, sets refused, Finished, the phones; frames (mural-test.cjs)
+  await require('./mural-test.cjs')({ browser, check, PAGE, OUT });
   // ---- touch: an emulated phone, played with gestures (scripts/touch-test.cjs) -----------------------------------------
   await require('./touch-test.cjs')({ browser, check, PAGE, OUT });
   // ---- what the device can do: a phone, a desktop browser, the app, a tablet with a trackpad (device-test.cjs) -------

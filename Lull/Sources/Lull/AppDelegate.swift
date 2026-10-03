@@ -41,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var store: SaveStore!
     private let bridge = BridgeHandler()
     private let navigation = NavigationGuard()
+    private let photoPicker = PhotoPicker()
     private var hotKey: HotKey?
     private var terminating = false
     private var theme = "dark"
@@ -133,6 +134,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         webView.allowsMagnification = false
         webView.isInspectable = true
         webView.navigationDelegate = navigation
+        webView.uiDelegate = photoPicker
         navigation.onFailure = { message in NSLog("Lull: the page failed to load: %@", message) }
         navigation.onCrash = { [weak self] in MainActor.assumeIsolated { self?.reloadGame() } }
         bridge.onMessage = { [weak self] body in MainActor.assumeIsolated { self?.receive(body) } }

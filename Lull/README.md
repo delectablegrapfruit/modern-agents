@@ -1007,6 +1007,64 @@ group; wins count against Steady or harder, on boards of 64 cells or more): **Re
 (100) beat Brisk; **Seamless** (120) win with no gap sealed and no start over; **Three Straight** (150) win 3 rounds in
 a row on one board; **Swifter Still** (250, legend) beat Swift.
 
+### Mural
+A mode (`js/mural.js`, its controller, look and window `js/muralview.js`, `css/mural.css`): a picture becomes the
+board's target. It is cut into pieces that cover the whole well with no gap, and they come in one fixed order, bottom up,
+each already carrying its colours. Every block is split into 2 × 2 quarter cells, each its own colour, so the picture has
+twice the board's resolution each way (16 × 20 quarters at level 1, 32 × 52 at level 5); a piece's quarters turn with it,
+on the board, in play and in Next. Nothing falls by itself, no line ever clears, there is no clock and nothing to lose:
+time counts only while the board is used (its own `timeMs.mural`).
+
+*Its place.* The spot the piece in play belongs in is outlined on the board (an accent line over a soft halo, its
+quarters faintly in it; dashed until a drop would set it there, then solid; the ghost is a plain outline). The piece
+appears at the top in another turn than its place wherever that looks different (its shape, or its quarters), nearest
+the middle, where its place can still be reached by moves and turns (searched as the engine moves and kicks); with none,
+in its own turn right over its place. It must be turned and moved there by hand: a drop or a set anywhere else, or in
+another turn, simply does not happen (the piece stays where it was; no sound, no shake, no note; the outline brightens
+once). Hold is off; Undo, the hints and every power-up are off ("Not in Mural"). The last piece set: the **Finished**
+card (Boards; Look, which hides it to show the whole picture, Space or a tap brings it back; New board, which keeps the
+mural in the library, tagged Finished, and opens the New board window). A finished mural is drawn flat, no gaps, and
+stays viewable in the library (its thumbnail and full view in the picture's colours). Status bar: Placed "n of N" and
+Level; under the board, a slim progress track.
+
+*Tiling.* The cells are taken bottom up, left to right; a piece starts at the first free cell and grows (left, right or
+up) only into a cell whose cell below is already taken. So every cell under a piece belongs to an earlier one (or is the
+floor) and every cell over it to a later one: the order made is the order dealt, each piece drops straight down into its
+place and rests there, and no order can cycle. Seeded by the board's seed (kept in the save, `x.mural = { v, seed, i }`).
+
+| Level | Board | Colours | Pieces (1 / 2 / 3 / 4 blocks aimed for) |
+|---|---|---|---|
+| 1 | 8 × 10 | 3 | 24 / 34 / 28 / 14 % |
+| 2 | 10 × 14 | 4 | 14 / 28 / 32 / 26 % |
+| 3 | 12 × 18 | 6 | 8 / 20 / 32 / 40 % |
+| 4 | 14 × 22 | 8 | 5 / 14 / 28 / 53 % |
+| 5 | 16 × 26 | 10 | 3 / 10 / 22 / 65 % |
+
+Level 5 keeps a quarter at 5 px or more at 320 × 568. No pentominoes.
+
+*Pictures.* Three of Lull's own, drawn as functions of the point (4 × 4 samples a quarter): **Coast** (a coastline at
+dusk: a headland and lighthouse, a setting sun on the sea, sand), **Still life** (a bowl of fruit before a window) and
+**Abstract** (soft shapes). Each has its own colours, most needed first; at K colours every quarter takes the nearest of
+the first K (OKLab), each then the mean of its quarters, so a bowl stays blue at three. A **Photo**: the Photo chip
+opens the system's file picker (the macOS app answers the page's file input with an open panel for images,
+`Sources/Lull/PhotoPicker.swift`; the Home Screen web app and browsers their own), then the Photo window: the photo with a
+frame of the board's shape (drag it, or the arrows; Zoom), the frame showing the mural it makes. On the device, the crop
+is box-averaged to quarters and quantised (colours gathered at 5 bits a channel, each weighed by the root of its count, a
+median cut then k-means in OKLab: the same every time). Use photo keeps only the small grid in the recipe
+(`mural.own = { w, h, pal, px }`, one base-36 digit a quarter: about 1-2 KB), never the photo. Another level with the
+photo still at hand crops it again; without it, the grid is resampled and quantised again.
+
+*Recipe and window.* `mural: { pic: 'coast' | 'still' | 'soft' | 'own', level: 1-5, own? }`; label "Mural · Coast ·
+Level 3". Mode ▸ Mural shows four picture chips and Level 1-5; the size is the level's (Size has that one preset), and
+the preview is the picture. It combines with nothing: Physics, Mirror and every other shape set are off ("Not in
+Mural"; choosing Mural turns them off), and it keeps its picture for life (no Edit rules).
+
+*Pay* — 0.04 of a line for each block set (0.04 to 0.16 a piece): a mural bot earns 0.10–0.14 a piece and
+0.02–0.03 an action, against a careful Standard bot's 0.41 and 0.10 (`scripts/mural-unit.cjs`). *Achievements* (their
+own group): **First Mural** (30) finish a mural; **Sketch**, **Study**, **Panel**, **Fresco**, **Masterwork** (20, 30,
+50, 80, 250 legend) finish one at level 1 to 5; **Your Own** (60) finish one from a photo. *Stats* (Free Play): time,
+murals finished, pieces placed, by level, from photos.
+
 ## Keys
 
 | | |

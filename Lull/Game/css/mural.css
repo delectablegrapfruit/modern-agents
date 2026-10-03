@@ -1,0 +1,42 @@
+/* Lull — Mural (js/muralview.js): its achievements' place colour (a warm clay, 4.5:1 on its own tint in both themes, as
+   the other places'), the picture chips and the level in the New board window, the Photo window (the crop and Zoom),
+   and the mural's progress under the board. */
+:root { --area-mural: #e0a98a; }
+:root[data-theme="light"] { --area-mural: #8a4a2c; }
+[data-area="mural"] { --area: var(--area-mural); }
+
+/* The panel: the pictures, then the level. */
+.mu-panel { display: flex; flex-direction: column; gap: 8px; }
+/* The pictures: four chips across, each a small picture (a photo not chosen yet: a frame) beside its name. */
+.mu-pics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.nb-chip.mu-pic canvas { width: 20px !important; height: 28px !important; color: var(--muted); }
+@media (max-width: 440px) { .nb-chip.mu-pic canvas { width: 16px !important; height: 22px !important; } }
+.mu-lvrow { flex-wrap: nowrap; }
+.mu-lv button { min-width: 38px; }
+@media (max-width: 360px) { .mu-lv button { min-width: 34px; padding: 0 6px; } }
+
+/* The file picker the Photo chip opens: never seen. */
+.mu-file { position: fixed; left: -9999px; top: 0; width: 1px; height: 1px; opacity: 0; }
+
+/* The Photo window: the photo with its frame, Zoom under it, and another photo. */
+.mu-cropper { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.mu-stage { display: flex; justify-content: center; width: 100%; }
+.mu-crop { display: block; border-radius: 8px; touch-action: none; cursor: grab; background: var(--panel-2); }
+.mu-crop:active { cursor: grabbing; }
+.mu-crop:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mu-zrow { display: flex; align-items: center; gap: 10px; width: 100%; max-width: 320px; color: var(--muted); font-size: var(--fs-sm); }
+.mu-zrow input { flex: 1; min-width: 0; height: 44px; accent-color: var(--accent); }
+.mu-crow { display: flex; justify-content: center; }
+
+/* Under the board: the mural's progress, a slim track. */
+.itembar.mu-bar { display: flex; align-items: center; justify-content: center; padding: 0 12px; }
+.mu-prog { position: relative; width: min(100%, 280px); height: 6px; border-radius: 3px; background: var(--panel-3, var(--line)); overflow: hidden; }
+.mu-prog > i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: var(--accent); opacity: 0.85; }
+
+/* With Mural there can be six modes or more: on a phone, rather than buttons under 44 px, they go in two rows. */
+@media (max-width: 400px) {
+  .nb-modes:has(> button:nth-child(6)) { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; }
+  .nb-modes:has(> button:nth-child(7)) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+/* Its achievements make the counts three digits: in a 300 px window the filter keeps beside Recent. */
+@container (max-width: 290px) { .ach-tools { gap: 4px; } .ach-tools > .seg button { padding: 0 4px; } }
