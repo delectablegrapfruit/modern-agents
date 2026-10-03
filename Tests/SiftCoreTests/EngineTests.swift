@@ -119,11 +119,13 @@ final class EngineTests: XCTestCase {
         engine.start()
         XCTAssertEqual(Set(engine.activeRoots.map(\.path)), [box.path + "/Users/me", box.path + "/USB"])
 
+        func removedPaths() -> [String] { lock.lock(); defer { lock.unlock() }; return removed.map(\.path) }
+
         try box.file("USB/Later/.DS_Store")
-        XCTAssertTrue(waitUntil(10) { !self.box.exists("USB/Later/.DS_Store") })
+        // The engine reports a removal just after the file is gone: wait for both.
+        XCTAssertTrue(waitUntil(10) { !self.box.exists("USB/Later/.DS_Store") && !removedPaths().isEmpty })
         XCTAssertTrue(box.exists("USB/Later"))
-        lock.lock(); let names = removed.map(\.path); lock.unlock()
-        XCTAssertEqual(names, [box.path + "/USB/Later/.DS_Store"])
+        XCTAssertEqual(removedPaths(), [box.path + "/USB/Later/.DS_Store"])
 
         engine.isPaused = true
         XCTAssertTrue(engine.activeRoots.isEmpty)
