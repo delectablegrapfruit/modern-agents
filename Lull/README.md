@@ -1155,9 +1155,7 @@ By touch alone Settings ▸ Keys is Settings ▸ Gestures, and lists the gesture
 
 ## Touch
 
-A quick swipe left or right anywhere off the board changes game tab (left: the next of Play, Puzzles, Factory;
-right: the one before; it follows the title bar's list, `TABS`). A swipe on a board steers the piece instead, and slow drags, dialogs and anything
-that scrolls sideways are left alone (`bindTabSwipe` in `js/app.js`).
+Tabs change only by a tap on them (or ⌘1–⌘6): a sideways swipe never changes tab.
 
 On a phone or a tablet the board is played with one finger, anywhere on it (`js/touch.js` reads the gestures;
 `BoardMode.bindTouch` in `js/modes.js` carries them out through the same `action()` as the keys):

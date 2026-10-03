@@ -468,7 +468,7 @@ module.exports = async function touchTests({ browser, check, PAGE, OUT }) {
   await shot('75-phone-reduced');
   await ev(() => { Lull.app.settings.motion = 'full'; Lull.app.applySettings(); });
 
-  // A quick sideways swipe off the board changes game tab; on a board, slow, or with a dialog up it does not.
+  // A sideways swipe never changes tab (tabs change only by tapping them, or their keys): off the board or on it.
   const swipe = (sel, dx, ms) => ev(([sel, dx, ms]) => new Promise((r) => {
     while (Lull.UI.modalOpen()) Lull.UI.closeTopModal();
     const el = document.querySelector(sel), b = el.getBoundingClientRect(), x = b.left + b.width / 2, y = b.top + Math.min(b.height / 2, 40);
@@ -478,14 +478,15 @@ module.exports = async function touchTests({ browser, check, PAGE, OUT }) {
   }), [sel, dx, ms]);
   await ev(() => Lull.app.setTab('puzzle'));
   const sw = { next: await swipe('#view-puzzle', -120, 120) };
+  await ev(() => Lull.app.setTab('factory'));
   sw.last = await swipe('#view-factory', -120, 120);
   sw.back = await swipe('#view-factory', 120, 120);
   await ev(() => Lull.app.setTab('factory'));
   sw.slow = await swipe('#view-factory', 120, 600);
   await ev(() => Lull.app.setTab('play'));
   sw.board = await swipe('#cv-play', -120, 120);
-  check('a quick sideways swipe changes game tab along Play, Puzzles, Factory (left: next, right: back; no Classic tab, none past Factory); not on a board, not slow',
-    sw.next === 'factory' && sw.last === 'factory' && sw.back === 'puzzle' && sw.slow === 'factory' && sw.board === 'play', JSON.stringify(sw));
+  check('a quick sideways swipe never changes tab (off the board, on it, either way)',
+    sw.next === 'puzzle' && sw.last === 'factory' && sw.back === 'factory' && sw.slow === 'factory' && sw.board === 'play', JSON.stringify(sw));
 
   check('no page errors on the phone', errors.length === 0, errors.slice(0, 5).join('\n'));
   await P.ctx.close();

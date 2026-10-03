@@ -161,31 +161,6 @@
       if (!on && cur) cur.remove();
     },
 
-    /**
-     * A quick left or right swipe by touch changes tab: left goes to the next game tab (Play, Puzzles, Factory: TABS), right to the one before. Swipes on a
-     * board (they steer the piece), in a dialog, on a slider or in anything that scrolls sideways are left alone, and so
-     * is a slow drag or one that is more up and down than across.
-     */
-    bindTabSwipe() {
-      const BOARDS = '#cv-play, #cv-puzzle, .modal, #modal-root, input, textarea, select';
-      let s = null;
-      const sideScroll = (el) => { for (; el && el !== document.body; el = el.parentElement) if (el.scrollWidth > el.clientWidth + 1 && /auto|scroll/.test(getComputedStyle(el).overflowX)) return true; return false; };
-      document.addEventListener('touchstart', (e) => {
-        const t = e.touches[0], el = e.target;
-        s = e.touches.length === 1 && !(el.closest && el.closest(BOARDS)) && !sideScroll(el) && !L.UI.modalOpen() ? { x: t.clientX, y: t.clientY, at: performance.now() } : null;
-      }, { passive: true });
-      document.addEventListener('touchmove', (e) => { if (s && e.touches.length > 1) s = null; }, { passive: true });
-      document.addEventListener('touchend', (e) => {
-        if (!s) return;
-        const t = e.changedTouches[0], dx = t.clientX - s.x, dy = t.clientY - s.y, dt = performance.now() - s.at;
-        s = null;
-        if (dt > 350 || Math.abs(dx) < 60 || Math.abs(dx) < 2 * Math.abs(dy)) return;
-        const ids = TABS.filter((x) => x.group === 'modes').map((x) => x.id), i = ids.indexOf(this.tab);
-        const j = i < 0 ? 0 : i + (dx < 0 ? 1 : -1);
-        if (j >= 0 && j < ids.length) this.setTab(ids[j]);
-      }, { passive: true });
-    },
-
     setTab(id) {
       if (!VIEWS.includes(id)) id = 'play';
       if (L.Collapse.on) L.Collapse.set(false);
@@ -258,7 +233,6 @@
       root.addEventListener('focus', () => { this.focusedAt = performance.now(); setTimeout(() => this.announceUnheard(), 400); });
       root.addEventListener('mousedown', () => this.activity(), true);
       root.addEventListener('pointerdown', () => this.activity(), true);
-      this.bindTabSwipe();
       // Clicked buttons let go of focus, so Space and Enter keep playing instead of pressing them again.
       document.addEventListener('mouseup', (e) => {
         const b = e.target && e.target.closest && e.target.closest('button');
