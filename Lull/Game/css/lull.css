@@ -1337,11 +1337,13 @@ body.fv-open header#titlebar { opacity: 0.45; }
 .nb-preset b { color: var(--fg); font-weight: 650; font-size: var(--fs-xs); }
 @media (hover: hover) { .nb-preset:hover { background: var(--panel-2); } }
 .nb-preset[aria-pressed="true"] { border-color: var(--accent-line); background: var(--accent-soft); }
-/* A narrow window: each label over its stepper, so the steppers keep their size beside the well. */
+/* A narrow window: the well narrower and shorter (as tall as the two steppers), each label still beside its stepper, so
+   the size takes less height and the panel under it room for six modes in two rows. */
 @media (max-width: 380px) {
-  .nb-row { flex-direction: column; align-items: flex-start; gap: 3px; }
-  .nb-main { gap: 12px; justify-content: center; }
-  .nb-fields { flex: none; }
+  .nb-body { gap: 9px; }
+  .nb-main { gap: 12px; }
+  .nb-well { width: 56px; height: 106px; }
+  .nb-row { gap: 6px; }
 }
 @media (hover: none) and (pointer: coarse) {
   .nb-step { width: 44px; height: 44px; }
@@ -1391,8 +1393,9 @@ body.fv-open header#titlebar { opacity: 0.45; }
 .nb-modes button, .nb-lvl button { flex: 1 1 0; min-width: 0; justify-content: center; height: 34px; padding: 0 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (hover: none) and (pointer: coarse) {
   .nb-modes button, .nb-lvl button { height: 44px; }
-  /* The tallest panel at 44 px targets: the modes, a level and Descent's stage, and the line for why. */
-  .nb-body { --nb-panel-h: 182px; }
+  /* The tallest panel at 44 px targets: the modes (six: two rows), a level and Descent's stage (or Mural's pictures and
+     level), and the line for why. */
+  .nb-body { --nb-panel-h: 228px; }
 }
 @media (prefers-reduced-motion: reduce) { .nb-switch .sw, .nb-switch .sw::after { transition: none; } }
 /* Narrow: the sample shrinks and goes above the name, so a name keeps its line whole (never broken inside a word,

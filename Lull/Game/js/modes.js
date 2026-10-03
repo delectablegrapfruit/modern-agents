@@ -1038,7 +1038,7 @@
       const paint = () => {
         // The empty well at this size, fitted in a fixed box on whole device pixels (as the library's thumbnails).
         const dpr = Math.min(3, root.devicePixelRatio || 1);
-        const boxW = 76, boxH = 124;
+        const narrow = !!(root.matchMedia && root.matchMedia('(max-width: 380px)').matches), boxW = narrow ? 56 : 76, boxH = narrow ? 106 : 124; // (as .nb-well)
         const c = Math.max(1, Math.floor(Math.min(boxW * dpr / z.w, boxH * dpr / z.h)));
         const W = z.w * c, H = z.h * c;
         preview.width = W; preview.height = H;

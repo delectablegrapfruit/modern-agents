@@ -14,6 +14,8 @@
 .mu-lvrow { flex-wrap: nowrap; }
 .mu-lv button { min-width: 38px; }
 @media (max-width: 360px) { .mu-lv button { min-width: 34px; padding: 0 6px; } }
+/* A finger: each level a 44 px square at any width (the five and Level fit across 320 px). */
+@media (hover: none) and (pointer: coarse) { .mu-lv button { min-width: 44px; padding: 0; } .mu-lvrow { gap: 6px; } }
 
 /* The file picker the Photo chip opens: never seen. */
 .mu-file { position: fixed; left: -9999px; top: 0; width: 1px; height: 1px; opacity: 0; }
@@ -33,10 +35,13 @@
 .mu-prog { position: relative; width: min(100%, 280px); height: 6px; border-radius: 3px; background: var(--panel-3, var(--line)); overflow: hidden; }
 .mu-prog > i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: var(--accent); opacity: 0.85; }
 
-/* With Mural there can be six modes or more: on a phone, rather than buttons under 44 px, they go in two rows. */
-@media (max-width: 400px) {
+/* With Mural there are six modes: on a phone, rather than buttons under 44 px, they go in two rows (a pointer keeps
+   them in one row of 34 px buttons, so the panel keeps its height). */
+@media (max-width: 440px) and (hover: none) and (pointer: coarse) {
   .nb-modes:has(> button:nth-child(6)) { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; }
   .nb-modes:has(> button:nth-child(7)) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 /* Its achievements make the counts three digits: in a 300 px window the filter keeps beside Recent. */
 @container (max-width: 290px) { .ach-tools { gap: 4px; } .ach-tools > .seg button { padding: 0 4px; } }
+/* A pointer in a narrow window: the six in one row, a size smaller, so each name keeps clear of the next. */
+@media (max-width: 440px) and (hover: hover), (max-width: 440px) and (pointer: fine) { .nb-modes button { padding: 0 2px; font-size: var(--fs-xs); } }

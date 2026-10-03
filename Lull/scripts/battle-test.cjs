@@ -80,7 +80,7 @@ module.exports = async function battleTests({ browser, check, PAGE, OUT }) {
   await ev(() => { const B = Lull.app.store.state.boards; B.size = { w: 10, h: 20 }; B.recipe = Lull.Recipe.normalize({}); Lull.app.modes.play.openNewBoard(); });
   await page.waitForTimeout(150);
   await ev(() => document.querySelector('.nb-tab[data-tab="mode"]').click());
-  const modes = await ev(() => [...document.querySelectorAll('.nb-mode')].map((b) => b.textContent.trim()));
+  const modes = await ev(() => [...document.querySelectorAll('.nb-mode')].map((b) => b.textContent.trim()).filter((t) => t !== 'Mural')); // (Mural: mural-test.cjs)
   await ev(() => document.querySelector('.nb-mode[data-value="battle"]').click());
   await page.waitForTimeout(80);
   await ev(() => document.querySelector('.nb-level[data-value="brisk"]').click());
