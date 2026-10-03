@@ -189,6 +189,9 @@
 
     refreshWallet(bump) {
       const n = fmtInt(this.state.lines);
+      // A bump only when the number shown changes: fractions banked a piece at a time (Mural's, a slow board's) stay quiet.
+      if (n === this.walletShown) bump = false;
+      this.walletShown = n;
       document.getElementById('wallet-n').textContent = n;
       document.getElementById('wallet').setAttribute('aria-label', 'Shop — ' + n + ' lines');
       if (this.tab === 'shop') UI.refreshShopPrices(this);

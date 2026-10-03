@@ -66,6 +66,16 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   const after = await ev(() => ({ lines: Lull.app.store.state.lines, fromAch: Lull.app.store.state.stats.lines.achievements, wallet: document.getElementById('wallet-n').textContent, board: Lull.app.modes.play.game.board.count(), ach: Object.keys(Lull.app.store.state.achievements).sort() }));
   check('a quad banks 5 lines (4 + 1 for the quad; plus the first-quad and perfect-clear achievements)', after.lines === cleared + 5 + after.fromAch && after.ach.join() === 'pc,quad', JSON.stringify(after));
   check('board empty after the quad', after.board === 0);
+  // The wallet bumps only when the number it shows changes: a fraction banked (a Mural piece's) stays quiet.
+  const wb = await ev(() => {
+    const app = Lull.app, S = app.store.state, w = document.getElementById('wallet'), keep = S.lines, out = [];
+    S.lines = Math.floor(keep) + 0.2; app.refreshWallet(); w.classList.remove('bump');
+    S.lines += 0.04; app.refreshWallet(true); out.push(w.classList.contains('bump'));
+    S.lines += 1; app.refreshWallet(true); out.push(w.classList.contains('bump'));
+    S.lines = keep; app.refreshWallet(); w.classList.remove('bump');
+    return out;
+  });
+  check('the wallet bumps only when its number changes (no bump for a fraction of a line)', wb[0] === false && wb[1] === true, JSON.stringify(wb));
   check('the day log notes the quad (for the Triathlon)', await ev(() => Lull.app.store.state.history[Lull.dateKey()].quad === 1));
   await page.waitForTimeout(120);
   await shot('10-quad');
