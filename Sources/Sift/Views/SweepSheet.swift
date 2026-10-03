@@ -45,7 +45,10 @@ struct SweepSheet: View {
                         Button("Sift Pro…") {
                             model.dismissSweep()
                             // One sheet at a time: the next opens once this one has gone.
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { model.showsPro = true }
+                            Task { @MainActor in
+                                try? await Task.sleep(nanoseconds: 300_000_000)
+                                model.showsPro = true
+                            }
                         }
                     }
                 }
