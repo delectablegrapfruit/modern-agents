@@ -48,7 +48,7 @@
   function picOf(game) {
     const X = Mural.extOf(game);
     if (X) return X.plan().pic;
-    return game && game.recipe && Mural.on(game.recipe) ? Mural.picture(game.recipe) : null;
+    return game && game.recipe && Mural.on(game.recipe) ? Mural.picture(game.recipe, game.w, Math.max(6, game.h - Mural.BUF)) : null;
   }
   const kOf = (id) => { const m = /^U:(\d+):/.exec(id || ''); return m ? +m[1] : -1; };
   const idxIn = (cells, x, y) => cells.findIndex((c) => c[0] === x && c[1] === y);
@@ -275,9 +275,10 @@
     /** The New board preview: the whole picture; a library thumbnail: the picture where the board has blocks. */
     preview(ctx, gm, recipe) {
       if (!Mural.on(recipe)) return;
-      const r = Recipe.normalize(recipe), pic = Mural.picture(r);
-      if (gm.style === 'thumb') { if (gm.cells) paintPicture(ctx, pic, gm.w, gm.h, gm.x, gm.y, gm.c, gm.cells); return; }
-      paintPicture(ctx, pic, gm.w, gm.h, gm.x, gm.y, gm.c, null);
+      const r = Recipe.normalize(recipe);
+      // A thumbnail is a saved board's (its buffer on top); the New board window's is the picture's size.
+      if (gm.style === 'thumb') { if (gm.cells) paintPicture(ctx, Mural.picture(r, gm.w, Math.max(6, gm.h - Mural.BUF)), gm.w, gm.h, gm.x, gm.y, gm.c, gm.cells); return; }
+      paintPicture(ctx, Mural.picture(r, gm.w, gm.h), gm.w, gm.h, gm.x, gm.y, gm.c, null);
     },
   };
   Recipe.viewPart(VIEW);
@@ -343,7 +344,12 @@
         this.base.onLock(r);
         if (!r.mural || !X()) return;
         const st = app.store, gm = g();
-        const pay = Library.bank(r.placed * Mural.PAY_CELL);
+        // What it left over the picture fades (as Race's trim), in the picture's colour under it.
+        if (r.trimmed && r.trimmed.length && !play.reduced && play.view.lay) {
+          const s = play.view.lay.s, pic = X().plan().pic, H = X().plan().H;
+          play.view.fx.fadeCells(r.trimmed.map(([x, y]) => { const [sx, sy] = play.view.toScreen(x, y); return { x: sx, y: sy, s, color: pic.pal[Mural.quartersAt(pic, H, x, H - 1)[0]] }; }), play.view.look.skin, 0.6);
+        }
+        const pay = Library.bank(r.mural.cells * Mural.PAY_CELL);
         if (pay) { st.addLines(pay, 'play'); gm.s.banked = Library.bank((gm.s.banked || 0) + pay); app.refreshWallet(true); }
         statsOf(st).placed++;
         st.touch();
@@ -466,18 +472,21 @@
     ph.cx = (x + cw / 2) / ph.w; ph.cy = (y + ch / 2) / ph.h;
     return { x, y, w: cw, h: ch };
   }
+  /** The board size a photo is cropped for: the New board window's (api.size), else the level's. */
+  const sizeOf = (api, level) => { const lv = Mural.LEVELS[level], z = api && api.size; return z && z.w && z.h ? { w: z.w, h: z.h } : { w: lv.w, h: lv.h }; };
   /**
-   * The photo, as cropped, made a mural's grid at a level: { w, h, pal, px }. The crop is read at the photo's own pixels
-   * (no canvas scaling, which mixes colours in gamma and dulls them) and area-averaged to quarters in linear light.
+   * The photo, as cropped, made a mural's grid at a level, for a board of size ({ w, h }; the level's by default):
+   * { w, h, pal, px }. The crop (the board's shape) is read at the photo's own pixels (no canvas scaling, which mixes
+   * colours in gamma and dulls them) and area-averaged to quarters in linear light.
    */
-  function ownFrom(ph, level) {
-    const lv = Mural.LEVELS[level], c = cropOf(ph, lv.w / lv.h), W = Math.max(lv.w * 2, Math.round(c.w)), H = Math.max(lv.h * 2, Math.round(c.h));
+  function ownFrom(ph, level, size) {
+    const lv = Mural.LEVELS[level], z = size || lv, c = cropOf(ph, z.w / z.h), W = Math.max(z.w * 2, Math.round(c.w)), H = Math.max(z.h * 2, Math.round(c.h));
     const cv = document.createElement('canvas');
     cv.width = W; cv.height = H;
     const ctx = cv.getContext('2d', { willReadFrequently: true });
     ctx.imageSmoothingEnabled = W > Math.round(c.w);
     ctx.drawImage(ph.cv, c.x, c.y, c.w, c.h, 0, 0, W, H);
-    return Mural.fromPixels(ctx.getImageData(0, 0, W, H).data, W, H, lv.w, lv.h, lv.pk);
+    return Mural.fromPixels(ctx.getImageData(0, 0, W, H).data, W, H, z.w, z.h, lv.pk);
   }
 
   /**
@@ -485,7 +494,7 @@
    * colours (a photo has more than a built-in picture: LEVELS pk); Use photo makes it the picture. api: the New board window's.
    */
   function openCrop(api) {
-    const r = api.recipe, level = r.mural.level, lv = Mural.LEVELS[level], a = lv.w / lv.h, ph = PHOTO;
+    const r = api.recipe, level = r.mural.level, size = sizeOf(api, level), a = size.w / size.h, ph = PHOTO;
     const vw = Math.min(root.innerWidth || 520, 560), BOX = Math.max(200, Math.min(320, vw - 72)), BOXH = Math.max(180, Math.min(300, (root.innerHeight || 700) - 300));
     const k = Math.min(BOX / ph.w, BOXH / ph.h), cw = Math.round(ph.w * k), chh = Math.round(ph.h * k);
     const dpr = Math.min(3, root.devicePixelRatio || 1);
@@ -508,7 +517,7 @@
       ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
       ctx.strokeRect(c.x * k + 1, c.y * k + 1, c.w * k - 2, c.h * k - 2);
     };
-    const quant = () => { own = ownFrom(ph, level); draw(); };
+    const quant = () => { own = ownFrom(ph, level, size); draw(); };
     let drag = null;
     cv.addEventListener('pointerdown', (e) => { drag = { id: e.pointerId, x: e.clientX, y: e.clientY, cx: ph.cx, cy: ph.cy }; dragging = true; try { cv.setPointerCapture(e.pointerId); } catch (err) { /* no capture */ } e.preventDefault(); });
     cv.addEventListener('pointermove', (e) => {
@@ -564,6 +573,13 @@
     ctx.restore();
   }
 
+  /** The Mixed chip's picture: a single block, a domino and a tromino, in the accent's family. */
+  function mixedSample(ctx, px, look) {
+    const c = Math.max(4, Math.floor(px / 5)), x0 = Math.round((px - c * 4) / 2), y0 = Math.round((px - c * 3) / 2);
+    const cells = [[0, 2, 2], [1, 2, 3], [2, 2, 3], [3, 2, 4], [3, 1, 4], [1, 1, 5]];
+    for (const [x, y, k] of cells) Render.drawCell(ctx, look.skin, look.color ? look.color(k) : '#7aa2f7', x0 + x * c, y0 + y * c, c);
+  }
+
   Recipe.uiPart({
     key: 'mural', order: 60, mode: 'mural', name: 'Mural',
     tab: 'mode',
@@ -581,17 +597,40 @@
             pickPhoto(() => openCrop(api));
           } }, kids);
       };
-      // A photo chosen at another level: cropped again for this one (its own grid and colours).
+      // A photo chosen at another level or size: cropped again for this one (its own grid, shape and colours).
       if (r.mural.pic === 'own' && PHOTO) {
-        const lv = Mural.levelOf(r);
-        if (r.mural.own.w !== lv.w * 2 || r.mural.own.h !== lv.h * 2) setTimeout(() => { const own = ownFrom(PHOTO, r.mural.level); LAST_OWN = own; api.choose('mural', { pic: 'own', level: r.mural.level, own }); }, 0);
+        const z = sizeOf(api, r.mural.level);
+        if (r.mural.own.w !== z.w * 2 || r.mural.own.h !== z.h * 2) setTimeout(() => { const own = ownFrom(PHOTO, r.mural.level, z); LAST_OWN = own; api.choose('mural', { pic: 'own', level: r.mural.level, own }); }, 0);
       }
       return h('div', { class: 'mu-panel' },
         h('div', { class: 'nb-chips mu-pics', role: 'group', 'aria-label': 'Picture' }, Mural.PIC_IDS.map(chip)),
         h('div', { class: 'cl-row mu-lvrow' }, h('span', { class: 'cl-nm' }, 'Level'),
           h('div', { class: 'seg cl-seg mu-lv', role: 'group', 'aria-label': 'Level' }, Mural.LEVEL_IDS.map((n) => api.option('mural.level', n, 'nb-level', String(n))))));
     },
-    presets(r) { if (!Mural.on(r)) return null; const lv = Mural.levelOf(r); return [['Level ' + r.mural.level, lv.w, lv.h]]; },
+    // The level's size first (the default), then larger ones: twice the board, twice the detail each way.
+    presets(r) {
+      if (!Mural.on(r)) return null;
+      const lv = Mural.levelOf(r), out = [['Level ' + r.mural.level, lv.w, lv.h]];
+      for (const [name, w, hh] of [['Detailed', 16, 26], ['Large', 18, 30], ['Largest', Mural.SIZE.w[1], Mural.SIZE.h[1]]]) if (w > lv.w || hh > lv.h) out.push([name, w, hh]);
+      return out;
+    },
+    // Into Mural, or another level: the level's size, unless a size of its own was set (one that is no level's).
+    sizeFor(r, asked) {
+      if (!Mural.on(r) || !asked) return null;
+      const lv = Mural.levelOf(r), std = Library.STANDARD;
+      const preset = Mural.LEVEL_IDS.some((n) => Mural.LEVELS[n].w === asked.w && Mural.LEVELS[n].h === asked.h) || (asked.w === std.w && asked.h === std.h);
+      return preset ? { w: lv.w, h: lv.h } : null;
+    },
+    // Create: a photo cropped for another size is cropped again for this one.
+    commit(r, size) {
+      if (!Mural.on(r) || r.mural.pic !== 'own' || !PHOTO || !size) return null;
+      if (r.mural.own.w === size.w * 2 && r.mural.own.h === size.h * 2) return null;
+      const own = ownFrom(PHOTO, r.mural.level, size);
+      LAST_OWN = own;
+      return { recipe: Recipe.normalize(Object.assign({}, r, { mural: { pic: 'own', level: r.mural.level, own } })), size };
+    },
+    // Mural's own set: 1-4 blocks, the level's share of small ones (shown only on a Mural board).
+    chips: [{ value: 'mixed', name: 'Mixed', sample: (ctx, px, look) => mixedSample(ctx, px, look), when: (r) => Mural.on(r) }],
     said(path, v) {
       if (path === 'mural.level') return 'Level ' + v;
       if (path === 'mural.pic') return Mural.PIC_NAMES[v] || null;

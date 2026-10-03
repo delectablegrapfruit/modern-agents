@@ -30,15 +30,15 @@ const PHOTO = png(300, 220, (x, y) => {
   return [214, 190, 150];
 });
 
-/** In the page: a Mural board (pic, level, seed) with `placed` pieces set; the piece in play where asked. */
+/** In the page: a Mural board (pic, level, seed; set and w × h when given) with `placed` pieces set (a negative count: all but that many). */
 const SCENE = (o) => {
   const app = Lull.app, m = app.modes.play, R = Lull.Recipe;
   while (Lull.UI.modalOpen()) Lull.UI.closeTopModal();
   m.hideCard();
-  const r = R.normalize({ mode: 'mural', mural: { pic: o.pic || 'coast', level: o.level || 3 } }), z = R.clampSize({}, r);
+  const r = R.normalize({ mode: 'mural', mural: { pic: o.pic || 'coast', level: o.level || 3 }, shapes: { preset: o.set || 'normal' } }), z = o.w ? { w: o.w, h: o.h } : R.clampSize({}, r);
   m.setGame(new Lull.Game({ w: z.w, h: z.h, seed: o.seed || 3, recipe: r, previewCount: m.settings.preview }));
   const g = m.game, X = Lull.Mural.extOf(g);
-  const n = o.placed === 'all' ? X.plan().pieces.length : o.placed || 0;
+  const n = o.placed === 'all' ? X.plan().pieces.length : o.placed < 0 ? X.plan().pieces.length + o.placed : o.placed || 0;
   for (let i = 0; i < n && !g.over; i++) { const q = X.current(g).goals[0], p = g.piece; p.rot = q.rot; p.x = q.x; p.y = q.y; g.lock(); }
   if (g.over) m.onTopout(true);
   m.view.pointerCol = null; m.view.fx.clear(); m.view.muralNudge = 0;
@@ -101,13 +101,14 @@ module.exports = async function muralTests({ browser, check, PAGE, OUT }) {
     document.querySelector('.nb-tab[data-tab="mods"]').click();
     const sw = [...document.querySelectorAll('.nb-switch')].map((b) => [b.dataset.path, b.getAttribute('aria-disabled'), b.dataset.tip]);
     document.querySelector('.nb-tab[data-tab="shapes"]').click();
-    const chips = [...document.querySelectorAll('.nb-chip')].filter((b) => b.dataset.value !== 'normal').map((b) => b.getAttribute('aria-disabled'));
+    const chips = Object.fromEntries([...document.querySelectorAll('.nb-chip')].map((b) => [b.dataset.value, b.getAttribute('aria-disabled') === 'true']));
     document.querySelector('.nb-tab[data-tab="size"]').click();
     const presets = [...document.querySelectorAll('.nb-preset')].map((b) => b.textContent);
     document.querySelector('.nb-tab[data-tab="mode"]').click();
     return { sw, chips, presets };
   });
-  check('Physics and Mirror are off ("Not in Mural"), so are the other shapes; Size has the level\'s one size', off.sw.every((s) => s[1] === 'true' && s[2] === 'Not in Mural') && off.chips.length > 0 && off.chips.every((c) => c === 'true') && off.presets.join() === 'Level 312 × 18', JSON.stringify(off));
+  check('Physics and Mirror are off ("Not in Mural"); the piece sets Mixed, Normal, Frantic and Pentominoes are on offer (Tiny, Big and Custom not shown); Size offers the level\'s size first, then larger ones up to 20 × 36',
+    off.sw.every((s) => s[1] === 'true' && s[2] === 'Not in Mural') && ['mixed', 'normal', 'frantic', 'pentominoes'].every((v) => off.chips[v] === false) && ['tiny', 'big', 'custom'].every((v) => !(v in off.chips)) && off.presets[0] === 'Level 312 × 18' && off.presets[off.presets.length - 1] === 'Largest20 × 36', JSON.stringify(off));
   await ev(() => { [...document.querySelectorAll('.modal .btn')].find((b) => b.textContent.trim() === 'Create').click(); });
   await page.waitForTimeout(200);
   const made = await ev(() => { const m = Lull.app.modes.play, g = m.game; return { label: Lull.Recipe.label(g.recipe), w: g.w, h: g.h - Lull.Mural.BUF, ext: g.ext.map((e) => e.key).join(), parts: m.view.parts.map((p) => p.key).join(), card: m.cardOpen, bar: document.querySelector('#itembar').classList.contains('mu-bar') && !!document.querySelector('#itembar .mu-prog'), next: (g.queue || []).length, fixed: g.fixed }; });
@@ -141,9 +142,9 @@ module.exports = async function muralTests({ browser, check, PAGE, OUT }) {
     for (let k = 0; k < 20 && p.x !== q.x; k++) m.action(p.x > q.x ? 'moveL' : 'moveR');
     const ready = X.exact(g, p.rot, p.x, g.ghostY(p));
     m.action('drop');
-    return { rot0, rt: q.rot, ready, i: X.M.i - i0, paid: Math.round((m.app.store.state.lines - lines0) * 100) / 100, want: Math.floor(pc.cells.length * Lull.Mural.PAY_CELL * 100 + 1e-6) / 100, placed: [...document.querySelectorAll('#play-status .stat')][0].textContent };
+    return { rot0, rt: q.rot, all: pc.goals.length, ready, i: X.M.i - i0, paid: Math.round((m.app.store.state.lines - lines0) * 100) / 100, want: Math.floor(pc.cells.length * Lull.Mural.PAY_CELL * 100 + 1e-6) / 100, placed: [...document.querySelectorAll('#play-status .stat')][0].textContent };
   });
-  check('in place (turned and stepped there by keys), Space sets it and pays a little (0.04 a block); it appeared in another turn', keyed.ready && keyed.i === 1 && keyed.paid === keyed.want && keyed.rot0 !== keyed.rt && /6 of/.test(keyed.placed), JSON.stringify(keyed));
+  check('in place (turned and stepped there by keys), Space sets it and pays a little (0.04 a block); it appeared in another turn', keyed.ready && keyed.i === 1 && keyed.paid === keyed.want && (keyed.rot0 !== keyed.rt || keyed.all === 4) && /6 of/.test(keyed.placed), JSON.stringify(keyed));
 
   // ---- the quarters: each block its picture's four colours, on the board and in play (turned) ---------------------------------
   const quarters = await ev(() => {
@@ -233,7 +234,7 @@ module.exports = async function muralTests({ browser, check, PAGE, OUT }) {
   check('a reload mid-mural: the same mural, piece and count', post.i === pre.i && post.id === pre.id && post.rot === pre.rot && post.x === pre.x && post.label === 'Mural · Coast · Level 2', JSON.stringify({ pre, post }));
 
   // ---- a photo: the file picker, the Photo window (crop, Zoom, the preview in the level's colours), Use photo, Create ---------------
-  await ev(() => { while (Lull.UI.modalOpen()) Lull.UI.closeTopModal(); const B = Lull.app.store.state.boards; B.recipe = Lull.Recipe.normalize({ mode: 'mural', mural: { pic: 'coast', level: 4 } }); Lull.app.modes.play.openNewBoard(); });
+  await ev(() => { while (Lull.UI.modalOpen()) Lull.UI.closeTopModal(); const B = Lull.app.store.state.boards; B.recipe = Lull.Recipe.normalize({ mode: 'mural', mural: { pic: 'coast', level: 4 } }); B.size = { w: 14, h: 22 }; Lull.app.modes.play.openNewBoard(); });
   await page.waitForTimeout(150);
   await ev(() => document.querySelector('.nb-tab[data-tab="mode"]').click());
   const [chooser] = await Promise.all([page.waitForEvent('filechooser'), ev(() => document.querySelector('.mu-pic[data-value="own"]').click())]);
@@ -324,6 +325,21 @@ module.exports = async function muralTests({ browser, check, PAGE, OUT }) {
     check(vw + ' × ' + vh + ' ' + theme + ': the buffer hidden while the stack is low; near the top it shows (all its rows, the piece at its top) and the board still fits (no clipping or sideways scroll, quarters 4 px or more; on a phone 44 px controls)',
       buf.low && fitB.open && fitB.shown === fitB.h && fitB.top === fitB.h - 1 && fitB.inside && fitB.board && fitB.items && fitB.page && fitB.quarter >= 4 && (!phone || fitB.small === 0), JSON.stringify({ buf, fitB }));
     await F.shot('mural-buffer-' + vw + 'x' + vh + '-' + theme);
+    if (phone || vw === 400) {
+      // The largest board (20 × 36, the picture at 40 × 72 quarters), its buffer open: it still fits, and its quarters are stated.
+      await F.ev(SCENE, { pic: 'still', level: 5, seed: 4, set: 'frantic', w: 20, h: 36, placed: -5 });
+      await F.page.waitForTimeout(650);
+      const big = await F.ev(() => {
+        const m = Lull.app.modes.play, g = m.game, cv = m.view.canvas.getBoundingClientRect(), ib = document.querySelector('#itembar').getBoundingClientRect();
+        m.view.dirty = true; m.view.render(performance.now());
+        const L0 = m.view.lay, btns = [...document.querySelectorAll('#play-status button, #itembar button')].filter((b) => b.offsetParent).map((b) => b.getBoundingClientRect());
+        return { shown: L0.gh, h: g.h, inside: L0.board.y >= 0 && L0.board.y + L0.board.h <= cv.height + 0.5 && L0.board.x >= 0 && L0.board.x + L0.board.w <= cv.width + 0.5, board: cv.bottom <= window.innerHeight, items: ib.bottom <= window.innerHeight + 0.5, page: document.documentElement.scrollWidth <= window.innerWidth, quarter: L0.s / 2, small: btns.filter((r) => r.height < 43.5 && r.width < 43.5).length };
+      });
+      console.log('    ' + vw + ' x ' + vh + ' ' + theme + ': the largest board (20 x 36) draws a quarter cell at ' + big.quarter + ' px');
+      check(vw + ' × ' + vh + ' ' + theme + ': the largest board (20 × 36) with its buffer open fits (no clipping or sideways scroll' + (phone ? ', 44 px controls' : '') + '); a quarter is 3 px or more (' + big.quarter + ' px)',
+        big.shown === big.h && big.inside && big.board && big.items && big.page && big.quarter >= 3 && (!phone || big.small === 0), JSON.stringify(big));
+      await F.shot('mural-largest-' + vw + 'x' + vh + '-' + theme);
+    }
     if (vw === 520 && theme === 'light') {
       // As each piece appears (set in place one after another, as the real controls would): by default its badge shows
       // one press of the single turn button (or a tick for a look-alike); under Inverted Controls the counter-clockwise
@@ -410,6 +426,18 @@ module.exports = async function muralTests({ browser, check, PAGE, OUT }) {
     });
     check(vw + ' × ' + vh + ' ' + theme + ': the window\'s Mode tab on Mural fits (the pictures and levels in the panel, nothing scrolls' + (phone ? ', 44 px targets' : '') + ')', nb.top >= 0 && nb.bottom <= nb.vh && nb.inPanel && !nb.scrolls && nb.page && (!phone || nb.minH >= 43.5), JSON.stringify(nb));
     await F.shot('mural-newboard-' + vw + 'x' + vh + '-' + theme);
+    // The Shapes tab on Mural: Mixed joins the sets; everything in the panel, nothing scrolls.
+    await F.ev(() => document.querySelector('.nb-tab[data-tab="shapes"]').click());
+    await F.page.waitForTimeout(80);
+    const shp = await F.ev(() => {
+      const m = document.querySelector('.modal-newboard'), r = m.getBoundingClientRect(), panel = m.querySelector('.nb-panel'), pr = panel.getBoundingClientRect();
+      const chips = [...m.querySelectorAll('.nb-chip')], bs = chips.map((b) => b.getBoundingClientRect());
+      return { n: chips.length, mixed: chips.some((b) => b.dataset.value === 'mixed'), top: r.top, bottom: r.bottom, vh: window.innerHeight, minH: Math.min(...bs.map((b) => b.height)), inPanel: bs.every((b) => b.bottom <= pr.bottom + 0.5 && b.right <= pr.right + 0.5), scrolls: panel.scrollHeight > panel.clientHeight + 1 };
+    });
+    check(vw + ' × ' + vh + ' ' + theme + ': the window\'s Shapes tab on Mural (Mixed among the sets) fits: every chip in the panel, nothing scrolls' + (phone ? ', 44 px targets' : ''), shp.mixed && shp.top >= 0 && shp.bottom <= shp.vh && shp.inPanel && !shp.scrolls && (!phone || shp.minH >= 43.5), JSON.stringify(shp));
+    await F.shot('mural-newboard-shapes-' + vw + 'x' + vh + '-' + theme);
+    await F.ev(() => document.querySelector('.nb-tab[data-tab="mode"]').click());
+    await F.page.waitForTimeout(60);
     if (vw === 320 || vw === 390) {
       // The Photo window on a phone.
       const [ch] = await Promise.all([F.page.waitForEvent('filechooser'), F.ev(() => document.querySelector('.mu-pic[data-value="own"]').click())]);
@@ -421,6 +449,59 @@ module.exports = async function muralTests({ browser, check, PAGE, OUT }) {
     }
     await F.ctx.close();
   }
+
+  // ---- piece sets, sizes and a fresh cut: Pentominoes at Detailed (16 × 26) made in the window and played to the end ---------------------
+  const S2 = await open();
+  const newWith = async () => {
+    await S2.ev(() => { while (Lull.UI.modalOpen()) Lull.UI.closeTopModal(); const B = Lull.app.store.state.boards; B.size = { w: 10, h: 14 }; B.recipe = Lull.Recipe.normalize({ mode: 'mural', mural: { pic: 'soft', level: 2 } }); Lull.app.modes.play.openNewBoard(); });
+    await S2.page.waitForTimeout(150);
+    await S2.ev(() => document.querySelector('.nb-tab[data-tab="shapes"]').click());
+    await S2.ev(() => document.querySelector('.nb-chip[data-value="pentominoes"]').click());
+    const tab = await S2.ev(() => ({ value: document.querySelector('.nb-tab[data-tab="shapes"] .vl').textContent, pressed: (document.querySelector('.nb-chip[aria-pressed="true"]') || {}).dataset.value }));
+    await S2.ev(() => document.querySelector('.nb-tab[data-tab="size"]').click());
+    await S2.ev(() => [...document.querySelectorAll('.nb-preset')].find((b) => /Detailed/.test(b.textContent)).click());
+    await S2.page.waitForTimeout(60);
+    await S2.shot('mural-sets-window-520x760');
+    await S2.ev(() => { [...document.querySelectorAll('.modal .btn')].find((b) => b.textContent.trim() === 'Create').click(); });
+    await S2.page.waitForTimeout(250);
+    return tab;
+  };
+  const setTab = await newWith();
+  const setMade = await S2.ev(() => {
+    const m = Lull.app.modes.play, g = m.game, X = Lull.Mural.extOf(g), P = X.plan();
+    return { set: g.recipe.shapes.preset, label: Lull.Recipe.label(g.recipe), w: g.w, h: g.h - Lull.Mural.BUF, q: [P.pic.QW, P.pic.QH], five: P.pieces.every((p) => p.cells.length === 5 || p.cells.length === 1), ok: P.check && P.check.ok, first: JSON.stringify(P.pieces.slice(0, 8).map((p) => p.cells)) };
+  });
+  await S2.shot('mural-pentominoes-520x760');
+  const setPlayed = await S2.ev(() => {
+    const m = Lull.app.modes.play, g = m.game, X = Lull.Mural.extOf(g);
+    let n = 0;
+    while (!g.over && n < 400) { const q = X.current(g).goals[0], p = g.piece; p.rot = q.rot; p.x = q.x; p.y = g.h - 1 - p.type.rotBounds[q.rot].maxY; m.action('drop'); n++; }
+    let left = 0; for (let y = g.h - Lull.Mural.BUF; y < g.h; y++) for (let x = 0; x < g.w; x++) if (g.board.get(x, y)) left++;
+    return { done: g.endKind === 'finished', n, left };
+  });
+  await S2.page.waitForTimeout(150);
+  await S2.ev(() => Lull.app.modes.play.hideCard());
+  await S2.shot('mural-pentominoes-finished-520x760');
+  check('Shapes ▸ Pentominoes and Size ▸ Detailed in the window: Create makes a 16 × 26 Pentominoes mural (its picture at 32 × 52 quarters, every piece of five blocks), checked solvable; it plays to Finished, nothing left in the buffer',
+    setTab.value === 'Pentominoes' && setTab.pressed === 'pentominoes' && setMade.set === 'pentominoes' && setMade.label === 'Mural · Abstract · Level 2 · Pentominoes' && setMade.w === 16 && setMade.h === 26 && setMade.q.join() === '32,52' && setMade.five && setMade.ok && setPlayed.done && setPlayed.left === 0, JSON.stringify({ setTab, setMade: Object.assign({}, setMade, { first: undefined }), setPlayed }));
+  await newWith();
+  const again = await S2.ev(() => JSON.stringify(Lull.Mural.extOf(Lull.app.modes.play.game).plan().pieces.slice(0, 8).map((p) => p.cells)));
+  check('a new board with the same picture, level, size and set is cut differently (a fresh seed)', again !== setMade.first);
+  // Plan time in Chromium, the CPU slowed 4 ×: a fresh seed each, cut and checked from nothing.
+  const cdp = await S2.ctx.newCDPSession(S2.page);
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+  const ms = await S2.ev(() => {
+    const out = {};
+    for (const set of Lull.Mural.SETS) for (const [w, hh] of [[16, 26], [20, 36]]) {
+      const r = Lull.Recipe.normalize({ mode: 'mural', mural: { pic: 'still', level: 5 }, shapes: { preset: set } });
+      const t0 = performance.now(); Lull.Mural.plan(r, 777000 + w + set.length, w, hh); out[set + ' ' + w + 'x' + hh] = Math.round(performance.now() - t0);
+    }
+    return out;
+  });
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
+  console.log('    plan ms in Chromium at 4 x CPU throttle:', JSON.stringify(ms));
+  check('a level 5 board (16 × 26) plans in under half a second in Chromium at 4 × CPU throttle, every set', Object.entries(ms).filter(([k]) => /16x26/.test(k)).every(([, v]) => v < 500), JSON.stringify(ms));
+  await S2.ctx.close();
 
   // ---- reduced motion: the nudge is drawn still (no shake ever) ----------------------------------------------------------------------
   const RM = await open({ reducedMotion: 'reduce' });

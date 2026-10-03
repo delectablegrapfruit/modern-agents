@@ -28,7 +28,7 @@
   const WEIGHT_NAMES = { less: 'Less', even: 'Even', more: 'More', all: 'All' };
   const BIGS = ['off', 'less', 'even', 'more', 'all'];
   const PRESETS = ['normal', 'tiny', 'frantic', 'pentominoes', 'big', 'custom'];
-  const NAMES = { normal: 'Normal', tiny: 'Tiny', frantic: 'Frantic', pentominoes: 'Pentominoes', big: 'Big', custom: 'Custom' };
+  const NAMES = { normal: 'Normal', tiny: 'Tiny', frantic: 'Frantic', pentominoes: 'Pentominoes', big: 'Big', custom: 'Custom', mixed: 'Mixed' };
   const SEVEN = Pieces.TETROMINOES;
   /** The built-in ids of each group of 1 to 5 blocks (the seven keep SRS and T-spins). */
   const SMALL = { 1: ['M1'], 2: ['D2'], 3: ['I3', 'V3'], 4: SEVEN, 5: Pieces.PENTO18 };
@@ -303,7 +303,8 @@
    */
   function normalize(raw) {
     raw = isObj(raw) ? raw : {};
-    const preset = PRESETS.includes(raw.preset) ? raw.preset : 'normal';
+    // (Mixed: Mural's own set, kept here; js/mural.js makes it Normal on any other board.)
+    const preset = PRESETS.includes(raw.preset) || raw.preset === 'mixed' ? raw.preset : 'normal';
     if (preset !== 'custom') return { preset };
     const c = isObj(raw.custom) ? raw.custom : CUSTOM_DEFAULT;
     const out = { groups: [], big: BIGS.includes(c.big) ? c.big : 'off' };
@@ -600,7 +601,8 @@
 
   // ---- the part ---------------------------------------------------------------------------------------------------------
 
-  const presetOf = (r) => (r && isObj(r.shapes) ? r.shapes.preset : 'normal');
+  // A Mural board cuts its picture into its set's pieces itself (js/mural.js): none of this part's dealing, pay or sizes.
+  const presetOf = (r) => (r && isObj(r.shapes) && r.mode !== 'mural' ? r.shapes.preset : 'normal');
   const part = {
     key: 'shapes', order: 10, owns: ['shapes'],
     options: { 'shapes.preset': PRESETS.slice() },
@@ -608,7 +610,7 @@
       const sh = normalize(isObj(raw.shapes) ? raw.shapes : null);
       out.shapes = sh;
     },
-    label: (r, short) => label(r.shapes, short),
+    label: (r, short) => (r.mode === 'mural' ? '' : label(r.shapes, short)),
     thin(r) { r.shapes = thin(r.shapes); },
     // A saved board of a set: its bag holds this set's tokens.
     valid(g, r) {
@@ -617,7 +619,7 @@
     },
     rules(r, R) {
       const sh = r.shapes;
-      if (sh.preset === 'normal') return;
+      if (presetOf(r) === 'normal') return;
       R.E = payCells(sh);
       R.u = unit(sh);
       if (!rated(sh)) R.rated = false;
@@ -638,7 +640,7 @@
       if (c.big !== 'off' || c.clusters || c.groups.some((g) => g.n > 5)) out['shapes.preset=custom'] = why;
     },
     engine(game) {
-      const c = compile(game.recipe && game.recipe.shapes);
+      const c = presetOf(game.recipe) === 'normal' ? null : compile(game.recipe && game.recipe.shapes);
       if (!c) return null;
       const dealer = {
         next(g) {

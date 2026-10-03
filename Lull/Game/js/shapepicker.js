@@ -83,7 +83,7 @@
     },
     // The New board preview: the set's first pieces, faint, on the floor of the well (what the shapes are, to the board's scale).
     preview(ctx, geom, recipe, theme) {
-      if (geom.style !== 'well' || !recipe || !recipe.shapes || recipe.shapes.preset === 'normal') return;
+      if (geom.style !== 'well' || !recipe || !recipe.shapes || recipe.shapes.preset === 'normal' || recipe.mode === 'mural') return;
       const cells = sampleFloor(recipe.shapes, geom.w, geom.h), c = geom.c;
       if (!cells.length || c < 2) return;
       ctx.fillStyle = theme.accent;
@@ -112,14 +112,16 @@
   let lastCustom = null;
   const seenPreset = new WeakMap();
 
+  const notMural = (r) => !r || r.mode !== 'mural';
   Recipe.uiPart({
     key: 'shapes', order: 10, tab: 'shapes',
     chips: [
-      { value: 'tiny', name: 'Tiny', piece: 'V3' },
+      // (Tiny, Big and Custom are not Mural's: not shown on a Mural board.)
+      { value: 'tiny', name: 'Tiny', piece: 'V3', when: notMural },
       { value: 'frantic', name: 'Frantic', sample: (ctx, px, look) => drawMix(ctx, px, look) },
       { value: 'pentominoes', name: 'Pentominoes', piece: 'F' },
-      { value: 'big', name: 'Big', sample: (ctx, px, look) => drawSample(ctx, px, look, 'BO', Math.max(3, Math.floor(px * 0.19))) },
-      { value: 'custom', name: 'Custom', sample: (ctx, px, look) => drawSample(ctx, px, look, CLUSTER_SAMPLE()) },
+      { value: 'big', name: 'Big', sample: (ctx, px, look) => drawSample(ctx, px, look, 'BO', Math.max(3, Math.floor(px * 0.19))), when: notMural },
+      { value: 'custom', name: 'Custom', sample: (ctx, px, look) => drawSample(ctx, px, look, CLUSTER_SAMPLE()), when: notMural },
     ],
     said: (path, v) => (path === 'shapes.custom' && v ? Shapes.describe(Shapes.normalize({ preset: 'custom', custom: v }).custom) : null),
     // Custom: what it deals, and Edit (the Custom shapes window).

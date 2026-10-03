@@ -951,7 +951,8 @@
      * a board was made.
      *
      * The feature parts fill it through Recipe.uiPart({ key, order, … }), every field optional:
-     *   chips: [{ value, name, piece | sample(ctx, px, look) }]   Shapes chips (path 'shapes.preset'); Normal is built in
+     *   chips: [{ value, name, piece | sample(ctx, px, look), when?(r) }]   Shapes chips (path 'shapes.preset'; shown only
+     *                             where when(r) says so, when given); Normal is built in
      *   tab: 'shapes' | 'mods' | 'mode' | 'size', panel(r, api) -> element   more in that tab's panel, under its options
      *   value(r) -> text          the Shapes tab's short value ("Frantic", "Custom")
      *   mod: 'physics', name        Modifiers: its switch's name        mode: 'descent', name   Mode: its button's name
@@ -964,7 +965,7 @@
      *                             a chip's or a level's name does not say it
      *   tags(r, x, info) -> [{ text, cls }]   more tags on its boards' library rows (see PlayMode.rowTags)
      *   tiles(ext, r, m) -> [[value, label]]  its numbers on a board's summary, from the summary's ext (Recipe.summary)
-     * api: { recipe, choose(path, value), why(text), refresh(), look, app }. A panel's control keeps focus through a
+     * api: { recipe, size (the size shown), choose(path, value), why(text), refresh(), look, app }. A panel's control keeps focus through a
      * refresh when it carries data-focus="a name of its own" (or an id, or data-path and data-value as the options do);
      * one that cannot be found again leaves focus on the tab, never outside the window (where Enter is Create).
      *
@@ -993,6 +994,7 @@
       const chips = () => {
         const out = [{ path: 'shapes.preset', value: 'normal', name: 'Normal', piece: 'T' }];
         for (const u of uis()) for (const c of u.chips || []) {
+          if (c.when && !c.when(recipe)) continue;
           const k = out.findIndex((o) => o.value === c.value && o.path === (c.path || 'shapes.preset'));
           const chip = Object.assign({ path: 'shapes.preset' }, c);
           if (k >= 0) out[k] = chip; else out.push(chip);
@@ -1106,7 +1108,7 @@
         if (was.w !== z.w || was.h !== z.h) words.push(Library.sizeLabel(z.w, z.h));
         live.textContent = words.join(', ');
       };
-      const api = { get recipe() { return recipe; }, choose, why: showWhy, refresh: () => refresh(), look, app: this.app, option, edit: edit || null };
+      const api = { get recipe() { return recipe; }, get size() { return z; }, choose, why: showWhy, refresh: () => refresh(), look, app: this.app, option, edit: edit || null };
       const extras = (k) => uis().filter((u) => u.tab === k && u.panel).map((u) => u.panel(recipe, api)).filter(Boolean);
       const panels = {
         size: () => {
