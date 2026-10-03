@@ -2020,8 +2020,9 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     const a = grab(); await new Promise((r) => setTimeout(r, 900)); const b = grab();
     app.settings.motion = keep; app.applySettings();
     await new Promise((r) => setTimeout(r, 300));
-    const c = grab(); await new Promise((r) => setTimeout(r, 700)); const d2 = grab();
-    return { still: a === b, moving: c !== d2, mood: v.signMood };
+    const seen = new Set([grab()]);
+    for (let i = 0; i < 8; i++) { await new Promise((r) => setTimeout(r, 250)); seen.add(grab()); }
+    return { still: a === b, moving: seen.size > 1, mood: v.signMood };
   });
   check('reduced motion: the sign is a still frame; otherwise its dots move', still.still && still.moving, JSON.stringify(still));
 

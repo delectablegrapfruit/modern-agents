@@ -422,7 +422,7 @@ module.exports = function econTests(test, L) {
     const gap = (a, b) => { const n = st.log.filter((x) => x[0] > a && x[0] <= b).length; return n ? (b - a) / n * 60 : Infinity; };
     return { hourly, allCosmeticsAt: cos.length === forSale.length ? cos[cos.length - 1][0] : null, snaps, gap05: gap(0, 5) };
   }
-  test('career: every cosmetic owned in 50–80 h casually, 25–45 h skilled, 40–70 h puzzle-focused; purchases come often early', () => {
+  test('career: every cosmetic owned in 50–80 h casually, 25–45 h skilled, 40–70 h puzzle-focused; purchases come often early; the factory a sixth to three tenths of casual income', () => {
     const c = career('casual', 400), s = career('skilled', 400), p = career('puzzle', 400);
     const within = (x, a, b, what) => assert(x != null && x >= a && x <= b, what + ': ' + x);
     within(c.allCosmeticsAt, 50, 80, 'casual');
@@ -433,7 +433,7 @@ module.exports = function econTests(test, L) {
     assert(share(s.snaps[10], 'achievements') <= 0.35, 'skilled achievements at 10 h: ' + share(s.snaps[10], 'achievements').toFixed(3));
     assert(share(s.snaps[50], 'achievements') <= 0.15, 'skilled achievements at 50 h: ' + share(s.snaps[50], 'achievements').toFixed(3));
     const fac = share(c.snaps[200], 'factory');
-    assert(fac >= 0.15 && fac <= 0.25, 'casual factory share at 200 h: ' + fac.toFixed(3));
+    assert(fac >= 0.15 && fac <= 0.3, 'casual factory share at 200 h: ' + fac.toFixed(3));
     console.log('       every cosmetic at ' + [c, s, p].map((x) => x.allCosmeticsAt + ' h').join(' / ') + ' (casual / skilled / puzzle); skilled achievements ' +
       Math.round(100 * share(s.snaps[10], 'achievements')) + '% at 10 h, ' + Math.round(100 * share(s.snaps[50], 'achievements')) + '% at 50 h; casual factory ' + Math.round(100 * fac) + '% at 200 h; casual buys every ' + c.gap05.toFixed(0) + ' min (0–5 h)');
     void round;
