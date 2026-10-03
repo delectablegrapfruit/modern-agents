@@ -33,7 +33,25 @@ if command -v swiftc >/dev/null && command -v iconutil >/dev/null; then
     || echo "icon skipped"
 fi
 
-# Ad-hoc signature so the app can register as a login item.
-codesign --force --sign - "$APP" >/dev/null 2>&1 || echo "codesign skipped"
+# The Lemon Squeezy product this build sells Sift Pro as. Left empty, the app sells nothing and has every feature.
+if command -v plutil >/dev/null; then
+  plutil -replace SiftCheckoutURL -string "${SIFT_CHECKOUT_URL:-}" "$APP/Contents/Info.plist"
+  plutil -replace SiftStoreID -string "${SIFT_STORE_ID:-}" "$APP/Contents/Info.plist"
+  plutil -replace SiftProductID -string "${SIFT_PRODUCT_ID:-}" "$APP/Contents/Info.plist"
+fi
+
+if [ -n "${SIFT_SIGN_IDENTITY:-}" ]; then
+  # Developer ID with the hardened runtime and a secure timestamp, as notarization asks. The executables inside
+  # are signed before the bundle that seals them.
+  for tool in sift-cli sift-helper; do
+    codesign --force --options runtime --timestamp --sign "$SIFT_SIGN_IDENTITY" "$APP/Contents/MacOS/$tool"
+  done
+  codesign --force --options runtime --timestamp --entitlements Packaging/Sift.entitlements \
+    --sign "$SIFT_SIGN_IDENTITY" "$APP"
+  codesign --verify --strict --verbose=2 "$APP"
+else
+  # Ad-hoc signature so the app can register as a login item.
+  codesign --force --sign - "$APP" >/dev/null 2>&1 || echo "codesign skipped"
+fi
 
 echo "built $APP"

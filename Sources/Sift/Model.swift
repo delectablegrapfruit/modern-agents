@@ -68,6 +68,11 @@ final class Model: ObservableObject {
     @Published private(set) var reactsInstantly = false
     /// The root helper is installed and answering.
     @Published private(set) var helperReady = false
+    /// Whether cleaning by itself and Finder views are unlocked: the trial, a license, or a build that sells nothing.
+    @Published private(set) var entitlement: Entitlement
+    @Published var showsPro = false
+    @Published private(set) var licenseBusy = false
+    @Published var licenseProblem: String?
     /// The window shows itself once, the first time the app runs.
     private var wantsWindow: Bool
 
@@ -76,9 +81,14 @@ final class Model: ObservableObject {
     private var sweptRoots: [Root] = []
     private var activityRefresh: Task<Void, Never>?
     private var observers: [NSObjectProtocol] = []
+    let licensing: Licensing
+    /// Looks at the trial now and then: Sift runs for weeks without its window coming to the front.
+    private var entitlementTimer: Timer?
 
-    init(engine: Engine = Engine()) {
+    init(engine: Engine = Engine(), licensing: Licensing = Licensing(storefront: Storefront(info: Bundle.main.infoDictionary))) {
         self.engine = engine
+        self.licensing = licensing
+        entitlement = licensing.entitlement
         wantsWindow = engine.isFirstLaunch
         let views = engine.settings.views
         draft = views
@@ -119,12 +129,19 @@ final class Model: ObservableObject {
         }
         checkPermissions()
         Task { await refreshHelper() }
+        // Past the trial nothing runs by itself; sweeping stays.
+        let idle = !entitlement.isPro
+        guardian.userPaused = idle
         guardian.start()
+        entitlementTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.refreshEntitlement() }
+        }
         let settings = engine.settings
         Task.detached(priority: .utility) {
             try? FinderPrefs.preventStores()
             // The first run writes the settings file, so the window opens by itself only once.
             if engine.isFirstLaunch { engine.update(settings) }
+            engine.isPaused = idle
             engine.start()
         }
     }
@@ -138,6 +155,7 @@ final class Model: ObservableObject {
 
     /// Called when the app comes to the front: permissions may have been granted meanwhile.
     func checkPermissions() {
+        refreshEntitlement()
         hasFullDiskAccess = Permissions.hasFullDiskAccess
         reactsInstantly = AXIsProcessTrusted()
         if !canControlFinder {
@@ -191,6 +209,7 @@ final class Model: ObservableObject {
     // MARK: - Status
 
     var statusText: String {
+        if !entitlement.isPro { return "Not cleaning by itself" }
         if isPaused { return "Paused" }
         var labels: [String] = []
         for root in roots where !labels.contains(root.label) { labels.append(root.label) }
@@ -239,12 +258,91 @@ final class Model: ObservableObject {
     /// Pause stops everything automatic: cleaning and the window guard.
     func togglePause() {
         guard applyPhase == nil else { return }
+        guard entitlement.isPro else { return showPro() }
         isPaused.toggle()
-        let paused = isPaused
+        applyRunState()
+    }
+
+    /// Cleaning and the window guard run unless the person paused Sift or the trial is over.
+    private func applyRunState() {
+        let idle = isPaused || !entitlement.isPro
         let engine = self.engine
-        Task.detached(priority: .utility) { engine.isPaused = paused }
-        guardian.userPaused = paused
-        if !paused { guardian.resume() }
+        Task.detached(priority: .utility) { engine.isPaused = idle }
+        guardian.userPaused = idle
+        if !idle { guardian.resume() }
+    }
+
+    // MARK: - Sift Pro
+
+    /// The trial and license as the window and menu show them.
+    var proStatus: String {
+        switch entitlement {
+        case .unsold: return "Every feature is included in this build."
+        case .licensed(let license): return license.holder.isEmpty ? "Licensed. Thank you for buying Sift." : "Licensed to " + license.holder + ". Thank you for buying Sift."
+        case .trial(let days): return days == 1 ? "1 day left in your free trial." : "\(days) days left in your free trial."
+        case .expired: return "Your free trial has ended. Sweep still works; cleaning by itself and Finder views need Sift Pro."
+        }
+    }
+
+    /// Whether there is anything to buy: the trial is running or over.
+    var offersPro: Bool {
+        switch entitlement {
+        case .trial, .expired: return true
+        case .unsold, .licensed: return false
+        }
+    }
+
+    func showPro() {
+        WindowOpener.open()
+        showsPro = true
+    }
+
+    func buyPro() {
+        guard let url = licensing.storefront.checkoutURL else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    func refreshEntitlement() {
+        let now = licensing.entitlement
+        guard now != entitlement else { return }
+        let changed = now.isPro != entitlement.isPro
+        entitlement = now
+        if changed { applyRunState() }
+    }
+
+    func activate(_ key: String) {
+        guard !licenseBusy else { return }
+        licenseBusy = true
+        licenseProblem = nil
+        let licensing = self.licensing
+        Task {
+            do {
+                let name = await Task.detached(priority: .userInitiated) { Host.current().localizedName ?? "Mac" }.value
+                try await licensing.activate(key, instanceName: name)
+                refreshEntitlement()
+                engine.log.info("Sift Pro activated")
+            } catch {
+                licenseProblem = error.localizedDescription
+            }
+            licenseBusy = false
+        }
+    }
+
+    /// Gives the activation back, so the key can move to another Mac.
+    func deactivate() {
+        guard !licenseBusy else { return }
+        licenseBusy = true
+        licenseProblem = nil
+        let licensing = self.licensing
+        Task {
+            do {
+                try await licensing.deactivate()
+                refreshEntitlement()
+            } catch {
+                licenseProblem = error.localizedDescription
+            }
+            licenseBusy = false
+        }
     }
 
     // MARK: - Sweeping
@@ -329,6 +427,7 @@ final class Model: ObservableObject {
     /// with the windows it had.
     func apply() {
         guard hasChanges, applyPhase == nil else { return }
+        guard entitlement.isPro else { return showPro() }
         applyPhase = "Applying…"
         let views = draft
         let previous = engine.plan

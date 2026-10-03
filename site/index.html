@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sift for Mac</title>
+<meta name="description" content="Sift removes .DS_Store, ._ files and the hidden folders macOS leaves on every disk, the moment they appear, and makes Finder show folders your way.">
+<script>
+  // The two links this page needs: the Lemon Squeezy checkout for Sift Pro, and the app download.
+  const BUY_URL = "https://YOUR-STORE.lemonsqueezy.com/buy/YOUR-PRODUCT";
+  const DOWNLOAD_URL = "https://github.com/delectablegrapfruit/modern-agents/raw/claude/sift-pro/dist/Sift.app.zip";
+  const PRICE = "$12";
+</script>
+<style>
+  :root {
+    --bg: #fbfbfa; --surface: #ffffff; --text: #1d1d1f; --muted: #6e6e73; --line: #e5e5e7;
+    --accent: #2f6fde; --accent-text: #ffffff; --junk: #c4483c; --good: #2f9e5b; --code: #f2f2f4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #111113; --surface: #1b1b1e; --text: #f2f2f4; --muted: #9a9aa1; --line: #2c2c31;
+      --accent: #5b93f5; --accent-text: #0b0b0c; --junk: #ef7468; --good: #5ccf8a; --code: #232327;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #111113; --surface: #1b1b1e; --text: #f2f2f4; --muted: #9a9aa1; --line: #2c2c31;
+    --accent: #5b93f5; --accent-text: #0b0b0c; --junk: #ef7468; --good: #5ccf8a; --code: #232327;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 17px/1.55 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+  a { color: var(--accent); }
+  code { font: 0.88em ui-monospace, "SF Mono", Menlo, monospace; background: var(--code); padding: 0.1em 0.35em; border-radius: 5px; }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 16px; }
+  header.top { display: flex; align-items: center; justify-content: space-between; padding: 18px 0; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 19px; color: var(--text); text-decoration: none; }
+  .brand svg { width: 28px; height: 28px; }
+  nav a { color: var(--muted); text-decoration: none; margin-left: 20px; font-size: 15px; }
+  nav a:hover { color: var(--text); }
+
+  .hero { display: grid; grid-template-columns: 1.05fr 1fr; gap: 48px; align-items: center; padding: 56px 0 72px; }
+  h1 { font-size: clamp(34px, 5.4vw, 54px); line-height: 1.08; letter-spacing: -0.02em; margin: 0 0 18px; }
+  .lede { font-size: 20px; color: var(--muted); margin: 0 0 28px; max-width: 34ch; }
+  .ctas { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 46px; padding: 0 22px;
+         border-radius: 999px; font-weight: 600; font-size: 16px; text-decoration: none; border: 1px solid var(--line); color: var(--text); background: var(--surface); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  .btn:hover { filter: brightness(1.06); }
+  .fine { color: var(--muted); font-size: 14px; margin-top: 14px; }
+
+  /* A Finder-like listing where the junk rows strike through and fade, one after another. */
+  .window { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
+            box-shadow: 0 24px 60px -24px rgba(0,0,0,.28); }
+  .titlebar { display: flex; align-items: center; gap: 7px; padding: 12px 14px; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+  .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--line); }
+  .titlebar span:last-child { margin-left: 10px; }
+  .rows { list-style: none; margin: 0; padding: 6px 0; font: 14px ui-monospace, "SF Mono", Menlo, monospace; }
+  .rows li { display: flex; justify-content: space-between; padding: 7px 16px; }
+  .rows li .size { color: var(--muted); }
+  .rows li.junk { color: var(--junk); animation: sift 7s infinite; }
+  .rows li.junk:nth-child(3) { animation-delay: .5s; }
+  .rows li.junk:nth-child(5) { animation-delay: 1s; }
+  .rows li.junk:nth-child(7) { animation-delay: 1.5s; }
+  @keyframes sift {
+    0%, 22% { opacity: 1; text-decoration: none; max-height: 40px; }
+    34% { opacity: .5; text-decoration: line-through; max-height: 40px; }
+    48%, 86% { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; }
+    100% { opacity: 1; max-height: 40px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .rows li.junk { animation: none; text-decoration: line-through; opacity: .55; } }
+  .status { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+  .status i { width: 8px; height: 8px; border-radius: 50%; background: var(--good); display: inline-block; }
+
+  section { padding: 64px 0; border-top: 1px solid var(--line); }
+  h2 { font-size: clamp(26px, 3.6vw, 34px); letter-spacing: -0.01em; margin: 0 0 10px; }
+  .sub { color: var(--muted); margin: 0 0 36px; max-width: 60ch; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
+  .card h3 { margin: 0 0 8px; font-size: 18px; }
+  .card p { margin: 0; color: var(--muted); font-size: 15.5px; }
+  .junklist { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+
+  .pricing { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 760px; }
+  .plan { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 26px; display: flex; flex-direction: column; }
+  .plan.pro { border: 2px solid var(--accent); }
+  .plan h3 { margin: 0; font-size: 20px; }
+  .price { font-size: 40px; font-weight: 700; letter-spacing: -0.02em; margin: 8px 0 2px; }
+  .price small { font-size: 16px; font-weight: 500; color: var(--muted); }
+  .plan ul { padding: 0; margin: 16px 0 22px; list-style: none; flex: 1; }
+  .plan li { padding: 6px 0 6px 26px; position: relative; font-size: 15.5px; }
+  .plan li::before { content: "✓"; position: absolute; left: 2px; color: var(--good); font-weight: 700; }
+
+  .faq { max-width: 760px; }
+  details { border-bottom: 1px solid var(--line); padding: 16px 0; }
+  summary { cursor: pointer; font-weight: 600; list-style: none; }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: "+"; float: right; color: var(--muted); font-weight: 400; }
+  details[open] summary::after { content: "–"; }
+  details p { color: var(--muted); margin: 10px 0 0; font-size: 15.5px; }
+
+  footer { padding: 36px 0 56px; color: var(--muted); font-size: 14px; border-top: 1px solid var(--line); }
+
+  @media (max-width: 820px) {
+    .hero { grid-template-columns: 1fr; gap: 36px; padding: 28px 0 48px; }
+    .grid, .pricing { grid-template-columns: 1fr; }
+    nav a:not(.keep) { display: none; }
+    section { padding: 48px 0; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="#">
+      <svg viewBox="0 0 28 28" aria-hidden="true"><rect width="28" height="28" rx="7" fill="var(--accent)"/><g stroke="var(--accent-text)" stroke-width="2.4" stroke-linecap="round"><path d="M7 9.5h14"/><path d="M9.5 14h9"/><path d="M12 18.5h4"/></g></svg>
+      Sift
+    </a>
+    <nav>
+      <a href="#what">What it removes</a>
+      <a href="#pricing" class="keep">Pricing</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+  </header>
+
+  <div class="hero">
+    <div>
+      <h1>Your Mac litters every disk. Sift cleans up the moment it does.</h1>
+      <p class="lede">.DS_Store, ._ files, .Spotlight-V100, .fseventsd — gone from USB drives, network shares, cloud folders and repos as soon as they appear. And Finder finally shows folders the way you set them.</p>
+      <div class="ctas">
+        <a class="btn primary" data-link="download" href="#">Download free</a>
+        <a class="btn" data-link="buy" href="#"><span>Buy Sift Pro · <b data-price>$12</b></span></a>
+      </div>
+      <p class="fine">macOS 13 or later · Apple silicon and Intel · 14-day Pro trial, no account</p>
+    </div>
+    <div class="window" aria-label="A USB drive being cleaned">
+      <div class="titlebar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span>KINGSTON — USB</span></div>
+      <ul class="rows">
+        <li><span>Photos/</span><span class="size">2.1 GB</span></li>
+        <li class="junk"><span>.DS_Store</span><span class="size">12 KB</span></li>
+        <li><span>holiday.mov</span><span class="size">840 MB</span></li>
+        <li class="junk"><span>._holiday.mov</span><span class="size">4 KB</span></li>
+        <li><span>report.pdf</span><span class="size">1.2 MB</span></li>
+        <li class="junk"><span>.Spotlight-V100/</span><span class="size">38 MB</span></li>
+        <li><span>slides.key</span><span class="size">56 MB</span></li>
+        <li class="junk"><span>.fseventsd/</span><span class="size">2 MB</span></li>
+      </ul>
+      <div class="status"><i></i>Watching Startup disk, KINGSTON</div>
+    </div>
+  </div>
+</div>
+
+<section id="what">
+  <div class="wrap">
+    <h2>The files nobody asked for</h2>
+    <p class="sub">Finder drops them wherever you browse. Windows PCs, TVs, cameras, car stereos and your teammates' <code>git status</code> see every one.</p>
+    <div class="grid">
+      <div class="card"><h3>Cleans by itself</h3><p>Junk is removed the instant macOS writes it — on your home folder, iCloud Drive, Dropbox, OneDrive, Google Drive and every connected disk, internal, external or network. Idle cost: nothing; disks still sleep.</p></div>
+      <div class="card"><h3>Sweep on demand</h3><p>One click looks through everything, lists what it found with sizes, and removes it only when you say so. Free, forever, and also on the command line.</p></div>
+      <div class="card"><h3>Finder views, your way</h3><p>One view for every folder on every disk — list, columns, sort, grouping, icon size — plus folders with views of their own. No more windows remembering whatever they last looked like.</p></div>
+      <div class="card"><h3>Safe by design</h3><p>Never touches system folders, apps, <code>~/Library</code>, Time Machine disks, read-only disks, <code>node_modules</code>, custom volume icons or anything of yours.</p></div>
+      <div class="card"><h3>Root-owned junk too</h3><p>Disk-level folders that belong to the system go with one administrator password, through a tiny helper that removes only catalogued junk.</p></div>
+      <div class="card"><h3>Private</h3><p>No account, no analytics. The only thing Sift ever sends is your license key, once, when you activate it.</p></div>
+    </div>
+    <div class="junklist">
+      <code>.DS_Store</code><code>._*</code><code>.apdisk</code><code>.Spotlight-V100</code><code>.fseventsd</code><code>.Trashes</code><code>.TemporaryItems</code>
+    </div>
+  </div>
+</section>
+
+<section id="pricing">
+  <div class="wrap">
+    <h2>Pay once. Keep it.</h2>
+    <p class="sub">Every download starts with 14 days of Pro. After that, Sweep stays free.</p>
+    <div class="pricing">
+      <div class="plan">
+        <h3>Sift</h3>
+        <div class="price">Free</div>
+        <ul>
+          <li>Sweep every disk on demand</li>
+          <li>See everything before it goes</li>
+          <li><code>sift-cli</code> scan and sweep</li>
+          <li>Administrator helper</li>
+        </ul>
+        <a class="btn" data-link="download" href="#">Download</a>
+      </div>
+      <div class="plan pro">
+        <h3>Sift Pro</h3>
+        <div class="price"><span data-price>$12</span> <small>once</small></div>
+        <ul>
+          <li>Everything in Sift</li>
+          <li>Removes junk the moment it appears</li>
+          <li>Finder views for every folder</li>
+          <li>All future updates</li>
+        </ul>
+        <a class="btn primary" data-link="buy" href="#">Buy Sift Pro</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="wrap faq">
+    <h2>Questions</h2>
+    <details><summary>Will it delete anything I need?</summary><p>Sift removes only files from a fixed catalogue of macOS bookkeeping files, and never in system folders, apps, <code>~/Library</code>, Time Machine or read-only disks. A disk's Trash and in-progress saves are only offered in a Sweep, with what removing them means.</p></details>
+    <details><summary>Why do .DS_Store files keep coming back without it?</summary><p>Finder writes one into every folder you open to remember its view, and ._ files whenever a Mac copies to a disk that cannot store Mac metadata. Sift removes each the moment it is written, and turns on Finder's own switches for not writing them on network and USB disks.</p></details>
+    <details><summary>What happens when the trial ends?</summary><p>Cleaning by itself and Finder views pause; views already applied stay. Sweep keeps working, free. Enter a key at any time to turn Pro back on.</p></details>
+    <details><summary>How many Macs can I use it on?</summary><p>Your key works on your own Macs; <em>Deactivate on This Mac</em> moves it to a new one.</p></details>
+    <details><summary>How do I get my license key?</summary><p>It is on the receipt emailed right after purchase. Paste it into Sift ▸ Sift Pro… ▸ Activate.</p></details>
+    <details><summary>Is it open source?</summary><p>Yes, MIT licensed. Buying Pro pays for the signed, notarized build and for its development.</p></details>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">Sift · Made for macOS · Payments by Lemon Squeezy</div>
+</footer>
+
+<script>
+  for (const a of document.querySelectorAll('[data-link="buy"]')) a.href = BUY_URL;
+  for (const a of document.querySelectorAll('[data-link="download"]')) a.href = DOWNLOAD_URL;
+  for (const el of document.querySelectorAll("[data-price]")) el.textContent = PRICE;
+</script>
+</body>
+</html>

@@ -18,12 +18,52 @@ jobs:
       - run: swift --version
       - run: swift build -v
       - run: swift test
-      - run: scripts/make-app.sh release
+      # With a Developer ID certificate in the repository's secrets the app is signed with it and notarized, so it
+      # opens without warnings; without one it is signed ad hoc, as before.
+      - name: Developer ID certificate
+        env:
+          CERTIFICATE_P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          if [ -z "$CERTIFICATE_P12" ]; then echo "No DEVELOPER_ID_P12 secret: the app is signed ad hoc."; exit 0; fi
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          password="$(uuidgen)"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          echo "$CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/certificate.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          identity="$(security find-identity -v -p codesigning "$keychain" | sed -n 's/.*"\(Developer ID Application: .*\)"/\1/p' | head -n 1)"
+          if [ -z "$identity" ]; then echo "::error::DEVELOPER_ID_P12 holds no Developer ID Application identity"; exit 1; fi
+          echo "SIFT_SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+      - name: Build the app
+        env:
+          # The Lemon Squeezy product Sift Pro is sold as (repository variables); unset, the app sells nothing.
+          SIFT_CHECKOUT_URL: ${{ vars.SIFT_CHECKOUT_URL }}
+          SIFT_STORE_ID: ${{ vars.SIFT_STORE_ID }}
+          SIFT_PRODUCT_ID: ${{ vars.SIFT_PRODUCT_ID }}
+        run: scripts/make-app.sh release
       - name: Package
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: |
           mkdir -p dist
           rm -f dist/Sift.app.zip
           ditto -c -k --keepParent build/Sift.app dist/Sift.app.zip
+          if [ -n "${SIFT_SIGN_IDENTITY:-}" ] && [ -n "$APPLE_ID" ]; then
+            xcrun notarytool submit dist/Sift.app.zip --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+              --password "$APPLE_APP_PASSWORD" --wait --timeout 30m | tee "$RUNNER_TEMP/notary.txt"
+            if ! grep -q "status: Accepted" "$RUNNER_TEMP/notary.txt"; then echo "::error::Notarization was not accepted"; exit 1; fi
+            # The ticket is stapled to the app, so it opens offline too, and the zip is made again around it.
+            xcrun stapler staple build/Sift.app
+            rm dist/Sift.app.zip
+            ditto -c -k --keepParent build/Sift.app dist/Sift.app.zip
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: Sift.app

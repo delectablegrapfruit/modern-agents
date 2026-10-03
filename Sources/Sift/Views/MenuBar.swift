@@ -25,8 +25,11 @@ struct MenuBarMenu: View {
     var body: some View {
         Text(model.statusText)
         Divider()
-        Button(model.isPaused ? "Resume" : "Pause") { model.togglePause() }
+        Button(!model.entitlement.isPro ? "Turn On…" : (model.isPaused ? "Resume" : "Pause")) { model.togglePause() }
         Button("Open Sift") { WindowOpener.open() }
+        if model.offersPro {
+            Button("Sift Pro…") { model.showPro() }
+        }
         Divider()
         Button("Quit Sift") { NSApp.terminate(nil) }.keyboardShortcut("q")
     }
