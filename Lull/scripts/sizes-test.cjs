@@ -94,7 +94,8 @@ module.exports = async function sizesTests({ browser, check, PAGE, OUT }) {
   console.log('board sizes');
   const D = await open();
   let { page, ev, shot } = D;
-  await page.click('#play-status .boards-btn');
+  await page.click('#play-status .menu-btn');
+  await page.click('.modal-menu .mn-manage');
   await page.waitForTimeout(200);
   const first = await ev(() => ({ id: Lull.app.store.state.boards.cur, n: Lull.app.store.state.boards.list.length, disabled: document.querySelector('.modal-lib .lib-new').disabled }));
   check('New board is open on a board nothing has been done on (it can be made again at another size)', !first.disabled, JSON.stringify(first));
@@ -210,7 +211,8 @@ module.exports = async function sizesTests({ browser, check, PAGE, OUT }) {
     return { over: g.over, card: text, w: m.game.w, h: m.game.h, rec: [e.w, e.h, e.reason], dialog: !!document.querySelector('.modal-newboard') };
   });
   check('a full board\'s card shows its size; Retire starts a new board of the same size, without asking', retired.over && /4 × 8/.test(retired.card) && /Size/.test(retired.card) && retired.w === 4 && retired.h === 8 && retired.rec.join() === '4,8,full' && !retired.dialog, JSON.stringify(retired));
-  await page.click('#play-status .boards-btn');
+  await page.click('#play-status .menu-btn');
+  await page.click('.modal-menu .mn-manage');
   await page.click('.modal-lib .lib-tabs [data-k="retired"]');
   await page.waitForTimeout(100);
   const rrow = await ev(() => document.querySelector('.modal-lib .lib-row.retired').textContent);
@@ -231,7 +233,8 @@ module.exports = async function sizesTests({ browser, check, PAGE, OUT }) {
     for (const id of ['golden', 'net', 'giant']) { st.state.inventory[id] = (st.state.inventory[id] || 0) + 1; m.useItem(id); }
     return { untouched: m.untouched(), gold: m.game.s.gold, net: m.game.s.net, piece: m.game.piece.type.id, n: B.list.length, cur: B.cur };
   });
-  await page.click('#play-status .boards-btn');
+  await page.click('#play-status .menu-btn');
+  await page.click('.modal-menu .mn-manage');
   await page.click('.modal-lib .lib-new');
   await page.waitForTimeout(120);
   await page.click('.modal-newboard .nb-preset[data-w="8"][data-h="30"]');
@@ -347,7 +350,8 @@ module.exports = async function sizesTests({ browser, check, PAGE, OUT }) {
   ({ page, ev, shot } = P);
   const tapEl = async (sel) => { const b = await page.$(sel); const r = await b.boundingBox(); await page.touchscreen.tap(r.x + r.width / 2, r.y + r.height / 2); await page.waitForTimeout(120); };
   await ev(() => { const g = Lull.app.modes.play.game; g.drop(); g.drop(); });
-  await tapEl('#play-status .boards-btn');
+  await tapEl('#play-status .menu-btn');
+  await tapEl('.modal-menu .mn-manage');
   await tapEl('.modal-lib .lib-new');
   await page.waitForTimeout(400); // the window has finished opening (it grows in)
   const targets = await ev(() => [...document.querySelectorAll('.modal-newboard .nb-step, .modal-newboard .nb-preset, .modal-newboard footer .btn')].map((b) => { const r = b.getBoundingClientRect(); return Math.min(r.width, r.height); }));

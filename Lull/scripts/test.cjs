@@ -17,6 +17,8 @@ const L = load([
   'race.js',
   'battle.js',
   'mural.js',
+  // The Play menu's rules (Solo or Multiplayer, resume by rules): its page is drawn only in a browser.
+  'menu.js',
 ]);
 const { Pieces, Board, Game, Puzzles, Factory, RNG } = L;
 
@@ -4155,6 +4157,124 @@ console.log('board recipe');
   test('golden: a default board plays exactly as boards did before the recipe (scripts/golden.cjs)', () => {
     const out = require('child_process').spawnSync(process.execPath, [require('path').join(__dirname, 'golden.cjs')], { encoding: 'utf8' });
     assert.strictEqual(out.status, 0, (out.stdout || '') + (out.stderr || ''));
+  });
+}
+
+console.log('play menu');
+{
+  const { Library, Recipe: R, Menu } = L;
+  const mk = (recipe, w, h, seed, n) => { const g = new Game({ w, h, recipe: R.normalize(recipe), seed }); for (let i = 0; i < (n || 0); i++) g.drop(); return g; };
+  /** A library: the board in play `cur` (a Game), then each of `shelf` shelved under it, oldest first. */
+  const lib = (shelf, cur) => {
+    const st = L.loadState({});
+    let t = 1000;
+    const all = shelf.concat([cur]);
+    st.free = all[0].toJSON();
+    Library.ensure(st, t);
+    const ids = [st.boards.cur];
+    for (const g of all.slice(1)) { Library.startNew(st, st.free, (t += 1000)); st.free = g.toJSON(); ids.push(st.boards.cur); }
+    return { st, B: st.boards, ids };
+  };
+  test('Solo and Multiplayer: Race and Battle boards are Multiplayer, every other board (and a broken recipe) Solo', () => {
+    assert.deepStrictEqual(['race', 'battle'].map((m) => Library.side(R.normalize({ mode: m }))), ['multi', 'multi']);
+    assert.deepStrictEqual(['plain', 'classic', 'descent', 'mural'].map((m) => Library.side(R.normalize({ mode: m }))), ['solo', 'solo', 'solo', 'solo']);
+    assert.strictEqual(Library.side(R.normalize({ shapes: { preset: 'tiny' }, mods: { mirror: true } })), 'solo');
+    assert.strictEqual(Library.side(null), 'solo');
+    assert.strictEqual(Library.side('race'), 'solo');
+    // A retired record's thin recipe says the same.
+    assert.strictEqual(Library.side(R.thin(R.normalize({ mode: 'battle' }))), 'multi');
+    // The menu's two lists are the same split.
+    assert.deepStrictEqual(Menu.SOLO.map((x) => x.mode), ['plain', 'classic', 'descent', 'mural']);
+    assert.deepStrictEqual(Menu.MULTI.map((x) => x.mode), ['race', 'battle']);
+    assert(Menu.SOLO.every((x) => Library.side(R.normalize({ mode: x.mode })) === 'solo') && Menu.MULTI.every((x) => Library.side(R.normalize({ mode: x.mode })) === 'multi'));
+  });
+  test('resume by rules: the same rules at the same size find the board; another setting, size or mode does not', () => {
+    const classic = mk({ mode: 'classic' }, 10, 20, 1, 2), race = mk({ mode: 'race' }, 10, 10, 2, 1), plain = mk({}, 10, 20, 3, 3);
+    const { B, ids } = lib([classic, race], plain);
+    const cur = () => B.cur === ids[2] ? plain.toJSON() : null;
+    const find = (recipe, size) => { const r = Library.match(B, cur(), R.normalize(recipe), size); return r ? r.id : null; };
+    assert.strictEqual(find({ mode: 'classic' }, { w: 10, h: 20 }), ids[0], 'Classic A, the same settings');
+    assert.strictEqual(find({ mode: 'classic', classic: { level: 5 } }, { w: 10, h: 20 }), null, 'another start level');
+    assert.strictEqual(find({ mode: 'classic', classic: { type: 'b' } }, { w: 10, h: 20 }), null, 'B type');
+    assert.strictEqual(find({ mode: 'classic' }, { w: 12, h: 24 }), null, 'another size');
+    assert.strictEqual(find({ mode: 'classic', classic: { music: 'off' } }, { w: 10, h: 20 }), ids[0], 'the music changes for free: still the same rules');
+    // Race: the size as chosen (its rows), not the board's height with the buffer on top.
+    assert.strictEqual(find({ mode: 'race' }, { w: 10, h: 10 }), ids[1]);
+    assert.strictEqual(find({ mode: 'race', race: { level: 'swift' } }, { w: 10, h: 10 }), null, 'another opponent');
+    assert.strictEqual(find({ mode: 'race' }, { w: 8, h: 8 }), null, 'another preset');
+    // The board in play counts, first.
+    assert.strictEqual(find({}, { w: 10, h: 20 }), ids[2]);
+    assert.strictEqual(find({ shapes: { preset: 'tiny' } }, { w: 10, h: 20 }), null, 'other shapes');
+    assert.strictEqual(find({ mods: { mirror: true } }, { w: 10, h: 20 }), null, 'a modifier');
+    assert.strictEqual(find({ mode: 'descent' }, { w: 10, h: 20 }), null, 'a mode with no board');
+  });
+  test('resume by rules: only a board still to be played (not full, not ended, not retired); the most recent first', () => {
+    const a = mk({}, 10, 20, 4, 1), b = mk({}, 10, 20, 5, 1), c = mk({ mode: 'classic' }, 10, 20, 6, 1);
+    const { st, B, ids } = lib([a, b], c);
+    const plain = R.normalize({}), z = { w: 10, h: 20 };
+    assert.strictEqual(Library.match(B, c.toJSON(), plain, z).id, ids[1], 'the one played last');
+    Library.find(B, ids[1]).game.over = true;
+    assert.strictEqual(Library.match(B, c.toJSON(), plain, z).id, ids[0], 'a full board is passed over');
+    Library.find(B, ids[0]).game.ended = 'cleared';
+    assert.strictEqual(Library.match(B, c.toJSON(), plain, z), null, 'an ended one too');
+    delete Library.find(B, ids[0]).game.ended;
+    Library.retire(st, ids[0], Library.find(B, ids[0]).game, 9000, 'manual');
+    assert.strictEqual(Library.match(B, c.toJSON(), plain, z), null, 'a retired board is never resumed');
+    const cj = c.toJSON(); cj.over = true;
+    assert.strictEqual(Library.match(B, cj, R.normalize({ mode: 'classic' }), z), null, 'the board in play, full');
+    assert.strictEqual(Library.match(B, c.toJSON(), R.normalize({ mode: 'classic' }), z).id, ids[2]);
+    assert.strictEqual(Library.match(null, null, plain, z), null);
+  });
+  test('Recent: the last three boards played, not the one in play, most recent first', () => {
+    const gs = [1, 2, 3, 4, 5].map((s) => mk({}, 10, 20, 10 + s, 1));
+    const { B, ids } = lib(gs.slice(0, 4), gs[4]);
+    assert.deepStrictEqual(Library.recent(B).map((r) => r.id), [ids[3], ids[2], ids[1]]);
+    assert.deepStrictEqual(Library.recent(B, 5).map((r) => r.id), [ids[3], ids[2], ids[1], ids[0]]);
+    const one = lib([], gs[0]);
+    assert.deepStrictEqual(Library.recent(one.B), [], 'nothing but the board in play');
+  });
+  test('a mode\'s setup: its own last one, else its settings from New board, at its own size; no modifiers; kept in the save', () => {
+    const B = Library.blank();
+    assert.deepStrictEqual(B.menu, {});
+    const race = Menu.setupOf(B, 'race');
+    assert.strictEqual(race.recipe.mode, 'race');
+    assert.deepStrictEqual(race.size, { w: 10, h: 10 });
+    assert.deepStrictEqual(Menu.setupOf(B, 'battle').size, { w: 10, h: 14 });
+    assert.deepStrictEqual(Menu.setupOf(B, 'classic').size, { w: 10, h: 20 });
+    B.recipe = R.normalize({ mode: 'classic', classic: { level: 7 }, mods: { mirror: true }, shapes: { preset: 'tiny' } });
+    const cl = Menu.setupOf(B, 'classic');
+    assert.strictEqual(cl.recipe.classic.level, 7, 'its settings from New board');
+    assert(!R.MODS.some((k) => cl.recipe.mods[k]) && cl.recipe.shapes.preset === 'normal', 'no modifiers, Normal shapes');
+    B.menu.classic = { recipe: R.normalize({ mode: 'classic', classic: { level: 3 } }), size: { w: 10, h: 20 } };
+    assert.strictEqual(Menu.setupOf(B, 'classic').recipe.classic.level, 3, 'the menu\'s own last setup');
+    B.menu.plain = { recipe: R.normalize({ shapes: { preset: 'frantic' } }), size: { w: 16, h: 16 } };
+    const p = Menu.setupOf(B, 'plain');
+    assert.strictEqual(p.recipe.shapes.preset, 'frantic');
+    assert.deepStrictEqual(p.size, { w: 16, h: 16 });
+    B.menu.mural = { recipe: { mode: 'classic' }, size: { w: 99, h: 1 } };
+    const mu = Menu.setupOf(B, 'mural');
+    assert.strictEqual(mu.recipe.mode, 'mural', 'junk is made safe');
+    assert(R.sizeOk(mu.size.w, mu.size.h, mu.recipe));
+    // Through a save: ensure keeps it, and drops what is not a setup.
+    const st = L.loadState({});
+    st.boards = { menu: { race: { recipe: race.recipe, size: race.size }, junk: 3 } };
+    Library.ensure(st, 1000);
+    assert.deepStrictEqual(Object.keys(st.boards.menu), ['race']);
+    st.boards.menu = 'bad';
+    Library.ensure(st, 1000);
+    assert.deepStrictEqual(st.boards.menu, {});
+  });
+  test('progress in a few words: lines, a match\'s tally, a picture\'s pieces, Full, a mode\'s own end', () => {
+    const g = mk({}, 10, 20, 30, 2);
+    g.s.lines = 12;
+    assert.strictEqual(Menu.progress(g.toJSON()), 'Lines 12');
+    assert.strictEqual(Menu.progress(mk({ mode: 'race' }, 10, 10, 31).toJSON()), 'vs Steady 0\u20130');
+    assert(/^0 of \d+ placed$/.test(Menu.progress(mk({ mode: 'mural' }, 10, 20, 32).toJSON())), Menu.progress(mk({ mode: 'mural' }, 10, 20, 32).toJSON()));
+    const j = g.toJSON(); j.over = true;
+    assert.strictEqual(Menu.progress(j), 'Full');
+    assert.strictEqual(Menu.modeLabel(R.normalize({})), 'Relaxed');
+    assert.strictEqual(Menu.modeLabel(R.normalize({ shapes: { preset: 'tiny' } })), 'Relaxed \u00b7 Tiny');
+    assert.strictEqual(Menu.modeLabel(R.normalize({ mode: 'classic' })), 'Classic A');
   });
 }
 

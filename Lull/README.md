@@ -38,8 +38,30 @@ brought back. The ⦵ glyph is a cleared line running into a small black hole; i
 lived and was played, pieces, lines, score, quads, T-spins, perfect clears, best combo and back-to-back, holds and
 every power-up used on it; Stats ▸ Free Play keeps the last boards.
 
-*Boards* — the library, from the Boards button in the Relaxed status bar (`js/library.js` keeps it; the window is in
-`js/modes.js`). Two tabs, Saved (count of 12) and Retired, and New board. Saved lists the board in play first (marked
+*The menu* (`js/menu.js`) — opened only by hand: the Menu button in the Relaxed status bar (where Boards was), or Esc
+on the Play tab in a browser when nothing else takes it (a tray, Battle's aim, a window; in the Mac app Esc still tucks
+the window away, and closes the menu when it is open). It never opens by itself: at start, after a reload and on a tab
+switch the last board is shown exactly as it was. Over the board (which waits, as under any window), four areas:
+**Solo** (Relaxed, Classic, Descent, Mural, then Custom: the full New board window below), **Multiplayer** (Race and
+Battle, against the computer), **Recent** (the last three boards played other than the one in play, as cards: a small
+preview, the mode and how far it got, "Lines 12", "vs Steady 3–2", "40 of 120 placed"; a tap resumes one; Manage opens
+the library) and **Escape** (closes the menu: back to the board in play, as it was; so does Esc or a click outside). A
+mode opens a short setup with only its own settings, the New board window's own controls: Relaxed its size presets and
+shapes (Custom shapes are in Custom), Classic its type and settings, Descent its level and stage, Mural its picture
+(Photo too) and level, Race and Battle the opponent and a size preset; then Start. Each mode's last setup is kept
+(`boards.menu` in the save); a mode's setup first takes that mode's settings last chosen in New board, with Normal
+shapes and no modifier. *Resume by rules*: when a saved board still to be played (not full, not ended, not retired)
+has exactly these rules at this size (`Library.match`: `Recipe.editPrice` finds nothing to change, so Classic's music,
+which changes for free, does not count; the board in play first, then the most recently played), the setup shows
+"Resume: <name> (<progress>)" above Start new, focused, and Enter resumes it. A new board is made only when the
+settings differ (Start), by Start new, or by Custom. Back steps back a page (focus on where it came from); Enter on a
+button presses it, elsewhere it is the page's main button. By touch every target is 44 px or more and nothing scrolls
+sideways, at 520 × 760, 400 × 700, 390 × 844 and 320 × 568, light and dark (`scripts/menu-test.cjs`).
+
+*Boards* — the library, from Manage in the menu (and Boards on a board's end cards; `js/library.js` keeps it; the window is in
+`js/modes.js`). Two tabs, **Solo** and **Multiplayer** (Race and Battle boards: `Library.side`), opened on the side of
+the board in play; each has Saved and Retired (with that side's counts; the library holds 12 boards in all, Solo and
+Multiplayer together, and New board says Library full), and New board. Saved lists the board in play first (marked
 Playing), then the rest by when they were last played; each row is a thumbnail of its stack (in the current palette, plain squares
 on whole screen pixels so it stays crisp; cached and redrawn only when the stack or the look changed), its name, lines, score and when it was last played
 (Full on one that filled up). Click a row (or ↑/↓ and Enter) to resume it exactly as it was left: cells, the piece in
@@ -1145,6 +1167,7 @@ murals finished, pieces placed, by level, from photos.
 | S, Shift+S | Race: send the piece in play, or the first Next piece (a Race board holds with Shift when it is let go alone) |
 | T | Battle: aim the piece in play at the opponent's board (arrows and turns move the shadow, Space or Enter throws, Esc or T cancels) |
 | M | mute everything, on any tab (again to unmute) |
+| Esc | the Play menu, in a browser when nothing else takes Esc (again, or Escape, to close it; in the Mac app Esc tucks the window away, and closes the menu when it is open) |
 | mouse: point | slide the piece left and right (at its height; slightly sticky at column edges: the pointer goes 0.15 of a cell past one before the piece follows; mirrored under Inverted Controls; keys keep working while the pointer rests there) |
 | left click | drop it straight down — anywhere on the board side (a slip into the next column in the last 0.06 s before the click is ignored) |
 | right click | turn clockwise |

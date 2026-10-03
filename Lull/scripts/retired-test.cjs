@@ -206,7 +206,10 @@ module.exports = async function retiredTests({ browser, check, PAGE, OUT }) {
     check(tag + ': three retired boards (a 10 × 20 full, a 4 × 40, a 20 × 8)', made.full && made.ids.length === 3 && made.names.join() === 'Full Harbor,Tall Willow,Wide Dune', JSON.stringify(made));
     const before = await snap(P);
     // From the retired row: its View.
-    await press(P, '#play-status .boards-btn');
+    // The library: Menu, then Manage.
+    await press(P, '#play-status .menu-btn');
+    await page.waitForTimeout(150);
+    await press(P, '.modal-menu .mn-manage');
     await page.waitForTimeout(150);
     await press(P, '.modal-lib .lib-tabs [data-k="retired"]');
     await page.waitForTimeout(100);

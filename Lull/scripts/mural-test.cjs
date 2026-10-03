@@ -306,7 +306,7 @@ module.exports = async function muralTests({ browser, check, PAGE, OUT }) {
     await F.page.waitForTimeout(80);
     const fit = await F.ev(() => {
       const m = Lull.app.modes.play, bar = document.querySelector('#play-status'), r = bar.getBoundingClientRect(), cv = m.view.canvas.getBoundingClientRect();
-      const boards = document.querySelector('#play-status .boards-btn').getBoundingClientRect(), ib = document.querySelector('#itembar').getBoundingClientRect();
+      const boards = document.querySelector('#play-status .menu-btn').getBoundingClientRect(), ib = document.querySelector('#itembar').getBoundingClientRect();
       return { bar: r.right <= window.innerWidth + 0.5 && boards.right <= window.innerWidth + 0.5, page: document.documentElement.scrollWidth <= window.innerWidth, board: cv.width > 100 && cv.bottom <= window.innerHeight, items: ib.bottom <= window.innerHeight + 0.5, quarter: m.view.lay.s / 2 };
     });
     check(vw + ' × ' + vh + ' ' + theme + ': level 5 in play fits (status bar, board, progress, no sideways scroll); a quarter is 5 px or more', fit.bar && fit.page && fit.board && fit.items && fit.quarter >= 5, JSON.stringify(fit));
