@@ -1,6 +1,6 @@
 // Lull — Mural's look and its place in Free Play (the rules are js/mural.js): every block drawn as its 2 × 2 quarter
 // cells in the picture's colours (on the board, in play and in Next, turned with the piece), the place the piece in
-// play belongs in outlined with its quarters faintly in it, the ghost as a plain outline, a set that is not in its place
+// play belongs in outlined with its quarters lightly in it and a badge saying the turn to make (or a tick), the ghost as a plain outline, a set that is not in its place
 // declined without a sound or a shake (the outline brightens once), Placed and Level in the status bar and the mural's
 // progress under the board, the Finished card, the New board window's picture and level (a photo chosen, cropped and
 // previewed in its own window), the library's tags, thumbnails and tiles, and the Mural line in Stats.
@@ -81,6 +81,75 @@
     }
   }
 
+  /**
+   * The quarter turns from rot to the nearest turn its place is set in: 0 (right), 1 (clockwise), -1 (counter-clockwise)
+   * or 2 (a half turn, either way).
+   */
+  function turnsTo(pc, rot) {
+    let best = null;
+    for (const g of pc.goals) {
+      const d = (((g.rot - rot) % 4) + 4) % 4, v = d === 3 ? -1 : d;
+      if (best === null || Math.abs(v) < Math.abs(best)) best = v;
+    }
+    return best === null ? 0 : best;
+  }
+  /** The piece in play and its place: { pc, pic, ready (a drop sets it), turns (turnsTo) }, or null. */
+  function placeState(view) {
+    const g = view.game, X = Mural.extOf(g), p = g && g.piece;
+    if (!X || g.over || !p) return null;
+    const pc = X.current(g);
+    if (!pc) return null;
+    const gy = g.ghostY(p), ready = gy != null && X.exact(g, p.rot, p.x, gy);
+    return { pc, pic: X.plan().pic, ready, turns: ready ? 0 : turnsTo(pc, p.rot) };
+  }
+  /**
+   * The turn badge, a small disc on the top right corner of the place (kept inside the well): a tick when the piece's
+   * turn is right (filled once a drop would set it), else an arrow round the way to turn it (clockwise, or counter-
+   * clockwise), with a 2 inside for a half turn. Still: nothing in it moves.
+   */
+  function turnBadge(ctx, view, st) {
+    const { pc, ready, turns } = st, s = view.lay.s, th = view.look.theme, g = view.game;
+    let top = pc.cells[0];
+    for (const c of pc.cells) if (c[1] > top[1] || (c[1] === top[1] && c[0] > top[0])) top = c;
+    const R = Math.max(7, Math.min(13, s * 0.4)), [sx, sy] = view.toScreen(top[0], top[1]);
+    const [lx, ty] = view.toScreen(0, g.h - 1), [rx] = view.toScreen(g.w - 1, 0);
+    const cx = Math.max(lx + R + 1, Math.min(rx + s - R - 1, sx + s - R * 0.35)), cy = Math.max(ty + R + 1, sy + R * 0.35);
+    const light = th.name === 'light', bg = th.well || (light ? '#ffffff' : '#14161c');
+    ctx.save();
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.beginPath(); ctx.arc(cx, cy, R + 1.5, 0, Math.PI * 2);
+    ctx.fillStyle = light ? 'rgba(255,255,255,0.9)' : 'rgba(8,10,16,0.75)'; ctx.fill();
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.fillStyle = ready ? th.accent : bg; ctx.fill();
+    ctx.strokeStyle = th.accent; ctx.lineWidth = Math.max(1.2, R * 0.14); ctx.stroke();
+    // The mark in the text colour (or, on the filled disc, whichever of dark and white reads on the accent).
+    const ink = ready ? (Render.luminance && Render.luminance(th.accent) > 0.45 ? '#16181f' : '#ffffff') : th.fg || th.accent;
+    ctx.lineWidth = Math.max(1.6, R * 0.2);
+    if (turns === 0) {
+      // A tick.
+      ctx.strokeStyle = ink;
+      ctx.beginPath(); ctx.moveTo(cx - R * 0.45, cy + R * 0.02); ctx.lineTo(cx - R * 0.12, cy + R * 0.36); ctx.lineTo(cx + R * 0.48, cy - R * 0.36); ctx.stroke();
+    } else {
+      // An arrow round the way to turn: three quarters of a circle, its head at the end (mirrored for counter-clockwise).
+      ctx.translate(cx, cy);
+      if (turns < 0) ctx.scale(-1, 1);
+      const r = R * (turns === 2 ? 0.62 : 0.5), a0 = -Math.PI * 0.85, a1 = Math.PI * 0.45;
+      ctx.strokeStyle = ink; ctx.fillStyle = ink;
+      ctx.beginPath(); ctx.arc(0, 0, r, a0, a1); ctx.stroke();
+      const hx = r * Math.cos(a1), hy = r * Math.sin(a1), tx = -Math.sin(a1), ty2 = Math.cos(a1), nx = Math.cos(a1), ny = Math.sin(a1), hl = R * 0.42;
+      ctx.beginPath(); ctx.moveTo(hx + tx * hl * 0.55, hy + ty2 * hl * 0.55);
+      ctx.lineTo(hx - tx * hl * 0.45 + nx * hl * 0.5, hy - ty2 * hl * 0.45 + ny * hl * 0.5);
+      ctx.lineTo(hx - tx * hl * 0.45 - nx * hl * 0.5, hy - ty2 * hl * 0.45 - ny * hl * 0.5);
+      ctx.closePath(); ctx.fill();
+      if (turns === 2) {
+        ctx.font = '700 ' + Math.round(R * 0.95) + 'px ' + (Render.FONT || 'system-ui, sans-serif');
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('2', 0, R * 0.04);
+      }
+    }
+    ctx.restore();
+  }
+
   // ---- the board view's part ----------------------------------------------------------------------------------------
 
   const NUDGE_MS = 700;
@@ -124,19 +193,19 @@
       }
       return false;
     },
-    /** The piece in play's place: its quarters faintly, and an outline (solid once a drop would set it there). */
+    /**
+     * The piece in play's place: its quarters (lighter than a set block), and an outline: dashed while the piece is in
+     * another turn than its place, solid once its turn is right (full strength when a drop would set it there).
+     */
     overStack(ctx, view) {
-      const g = view.game, X = Mural.extOf(g), p = g.piece;
-      if (!X || g.over || !p) return;
-      const pc = X.current(g);
-      if (!pc) return;
-      const pic = X.plan().pic, s = view.lay.s, th = view.look.theme;
+      const st = placeState(view);
+      if (!st) return;
+      const { pc, pic, ready, turns } = st, s = view.lay.s, th = view.look.theme;
       ctx.save();
       for (let i = 0; i < pc.cells.length; i++) {
         const [x, y] = pc.cells[i], [sx, sy] = view.toScreen(x, y);
-        drawBlock(ctx, sx, sy, s, pc.qt[i], pic.pal, 0.45);
+        drawBlock(ctx, sx, sy, s, pc.qt[i], pic.pal, 0.55);
       }
-      const gy = g.ghostY(p), ready = gy != null && X.exact(g, p.rot, p.x, gy);
       const t = view.muralNudge ? (now() - view.muralNudge) / NUDGE_MS : 1, pulse = t < 1 ? Math.sin(Math.PI * t) : 0;
       const segs = outline(view, pc.cells), lw = Math.max(2, s * (0.1 + 0.06 * pulse));
       ctx.lineCap = 'round';
@@ -144,10 +213,15 @@
       ctx.strokeStyle = th.name === 'light' ? 'rgba(255,255,255,0.85)' : 'rgba(8,10,16,0.7)'; ctx.lineWidth = lw + 2;
       strokeSegs(ctx, segs);
       ctx.strokeStyle = th.accent; ctx.lineWidth = lw;
-      ctx.globalAlpha = ready ? 1 : 0.8 + 0.2 * pulse;
-      if (!ready) ctx.setLineDash([Math.max(2, s * 0.24), Math.max(2, s * 0.14)]);
+      ctx.globalAlpha = ready ? 1 : turns === 0 ? 0.9 : 0.75 + 0.25 * pulse;
+      if (turns !== 0) ctx.setLineDash([Math.max(2, s * 0.24), Math.max(2, s * 0.14)]);
       strokeSegs(ctx, segs);
       ctx.restore();
+    },
+    /** Over the piece: the turn badge at the place's top corner (a tick when the turn is right; else the turn to make). */
+    overPiece(ctx, view) {
+      const st = placeState(view);
+      if (st) turnBadge(ctx, view, st);
     },
     busy(view) { return !!view.muralNudge && now() - view.muralNudge < NUDGE_MS; },
     /** The New board preview: the whole picture; a library thumbnail: the picture where the board has blocks. */
@@ -489,5 +563,5 @@
     },
   });
 
-  L.MuralView = { controller, drawBlock, VIEW, openCrop, pickPhoto, setPhoto, ownFrom, cropOf, get photo() { return PHOTO; }, lastCrop: null };
+  L.MuralView = { controller, drawBlock, VIEW, turnsTo, placeState, openCrop, pickPhoto, setPhoto, ownFrom, cropOf, get photo() { return PHOTO; }, lastCrop: null };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

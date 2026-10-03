@@ -1080,7 +1080,11 @@ on the board, in play and in Next. Nothing falls by itself, no line ever clears,
 time counts only while the board is used (its own `timeMs.mural`).
 
 *Its place.* The spot the piece in play belongs in is outlined on the board (an accent line over a soft halo, its
-quarters faintly in it; dashed until a drop would set it there, then solid; the ghost is a plain outline). The piece
+quarters lightly in it; the ghost is a plain outline). The outline says whether the piece's turn is right: dashed while
+it is in another turn, solid once its turn matches. A small badge on the place's top corner, drawn over the piece, says
+the same plainly: an arrow round the way to turn it (clockwise, or counter-clockwise: one turn), a 2 for a half turn,
+a tick once the turn is right, filled when a drop would set it there. Nothing in it moves (the same under reduced
+motion), and it reads on either theme (`turnBadge` in `js/muralview.js`). The piece
 appears at the top in another turn than its place wherever that looks different (its shape, or its quarters), nearest
 the middle, where its place can still be reached by moves and turns (searched as the engine moves and kicks); with none,
 in its own turn right over its place. It must be turned and moved there by hand: a drop or a set anywhere else, or in

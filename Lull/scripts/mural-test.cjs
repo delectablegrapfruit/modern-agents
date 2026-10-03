@@ -312,6 +312,31 @@ module.exports = async function muralTests({ browser, check, PAGE, OUT }) {
     check(vw + ' × ' + vh + ' ' + theme + ': level 5 in play fits (status bar, board, progress, no sideways scroll); a quarter is 5 px or more', fit.bar && fit.page && fit.board && fit.items && fit.quarter >= 5, JSON.stringify(fit));
     await F.shot('mural-play-' + vw + 'x' + vh + '-' + theme);
     if (phone) {
+      // The turn badge on the place: the arrow (or a 2) while the turn is wrong, a tick once it is right, filled when a
+      // drop would set it there.
+      const cue = {};
+      for (const want of ['cw', 'ccw', 'half', 'right', 'ready']) {
+        cue[want] = await F.ev((want) => {
+          const m = Lull.app.modes.play, g = m.game, X = Lull.Mural.extOf(g), p = g.piece, pc = X.current(g), q = pc.goals[0];
+          const d = { cw: -1, ccw: 1, half: 2, right: 0, ready: 0 }[want], rot = (q.rot + d + 4) % 4, top = g.h - 1 - p.type.rotBounds[rot].maxY;
+          // Its own column over its place when ready, else a column away from it.
+          const xs = want === 'ready' ? [q.x] : [q.x + 3, q.x - 3, q.x + 4, q.x - 4, q.x + 2, q.x - 2];
+          const x = xs.find((x) => g.fitsAt(p, rot, x, top));
+          if (x == null) return null;
+          p.rot = rot; p.x = x; p.y = top;
+          m.view.dirty = true; m.view.render(performance.now());
+          const st = Lull.MuralView.placeState(m.view);
+          return { turns: st.turns, ready: st.ready, all: pc.goals.length };
+        }, want);
+        await F.page.waitForTimeout(40);
+        if (cue[want]) await F.shot('mural-turn-' + want + '-' + vw + 'x' + vh + '-' + theme);
+      }
+      const ok = (c, t, r) => !c || (c.turns === t && c.ready === r) || c.all > 1;
+      check(vw + ' × ' + vh + ' ' + theme + ': the turn badge says the turn to make (clockwise, counter-clockwise, a half turn), a tick once right, filled when a drop sets it',
+        !!cue.right && !!cue.ready && ok(cue.cw, 1, false) && ok(cue.ccw, -1, false) && ok(cue.half, 2, false) && cue.right.turns === 0 && !cue.right.ready && cue.ready.turns === 0 && cue.ready.ready, JSON.stringify(cue));
+      await F.ev(SCENE, { pic: 'coast', level: 5, seed: 2, placed: 70 });
+    }
+    if (phone) {
       // A swipe down (the drop) out of place does nothing; the Finished card's buttons are 44 px targets.
       const swiped = await F.ev(() => { const m = Lull.app.modes.play, g = m.game, i = Lull.Mural.of(g).i, X = Lull.Mural.extOf(g), p = g.piece, pc = X.current(g); if (pc.goals.some((q) => q.rot === p.rot && q.x === p.x)) m.action('moveL'); m.touchActing = true; const ok = m.action('drop'); m.touchActing = false; return { ok, same: Lull.Mural.of(g).i === i }; });
       await F.ev(SCENE, { pic: 'soft', level: 3, seed: 2, placed: 'all' });
