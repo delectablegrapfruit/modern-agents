@@ -1563,7 +1563,7 @@ kbd.big { font-size: var(--fs-sm); height: 22px; padding: 0 7px; }
 .ach-recent.open .ach-recent-more svg { transform: rotate(180deg); }
 @container (max-width: 440px) { .ach-recent { flex: none; } .ach-recent-go .nm, .ach-recent-go .leg-i { display: none; } .ach-recent-go .short { display: inline; } .ach-recent-go { padding: 0 9px 0 8px; } }
 @container (max-width: 340px) { .ach-recent-go .short { display: none; } .ach-recent-go { width: 28px; justify-content: center; padding: 0; } }
-@container (max-width: 290px) { .ach-tools { gap: 6px; } .ach-tools > .seg button { padding: 0 5px; } }
+@container (max-width: 290px) { .ach-tools { gap: 6px; } .ach-tools > .seg button { padding: 0 4px; font-size: var(--fs-sm); } }
 .ach-menu {
   position: absolute; top: calc(100% + 6px); left: 0; z-index: 10; width: max-content; min-width: 220px; max-width: min(320px, calc(100vw - 48px));
   padding: 4px; background: var(--raised); border: 1px solid var(--line-2); border-radius: var(--r-md); box-shadow: var(--sh-2), var(--hi);

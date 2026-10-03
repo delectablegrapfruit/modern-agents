@@ -613,7 +613,7 @@
       }
       if (!this.fitShape(p, p.rot, p.x, p.y)) { this.emit('blocked', 'lock'); return false; }
       const cells = this.absCells(p);
-      // A board's recipe can refuse a lock here (Battle: a piece must touch your board): the piece stays in play.
+      // A board's recipe can refuse a lock here (Race: a piece must touch your board): the piece stays in play.
       const note = this.hooks.refuseLock ? this.ask('refuseLock', this.board, cells) : null;
       if (note) { this.emit('blocked', 'lock'); this.emit('refused', note); return false; }
       this.pushHistory();
@@ -1126,7 +1126,7 @@
       this.emit('reset');
     }
 
-    // ---- pieces given and taken (Battle's Send) ----------------------------------------------------------------------
+    // ---- pieces given and taken (Race's Send, Battle's throws) ----------------------------------------------------------------------
 
     /**
      * Puts a piece at the front of the queue: { id, received } entries go first, in the order they came (first in,

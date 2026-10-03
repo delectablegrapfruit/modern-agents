@@ -2840,7 +2840,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await shot('51-achievements');
   const ach = await ev(() => ({ legends: document.querySelectorAll('.ach.legend').length, got: document.querySelectorAll('.ach.got').length, all: document.querySelectorAll('.ach').length, groups: document.querySelectorAll('.ach-group').length, partGroups: Lull.Achievements.GROUPS.filter((g) => g.part).length, open: document.querySelectorAll('.ach-group[open]').length, quad: !!Lull.app.store.state.achievements.quad, paid: Lull.app.store.state.stats.lines.achievements }));
   check('achievements: earned in play, listed in their own tab (legendary ones too), and paid', ach.quad && ach.got >= 1 && ach.all >= 85 && ach.legends >= 28 && ach.paid >= 15, JSON.stringify(ach));
-  // (Five places, and a group for each board option loaded that has one: Descent's, Battle's.)
+  // (Five places, and a group for each board option loaded that has one: Descent's, Race's, Battle's.)
   check('achievements: five groups (and the board options’), folded away at first', ach.groups === 5 + ach.partGroups && ach.open === 0, JSON.stringify(ach));
   await page.click('.ach-group[data-group="play"] > summary');
   await page.waitForTimeout(60);
@@ -4327,7 +4327,9 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await require('./mirror-test.cjs')({ browser, check, PAGE, OUT });
   // ---- Descent: made, its cards, the clock and its pauses, shots, Rewind 5 s, reloaded, the phones; screenshots (descent-test.cjs)
   await require('./descent-test.cjs')({ browser, check, PAGE, OUT });
-  // ---- Battle: made, the Ready card and 3-2-1, Send, pausing, the End card, both boards' cells, slices (battle-test.cjs)
+  // ---- Race: made, the Ready card and 3-2-1, Send, pausing, the End card, both boards' cells, slices (race-test.cjs)
+  await require('./race-test.cjs')({ browser, check, PAGE, OUT });
+  // ---- Battle: made, aiming and throwing (keys, touch), the End card, auto pause, four sizes (battle-test.cjs)
   await require('./battle-test.cjs')({ browser, check, PAGE, OUT });
   // ---- touch: an emulated phone, played with gestures (scripts/touch-test.cjs) -----------------------------------------
   await require('./touch-test.cjs')({ browser, check, PAGE, OUT });

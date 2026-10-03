@@ -13,6 +13,8 @@ const L = load([
   'physics.js',
   'descent.js',
   'classic.js',
+  'versus.js',
+  'race.js',
   'battle.js',
 ]);
 const { Pieces, Board, Game, Puzzles, Factory, RNG } = L;
@@ -4833,7 +4835,11 @@ require('./descent-unit.cjs')({ L, test });
 // Classic, a board mode, and editing a board's rules (scripts/classic-unit.cjs).
 require('./classic-unit.cjs')({ L, test });
 
-// Battle, a board mode, and its AI (scripts/battle-unit.cjs).
+// Race, a board mode, and its AI (scripts/race-unit.cjs).
+console.log('race');
+require('./race-unit.cjs')({ L, test });
+
+// Battle, a board mode where cleared lines are thrown as pieces, and its AI (scripts/battle-unit.cjs).
 console.log('battle');
 require('./battle-unit.cjs')({ L, test });
 

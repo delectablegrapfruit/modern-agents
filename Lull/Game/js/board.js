@@ -12,7 +12,7 @@
   //   STONE    512    Descent: stone, where a hanging block fused (always with FOREIGN)
   //   SHOT     1024–4096   Descent: the shot a cell of yours fires when its row clears (bits 10–12, SHOT_SHIFT)
   //   (8192 is free)
-  //   FILL     16384  Battle's gap filler (always with FOREIGN)
+  //   FILL     16384  Race's gap filler, Battle's ceiling (always with FOREIGN)
   //   WALL     32768  what get() returns outside the board; never stored
   // Anything that reads a colour masks with COLOR.
   const CELL = Object.freeze({ COLOR: 31, GEM: 32, HIDDEN: 64, FOREIGN: 128, HANG: 256, STONE: 512, SHOT: 1024 | 2048 | 4096, SHOT_SHIFT: 10, FILL: 16384, WALL: 32768 });

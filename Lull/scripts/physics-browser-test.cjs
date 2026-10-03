@@ -83,7 +83,7 @@ module.exports = async function physicsTests({ browser, check, PAGE, OUT }) {
       return { name, before, after, noMaterial, mat, mirrorOff, descentOff, modeNames, modes, on: !!g.recipe.mods.physics, ext: g.ext.map((e) => e.key).join(), parts: m.view.parts.map((p) => p.key).join(), label: Lull.Recipe.label(g.recipe) };
     });
     check('New board ▸ Modifiers: a Physics switch; on, its Material (Jelly); Create makes a Physics board', made.name === 'Physics' && made.before === 'false' && made.after === 'true' && made.noMaterial && made.mat.join() === 'Jelly' && made.on && made.ext === 'physics' && made.parts === 'physics' && made.label === 'Physics', JSON.stringify(made));
-    check('with Physics on, Mirror and Descent are off (aria-disabled); the modes stay Plain, Classic, Descent, Battle', made.mirrorOff === 'true' && made.descentOff === 'true' && !made.modeNames.includes('Physics') && made.modeNames.includes('Classic'), JSON.stringify(made));
+    check('with Physics on, Mirror and Descent are off (aria-disabled); the modes stay Plain, Classic, Descent, Race, Battle', made.mirrorOff === 'true' && made.descentOff === 'true' && !made.modeNames.includes('Physics') && made.modeNames.includes('Classic'), JSON.stringify(made));
     const bar = await ev(() => {
       const m = Lull.app.modes.play, out = {};
       for (const tray of ['tool', 'board', 'choice', 'luck']) {

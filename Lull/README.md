@@ -522,7 +522,7 @@ board its own way: `game.end(kind)`, told after the lock and kept in the save un
 Horizon count what an item took: `comboCount`, or by default one copy's share, `R.copies`, so a Mirror Bomb counts
 one half), its view and its window. An
 unrated board (shapes other than the seven) has no difficult clears: no quad, no back-to-back streak, no bonus, ×1. Parts always run in a fixed
-order (shapes, mirror, physics, classic, descent, battle), whatever order they load in. What pays and counts is measured in own
+order (shapes, mirror, physics, classic, descent, race, battle), whatever order they load in. What pays and counts is measured in own
 cells: a row holding a cell the player never placed is plain and pays only the player's cells, and no option pays more
 per piece or per action than a Standard board (`f = min(1, 4 / E)`, E the mean cells a piece). Outside the board,
 `Board.get` reads as a wall (`CELL.WALL`); every cell bit has one name in `CELL` (`js/board.js`), and anything that
@@ -650,7 +650,7 @@ symmetric. A piece appears centred in the left half (one wider than the half, ce
 (`targets`): two drill bits, two bombs, two black holes, the pair's laser rows; a Patch goes into a covered hole only
 where its copy's hole is open in the same row, else lands like a block; a Ghost is a pair. Tornado shuffles the left
 half and gives the right half the reflection of that order (an odd width's centre column stays put); Settle and
-Trapdoor are as ever; Mirror World is refused ("Not on a Mirror board"). Mirror is never in Battle.
+Trapdoor are as ever; Mirror World is refused ("Not on a Mirror board"). Mirror is never in Race or Battle.
 
 *Pay* — the copy is placed by the piece, never by hand, so a piece is worth its pair's cells: `copies` 2, E doubled
 (8 on Normal shapes, f ½), so a row pays w/20 Standard lines (half a Standard single on a Mirror board 10 wide) and a
@@ -809,7 +809,7 @@ lines, as from level 1, so a high start level is no shortcut. The Best shown (st
 size, `stats.classic.bests`), so a new board of the same rules shows it, and the board's own (carried on by Play
 again); Stats ▸ Classic keeps the best of all boards.
 
-*Its settings* — the Mode tab, under Plain, Classic, Descent and Battle, once Classic is chosen, in the spirit of the NES and
+*Its settings* — the Mode tab, under Plain, Classic, Descent, Race and Battle, once Classic is chosen, in the spirit of the NES and
 Game Boy Advance games:
 
 | Setting | Values | |
@@ -918,7 +918,7 @@ Boards and the next stage (Space: this board retired as cleared, the next stage 
 card; after 12, Endless). Topped out: the rows broken, Rewind 5 s, Boards and Try again (Space: the same stage anew). The
 library tags a cleared board Cleared (an Endless one its rows); its summary adds Rows broken, Stone and Time; Stats ▸
 Free Play has a Descent section (time, stages cleared, blocks broken, turned to stone, topped out, stages cleared on each
-level, Endless best). The New board window's Mode tab has Descent between Classic and Battle, its level row and a Stage
+level, Endless best). The New board window's Mode tab has Descent between Classic and Race, its level row and a Stage
 stepper (1–12, Endless) with how many of the 12 are cleared on that level (the stage's number marked when cleared); the
 preview shows the hanging rows. Shots are thin lines of light from the cleared cells to what they hit; a broken block
 fades out; with reduced motion nothing shimmers. No red rim. Tests: `scripts/descent-unit.cjs` (Node) and
@@ -943,14 +943,14 @@ another dealer starts its own bag, the mode it left drops its state, and the Und
 Not enough lines and nothing changes. Pay stays fair: an edit only costs, and every board, however edited, pays by its
 own rules, never faster than Standard.
 
-### Battle
-A mode (`js/battle.js`, its controller, view and window `js/battleview.js`): your board against an opponent's, the
+### Race
+A mode (`js/race.js`, its controller, view and window `js/raceview.js`; what it shares with Battle: `js/versus.js`, `js/versusview.js`): your board against an opponent's, the
 first to fill every cell of its board wins the round. No row ever clears. A board is 6–12 wide and 6–12 rows (the
 Height stepper is named Rows; presets Quick 8 × 8, Standard 10 × 10, Long 10 × 12), and over its rows sits a buffer of
 k rows (4 for Normal shapes, 3 Tiny, 5 Frantic and Pentominoes; `R.k`), where pieces come in, move and turn. A piece
 must touch the board to set ("Set it on your board"); what it leaves in the buffer is trimmed away (and fades). Big,
-Custom with groups over 5 blocks or Clusters, Mirror and Physics are not in Battle; Classic and Descent are other modes.
-A Battle board keeps its rules (no Edit rules); the opponent can be changed between rounds.
+Custom with groups over 5 blocks or Clusters, Mirror and Physics are not in Race; Classic, Descent and Battle are other modes.
+A Race board keeps its rules (no Edit rules); the opponent can be changed between rounds.
 
 *Send* — S sends the piece in play to the opponent; Shift+S, or a tap or click on the first Next slot, sends the first
 Next piece. Send is ready once every six pieces you set (a ring of six on the Send button fills as they go), and a piece
@@ -958,7 +958,7 @@ sent to you goes to the front of your queue, after any sent before it, ringed in
 neither held nor sent on. (Shift alone holds when it is let go, so Shift+S never holds.)
 
 *Sealed gaps and Gap fillers* — an empty cell of the board that no piece of the set can reach (every turn of every
-shape, from the top, sideways and down, as the engine moves: `Battle.cover`, on bit rows, 0.05 ms typical) is a sealed
+shape, from the top, sideways and down, as the engine moves: `Race.cover`, on bit rows, 0.05 ms typical) is a sealed
 gap, drawn with a soft hatch. A piece you sent that seals a new gap as the opponent sets it earns you a Gap filler (two
 at most, the dots on Send); a filler held fills your own sealed gaps at once, one region each, lowest first, with stone
 (`FOREIGN | FILL`: never yours, never paid). A board that cannot be finished (closed: every empty cell sealed and no
@@ -981,20 +981,20 @@ Every piece it considers every spot it can reach (a search over turn, column and
 the board each would leave (sealed cells, covered cells, bumps, deep pits, cells left in the buffer, height), judges its
 best five again by the cover, and plays the chosen spot's path move by move at its pace, so it tucks under overhangs
 where you can see it (with reduced motion it jumps there). It holds like you do. It thinks in slices of under a
-millisecond a frame (a generator), so the page never stutters. Measured (`scripts/battle-unit.cjs`, 20 rounds each):
+millisecond a frame (a generator), so the page never stutters. Measured (`scripts/race-unit.cjs`, 20 rounds each):
 Swift beats Easy 20 of 20; a player setting a piece every 3 s with Steady's judgement beats Easy 17 of 20.
 
 *In Free Play* — the opponent's board is on top, turned 180° as if seen across the table (its pieces keep their
 shape), a little fainter, with no trays; the two buffers meet at a line in the middle; your board and its trays are
 below. The opponent is drawn at your scale while your cells stay 16 px or more, and shrinks to half yours at the least
 (on a 320 × 568 phone a Long board of Pentominoes is 11 px yours, 5.5 px theirs). A round starts at the Ready card
-(Battle, vs Steady; Start or Space) with 3-2-1; away from the board (another tab, window or app, the page hidden, a
+(Race, vs Steady; Start or Space) with 3-2-1; away from the board (another tab, window or app, the page hidden, a
 window over it, the window losing focus, rolled up) it pauses at the Paused card, and Resume counts down again; a board
-reloaded comes back paused. Battle is the only Relaxed board with a clock. The status bar reads You 64% · Steady 58%
+reloaded comes back paused. Race and Battle are the Relaxed boards with an opponent and a clock. The status bar reads You 64% · Steady 58%
 (the tally in its tip); the bar under the board is Send, Start over and Pause (P). No power-ups, Undo, Luck, control
 hints, shake or red rim. The End card says You win or Opponent wins, both boards' fill, the tally, the time and what it
-paid, with Rematch (Space), Boards, Retire and the opponent for the next round. The library row reads "10 × 10 · Battle"
-and "vs Steady 3–2"; its summary adds the tally and rounds; Stats ▸ Free Play has a Battle section (rounds, won, lost,
+paid, with Rematch (Space), Boards, Retire and the opponent for the next round. The library row reads "10 × 10 · Race"
+and "vs Steady 3–2"; its summary adds the tally and rounds; Stats ▸ Free Play has a Race section (rounds, won, lost,
 most in a row, sent, Gap fillers, started over, by opponent, time).
 
 *Pay* — once a round, for your board as the round ends: a tenth of a line for each of your own cells on it, times the
@@ -1006,6 +1006,70 @@ group; wins count against Steady or harder, on boards of 64 cells or more): **Re
 **Across the Middle** (40) win a round; **Second Wind** (80) win after starting over in that round; **Head to Head**
 (100) beat Brisk; **Seamless** (120) win with no gap sealed and no start over; **Three Straight** (150) win 3 rounds in
 a row on one board; **Swifter Still** (250, legend) beat Swift.
+
+### Battle
+A mode (`js/battle.js`, its controller, view and window `js/battleview.js`; the two-board view, the opponent's search,
+the cards and the countdown are Race's, shared in `js/versus.js` and `js/versusview.js`): your board against an
+opponent's, both played as plain boards (rows clear, pieces float as everywhere in Relaxed play). A board is 6–12 wide
+and 10–16 high (presets Quick 8 × 12, Standard 10 × 14, Long 10 × 16); Big, Custom with groups over 5 blocks or
+Clusters, Mirror and Physics are not in Battle. A Battle board keeps its rules (no Edit rules); the opponent can be
+changed between rounds. No power-ups, Undo, Luck, control hints or red rim.
+
+*Charges and throws* — every row you clear is a charge, six at most (the dots on Throw: a quad is four). T (or Throw)
+aims the piece in play at the opponent's board: a shadow comes up there, across from your piece and turned as it looks
+to you, with a faint band down the columns it falls through. ← → move it (the screen's way: their board is turned), ↑, X,
+Z and A turn it, Space or Enter throws, Esc or T cancels. It drops from their top (under their ceiling) straight down and
+rests on their stack, exactly where the shadow was; their piece in play is not in its way (if the landing covers it, it
+comes in again where pieces appear). A turn with no room at their top shows dashed in red and is not thrown ("No room
+there"). Your next piece comes in; the charge is spent. The cells thrown are theirs from then on: they clear as their
+own rows do, and a row the throw itself completes clears for them at once and gives them its charge (a backfire). While
+you aim, your piece waits; the clock and the opponent do not. By touch: Throw, then a drag moves the shadow, a tap on
+their board moves it there (a tap on the shadow throws), a tap on your board turns it, a swipe down throws; the bar
+reads Cancel and Throw here. With a mouse the shadow follows the pointer over their board and a click there throws.
+
+*Winning* — a board whose next piece cannot come in near where pieces appear (no room is searched for, as Classic) is
+out, and the round is the other's. From 3:00 both ceilings come down a row every 20 s (sudden death): the row turns to
+stone (`STONE`: never yours, never cleared, what was there is crushed), rows under it clear as ever and the stone stays,
+pieces come in under it, and a piece in play it reaches moves down a row or two, or comes in again. When both boards are
+out at once, the one with more cells is out; level, the opponent.
+
+*The opponent* — four levels, apart in pace, judgement and throwing:
+
+| | Easy | Steady | Brisk | Swift |
+|---|---|---|---|---|
+| Seconds a piece (±30%) | 4.5 | 3.2 | 2.3 | 1.6 |
+| Judgement (noise) | 9 | 4 | 1 | 0 |
+| Looks at the next piece | no | no | its best 5 | its best 8 |
+| Throws | a third of its pieces while it holds a charge | with two charges | with three, or with a piece bad for its board | once you are within 6 rows of the top, with six, or with three and a bad piece |
+| Aims | anywhere | onto your highest column | where your board is worst after it: wells and T-slots | the same, and where your next piece has no room |
+| Moves a second | 8 | 10 | 12 | 14 |
+
+It searches every spot a piece can reach (Race's search) and scores the board each leaves, rows cleared (height,
+holes and the cells over them, bumps, deep wells, a stack near the top); it never aims a throw that would clear a row for
+you when another aim is clean. It plays its path move by move (with reduced motion it jumps there), holds like you do,
+and plays on whatever is thrown at it. Its throw is shown on your board first: a dashed amber shadow for 0.8 s where it
+will land, then it lands. It thinks in slices of under a millisecond a frame. Measured (`scripts/battle-unit.cjs`, 20
+rounds each): Swift beats Easy 20 of 20; a player setting a piece every 3 s with Steady's judgement and throwing beats
+Easy 20 of 20.
+
+*In Free Play* — the two boards are laid out as Race's (theirs on top, turned 180°, a little fainter, at your scale while
+your cells stay 16 px or more, half yours at the least). A round starts at the Ready card (Battle, vs Steady; Start or
+Space) with 3-2-1, and pauses away from the board as Race's does; a board reloaded comes back paused. The status bar
+reads You 5 · Steady 3 (rows cleared; the tally in the tip) and the round's time, amber once the ceilings come down; the
+bar under the board is Throw (44 px, its six charge dots) and Pause (P). The End card says You win or Opponent wins, the
+rows each cleared, the tally, the time and what it paid, with Rematch (Space), Boards, Retire and the opponent for the
+next round. The library row reads "10 × 14 · Battle" and "vs Steady 3–2"; Stats ▸ Free Play has a Battle section
+(rounds, won, lost, most in a row, rows cleared, thrown, backfired, won in sudden death, by opponent, time).
+
+*Pay* — once a round: a Standard row's worth (w/10 × the set's `f`) for each row you cleared, at most a Standard piece's
+worth (E/10 × `f`) for each piece you set, so thrown and backfired rows never pay more than your own pieces could; times
+the opponent's D (Easy 0.4, Steady 0.55, Brisk 0.7, Swift 0.85), half for a loss. At most 0.34 a piece (Standard pays
+0.37–0.39); measured in simulated rounds it is 0.09–0.20 a piece, less a piece or a throw. It counts toward lifetime lines
+and the power-ups earned by lines, never toward the Free Play board records. *Achievements* (their own group; wins count
+against Steady or harder, on boards of 96 cells or more): **Special Delivery** (30) throw a piece; **Over the Top** (40)
+win a round; **Full Hand** (50) hold six charges; **Backfire** (60) clear a row with a piece thrown at you; **Fair
+Fight** (100) beat Brisk; **Under the Wire** (120) win after the ceilings start coming down; **Hat Trick** (150) win 3
+rounds in a row on one board; **Fastest Arm** (250, legend) beat Swift.
 
 ## Keys
 
@@ -1019,8 +1083,9 @@ a row on one board; **Swifter Still** (250, legend) beat Swift.
 | ⌫ / U, R, N, H | undo, retry, next puzzle, hint |
 | ⌘1–⌘6, ⌘, | tabs (⌘6 the Shop), settings |
 | ⌘J | collapse into the title bar, or expand (so does a double-click on the empty bar) |
-| P | pause a Classic or Battle board (Space or P starts and resumes it) |
-| S, Shift+S | Battle: send the piece in play, or the first Next piece (a Battle board holds with Shift when it is let go alone) |
+| P | pause a Classic, Race or Battle board (Space or P starts and resumes it) |
+| S, Shift+S | Race: send the piece in play, or the first Next piece (a Race board holds with Shift when it is let go alone) |
+| T | Battle: aim the piece in play at the opponent's board (arrows and turns move the shadow, Space or Enter throws, Esc or T cancels) |
 | M | mute everything, on any tab (again to unmute) |
 | mouse: point | slide the piece left and right (at its height; slightly sticky at column edges: the pointer goes 0.15 of a cell past one before the piece follows; mirrored under Inverted Controls; keys keep working while the pointer rests there) |
 | left click | drop it straight down — anywhere on the board side (a slip into the next column in the last 0.06 s before the click is ignored) |

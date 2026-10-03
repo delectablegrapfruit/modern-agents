@@ -93,6 +93,8 @@ const STAND_INS = () => {
   const R = Lull.Recipe, UI = Lull.UI, h = UI.h;
   // The real Physics modifier is left out of this world of stand-ins (its own tests are physics-browser-test.cjs).
   R.unpart('physics');
+  // Race too: the stand-in battle below is the one two-board mode here (its own tests are race-test.cjs).
+  R.unpart('race');
   const PRESETS = { normal: '', tiny: 'Tiny', frantic: 'Frantic', pentominoes: 'Pentominoes', big: 'Big', custom: 'Custom' };
   const isObj = (v) => !!v && typeof v === 'object';
   R.part({

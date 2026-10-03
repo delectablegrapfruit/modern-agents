@@ -1,4 +1,4 @@
-// Descent's rules in Node (js/descent.js): the recipe (a mode between Classic and Battle; its level and stage; 8 × 14 at
+// Descent's rules in Node (js/descent.js): the recipe (a mode between Classic and Race; its level and stage; 8 × 14 at
 // least; Physics and Mirror ruled out both ways; kept for the board's life), the stages laid out the same every time,
 // each shot (I pierce, O heavy, T spread, S and Z push, L and J angle, stone nothing; other shapes by their form), each
 // block (glass, dense, armour, prism, drip, weight, echo, lock), the clear effects (a volley a row, a T-spin through
@@ -48,9 +48,9 @@ module.exports = function descentUnit({ L, test }) {
 
   console.log('descent');
 
-  test('descent: the recipe — a mode between Classic and Battle, its level and stage, its label, 8 × 14 at least, refusals, Physics and Mirror ruled out both ways', () => {
+  test('descent: the recipe — a mode between Classic and Race, its level and stage, its label, 8 × 14 at least, refusals, Physics and Mirror ruled out both ways', () => {
     const modes = Recipe.options().find((o) => o.path === 'mode').values;
-    assert.deepStrictEqual(modes.filter((m) => ['plain', 'classic', 'descent', 'battle'].includes(m)), ['plain', 'classic', 'descent', 'battle']);
+    assert.deepStrictEqual(modes.filter((m) => ['plain', 'classic', 'descent', 'race', 'battle'].includes(m)), ['plain', 'classic', 'descent', 'race', 'battle']);
     assert(!modes.includes('protect'), 'Protect is gone');
     assert.deepStrictEqual(Recipe.normalize({ mode: 'descent' }).descent, { level: 'easy', stage: 1 });
     assert.deepStrictEqual(Recipe.normalize({ mode: 'descent', descent: { level: 'hard', stage: 'endless' } }).descent, { level: 'hard', stage: 'endless' });

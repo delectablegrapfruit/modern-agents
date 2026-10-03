@@ -1,5 +1,5 @@
 // Descent in the browser (js/descent.js, js/descentview.js): made in the New board window (Mode ▸ Descent between
-// Classic and Battle; its level and stage; 4 × 8 raised to 8 × 14; the preview's hanging rows), the board it makes (the
+// Classic and Race; its level and stage; 4 × 8 raised to 8 × 14; the preview's hanging rows), the board it makes (the
 // hanging blocks drawn, Stage, Broken and Next in the status bar), the clock (the Ready card; Space starts it; it runs in
 // real time; it pauses at the Paused card on a blur, the page hidden, a window over it and P), a clear's shots, Rewind
 // 5 s (Undo's place: its name, five seconds back, paid as an Undo), the Cleared card and its next stage, the Topped out
@@ -83,7 +83,7 @@ module.exports = async function descentTests({ browser, check, PAGE, OUT }) {
   await page.waitForTimeout(150);
   await ev(() => document.querySelector('.nb-tab[data-tab="mode"]').click());
   const modes = await ev(() => [...document.querySelectorAll('.nb-mode')].map((b) => b.textContent.trim()));
-  check('the Mode tab: Plain, Classic, Descent, Battle', modes.join() === 'Plain,Classic,Descent,Battle', JSON.stringify(modes));
+  check('the Mode tab: Plain, Classic, Descent, Race, Battle', modes.join() === 'Plain,Classic,Descent,Race,Battle', JSON.stringify(modes));
   await ev(() => document.querySelector('.nb-mode[data-value="descent"]').click());
   await ev(() => document.querySelector('.nb-level[data-value="hard"]').click());
   await ev(() => { document.querySelector('[data-focus="descent.stage+"]').click(); });

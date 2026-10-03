@@ -571,8 +571,8 @@
     return { w: Math.min(20, w), h: Math.min(40, h) };
   }
 
-  /** Battle's buffer rows for a set (k): Normal 4, Tiny 3, Frantic and Pentominoes 5. */
-  function battleK(sh) { return { normal: 4, tiny: 3, frantic: 5, pentominoes: 5 }[normalize(sh).preset] || 5; }
+  /** Race's buffer rows for a set (k): Normal 4, Tiny 3, Frantic and Pentominoes 5. */
+  function raceK(sh) { return { normal: 4, tiny: 3, frantic: 5, pentominoes: 5 }[normalize(sh).preset] || 5; }
 
   // ---- words ----------------------------------------------------------------------------------------------------------
 
@@ -621,7 +621,7 @@
       R.E = payCells(sh);
       R.u = unit(sh);
       if (!rated(sh)) R.rated = false;
-      if (r.mode === 'battle') R.k = battleK(sh);
+      if (r.mode === 'race') R.k = raceK(sh);
     },
     limits(r, lim) {
       if (presetOf(r) === 'normal') return;
@@ -630,10 +630,12 @@
       lim.h[0] = Math.max(lim.h[0], Math.min(40, m.h));
     },
     conflicts(r, out) {
-      if (r.mode !== 'battle') return;
-      out['shapes.preset=big'] = 'Not in Battle';
+      // Race and Battle read boards as rows of bits (their AI, Race's cover): no Big, no groups over 5 blocks, no Clusters.
+      const why = { race: 'Not in Race', battle: 'Not in Battle' }[r.mode];
+      if (!why) return;
+      out['shapes.preset=big'] = why;
       const c = r.shapes.custom || normalize({ preset: 'custom' }).custom;
-      if (c.big !== 'off' || c.clusters || c.groups.some((g) => g.n > 5)) out['shapes.preset=custom'] = 'Not in Battle';
+      if (c.big !== 'off' || c.clusters || c.groups.some((g) => g.n > 5)) out['shapes.preset=custom'] = why;
     },
     engine(game) {
       const c = compile(game.recipe && game.recipe.shapes);
@@ -671,7 +673,7 @@
   const Shapes = {
     TOTAL, MAX_N, MAX_PICKS, WEIGHTS, WEIGHT_NAMES, BIGS, PRESETS, NAMES, SMALL, CUSTOM_DEFAULT,
     normalize, thin, compile, round, resolve, spawnRot, cluster, clusterBox, poly, range, page, count, canon, checkDrawn,
-    idOfKey, idOfCells, minSize, sources, meanCells, payCells, variety, unit, rated, label, describe, candidates, fixedIds, battleK,
+    idOfKey, idOfCells, minSize, sources, meanCells, payCells, variety, unit, rated, label, describe, candidates, fixedIds, raceK,
     enumFor, table, encode, decode, part,
   };
   L.Shapes = Shapes;

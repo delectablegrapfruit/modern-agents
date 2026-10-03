@@ -143,7 +143,7 @@
 
   function freshPuzzleDiff() { return { played: 0, solved: 0, firstTry: 0, attempts: 0, fails: 0, bestMs: 0, totalMs: 0, streak: 0, bestStreak: 0, hints: 0 }; }
 
-  // Stats a board option keeps (Descent's per level, Battle's rounds and time): each registers its defaults (a part's
+  // Stats a board option keeps (Descent's per level, Race's and Battle's rounds and time): each registers its defaults (a part's
   // `stats` in js/recipe.js, or Store.addStats(def)), merged under state.stats wherever the defaults lack them.
   const STATS = [];
   /** Registers stats defaults ({ free: { guard: {…} } }, { battle: {…}, timeMs: { battle: 0 } }). */

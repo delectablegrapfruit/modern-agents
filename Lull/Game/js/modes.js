@@ -212,7 +212,7 @@
         if (performance.now() - this.app.focusedAt < 300) return; // the click that brought the window forward
         const [px, py] = pos(e);
         this.pointer = [px, py];
-        // A press the board's controller takes (mapInput 'click' answers true: Battle's first Next slot) does nothing else.
+        // A press the board's controller takes (mapInput 'click' answers true: Race's first Next slot, Battle's throw) does nothing else.
         if (this.mapInput('click', [px, py], e) === true) return;
         if (e.button === 0 && this.view.onHold(px, py)) { mouse(() => this.action('hold')); return; }
         if (e.button === 2) { mouse(() => { this.follow(); this.action('cw'); this.follow(); }); return; }
@@ -378,7 +378,7 @@
             if (this.touchTapStarts && this.touchTapStarts()) { ok = this.action('drop'); break; }
             {
               const side = this.mapInput('tap', it.side, this.touchAt);
-              // Taken by the board's controller (null or false: Battle's tap on the first Next slot): nothing turns.
+              // Taken by the board's controller (null or false: Race's tap on the first Next slot, Battle's taps while aiming): nothing turns.
               if (side === null || side === false) { ok = true; break; }
               ok = this.action(this.settings.tapTurn === 'cw' ? 'rotate' : side === 'left' ? 'ccw' : 'cw');
             }
@@ -403,7 +403,7 @@
 
     frame(now, dt) {
       if (this.gest && this.gest.active) { this.touchGuard(); this.gest.tick(this.clock ? this.clock() : now); }
-      // A board whose recipe has no control hints (R.hints false: Battle) never shows one.
+      // A board whose recipe has no control hints (R.hints false: Race, Battle) never shows one.
       if (this.app.hints) {
         if (!(this.game && this.game.rules && this.game.rules.hints === false)) { this.hintsOff = false; this.app.hints.frame(this, now, dt); }
         else if (!this.hintsOff) { this.hintsOff = true; if (this.app.hints.hide) this.app.hints.hide(); }
@@ -431,7 +431,7 @@
    * before it (reached while it runs as this.base), and frame, pause, attach, detach, input, onKey, action, tiles,
    * status and cards gather every part's. Its name is `id` (never `key`). Hooks, called with this = the controller:
    *   view: 'single' | 'battle'     the board view's layout (another than 'single' is drawn by a view part: BoardView.shell)
-   *   timed: false                  a clock that runs while play.canRun() (Battle's)
+   *   timed: false                  a clock that runs while play.canRun() (Race's, Battle's)
    *   frame(now, dt, running)       every frame on the Play tab; running is play.canRun()
    *   pause(why)                    play has to stop: 'blur', 'pointer' (it left the window), 'hidden', 'tab', 'modal',
    *                                 'collapse' (app.onAway and the frame loop)
@@ -448,7 +448,7 @@
    *   bar(el) -> true               it drew the bar under the board itself (plain: the power-up groups)
    *   tiles(game) -> [[value, label]]   more tiles for the board in play's summary (the Board full and Retire cards;
    *                                 a record's own numbers are its uiPart's tiles)
-   *   onKey(e) -> true              a key it took, before the game's own keys (Battle's S, Shift+S)
+   *   onKey(e) -> true              a key it took, before the game's own keys (Race's S, Shift+S; Battle's T)
    *   action(a, rep) -> ok          an action the game does not know (P: 'pause')
    *   input(kind, v, pos) -> v      what an input means here: 'aim' (the mouse's target column), 'touch' (a gesture's
    *                                 options; swap: true turns its sideways moves around), 'tap' ('left' or 'right';
@@ -526,7 +526,7 @@
       if (this.ctl && this.ctl.detach) this.ctl.detach();
       this.ctl = this.makeController(game);
       super.attachGame(game, view);
-      // A lock the recipe refuses (a part's refuseLock: Battle's "Set it on your board") says why.
+      // A lock the recipe refuses (a part's refuseLock: Race's "Set it on your board") says why.
       game.on('refused', (note) => { if (note) toast(String(note), 'bad', 1800); });
       this.view.layoutName = this.ctl.view || 'single';
       this.ctl.attach(game);
@@ -558,7 +558,7 @@
       super.frame(now, dt);
     }
 
-    /** Actions the game does not know go to the controller (Battle's pause). */
+    /** Actions the game does not know go to the controller (Race's and Battle's pause). */
     modeAction(a, rep) { return !!this.ctl.action(a, rep); }
 
     /**
@@ -819,7 +819,7 @@
 
     /**
      * A library row's tags: Playing, Full (a board that ended full: not one a part ended its own way), then each part's
-     * (a uiPart's tags(recipe, x, info) -> [{ text, cls }]: Descent's Cleared, Battle's "vs Steady 3–2"; x is the part's
+     * (a uiPart's tags(recipe, x, info) -> [{ text, cls }]: Descent's Cleared, Race's and Battle's "vs Steady 3–2"; x is the part's
      * saved state, or its summary numbers on a retired record; info: { cur, over, ended, reason, retired }).
      */
     rowTags(recipe, xs, info) {
@@ -956,9 +956,9 @@
      *   value(r) -> text          the Shapes tab's short value ("Frantic", "Custom")
      *   mod: 'physics', name        Modifiers: its switch's name        mode: 'descent', name   Mode: its button's name
      *   levels(r) -> { path, values: [[value, label]] } | null      the level row of its mode
-     *   stepper(r, key) -> { label } | null   a stepper's name ('w', 'h': Battle's Height is Rows)
+     *   stepper(r, key) -> { label } | null   a stepper's name ('w', 'h': Race's Height is Rows)
      *   presets(r) -> [[name, w, h]] | null   the Size tab's presets
-     *   sizeFor(r, asked) -> asked | null     the size to show once the recipe changed (Battle keeps its own)
+     *   sizeFor(r, asked) -> asked | null     the size to show once the recipe changed (Race and Battle keep their own)
      *   commit(r, size) -> { recipe, size } | null   what Create makes
      *   said(path, value, r) -> text | null   a value of its own in words, for the live region (Custom's sources), where
      *                             a chip's or a level's name does not say it
@@ -1266,9 +1266,9 @@
       return true;
     }
 
-    /** The rows a board keeps on top of its own as a buffer (R.k: Battle's), left out of the size it is shown at. */
+    /** The rows a board keeps on top of its own as a buffer (R.k: Race's), left out of the size it is shown at. */
     bufferRows(recipe, w) { return L.Recipe && recipe ? L.Recipe.rules(recipe, w).k || 0 : 0; }
-    /** Why a board of this recipe offers no Edit rules (a part's noEdit: Battle), or null. */
+    /** Why a board of this recipe offers no Edit rules (a part's noEdit: Race, Battle), or null. */
     keepsRules(recipe) {
       const R = L.Recipe;
       if (!R || !recipe) return null;
@@ -1633,7 +1633,7 @@
      * (dimmed when the wallet is short). Click to use; one you have none of is bought and used. Esc closes it.
      */
     renderItems() {
-      // A controller with a bar of its own (Battle: Send, Start over, Pause) draws it instead of the power-ups.
+      // A controller with a bar of its own (Race: Send, Start over, Pause; Battle: Throw, Pause) draws it instead of the power-ups.
       this.itembar.classList.remove('cl-bar');
       if (this.ctl.bar(this.itembar) === true) { this.tray = null; this.renderTray(); return; }
       const inv = this.app.store.state.inventory;

@@ -282,7 +282,7 @@
     }
   }
   /**
-   * Registers a group (a board option's own: Descent, Battle): { id, name, icon, note?, noteTitle?, after?, list? },
+   * Registers a group (a board option's own: Descent, Race, Battle): { id, name, icon, note?, noteTitle?, after?, list? },
    * shown after the group `after` (by default, after Free Play's last board-option group), its list added (add).
    */
   function group(def) {

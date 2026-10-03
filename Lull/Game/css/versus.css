@@ -1,0 +1,11 @@
+/* Lull — the cards Race and Battle share (js/versusview.js): Ready, the countdown, Paused, and the End card with its
+   opponent picker. */
+.card .vs-sub { color: var(--muted); }
+.overlay .card.vs-counting { min-width: 120px; background: transparent; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.card .vs-count { margin: 0; font-size: 64px; line-height: 1; font-weight: 750; color: var(--fg); font-variant-numeric: tabular-nums; text-shadow: 0 2px 18px var(--bg); }
+.card .vs-opp { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 10px; margin-top: 10px; }
+.card .vs-opp-l { color: var(--muted); font-size: var(--fs-sm); }
+.card .vs-pick { display: flex; }
+.card .vs-pick button { min-width: 0; height: 32px; padding: 0 10px; white-space: nowrap; }
+@media (pointer: coarse) { .card .vs-pick button { height: 44px; } }
+@media (max-width: 380px) { .card .vs-pick button { padding: 0 7px; } }

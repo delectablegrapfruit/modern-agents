@@ -1,344 +1,321 @@
-// Battle's rules in Node (js/battle.js): the recipe and its sizes, the buffer (a lock wholly in it refused, the rest
-// trimmed, no clears), the cover (an overhang open, a lid sealed, regions lowest first, against the engine's own reach),
-// Send (both sources, its order, the cooldown, received pieces neither held nor sent on), Gap fillers (earned, capped,
-// fired both ways, never paid), resets and the win, pay (only the final board, a loss half, never more a piece than
-// Standard), the save, the AI (deterministic, every path valid move by move), cover's speed, and the ladder.
-// Run by test.cjs: require('./battle-unit.cjs')({ L, test }).
+// Battle's rules in Node (js/battle.js): the recipe and its sizes, charges (one a row, six at most), a throw landing
+// exactly where it was aimed (dropped from their top onto their stack), thrown cells clearing as the board's own (a
+// backfire too), the top out, sudden death (its timing, the ceiling's stone, clears under it, both at once), the AI's
+// throws by level, its handling of pieces thrown at it, the ladder, pay (never above Standard a piece or an action), and
+// the save mid-round. Run by test.cjs: require('./battle-unit.cjs')({ L, test }).
 'use strict';
 const assert = require('assert');
-const { performance } = require('perf_hooks');
 
 module.exports = function battleUnit({ L, test }) {
-  const { Game, Pieces, Recipe, Battle: B, CELL, Library } = L;
+  const { Game, Pieces, Recipe, Battle: B, CELL, Library, RNG } = L;
   const R0 = (o) => Recipe.normalize(Object.assign({ mode: 'battle', battle: { level: 'steady' } }, o || {}));
-  const mk = (w, rows, seed, o) => new Game(Object.assign({ w: w || 10, h: rows || 10, seed: seed == null ? 1 : seed, recipe: R0(), battleAI: true, previewCount: 5 }, o || {}));
+  const mk = (w, hh, seed, o) => new Game(Object.assign({ w: w || 10, h: hh || 14, seed: seed == null ? 1 : seed, recipe: R0(), battleAI: true, previewCount: 5 }, o || {}));
   /** A board from rows of text, bottom row first: '#' a block, '.' empty. */
   const paint = (g, rows) => { g.board.cells.fill(0); rows.forEach((row, y) => { for (let x = 0; x < row.length; x++) if (row[x] === '#') g.board.set(x, y, 8); }); };
   /** The piece in play becomes `id`, turned rot, its box at column x, at the top. */
-  const put = (g, id, x, rot, y) => {
-    const type = Pieces.get(id);
-    g.piece = { type, rot: rot || 0, x, y: y != null ? y : g.h - 1 - type.rotBounds[rot || 0].maxY, special: null, entry: { id, rot: 0 }, lastRot: false };
+  const put = (g, id, x, rot) => {
+    const type = Pieces.get(id), r = rot || 0;
+    g.piece = { type, rot: r, x, y: B.top(g) - 1 - type.rotBounds[r].maxY, special: null, entry: { id, rot: 0 }, lastRot: false };
     return g.piece;
   };
-  /** An O in play over column x (its left cell), at the top, with entry fields e. */
-  const O = (g, x, e) => { const type = Pieces.get('O'); g.piece = { type, rot: 0, x: x - type.rotBounds[0].minX, y: g.h - 1 - type.rotBounds[0].maxY, special: null, entry: Object.assign({ id: 'O', rot: 0 }, e), lastRot: false }; return g.piece; };
-  const sd = (g, lv) => { const s = B.side(g); s.lvl = B.LEVELS[lv || 'steady']; s.rng = new L.RNG(9); return s; };
+  const sd = (g, lv, seed) => { const s = B.side(g); s.lvl = B.LEVELS[lv || 'steady']; s.rng = new RNG(seed || 9); return s; };
+  const cellsOf = (g) => { const out = []; for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) if (g.board.get(x, y)) out.push(x + ',' + y); return out; };
 
-  test('battle: the recipe (a mode, levels Easy to Swift, Steady by default), its label, sizes 6–12 by rows 6–12, rules (k, no Undo, items, hints)', () => {
-    assert(Recipe.options().find((o) => o.path === 'mode').values.includes('battle'));
+  test('battle: the recipe (a mode after Race, levels Easy to Swift, Steady by default), its label, sizes 6–12 by 10–16, rules, Mirror, Physics and Big ruled out', () => {
+    const modes = Recipe.options().find((o) => o.path === 'mode').values;
+    assert.deepStrictEqual(modes.slice(-2), ['race', 'battle'], 'Race, then Battle');
     assert.deepStrictEqual(Recipe.normalize({ mode: 'battle' }).battle, { level: 'steady' });
-    assert.deepStrictEqual(Recipe.normalize({ mode: 'battle', battle: { level: 'x' } }).battle, { level: 'steady' });
     assert.strictEqual(Recipe.normalize({ battle: { level: 'swift' } }).battle, undefined, 'its settings only in Battle');
     assert.strictEqual(Recipe.label(R0({ battle: { level: 'swift' } })), 'Battle · Swift');
     assert.strictEqual(Recipe.label(R0(), true), 'Battle');
-    assert.deepStrictEqual(Recipe.limits(R0()), { w: [6, 12], h: [6, 12] });
-    assert.deepStrictEqual(Recipe.clampSize({}, R0()), { w: 10, h: 10 }, 'a size not given is 10 × 10');
-    assert.deepStrictEqual(Recipe.clampSize({ w: 20, h: 40 }, R0()), { w: 12, h: 12 });
+    assert.deepStrictEqual(Recipe.limits(R0()), { w: [6, 12], h: [10, 16] });
+    assert.deepStrictEqual(Recipe.clampSize({}, R0()), { w: 10, h: 14 }, 'a size not given is 10 × 14');
+    assert.deepStrictEqual(Recipe.clampSize({ w: 20, h: 40 }, R0()), { w: 12, h: 16 });
     const R = Recipe.rules(R0(), 10);
-    assert(R.k === 4 && !R.undo && !R.hints && R.timed && R.battle, JSON.stringify(R));
+    assert(!R.k && !R.undo && !R.hints && R.timed && R.battle && R.noFeats, JSON.stringify(R));
     for (const id of Object.keys(L.ITEMS)) assert.strictEqual(R.refuse[id], 'Not in Battle', id);
-    assert.strictEqual(Recipe.rules(R0({ shapes: { preset: 'tiny' } }), 10).k, 3);
-    assert.strictEqual(Recipe.rules(R0({ shapes: { preset: 'frantic' } }), 10).k, 5);
-    assert.strictEqual(Recipe.rules(R0({ shapes: { preset: 'pentominoes' } }), 10).k, 5);
-    // Mirror, Physics, Big and Custom with large groups are not in Battle; the last choice wins.
     const c = Recipe.conflicts(R0());
     assert.strictEqual(c['mods.mirror=true'], 'Not in Battle');
     assert.strictEqual(c['mods.physics=true'], 'Not in Battle');
     assert.strictEqual(c['shapes.preset=big'], 'Not in Battle');
-    const res = Recipe.resolve({ mode: 'battle', mods: { physics: true, mirror: false } }, 'mode', {});
-    assert.strictEqual(res.recipe.mods.physics, false, 'choosing Battle turns Physics off');
+    assert.strictEqual(Recipe.resolve({ mode: 'battle', mods: { physics: true } }, 'mode', {}).recipe.mods.physics, false, 'choosing Battle turns Physics off');
     assert.strictEqual(B.PART.noEdit(R0()), 'A Battle board keeps its rules');
+    assert.strictEqual(mk().h, 14, 'no buffer: the board is its height');
   });
 
-  test('battle: the board is rows + k tall; a lock wholly in the buffer is refused, what is left there trimmed; no row ever clears', () => {
-    const g = mk(10, 10);
-    assert.strictEqual(g.h, 14);
-    assert.strictEqual(B.goal(g), 10);
-    // A row about to be full: no clear.
-    paint(g, ['######.###']);
-    put(g, 'I', 6 - Pieces.get('I').rotBounds[1].minX, 1);
-    const r1 = g.drop();
-    assert(r1 && r1.lines === 0 && g.board.get(6, 0) === Pieces.get('I').color, 'the row stays full');
-    // Set in the buffer alone: refused, the piece stays.
-    const notes = [];
-    g.on('refused', (n) => notes.push(n));
-    paint(g, ['#'.repeat(10), '#'.repeat(10), '#'.repeat(10), '#'.repeat(10), '#'.repeat(10), '#'.repeat(10), '#'.repeat(10), '#'.repeat(10), '#'.repeat(10), '#'.repeat(10)]);
-    put(g, 'O', 3, 0);
-    assert.strictEqual(g.drop(), false);
-    assert.deepStrictEqual(notes, ['Set it on your board']);
-    assert(g.piece, 'still in play');
-    // Overflow: a vertical I on a stack 8 high sets with 2 cells in the goal; the 2 in the buffer go.
-    paint(g, ['##########', '##########', '##########', '##########', '##########', '##########', '##########', '##########']);
-    put(g, 'I', 3, 1);
+  test('battle: a row cleared is a charge (a quad four), six at most', () => {
+    const g = mk(6, 10), S = sd(g);
+    paint(g, ['#####.', '#####.', '#####.', '#####.']);
+    put(g, 'I', 5 - Pieces.get('I').rotBounds[1].minX, 1);
     const r = g.drop();
-    assert(r && r.trimmed && r.trimmed.length === 2, JSON.stringify(r && r.trimmed));
-    for (let y = 10; y < 14; y++) for (let x = 0; x < 10; x++) assert.strictEqual(g.board.get(x, y), 0, 'the buffer is empty');
+    assert.strictEqual(r.lines, 4);
+    B.afterLock(S, r);
+    assert.deepStrictEqual([S.S.charges, S.S.lines, S.S.pieces], [4, 4, 1]);
+    paint(g, ['#####.', '#####.', '#####.', '#####.']);
+    put(g, 'I', 5 - Pieces.get('I').rotBounds[1].minX, 1);
+    B.afterLock(S, g.drop());
+    assert.strictEqual(S.S.charges, B.MAX_CHARGES, 'capped at six');
+    assert.strictEqual(S.S.lines, 8, 'every row still counted');
+    B.afterLock(S, { lines: 0 });
+    assert.strictEqual(S.S.charges, 6);
   });
 
-  test('battle: cover: an overhang is open, a lid is sealed, regions come lowest first; the flood fill agrees on these', () => {
-    const g = mk(6, 6);
-    // A shelf over an open pocket (reachable sideways): open. A 2 × 1 hole under a lid: sealed. A 1 × 1 in a corner under a lid.
-    paint(g, ['.#.##.', '.#####', '###...', '......']);
-    const s = B.sealedOf(g);
-    const sealed = new Set([].concat(...s.regions).map(([x, y]) => x + ',' + y));
-    // (0,0) and (0,1) are under (0,2): sealed; (2,0) under (2,1); (5,0) under (5,1).
-    assert.deepStrictEqual([...sealed].sort(), ['0,0', '0,1', '2,0', '5,0'].sort(), JSON.stringify(s.regions));
-    assert.deepStrictEqual(s.regions[0].map(([x, y]) => x + ',' + y).sort(), ['0,0', '0,1'], 'lowest (then leftmost) first');
-    // Under a shelf two rows high, open at the side: an O slides in under it.
-    paint(g, ['######', '##....', '##....', '####..']);
-    assert.strictEqual(B.sealedOf(g).n, 0, 'an overhang reached from the side is open');
-    // A slot one row high under a shelf: no tetromino gets a cell into its far end; the flood fill says open.
-    paint(g, ['######', '#.....', '####..']);
-    assert.strictEqual(B.analyse(g.board.cells, g.w, g.h, B.goal(g)).sealed, 0);
-    assert(B.sealedOf(g).n > 0, 'the cover judges by shape');
-    // An L-shaped pocket whose foot is under a block: no tetromino's cell gets into the foot.
-    paint(g, ['######', '####..', '#####.']);
-    assert.strictEqual(B.sealedOf(g).n, 1);
-    // A lid over one hole.
-    paint(g, ['#.####', '##....']);
-    assert.strictEqual(B.sealedOf(g).n, 1, JSON.stringify(B.sealedOf(g).regions));
+  test('battle: a throw lands exactly where it was aimed: dropped from their top to rest on their stack, their piece in play not in the way', () => {
+    const a = mk(10, 14, 1), b = mk(10, 14, 2), A = sd(a), Bs = sd(b);
+    paint(b, ['##########'.replace(/#/g, '.'), '..........']);
+    paint(b, ['###.......', '###.......', '#.........']);
+    A.S.charges = 1;
+    const p = put(a, 'L', 0, 0), next = a.queue[0].id;
+    // Every aim of every turn: the landing is the lowest spot straight under the top, and the cells it fills are those.
+    for (const aim of B.aims(b, p.type)) {
+      const land = B.landing(b, p.type, aim.rot, aim.x);
+      assert(land, JSON.stringify(aim));
+      const fits = (y) => p.type.rots[aim.rot].every(([cx, cy]) => { const x = aim.x + cx, yy = y + cy; return x >= 0 && x < 10 && yy >= 0 && yy < 14 && !b.board.get(x, yy); });
+      assert(fits(land.y) && !fits(land.y - 1), 'resting');
+      for (let y = land.y; y <= 14 - 1 - p.type.rotBounds[aim.rot].maxY; y++) assert(fits(y), 'a clear way down from the top');
+    }
+    // Their piece hangs right over column 5: the throw falls past it (it is not on the board).
+    put(b, 'O', 4, 0);
+    const aim = { rot: 2, x: 4 }, land = B.landing(b, p.type, aim.rot, aim.x);
+    const before = new Set(cellsOf(b));
+    const r = B.throwAt(A, Bs, aim);
+    assert(r && r.id === 'L');
+    const added = cellsOf(b).filter((k) => !before.has(k)).sort();
+    assert.deepStrictEqual(added, land.cells.map(([x, y]) => x + ',' + y).sort(), 'exactly the shadow\'s cells');
+    for (const [x, y] of land.cells) assert.strictEqual(b.board.get(x, y), Pieces.get('L').color, 'the piece\'s own colour, not FOREIGN');
+    assert.deepStrictEqual([A.S.charges, A.S.throws, Bs.S.got], [0, 1, 1]);
+    assert.strictEqual(a.piece.type.id, next, 'your next piece came in');
+    // No charge, no throw; a turn that does not fit at their top, no throw.
+    assert.strictEqual(B.throwAt(A, Bs, aim), null);
+    paint(b, ['#.........', '#.........', '#.........', '#.........', '#.........', '#.........', '#.........', '#.........', '#.........', '#.........', '#.........', '#.........', '#.........', '#.........']);
+    A.S.charges = 1; put(a, 'I', 0, 1);
+    assert.strictEqual(B.landing(b, a.piece.type, 1, -Pieces.get('I').rotBounds[1].minX), null, 'column 0 is full to the top');
+    assert.strictEqual(B.throwAt(A, Bs, { rot: 1, x: -Pieces.get('I').rotBounds[1].minX }), null);
+    assert.strictEqual(A.S.charges, 1, 'kept');
   });
 
-  test('battle: reach (bit rows) is the engine\'s own reach, every turn of every set, on random boards; cover is what those reach', () => {
-    const rng = new L.RNG(42);
-    for (const preset of ['normal', 'tiny', 'frantic', 'pentominoes']) {
-      const g = new Game({ w: 9, h: 9, seed: 3, recipe: R0({ shapes: { preset } }), battleAI: true });
-      const types = B.typesOf(g);
-      for (let n = 0; n < 12; n++) {
-        const fill = rng.next() * 0.7;
-        g.board.cells.fill(0);
-        for (let y = 0; y < B.goal(g); y++) for (let x = 0; x < g.w; x++) if (rng.next() < fill * (1 - y / 10)) g.board.set(x, y, 8);
-        const rows = B.rowsOf(g.board.cells, g.w, g.h), cov = new Set();
-        for (const t of types) {
-          const sh = B.shapeOf(t);
-          for (let r = 0; r < 4; r++) {
-            const F = B.fitMap(rows, g.w, g.h, sh[r], new Int32Array(g.h)), Rm = B.reachMap(F, g.h, sh[r], new Int32Array(g.h));
-            const mine = new Set();
-            for (let py = 0; py < g.h; py++) for (let px = 0; px < g.w; px++) if ((Rm[py] >>> px) & 1) mine.add((px - sh[r].minX) + ',' + (py - sh[r].minY));
-            const eng = new Set(g.reach({ type: t, special: null }, r, [], null).map(([x, y]) => x + ',' + y));
-            assert.deepStrictEqual([...mine].sort(), [...eng].sort(), preset + ' ' + t.id + ' turn ' + r);
-            for (const xy of eng) { const [x, y] = xy.split(',').map(Number); for (const [cx, cy] of t.rots[r]) if (y + cy < B.goal(g)) cov.add((x + cx) + ',' + (y + cy)); }
-          }
-        }
-        const c = B.cover(rows, g.w, g.h, B.goal(g), types);
-        let sealed = 0;
-        for (let y = 0; y < B.goal(g); y++) for (let x = 0; x < g.w; x++) if (!g.board.get(x, y) && !cov.has(x + ',' + y)) sealed++;
-        assert.strictEqual(c.sealed, sealed, preset + ' board ' + n);
+  test('battle: thrown cells clear as their own: a row they complete clears for them (a backfire: their charge); later rows with thrown cells clear too', () => {
+    const a = mk(6, 10, 1), b = mk(6, 10, 2), A = sd(a), Bs = sd(b);
+    // Their bottom row lacks two cells at 4 and 5; an O thrown there completes it (and half of the next).
+    paint(b, ['####..', '#.....']);
+    A.S.charges = 1; put(a, 'O', 0, 0);
+    const r = B.throwAt(A, Bs, { rot: 0, x: 4 - Pieces.get('O').rotBounds[0].minX });
+    assert(r && r.res.lines === 1, JSON.stringify(r && r.res.lines));
+    assert.deepStrictEqual([Bs.S.lines, Bs.S.backfire, Bs.S.charges, A.S.gave], [1, 1, 1, 1], 'their row, their charge');
+    assert.deepStrictEqual(cellsOf(b).sort(), ['0,0', '4,0', '5,0'].sort(), 'the row cleared; the O\'s top half came down');
+    // A row holding thrown cells clears on their own lock, as any row.
+    paint(b, []);
+    b.board.set(4, 0, Pieces.get('O').color); b.board.set(5, 0, Pieces.get('O').color);
+    put(b, 'I', -Pieces.get('I').rotBounds[0].minX, 0);
+    const lk = b.drop();
+    assert.strictEqual(lk.lines, 1, 'their I and the thrown O make a row');
+    B.afterLock(Bs, lk);
+    assert.strictEqual(Bs.S.charges, 2);
+    assert.strictEqual(lk.plain || 0, 0, 'not a plain (foreign) row');
+  });
+
+  test('battle: the top out: a landing their piece cannot come in under, or a next piece with no room, ends that board (over)', () => {
+    const a = mk(6, 10, 1), b = mk(6, 10, 2), A = sd(a), Bs = sd(b);
+    // Their stack 8 high (the right column open, so no row clears), their O about to come in at the top: an I thrown flat
+    // lands on the stack right where the O is, and the O finds no room anywhere near: out.
+    const rows = []; for (let y = 0; y < 8; y++) rows.push('#####.');
+    paint(b, rows);
+    put(b, 'O', 2 - Pieces.get('O').rotBounds[0].minX, 0);
+    A.S.charges = 1; put(a, 'I', 0, 0);
+    const r = B.throwAt(A, Bs, { rot: 0, x: 1 - Pieces.get('I').rotBounds[0].minX });
+    assert(r && r.land.cells.every(([, y]) => y === 8), JSON.stringify(r && r.land));
+    assert(b.over, 'their piece had no room: out');
+    // Their spawn spot is blocked? Over only when no spot near it fits.
+    const full = []; for (let y = 0; y < 10; y++) full.push('###.##');
+    paint(b, full);
+    b.over = false; put(b, 'O', 1, 0);
+    b.spawn({ id: 'O', rot: 0 });
+    assert(b.over, 'no room for the O: out');
+    // Their own lock with no room for the next piece: out.
+    const c = mk(6, 10, 3);
+    const rr = []; for (let y = 0; y < 9; y++) rr.push(y % 2 ? '##.###' : '###.##');
+    paint(c, rr);
+    put(c, 'I', 0, 0);
+    c.queue[0] = { id: 'O', rot: 0 };
+    c.drop();
+    assert(c.over, 'the O after it had nowhere to come in');
+  });
+
+  test('battle: sudden death: from 3:00 a ceiling row every 20 s, stone; rows under it clear and it stays; pieces come in under it; both out at once: the higher stack loses', () => {
+    assert.deepStrictEqual([179999, 180000, 199999, 200000, 240000].map(B.ceilAt), [0, 1, 1, 2, 4]);
+    assert.strictEqual(B.nextCeilIn(170000), 10000);
+    assert.strictEqual(B.nextCeilIn(185000), 15000);
+    const g = mk(6, 10, 1), S = sd(g);
+    paint(g, ['#####.', '#####.']);
+    put(g, 'O', 1, 0);
+    assert.strictEqual(B.lowerTo(S, 2), false);
+    assert.strictEqual(B.top(g), 8);
+    for (let x = 0; x < 6; x++) { assert.strictEqual(g.board.get(x, 9), B.STONE); assert.strictEqual(g.board.get(x, 8), B.STONE); }
+    assert(g.board.get(0, 9) & CELL.FOREIGN && g.board.get(0, 9) & CELL.FILL, 'stone: never yours');
+    assert(g.piece.y + g.piece.type.rotBounds[0].maxY < 8, 'the piece in play moved down under it');
+    // A clear under the ceiling: the rows above come down to it, the ceiling stays.
+    put(g, 'I', 5 - Pieces.get('I').rotBounds[1].minX, 1);
+    const r = g.drop();
+    assert.strictEqual(r.lines, 2, 'the stone rows are full but never clear');
+    for (let x = 0; x < 6; x++) { assert.strictEqual(g.board.get(x, 9), B.STONE); assert.strictEqual(g.board.get(x, 8), B.STONE); assert.strictEqual(g.board.get(x, 7), x === 5 ? 0 : 0); }
+    assert(g.piece, 'the next piece came in');
+    const p = g.piece;
+    assert(p.y + p.type.rotBounds[p.rot].maxY < 8, 'under the ceiling');
+    // The match: both together; both out at once, the higher stack loses.
+    const me = new Game({ w: 6, h: 10, seed: 4, recipe: R0(), previewCount: 5 }), M = B.matchOf(me);
+    assert(M && M.ai && M.ai.game.h === 10);
+    M.round.phase = 'play'; M.round.ms = 185000;
+    assert.strictEqual(B.ceilings(M), null);
+    assert.deepStrictEqual([M.me.S.ceil, M.ai.S.ceil], [1, 1]);
+    const tall = []; for (let y = 0; y < 8; y++) tall.push('#####.');
+    paint(me, tall); paint(M.ai.game, tall.slice(0, 7).concat(['......']));
+    M.ai.game.board.set(0, 7, 8);
+    put(me, 'I', 5 - Pieces.get('I').rotBounds[1].minX, 1); put(M.ai.game, 'I', 5 - Pieces.get('I').rotBounds[1].minX, 1);
+    M.round.ms = 240000;
+    const out = B.ceilings(M);
+    assert(me.over && M.ai.game.over, 'both out');
+    assert.strictEqual(out, B.cellsIn(me) > B.cellsIn(M.ai.game) ? 'me' : 'ai', 'the higher stack is out');
+  });
+
+  test('battle: the AI throws by its level: Easy now and then and anywhere, Steady with two charges onto the highest column, Brisk into a well, Swift once you near the top', () => {
+    const pair = (lv, seed) => { const a = mk(10, 14, seed || 1), b = mk(10, 14, (seed || 1) + 50); return [sd(a, lv, seed), sd(b, 'steady', 3)]; };
+    // Easy: about one piece in three, at aims all over.
+    {
+      let n = 0, tries = 0; const xs = new Set();
+      for (let s = 1; s <= 60; s++) {
+        const [A, Bs] = pair('easy', s);
+        A.S.charges = 1;
+        const d = B.runAll(B.think(A, Bs, {}));
+        tries++;
+        if (d.kind === 'throw') { n++; xs.add(d.aim.rot + ':' + d.aim.x); }
       }
+      assert(n >= 8 && n <= 32, 'Easy threw ' + n + ' of ' + tries);
+      assert(xs.size >= 5, 'at many aims: ' + xs.size);
+    }
+    // Steady: not with one charge; with two, onto the highest column.
+    {
+      const [A, Bs] = pair('steady');
+      paint(Bs.game, ['..........', '.......#..', '.......#..', '.......#..'].map((r, i) => (i === 0 ? '#########.' : r)));
+      A.S.charges = 1;
+      assert.strictEqual(B.runAll(B.think(A, Bs, {})).kind, 'place', 'one charge: kept');
+      A.S.charges = 2;
+      const d = B.runAll(B.think(A, Bs, {}));
+      assert.strictEqual(d.kind, 'throw');
+      const type = A.game.piece.type, hiOf = (l) => Math.max(...l.cells.map(([, y]) => y));
+      const land = B.landing(Bs.game, type, d.aim.rot, d.aim.x);
+      const best = Math.max(...B.aims(Bs.game, type).map((m) => B.landing(Bs.game, type, m.rot, m.x)).filter(Boolean).map(hiOf));
+      assert.strictEqual(hiOf(land), best, 'the highest landing there is');
+      assert(land.cells.some(([x]) => x === 7), 'on the tower at column 7: ' + JSON.stringify(land.cells));
+    }
+    // Brisk: into their well (a deep one-wide gap at column 9), never completing a row for them.
+    {
+      const [A, Bs] = pair('brisk');
+      paint(Bs.game, ['#########.', '#########.', '#########.', '#########.', '###...###.']);
+      A.S.charges = 3; put(A.game, 'O', 4, 0);
+      const d = B.runAll(B.think(A, Bs, {}));
+      assert.strictEqual(d.kind, 'throw');
+      const land = B.landing(Bs.game, A.game.piece.type, d.aim.rot, d.aim.x);
+      const wellCovered = land.cells.some(([x]) => x === 9) || land.cells.some(([x, y]) => x >= 3 && x <= 5 && y === 4);
+      assert(wellCovered, 'over the well or into the slot: ' + JSON.stringify(land.cells));
+      const tmp = Bs.game.board.clone(); tmp.placeCells(land.cells, 3);
+      assert.strictEqual(tmp.fullRows().length, 0, 'no backfire');
+    }
+    // Swift: holds its charges while you are low, throws once you are near the top (or its charges are full).
+    {
+      const [A, Bs] = pair('swift');
+      A.S.charges = 2;
+      assert.strictEqual(B.runAll(B.think(A, Bs, {})).kind, 'place', 'you are low: it waits');
+      const rows = []; for (let y = 0; y < 9; y++) rows.push(y % 2 ? '####.#####' : '#####.####');
+      paint(Bs.game, rows);
+      const d = B.runAll(B.think(A, Bs, {}));
+      assert.strictEqual(d.kind, 'throw', 'you are near the top: it throws');
+      paint(Bs.game, []);
+      A.S.charges = B.MAX_CHARGES;
+      assert.strictEqual(B.runAll(B.think(A, Bs, {})).kind, 'throw', 'charges full: it throws');
     }
   });
 
-  test('battle: a cell outside the board (WALL) never reads as filler; a filler cell is FOREIGN, never paid', () => {
-    const g = mk(6, 6);
-    assert.strictEqual(g.board.get(-1, 0) & CELL.FILL, 0);
-    assert.strictEqual(g.board.get(0, -1) & CELL.FILL, 0);
-    assert(B.FILL & CELL.FOREIGN && B.FILL & CELL.FILL);
-    paint(g, ['#####.']);
-    g.board.set(5, 0, B.FILL);
-    assert.strictEqual(B.ownCells(g), 5, 'the filler is not yours');
-  });
-
-  test('battle: Send: the piece in play or the first Next one; to the front of the other queue, first in first out; a cooldown of 6; received pieces neither held nor sent on', () => {
-    const a = mk(10, 10, 1), b = mk(10, 10, 2), A = sd(a), Bs = sd(b);
-    const cur = a.piece.type.id, nx = a.queue[0].id, bQ = b.queue[0].id;
-    const e1 = B.send(A, Bs, 'current');
-    assert(e1 && e1.id === cur && e1.received && e1.tag === 'received');
-    assert.strictEqual(a.piece.type.id, nx, 'the next piece came in');
-    assert.strictEqual(A.S.cd, B.COOLDOWN);
-    assert.strictEqual(B.send(A, Bs, 'current'), null, 'not ready');
-    A.S.cd = 0;
-    const nx2 = a.queue[0].id, e2 = B.send(A, Bs, 'next');
-    assert(e2 && e2.id === nx2, 'the first Next piece');
-    assert.deepStrictEqual(b.queue.slice(0, 3).map((e) => e.id), [cur, nx2, bQ], 'first in, first out, ahead of their own');
-    // Their piece in play is theirs; the received one comes next and can be neither held nor sent.
-    b.lower(); while (b.piece && b.piece.entry && !b.piece.entry.received) b.drop();
-    assert(b.piece.entry.received);
-    assert.strictEqual(b.holdPiece(), false);
-    Bs.S.cd = 0;
-    assert.strictEqual(B.send(Bs, A, 'current'), null);
-    // Cooldown: six pieces set.
-    A.S.cd = B.COOLDOWN;
-    for (let i = 0; i < 6; i++) { const r = a.drop(); B.afterLock(A, Bs, r); }
-    assert.strictEqual(A.S.cd, 0);
-  });
-
-  test('battle: Gap fillers: earned when a piece you sent seals a gap as they set it (2 at most), fired on your own lock and when one is earned, lowest first; never paid', () => {
-    const a = mk(6, 6, 1), b = mk(6, 6, 2), A = sd(a), Bs = sd(b);
-    // B sets a received O that seals a hole: A earns one. (The O over (0,0) # and (1,0) empty: (1,0) sealed under it.)
-    paint(b, ['#.####']);
-    O(b, 0, { received: true, tag: 'received' });
-    let r = b.drop();
-    assert(r && r.tag === 'received');
-    let ev = B.afterLock(Bs, A, r);
-    assert(ev.earned && A.S.charges === 1 && A.S.earned === 1, JSON.stringify(ev));
-    // A plain piece sealing a gap earns nothing.
-    paint(b, ['#.####']);
-    O(b, 0, {});
-    Bs.S.sealedN = 0;
-    r = b.drop();
-    ev = B.afterLock(Bs, A, r);
-    assert(!ev.earned && A.S.charges === 1);
-    // The cap.
-    A.S.charges = 2;
-    paint(b, ['#.####']); Bs.S.sealedN = 0;
-    O(b, 0, { received: true, tag: 'received' });
-    r = b.drop();
-    ev = B.afterLock(Bs, A, r);
-    assert(!ev.earned && A.S.charges === 2, 'two at most');
-    // Fired on earning: A had a sealed gap; the earned charge fills it at once.
-    A.S.charges = 0;
-    paint(a, ['.#####', '######']);
-    a.board.set(0, 0, 0); a.board.set(0, 1, 8);
-    assert.strictEqual(B.sealedOf(a).n, 1);
-    paint(b, ['#.####']); Bs.S.sealedN = 0;
-    O(b, 0, { received: true, tag: 'received' });
-    r = b.drop();
-    ev = B.afterLock(Bs, A, r);
-    assert(ev.earned && ev.foeFilled.length === 1 && A.S.charges === 0 && a.board.get(0, 0) === B.FILL, JSON.stringify(ev));
-    // Fired on your own lock: a charge held, then a gap sealed by your own piece is filled.
-    paint(a, ['#.####']); A.S.charges = 1; A.S.sealedN = 0;
-    O(a, 0, {});
-    r = a.drop();
-    ev = B.afterLock(A, Bs, r);
-    assert(ev.filled.length === 1 && A.S.charges === 0 && a.board.get(1, 0) === B.FILL && A.S.fillers >= 1, JSON.stringify(ev));
-    // Two regions, two charges: lowest first.
-    paint(a, ['#.#.##', '######']); A.S.charges = 1;
-    const filled = B.fire(A);
-    assert.deepStrictEqual(filled[0].map((c) => c.join(',')), ['1,0']);
-    assert.strictEqual(B.ownCells(a), 10, 'fillers are never your cells');
-  });
-
-  test('battle: the win (every cell filled), a closed board starts over (the queue kept), Start over and a stuck piece', () => {
-    const a = mk(6, 6, 1), b = mk(6, 6, 2), A = sd(a), Bs = sd(b);
-    const rows = [];
-    for (let y = 0; y < 6; y++) rows.push(y < 4 ? '######' : '####..');
-    paint(a, rows);
-    a.board.set(4, 4, 0); a.board.set(5, 4, 0);
-    put(a, 'O', 4, 0);
-    let r = a.drop();
-    let ev = B.afterLock(A, Bs, r);
-    assert(ev.won && B.full(a), 'the O filled the last four');
-    // Closed: the only empty cells are sealed.
-    paint(a, ['.#####', '######', '######', '######', '######', '######'].map((s, i) => (i === 5 ? '#####.' : s)));
-    a.board.set(5, 5, 8); a.board.set(0, 0, 0);
-    put(a, 'O', 2, 0);
-    const before = a.queue.map((e) => e.id).join();
-    ev = { topout: B.closed(a) };
-    assert(ev.topout, 'closed');
-    B.resetSide(A);
-    assert(a.board.isEmpty() && A.S.resets === 1 && a.queue.map((e) => e.id).join() === before, 'emptied, the queue kept');
-    // Stuck: one hole a block wide left, an O in play and in hold, Send not ready.
-    paint(a, ['######', '######', '######', '######', '######', '#####.']);
-    put(a, 'O', 1, 0);
-    a.hold = { id: 'O', rot: 0 }; A.S.cd = 3;
-    assert(B.stuck(A));
-    A.S.cd = 0;
-    a.queue[0] = { id: 'O', rot: 0 };
-    assert(B.stuck(A), 'an O next would not help either');
-    a.queue[0] = { id: 'I', rot: 0 };
-    assert(!B.stuck(A), 'Send ready and an I next (sticking up into the buffer): not stuck');
-  });
-
-  test('battle: pay is the final board only (a reset drops what came before), a loss half, never more a piece than Standard', () => {
-    const a = mk(10, 10, 1);
-    paint(a, ['##########', '##########']);
-    assert.strictEqual(B.pay(a, 'swift', true), 20 / 10 * 1 * 0.85);
-    assert.strictEqual(B.pay(a, 'swift', false), 20 / 10 * 1 * 0.85 * 0.5);
-    assert.strictEqual(B.pay(a, 'easy', true), 20 / 10 * 0.4);
-    a.board.set(0, 0, B.FILL);
-    assert.strictEqual(B.pay(a, 'swift', true), 19 / 10 * 0.85, 'a filler cell pays nothing');
-    B.resetSide(B.side(a));
-    assert.strictEqual(B.pay(a, 'swift', true), 0, 'cells lost to a reset never pay');
-    // At most 0.34 a piece (Standard pays 0.37–0.39): a perfect board of every set, against Swift.
-    for (const preset of ['normal', 'tiny', 'frantic', 'pentominoes']) {
-      const R = Recipe.rules(R0({ shapes: { preset } }), 10);
-      const perPiece = (R.E / 10) * R.f * B.LEVELS.swift.D;
-      assert(perPiece <= 0.34 + 1e-9, preset + ' ' + perPiece);
-    }
-    // And in play: simulated rounds at every level (the winner's pay over its pieces set, resets included).
-    for (const lv of B.IDS) for (const preset of ['normal', 'pentominoes']) {
-      let pay = 0, pieces = 0;
-      for (let s = 0; s < 4; s++) {
-        const r = B.simulate({ levels: ['swift', lv], seed: 300 + s, shapes: { preset }, w: 10, rows: 10 });
-        for (const i of [0, 1]) { pay += r.sides[i].pay; pieces += r.sides[i].pieces; }
-      }
-      assert(pay / pieces <= 0.34, lv + ' ' + preset + ' ' + (pay / pieces).toFixed(3));
-    }
-  });
-
-  test('battle: the save: toJSON round trip (the match, the opponent\'s own board), playable at rows + k, a size check by rows', () => {
-    const g = new Game({ w: 8, h: 8, seed: 5, recipe: R0({ battle: { level: 'brisk' } }), previewCount: 5 });
-    const M = B.matchOf(g);
-    assert(M && M.ai && M.ai.game.h === 12 && M.level === 'brisk');
-    g.drop(); M.ai.game.drop(); M.round.phase = 'play'; M.round.ms = 1234; M.tally.brisk = [3, 2]; M.me.S.cd = 4;
-    const j = JSON.parse(JSON.stringify(g.toJSON()));
-    assert(Library.playable(j), 'playable');
-    assert(Recipe.valid(j));
-    const g2 = new Game({ saved: j, previewCount: 5 });
-    const M2 = B.matchOf(g2);
-    assert.deepStrictEqual(Array.from(g2.board.cells), Array.from(g.board.cells));
-    assert.deepStrictEqual(Array.from(M2.ai.game.board.cells), Array.from(M.ai.game.board.cells));
-    assert(M2.round.phase === 'play' && M2.round.ms === 1234 && M2.me.S.cd === 4 && B.tallyText(M2) === 'vs Brisk 3–2');
-    assert.deepStrictEqual(g2.toJSON(), g.toJSON());
-    const bad = JSON.parse(JSON.stringify(j)); bad.h = 20; bad.cells = new Array(8 * 20).fill(0);
-    assert(!Library.playable(bad), '16 rows is no Battle size');
-    assert.deepStrictEqual(Recipe.summary(j).battle, { level: 'brisk', won: 3, lost: 2, wins: 0, losses: 0, rounds: 0 });
-  });
-
-  test('battle: the AI: the same decisions from the same seed; every path valid move by move (left, right, down, turns), ending in a set', () => {
-    const run = () => { const r = B.simulate({ levels: ['brisk', 'steady'], seed: 77 }); return r.winner + ':' + r.time.toFixed(3) + ':' + r.sides.map((s) => s.pieces + '/' + s.S.sends).join(); };
-    assert.strictEqual(run(), run());
-    // Paths: from the spawn to every resting spot of every turn, on random boards, played on the engine.
-    const rng = new L.RNG(5);
+  test('battle: the AI plays on with pieces thrown at it: every path valid move by move; the same round from the same seed', () => {
+    const run = () => { const r = B.simulate({ levels: ['brisk', 'steady'], seed: 77 }); return r.winner + ':' + r.time.toFixed(3) + ':' + r.sides.map((s) => s.pieces + '/' + s.S.throws + '/' + s.S.got).join(); };
+    const one = run();
+    assert.strictEqual(one, run());
+    const rng = new RNG(5);
     let checked = 0;
-    for (let n = 0; n < 30; n++) {
-      const g = mk(10, 10, n + 1);
-      for (let y = 0; y < 6; y++) for (let x = 0; x < 10; x++) if (rng.next() < 0.45) g.board.set(x, y, 8);
-      const p = g.piece, rows = B.rowsOf(g.board.cells, g.w, g.h);
-      const s = B.search(g, p.type, { rot: p.rot, x: p.x, y: p.y }, rows);
-      for (const sp of s.restIn(B.goal(g))) {
-        const t = new Game({ saved: JSON.parse(JSON.stringify(g.toJSON())), battleAI: true });
-        const path = s.path(sp.i);
-        for (const m of path) assert(B.play(t, m), 'move ' + m);
-        assert(t.piece.rot === sp.rot && t.piece.x === sp.x && t.piece.y === sp.y, 'arrived');
-        const r = t.lower();
-        assert(r && typeof r === 'object', 'set where it rests');
+    for (let n = 0; n < 20; n++) {
+      const a = mk(10, 14, n + 1), b = mk(10, 14, n + 60), A = sd(a, 'steady'), Bs = sd(b, 'brisk');
+      for (let y = 0; y < 5; y++) for (let x = 0; x < 10; x++) if (rng.next() < 0.45) b.board.set(x, y, 8);
+      // Three pieces thrown at it; then it places each piece it is given, its paths played on the engine.
+      for (let k = 0; k < 3; k++) { A.S.charges = 1; const aim = B.aims(b, a.piece.type)[rng.int(8)]; B.throwAt(A, Bs, aim); }
+      assert(Bs.S.got >= 1);
+      for (let k = 0; k < 4 && !b.over; k++) {
+        const d = B.runAll(B.think(Bs, A, { noThrow: true }));
+        if (d.kind !== 'place') break;
+        const r = B.act(Bs, d);
+        assert(r.res, 'set');
+        B.afterLock(Bs, r.res);
         checked++;
       }
     }
-    assert(checked > 500, String(checked));
-  });
-
-  test('battle: cover is fast: p99 under 1 ms on Frantic 12 × 17 (29 shapes)', () => {
-    const g = new Game({ w: 12, h: 12, seed: 3, recipe: R0({ shapes: { preset: 'frantic' } }), battleAI: true });
-    const types = B.typesOf(g), rng = new L.RNG(4), ts = [];
-    assert(g.h === 17 && types.length >= 20, g.h + ' ' + types.length);
-    for (let i = 0; i < 1500; i++) {
-      g.board.cells.fill(0);
-      const fill = rng.next() * 0.8;
-      for (let y = 0; y < 12; y++) for (let x = 0; x < 12; x++) if (rng.next() < fill * (1 - y / 14)) g.board.set(x, y, 8);
-      const rows = B.rowsOf(g.board.cells, g.w, g.h), t0 = performance.now();
-      B.cover(rows, g.w, g.h, 12, types);
-      ts.push(performance.now() - t0);
-    }
-    ts.sort((a, b) => a - b);
-    const p99 = ts[Math.floor(ts.length * 0.99)];
-    assert(p99 < 1, 'p99 ' + p99.toFixed(3) + ' ms');
-    console.log('       cover on Frantic 12 x 17: p50 ' + ts[ts.length >> 1].toFixed(3) + ' ms, p99 ' + p99.toFixed(3) + ' ms');
+    assert(checked >= 40, String(checked));
   });
 
   test('battle: the ladder: Swift beats Easy in at least 18 of 20; a player at 3 s a piece (Steady\'s judgement) beats Easy in at least 14 of 20', () => {
     let swift = 0, human = 0;
-    const pay = [0, 0];
     for (let s = 0; s < 20; s++) {
-      const a = B.simulate({ levels: ['swift', 'easy'], seed: 100 + s });
-      if (a.winner === 0) swift++;
-      const hm = B.simulate({ levels: ['easy', 'easy'], seed: 100 + s, human: { pace: 3 } });
-      if (hm.winner === 0) human++;
-      pay[0] += hm.sides[0].pay; pay[1] += hm.sides[0].pieces;
+      if (B.simulate({ levels: ['swift', 'easy'], seed: 100 + s }).winner === 0) swift++;
+      if (B.simulate({ levels: ['easy', 'easy'], seed: 100 + s, human: { pace: 3 } }).winner === 0) human++;
     }
-    console.log('       Swift beats Easy ' + swift + '/20; the 3 s player beats Easy ' + human + '/20 (pays ' + (pay[0] / pay[1]).toFixed(3) + ' a piece)');
+    console.log('       Swift beats Easy ' + swift + '/20; the 3 s player beats Easy ' + human + '/20');
     assert(swift >= 18, String(swift));
     assert(human >= 14, String(human));
+  });
+
+  test('battle: pay: a row a Standard row, at most a Standard piece a piece set, the opponent\'s D, a loss half; never above Standard a piece or an action, in play', () => {
+    const g = mk(10, 14, 1), S = sd(g);
+    Object.assign(S.S, { lines: 4, pieces: 10 });
+    assert.strictEqual(B.pay(S, 'swift', true), 4 * 1 * 1 * 0.85);
+    assert.strictEqual(B.pay(S, 'swift', false), 4 * 0.85 * 0.5);
+    Object.assign(S.S, { lines: 10, pieces: 4 });
+    assert(Math.abs(B.pay(S, 'easy', true) - 4 * 0.4 * 0.4) < 1e-9, 'capped by pieces: backfires never pay more than pieces set');
+    // At most 0.34 a piece (Standard pays 0.37–0.39): a perfect clearer of every set, against Swift.
+    for (const preset of ['normal', 'tiny', 'frantic', 'pentominoes']) {
+      const R = Recipe.rules(R0({ shapes: { preset } }), 10);
+      assert((R.E / 10) * R.f * B.LEVELS.swift.D <= 0.34 + 1e-9, preset);
+    }
+    // In play: simulated rounds at every level (pay over pieces set, and over pieces set and thrown).
+    let worst = 0;
+    for (const lv of B.IDS) for (const preset of ['normal', 'pentominoes']) {
+      let pay = 0, pieces = 0, acts = 0;
+      for (let s = 0; s < 4; s++) {
+        const r = B.simulate({ levels: ['swift', lv], seed: 300 + s, shapes: { preset } });
+        for (const i of [0, 1]) { pay += r.sides[i].pay; pieces += r.sides[i].pieces; acts += r.sides[i].pieces + r.sides[i].S.throws; }
+      }
+      worst = Math.max(worst, pay / pieces);
+      assert(pay / pieces <= 0.34 && pay / acts <= 0.34, lv + ' ' + preset + ' ' + (pay / pieces).toFixed(3));
+    }
+    console.log('       pay in simulated rounds: at most ' + worst.toFixed(3) + ' a piece (Standard 0.37–0.39)');
+  });
+
+  test('battle: the save mid-round: toJSON round trip (charges, ceilings, the match, the opponent\'s own board), playable, valid', () => {
+    const g = new Game({ w: 10, h: 14, seed: 5, recipe: R0({ battle: { level: 'brisk' } }), previewCount: 5 });
+    const M = B.matchOf(g);
+    assert(M && M.ai && M.level === 'brisk' && M.ai.game.h === 14);
+    g.drop(); M.ai.game.drop();
+    M.round.phase = 'play'; M.round.ms = 201000; M.tally.brisk = [3, 2]; M.me.S.charges = 4; M.me.S.lines = 4;
+    B.ceilings(M);
+    assert.deepStrictEqual([M.me.S.ceil, M.ai.S.ceil], [2, 2]);
+    const j = JSON.parse(JSON.stringify(g.toJSON()));
+    assert(Library.playable(j) && Recipe.valid(j));
+    const g2 = new Game({ saved: j, previewCount: 5 }), M2 = B.matchOf(g2);
+    assert.deepStrictEqual(Array.from(g2.board.cells), Array.from(g.board.cells));
+    assert.deepStrictEqual(Array.from(M2.ai.game.board.cells), Array.from(M.ai.game.board.cells));
+    assert(M2.round.phase === 'play' && M2.round.ms === 201000 && M2.me.S.charges === 4 && M2.me.S.ceil === 2 && M2.ai.S.ceil === 2 && B.tallyText(M2) === 'vs Brisk 3–2');
+    assert.strictEqual(g2.findRoom, false, 'a resumed board still tops out where a piece cannot come in');
+    assert.deepStrictEqual(g2.toJSON(), g.toJSON());
+    // The next round: both boards empty, ceilings up, charges gone.
+    M2.round.phase = 'end';
+    B.newRound(M2);
+    assert(g2.board.isEmpty() && M2.ai.game.board.isEmpty() && M2.me.S.ceil === 0 && M2.me.S.charges === 0 && M2.round.n === 2 && g2.piece && M2.ai.game.piece);
+    assert.deepStrictEqual(Recipe.summary(j).battle, { level: 'brisk', won: 3, lost: 2, wins: 0, losses: 0, rounds: 0 });
   });
 };

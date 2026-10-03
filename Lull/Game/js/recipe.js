@@ -1,10 +1,10 @@
 // Lull — the board recipe: what a Relaxed board is made of, beyond its size. Its shapes, its modifiers (Mirror)
-// and its mode (Plain, Classic, Descent, Battle), chosen in the New board window and fixed for the board's life. Pure data and
+// and its mode (Plain, Classic, Descent, Race, Battle), chosen in the New board window and fixed for the board's life. Pure data and
 // rules, no DOM; the parts that give each option its behaviour register here (Recipe.part) and are always run in
 // ascending `order`, never in script load order.
 //
 //   recipe = { v: 1, shapes: { preset: 'normal' }, mods: { mirror: false }, mode: 'plain', physics?: { material }
-//              (js/physics.js), classic?: { type, level, … } (js/classic.js), descent?: { level, stage } (js/descent.js), battle?: { level, size: { w, rows } } }
+//              (js/physics.js), classic?: { type, level, … } (js/classic.js), descent?: { level, stage } (js/descent.js), race?: { level } (js/race.js), battle?: { level } (js/battle.js) }
 //
 // The default recipe is today's board exactly: the seven in a 7-bag, no modifier, plain play. A part:
 //   { key, order, owns: [paths it writes], mod?: 'mirror' (a modifier it brings: its switch, modName its name),
@@ -16,7 +16,7 @@
 //     are listed in js/engine.js), controller(play, game) -> ctl | null (Free Play's; every part's is composed over
 //     the plain one: Recipe.compose), summary(saved, g), stats? (store.js merges it under state.stats) }
 // Achievements a part adds go through Achievements.group / Achievements.add (js/achievements.js).
-// Orders: core 0, shapes 10, mirror 20, physics 30, classic 45, descent 47, battle 50.
+// Orders: core 0, shapes 10, mirror 20, physics 30, classic 45, descent 47, race 50, battle 55.
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
@@ -227,7 +227,7 @@
   /**
    * How a board of this recipe w wide plays and pays (R):
    *   u (block scale: Big is 2), copies (Mirror: 2; Full Blast and Event Horizon count one copy's share), E (mean cells a piece), rated, undo, hints, timed, noFeats,
-   *   refuse: { itemId: reason }, k (Battle's buffer rows), and derived: f = min(1, 4/E) (pay per cell never above
+   *   refuse: { itemId: reason }, k (Race's buffer rows), and derived: f = min(1, 4/E) (pay per cell never above
    *   Standard's), lk = (w/10)·f (what a row is worth in Standard lines), wEff = w/(u·copies), feats (the Free Play
    *   feats count here), quad = 4u (rows a quad needs).
    */

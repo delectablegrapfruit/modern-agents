@@ -1,0 +1,28 @@
+/* Lull — Race (js/raceview.js): its achievements' place colour (a soft rose, 4.5:1 on its own tint in both themes,
+   as the other places'), its bar under the board (Send with its cooldown ring and filler dots, Start over, Pause); its
+   cards are css/versus.css. */
+:root { --area-race: #e79bb0; }
+:root[data-theme="light"] { --area-race: #8a3550; }
+[data-area="race"] { --area: var(--area-race); }
+
+.itembar.rc-bar { display: flex; flex-wrap: nowrap; gap: 6px; justify-content: center; align-items: center; }
+.itembar.rc-bar .btn { height: 44px; min-width: 44px; padding: 0 12px; border-radius: 12px; white-space: nowrap; }
+.itembar.rc-bar .btn[aria-disabled="true"] { opacity: 0.55; }
+.itembar.rc-bar .btn.armed { color: var(--accent-ink); border-color: var(--accent); }
+.rc-send { gap: 6px; }
+.rc-send .rc-ic { position: relative; width: 28px; height: 28px; flex: none; display: inline-grid; place-items: center; }
+.rc-send .rc-ic .rc-ring { position: absolute; inset: 0; width: 28px; height: 28px; }
+.rc-send .rc-ic > svg:not(.rc-ring) { width: 13px; height: 13px; }
+.rc-ring circle.off { stroke: var(--line); }
+.rc-ring circle.on { stroke: var(--muted); }
+.rc-send.ready .rc-ring circle.on { stroke: var(--accent); }
+.rc-send.ready { color: var(--fg); border-color: var(--accent); }
+.rc-dots { display: inline-flex; gap: 3px; }
+.rc-dots i { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--muted); box-sizing: border-box; }
+.rc-dots i.on { background: #9ccfd8; border-color: #9ccfd8; }
+:root[data-theme="light"] .rc-dots i.on { background: #3f7f8c; border-color: #3f7f8c; }
+@media (max-width: 380px) {
+  .itembar.rc-bar { gap: 4px; }
+  .itembar.rc-bar .btn { padding: 0 9px; }
+  .itembar.rc-bar .btn .ico { display: none; }
+}

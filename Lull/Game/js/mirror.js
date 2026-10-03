@@ -122,8 +122,8 @@
 
   const PART = {
     key: 'mirror', order: 20, mod: 'mirror', owns: ['mods.mirror'],
-    // Mirror is never in Battle (its conflicts: the last choice wins).
-    conflicts(r, out) { if (r.mode === 'battle') out['mods.mirror=true'] = 'Not in Battle'; },
+    // Mirror is never in Race or Battle (its conflicts: the last choice wins).
+    conflicts(r, out) { if (r.mode === 'race' || r.mode === 'battle') out['mods.mirror=true'] = r.mode === 'race' ? 'Not in Race' : 'Not in Battle'; },
     rules(r, R) {
       if (!on(r)) return;
       R.copies = 2;

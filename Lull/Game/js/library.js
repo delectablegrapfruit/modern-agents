@@ -76,7 +76,7 @@
   /**
    * A saved game that can be resumed: a size in range with a stack to match, a queue, a bag, a random stream, stats;
    * and a board recipe every part accepts (Recipe.valid), a height its recipe allows (less a buffer it keeps on top:
-   * R.k, Battle's), and every piece in the queue, in
+   * R.k, Race's), and every piece in the queue, in
    * hold and in play one the pieces know (Pieces.get).
    */
   const playable = (g) => isObj(g) && validSize(g.w, g.h) && Array.isArray(g.cells) && g.cells.length === g.w * g.h && Array.isArray(g.queue) && Array.isArray(g.bag) && g.rng != null && isObj(g.s)
@@ -232,7 +232,7 @@
    */
   function summarize(s, now, size) {
     s = s || {};
-    // A board's recipe can add its own numbers (Descent's rows broken, Battle's rounds): Recipe.summary, from a Game or a
+    // A board's recipe can add its own numbers (Descent's rows broken, Race's and Battle's rounds): Recipe.summary, from a Game or a
     // saved one (size is the board).
     const ext = size && L.Recipe ? L.Recipe.summary(size) : {};
     return Object.assign(size ? { w: size.w, h: size.h } : {}, Object.keys(ext).length ? { ext } : {}, {
