@@ -82,7 +82,7 @@ module.exports = async function descentTests({ browser, check, PAGE, OUT }) {
   await ev(() => { const B = Lull.app.store.state.boards; B.size = { w: 4, h: 8 }; B.recipe = Lull.Recipe.normalize({}); Lull.app.modes.play.openNewBoard(); });
   await page.waitForTimeout(150);
   await ev(() => document.querySelector('.nb-tab[data-tab="mode"]').click());
-  const modes = await ev(() => [...document.querySelectorAll('.nb-mode')].map((b) => b.textContent.trim()));
+  const modes = await ev(() => [...document.querySelectorAll('.nb-mode')].map((b) => b.textContent.trim()).filter((t) => t !== 'Mural')); // (Mural: mural-test.cjs)
   check('the Mode tab: Plain, Classic, Descent, Race, Battle', modes.join() === 'Plain,Classic,Descent,Race,Battle', JSON.stringify(modes));
   await ev(() => document.querySelector('.nb-mode[data-value="descent"]').click());
   await ev(() => document.querySelector('.nb-level[data-value="hard"]').click());

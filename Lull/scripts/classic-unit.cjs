@@ -18,7 +18,7 @@ module.exports = function classicUnit({ L, test }) {
   const well = (g, n, hole) => { for (let y = 0; y < n; y++) for (let x = 0; x < g.w; x++) if (x !== hole) g.board.set(x, y, 5); };
 
   test('classic: the recipe part: a mode beside Plain and Descent, its settings made whole, its label', () => {
-    assert.deepStrictEqual(Recipe.options().find((o) => o.path === 'mode').values, ['plain', 'classic'].concat(Recipe.get('descent') ? ['descent'] : [], Recipe.get('race') ? ['race'] : [], Recipe.get('battle') ? ['battle'] : []));
+    assert.deepStrictEqual(Recipe.options().find((o) => o.path === 'mode').values, ['plain', 'classic'].concat(Recipe.get('descent') ? ['descent'] : [], Recipe.get('race') ? ['race'] : [], Recipe.get('battle') ? ['battle'] : [], Recipe.get('mural') ? ['mural'] : []));
     assert.strictEqual(Recipe.DEFAULT.classic, undefined, 'the default recipe is as it was');
     assert.strictEqual(Recipe.normalize({ classic: { type: 'b' } }).classic, undefined, 'settings only on a Classic board');
     const r = Recipe.normalize(CL());

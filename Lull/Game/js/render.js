@@ -953,7 +953,7 @@
       const lw = Math.max(1, Math.round(dpr));
       ctx.strokeStyle = theme.rim || theme.line; ctx.lineWidth = lw;
       rr(ctx, lw / 2, lw / 2, ww - lw, wh - lw, Math.min(4 * dpr, ww / 4)); ctx.stroke();
-      geom = { x: pad, y: pad, c, w, h, style, dpr };
+      geom = { x: pad, y: pad, c, w, h, style, dpr, cells: vals };
     } else {
       const W = w * c, H = h * c;
       const gr = ctx.createLinearGradient(0, 0, 0, H);

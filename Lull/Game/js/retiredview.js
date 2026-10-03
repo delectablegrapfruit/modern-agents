@@ -35,6 +35,7 @@
     Object.assign(g, { fixed: false, queue: next, hold, holdLocked: false });
     if (!piece) g.piece = null;
     g.ghostY = () => null;
+    if (L.Mural && e.recipe && e.recipe.mode === 'mural') { g.recipe = L.Recipe.normalize(e.recipe); g.mods.noHold = true; } // a mural's picture (js/muralview.js)
     return g;
   }
 
