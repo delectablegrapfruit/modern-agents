@@ -683,7 +683,7 @@
         kpi(fmtInt(S.lines.earned), 'Lines earned'),
         kpi(fmtInt(S.free.lines), 'Lines cleared'),
         kpi(fmtInt(solvedAll), 'Puzzles solved'),
-        kpi(count(st.factory.stats.minos), 'Minos shipped'),
+        kpi(count(st.factory.stats.delivered), 'Pieces delivered'),
         kpi(fmtDuration(S.timeMs.total), 'Time played'),
         kpi(fmtInt(S.sessions), 'Sessions'),
         kpi(fmtInt(S.days || 0), 'Days played')));
@@ -750,20 +750,12 @@
     } else if (sub === 'factory') {
       const f = st.factory, fs = f.stats;
       els.push(h('div', { class: 'kpis three' },
-        kpi(fmtInt(fs.lines), 'Lines collected'), kpi(fmtInt(fs.minos), 'Minos shipped'), kpi(fmtInt(fs.made), 'Minos stamped'),
-        kpi(fmtInt(fs.pieces), 'Pieces'), kpi(fmtInt(fs.collects), 'Collects'), kpi(fmtInt(fs.best), 'Best collect')));
-      els.push(h('h4', null, 'Minos by press'), hbars(Factory.MOLDS.map((n, k) => [Factory.NAMES[n], (fs.byPress[k] || 0) * n]))); // byPress counts pieces
-      // Every shape of each size: the ones pressed first, in colour; the rest a quiet fill.
-      for (const n of [5, 6, 7]) {
-        const list = Factory.shapes(n), seen = fs.seen[n] || '';
-        const order = list.map((c, s) => s).sort((a, b) => (seen[b] === '1') - (seen[a] === '1') || a - b);
-        els.push(h('h4', null, Factory.NAMES[n] + 'es · ' + Factory.seenCount(f, n) + ' / ' + list.length),
-          h('div', { class: 'catalog sm' }, order.map((s) => h('div', { class: 'fac-shape', title: Factory.shapeName(n, s) }, L.FactoryArt.shapeCanvas(look, list[s], 26, look.colors[1 + (s % 7)], seen[s] === '1', 0.18)))));
-      }
+        kpi(fmtInt(Math.floor(fs.paid / Factory.PTS)), 'Lines delivered'), kpi(fmtInt(fs.collected), 'Lines collected'), kpi(fmtInt(fs.delivered), 'Pieces delivered'),
+        kpi(fmtInt(fs.made), 'Minos dropped'), kpi(fmtInt(fs.collects), 'Collects'), kpi(fmtInt(fs.best), 'Best collect')));
+      els.push(h('h4', null, 'Pieces delivered by size'), hbars(Factory.SIZES.map((n, i) => [Factory.NAMES[n] + 's', fs.bySize[i] || 0])));
       const rows = [
-        ['Days collected', fmtInt(fs.days)], ['Minos shipped away', fmtInt(fs.away)],
-        ['Time crate full', fmtDuration(fs.fullMs)], ['Time short of minos', fmtDuration(fs.starveMs)],
-        ['Lines spent', fmtInt(fs.spent)], ['Time watched', fmtDuration(S.timeMs.factory)],
+        ['Days collected', fmtInt(fs.days)], ['Pieces built while away', fmtInt(fs.backlog)],
+        ['Time running smoothly', fmtDuration(fs.smoothMs)], ['Lines spent', fmtInt(fs.spent)], ['Time watched', fmtDuration(S.timeMs.factory)],
       ];
       els.push(h('h4', null, 'Totals'), table(rows));
     } else {

@@ -435,7 +435,7 @@
       check('free play moves and drops', () => { const g = this.modes.play.game; const before = g.s.pieces; this.setTab('play'); this.modes.play.action('left'); this.modes.play.action('drop'); return g.s.pieces === before + 1 || g.over; });
       check('board canvas painted', () => { this.modes.play.view.render(performance.now()); const c = document.getElementById('cv-play'); return c.width > 0 && c.height > 0; });
       check('puzzle tab loads', () => { this.setTab('puzzle'); return !!this.modes.puzzle.puzzle; });
-      check('factory runs', () => { this.setTab('factory'); const f = L.Factory.create(); L.Factory.step(f, 700); return f.stats.minos >= 4; });
+      check('factory runs', () => { this.setTab('factory'); const f = L.Factory.create(); L.Factory.step(f, 60); return f.stats.made > L.Factory.START_STORE; });
       check('shop and stats render', () => { this.setTab('shop'); this.setTab('stats'); return document.getElementById('stats-body').children.length > 0; });
       check('save serialises', () => JSON.parse(this.store.serialize()).v === L.SAVE_VERSION);
       this.setTab('play');
