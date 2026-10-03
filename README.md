@@ -1,5 +1,7 @@
 # Sift
 
+*by livenet — free utilities that fix what's broken in the software you already use.*
+
 Removes the hidden files macOS leaves on every disk, and makes Finder show folders the way you decided.
 
 ## What it does

@@ -59,7 +59,7 @@ struct About: View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Sift").font(.headline)
-                if !version.isEmpty { Text(version).font(.caption).foregroundStyle(.secondary) }
+                Text("by livenet" + (version.isEmpty ? "" : " · " + version)).font(.caption).foregroundStyle(.secondary)
             }
             Text("Removes the hidden files macOS leaves on every disk, such as .DS_Store, ._ sidecar files and the disk-level folders, the moment they appear. Sweep clears what was there before.")
             Text("Makes Finder show folders your way: one view for every folder on every disk, folders with a view of their own, and no more remembering whatever view a window last had.")
