@@ -17,7 +17,16 @@
 //              each piece drops straight down into its place and rests there, and no order can cycle.
 //   Turns      a piece appears in another turn than its place whenever that looks different (its shape, or its
 //              quarters), at the top, nearest the middle, where its place can still be reached by moves and turns
-//              (searched: reach); with none, in its own turn right over its place.
+//              (searched: reach); with none, in its own turn right over its place. As in puzzles, a single turn button
+//              places every piece (turn 1: clockwise; -1, counter-clockwise, under Inverted Controls): the piece
+//              appears one press of it away from its place's turn (two only when one press away cannot reach it), and
+//              the search counts only that direction and turns in place or nudged sideways off a wall (never a kick
+//              that hops it down or through a gap). Settings ▸ Controls ▸ Counter-clockwise puzzles (turn 0) allows
+//              both ways and half turns (the view tells the turn: setTurnMode).
+//   Buffer     BUF rows over the picture (the board is the picture's height + BUF; nothing ever sets there). Shut while
+//              the stack is low: a piece appears at the picture's top and its search stays under it. Open once the stack
+//              (or the piece's place) comes within BUF rows of the top, and from then on: pieces appear at the buffer's
+//              top, so the picture's last rows are reached by the same moves and turns as the rest (the view shows it).
 //   Pay        PAY_CELL lines for each block set (a Standard board pays more per piece and per action: mural-unit.cjs).
 (function (root) {
   'use strict';
@@ -36,6 +45,8 @@
   const PIC_IDS = PICS.concat(['own']);
   const PIC_NAMES = { coast: 'Coast', still: 'Still life', soft: 'Abstract', own: 'Photo' };
   const PAY_CELL = 0.04;
+  /** The buffer: rows over the picture (R.k, as Race's) where pieces appear and turn once the stack nears the top. */
+  const BUF = 4;
   /** The most quarters an imported picture keeps each way (level 5's grid, with room), and its colours. */
   const OWN_MAX = { w: 40, h: 60, k: 16 };
 
@@ -480,13 +491,23 @@
 
   // ---- reaching a place: moves and turns, as the engine makes them ----------------------------------------------------------
 
+  /** The turns a piece may make: 1 (clockwise only), -1 (counter-clockwise only) or 0 (both ways). */
+  const turnOk = (v) => (v === -1 || v === 0 ? v : 1);
+  /** Presses of the one turn button (turn 1 or -1) from rot to the nearest of goals' turns: 0-3. */
+  const presses = (goals, rot, turn) => goals.reduce((m, g) => Math.min(m, ((((g.rot - rot) * turn) % 4) + 4) % 4), 4) % 4;
+
   /**
-   * The fewest moves (a step left or right, a row down, a turn either way, kicks as the engine takes them) from `from`
-   * ({ rot, x, y }) to any of goals on board b for type t; -1 when none can be reached.
+   * The fewest moves (a step left or right, a row down, a turn, kicks as the engine takes them) from `from`
+   * ({ rot, x, y }) to any of goals on board b for type t; -1 when none can be reached. turn 0 (the default): turns
+   * either way, any kick. turn 1 or -1: turns that way only, and only in place or nudged sideways off a wall (one
+   * column, two for a long shape), as puzzles count them: never a kick that hops the piece down or through a gap.
    */
-  function reach(b, t, from, goals) {
+  function reach(b, t, from, goals, turn, top) {
+    turn = turn == null ? 0 : turnOk(turn);
+    const dirs = turn ? [turn] : [1, -1], maxKick = t.n >= 4 ? 2 : 1;
     const W = b.w, H = b.h, key = (r, x, y) => (r * 64 + (x + 16)) * 128 + (y + 16);
-    const fits = (r, x, y) => b.fits(t.rots[r], x, y);
+    // top: the rows it may use (under a shut buffer), the whole board by default.
+    const T = top == null ? H : top, fits = (r, x, y) => y + t.rotBounds[r].maxY < T && b.fits(t.rots[r], x, y);
     if (!fits(from.rot, from.x, from.y)) return -1;
     const goal = new Set(goals.map((g) => key(g.rot, g.x, g.y)));
     const seen = new Set([key(from.rot, from.x, from.y)]);
@@ -499,9 +520,14 @@
         if (fits(r, x - 1, y)) go(r, x - 1, y);
         if (fits(r, x + 1, y)) go(r, x + 1, y);
         if (fits(r, x, y - 1)) go(r, x, y - 1);
-        for (const dir of [1, -1]) {
+        for (const dir of dirs) {
           const to = (r + dir + 4) % 4, kicks = Pieces.kicksFor(t, r, to);
-          for (const [kx, ky] of kicks) if (fits(to, x + kx, y + ky)) { go(to, x + kx, y + ky); break; }
+          for (const [kx, ky] of kicks) {
+            if (!fits(to, x + kx, y + ky)) continue;
+            // The engine takes the first kick that fits; one way, only a turn a person expects counts.
+            if (!turn || (ky === 0 && Math.abs(kx) <= maxKick)) go(to, x + kx, y + ky);
+            break;
+          }
         }
       }
       front = next; d++;
@@ -511,12 +537,41 @@
   }
 
   /**
-   * Where piece k appears on board b: at the top, in the first turn it would rather appear in whose place can still be
-   * reached from there (the column nearest the middle first); else in its own turn, right over its place. { x, y, rot }.
+   * The turns piece pc would rather appear in, best first. turn 0: pc.pref (one way, the other, a half turn, its own).
+   * turn 1 or -1: one press of that turn button from its place's turn, then two, then its own.
    */
-  function spawnSpot(P, k, b) {
-    const pc = P.pieces[k], t = Pieces.get(pc.id), W = b.w, H = b.h;
-    for (const rot of pc.pref) {
+  function prefOf(pc, turn) {
+    turn = turnOk(turn);
+    if (!turn) return pc.pref;
+    const out = [];
+    for (const n of [1, 2]) for (let r = 0; r < 4; r++) if (presses(pc.goals, r, turn) === n) out.push(r);
+    return out.concat([pc.rt]);
+  }
+
+  /**
+   * Is the buffer open for piece k on board b: has the stack (or k's place) come within BUF rows of the picture's top?
+   * Once open it stays open (the stack only grows, and covers every earlier place).
+   */
+  function bufferOpen(P, k, b) {
+    if (b.h <= P.H) return false;
+    let top = 0;
+    for (let y = P.H - 1; y >= 0 && !top; y--) for (let x = 0; x < b.w; x++) if (b.get(x, y)) { top = y + 1; break; }
+    const pc = P.pieces[k];
+    if (pc) for (const [, y] of pc.cells) top = Math.max(top, y + 1);
+    return top > P.H - BUF;
+  }
+  /** The rows piece k may appear and move in on board b: the whole board once the buffer is open, else the picture's. */
+  const topOf = (P, k, b) => (bufferOpen(P, k, b) ? b.h : Math.min(b.h, P.H));
+
+  /**
+   * Where piece k appears on board b: at the top (topOf), in the first turn it would rather appear in (prefOf) whose
+   * place can still be reached from there with turn's turns (reach; the column nearest the middle first); else in its
+   * own turn, right over its place. { x, y, rot }.
+   */
+  function spawnSpot(P, k, b, turn) {
+    turn = turnOk(turn);
+    const pc = P.pieces[k], t = Pieces.get(pc.id), W = b.w, H = topOf(P, k, b);
+    for (const rot of prefOf(pc, turn)) {
       if (pc.goals.some((g) => g.rot === rot) && rot !== pc.rt) continue;
       const bnd = t.rotBounds[rot], y = H - 1 - bnd.maxY, x0 = Math.floor((W - bnd.w) / 2) - bnd.minX;
       const xs = [x0];
@@ -525,7 +580,7 @@
         if (x + bnd.minX < 0 || x + bnd.maxX >= W) continue;
         if (!b.fits(t.rots[rot], x, y)) continue;
         if (rot === pc.rt && pc.goals.some((g) => g.rot === rot && g.x === x && g.y === y)) continue;
-        if (reach(b, t, { rot, x, y }, pc.goals) >= 0) return { x, y, rot };
+        if (reach(b, t, { rot, x, y }, pc.goals, turn, H) >= 0) return { x, y, rot };
       }
     }
     // Right over its place, in its own turn: the way down is clear (every cell over it is a later piece's).
@@ -543,18 +598,36 @@
   }
   const summaryOf = (M, P, r) => ({ pic: r.mural.pic, level: r.mural.level, placed: M.i, total: P.pieces.length, done: M.i >= P.pieces.length });
 
-  function extension(game, saved) {
-    const r = game.recipe;
+  // The turn a mural is built for (turnOk), told by the view from the settings; clockwise without one.
+  let turnMode = () => 1;
+  function setTurnMode(f) { turnMode = typeof f === 'function' ? f : () => 1; }
+
+  function extension(game, saved, o) {
+    const r = game.recipe, lv = levelOf(r);
+    // The buffer over the picture: a new board grows it; a board saved before it had one is grown too, cells kept.
+    if (game.board.h < lv.h + BUF) {
+      const b0 = game.board, b = new L.Board(b0.w, lv.h + BUF);
+      for (let y = 0; y < Math.min(b0.h, lv.h); y++) for (let x = 0; x < b0.w; x++) b.set(x, y, b0.get(x, y));
+      game.board = b;
+    }
+    // A game's own (o.muralTurn: the tests'), else the settings' as they are now.
+    const turn = () => turnOk(o && o.muralTurn != null ? o.muralTurn : turnMode(game));
     const M = saved !== undefined && valid(saved, r) ? clone(saved) : { v: 1, seed: (Number(game.seed) >>> 0) || 1, i: 0 };
     let made = null;
     const P = () => made || (made = plan(r, M.seed));
     // No hold: the pieces come in their one order.
     game.mods.noHold = true;
     let dealt = M.i;
-    const entries = (from) => P().pieces.slice(from).map((p) => ({ id: p.id, rot: p.pref[0] }));
+    const entries = (from) => { const tn = turn(); return P().pieces.slice(from).map((p) => ({ id: p.id, rot: prefOf(p, tn)[0] })); };
     const X = {
       M,
       plan: P,
+      /** The turns this mural is played with now: 1, -1 or 0 (turnOk). */
+      turn,
+      /** Is the buffer open (bufferOpen) for the piece in play? */
+      open(g) { return bufferOpen(P(), M.i, g.board); },
+      /** The rows the piece in play may use (topOf). */
+      top(g) { return topOf(P(), M.i, g.board); },
       // The pieces in their order (the queue is made the mural's own, fixed, at the first piece).
       dealer: {
         next() { const ps = P().pieces; return ps[Math.min(dealt++, ps.length - 1)].id; },
@@ -566,7 +639,7 @@
         g.fixed = true;
         g.queue = entries(M.i + 1);
         if (M.i >= ps.length || type.id !== ps[M.i].id) return pos;
-        return spawnSpot(P(), M.i, b);
+        return spawnSpot(P(), M.i, b, turn());
       },
       // Set only exactly in its place: anywhere else the set does not happen (a drop leaves the piece where it was).
       refuseLock(g, b, abs) {
@@ -611,13 +684,14 @@
     o = Object.assign({ pieces: Infinity }, o || {});
     const X = extOf(g);
     let acts = 0, paid = 0, n = 0;
+    const tn = X.turn();
     while (!g.over && g.piece && n < o.pieces) {
       const pc = X.current(g), p = g.piece;
       if (!pc) break;
-      const d = reach(g.board, p.type, { rot: p.rot, x: p.x, y: p.y }, pc.goals);
+      const d = reach(g.board, p.type, { rot: p.rot, x: p.x, y: p.y }, pc.goals, tn, X.top(g));
       if (d < 0) break;
       // As a player makes it: the turns and the steps across (never fewer), then the drop.
-      const cost = (q) => Math.min((q.rot - p.rot + 4) % 4, (p.rot - q.rot + 4) % 4) + Math.abs(q.x - p.x);
+      const cost = (q) => (tn ? presses([q], p.rot, tn) : Math.min((q.rot - p.rot + 4) % 4, (p.rot - q.rot + 4) % 4)) + Math.abs(q.x - p.x);
       const g0 = pc.goals.reduce((a, q) => (cost(q) < cost(a) ? q : a), pc.goals[0]);
       acts += cost(g0) + 1;
       p.rot = g0.rot; p.x = g0.x; p.y = g0.y;
@@ -652,16 +726,19 @@
     },
     label: (r, short) => (on(r) ? (short ? 'Mural' : 'Mural · ' + PIC_NAMES[r.mural.pic] + ' · Level ' + r.mural.level) : ''),
     // Its size is its level's.
+    // (A board saved before the buffer, BUF rows shorter, still opens: it is grown then.)
     limits(r, lim) {
       if (!on(r)) return;
       const lv = levelOf(r);
-      lim.w = [lv.w, lv.w]; lim.h = [lv.h, lv.h];
+      lim.w = [lv.w, lv.w]; lim.h = [lv.h - BUF, lv.h];
     },
     clampSize(size, r) { if (!on(r)) return size; const lv = levelOf(r); return { w: lv.w, h: lv.h }; },
     rules(r, R) {
       if (!on(r)) return;
       for (const id of Object.keys(L.ITEMS || {})) R.refuse[id] = 'Not in Mural';
       R.undo = false; R.hints = false; R.rated = false; R.noFeats = true; R.mural = true;
+      // The buffer's rows, over the board's size (as Race's).
+      R.k = BUF;
     },
     conflicts(r, out) {
       if (!on(r)) return;
@@ -675,7 +752,7 @@
       const x = isObj(g.x) ? g.x.mural : undefined;
       return valid(x, r);
     },
-    engine(game, saved) { return on(game.recipe) ? extension(game, saved) : null; },
+    engine(game, saved, o) { return on(game.recipe) ? extension(game, saved, o) : null; },
     controller(play, game) { return game && on(game.recipe) && L.MuralView ? L.MuralView.controller(play, game) : null; },
     summary(x, g) { if (!isObj(x) || !g || !on(Recipe.normalize(g.recipe)) || !valid(x, Recipe.normalize(g.recipe))) return null; const r = Recipe.normalize(g.recipe); return summaryOf(x, plan(r, x.seed), r); },
     stats: { free: { mural: { placed: 0, finished: 0, own: 0, levels: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }, pics: { coast: 0, still: 0, soft: 0, own: 0 } } }, timeMs: { mural: 0 } },
@@ -701,8 +778,8 @@
   }
 
   L.Mural = {
-    LEVELS, LEVEL_IDS, PICS, PIC_IDS, PIC_NAMES, PAY_CELL, OWN_MAX, B36,
-    on, levelOf, quantise, toKeys, KEYS, render, picture, quartersAt, turnQ, tile, plan, exactAt, cellQ, reach, spawnSpot, typeOf,
+    LEVELS, LEVEL_IDS, PICS, PIC_IDS, PIC_NAMES, PAY_CELL, OWN_MAX, B36, BUF, bufferOpen, topOf,
+    on, levelOf, quantise, toKeys, KEYS, render, picture, quartersAt, turnQ, tile, plan, exactAt, cellQ, reach, spawnSpot, prefOf, presses, turnOk, setTurnMode, typeOf,
     ownOk, ownRgb, resample, fromPixels, valid, summaryOf, extOf, bot, hexRgb, rgbHex, oklab, fromLab, PART,
     of: (game) => { const e = extOf(game); return e ? e.M : null; },
   };

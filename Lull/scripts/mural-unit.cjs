@@ -3,7 +3,8 @@
 // dealt each piece drops straight down into its place and rests there; no order can cycle), the quantisation (the same
 // every time; the level's colours), the pictures, quarters that turn with the piece, a set anywhere but its place (or
 // in another turn) refused and the piece left where it was, the piece appearing in another turn wherever that looks
-// different and its place always reachable, the mural Finished, save and resume mid-mural, a photo imported from pixels,
+// different and its place always reachable (by default one press of the single turn button away, placed turning only
+// that way — clockwise, or counter-clockwise under Inverted Controls; both ways with Counter-clockwise puzzles on), the mural Finished, save and resume mid-mural, a photo imported from pixels,
 // pay no faster than a Standard board per piece or per action, and the achievements.
 // Run by test.cjs: require('./mural-unit.cjs')({ L, test }).
 'use strict';
@@ -33,7 +34,11 @@ module.exports = function muralUnit({ L, test }) {
     assert.strictEqual(Recipe.label(R('still', 3), true), 'Mural');
     const sizes = [1, 2, 3, 4, 5].map((n) => Recipe.clampSize({ w: 4, h: 40 }, R('coast', n)));
     assert.deepStrictEqual(sizes, [{ w: 8, h: 10 }, { w: 10, h: 14 }, { w: 12, h: 18 }, { w: 14, h: 22 }, { w: 16, h: 26 }]);
-    assert.deepStrictEqual(Recipe.limits(R('coast', 3)), { w: [12, 12], h: [18, 18] });
+    // (14: a board saved before the buffer still opens, grown by it.)
+    assert.deepStrictEqual(Recipe.limits(R('coast', 3)), { w: [12, 12], h: [14, 18] });
+    // The buffer: BUF rows over the picture (R.k, as Race's), the board that much taller; nothing set there.
+    assert.strictEqual(Recipe.rules(R('coast', 3), 12).k, M.BUF);
+    assert.strictEqual(mk('coast', 3).h, 18 + M.BUF);
     // Normal shapes and no modifier, whatever was asked.
     const r = Recipe.normalize({ mode: 'mural', mods: { mirror: true, physics: true }, shapes: { preset: 'frantic' } });
     assert(!Object.values(r.mods).some(Boolean) && r.shapes.preset === 'normal' && !r.physics, JSON.stringify(r));
@@ -107,7 +112,7 @@ module.exports = function muralUnit({ L, test }) {
     for (const pc of P.pieces) {
       const t = Pieces.get(pc.id);
       // At its own turn each cell shows the picture's quarters where it belongs.
-      t.rots[pc.rt].forEach(([cx, cy], i) => assert.deepStrictEqual(M.cellQ(pc, pc.rt, i), M.quartersAt(pic, g.h, pc.x + cx, pc.y + cy)));
+      t.rots[pc.rt].forEach(([cx, cy], i) => assert.deepStrictEqual(M.cellQ(pc, pc.rt, i), M.quartersAt(pic, P.H, pc.x + cx, pc.y + cy)));
       // A quarter turn later the same cell's quarters are turned a quarter clockwise.
       for (let i = 0; i < pc.cells.length; i++) assert.deepStrictEqual(M.cellQ(pc, (pc.rt + 1) % 4, i), M.turnQ(pc.qt[i], 1));
       checked++;
@@ -159,13 +164,123 @@ module.exports = function muralUnit({ L, test }) {
         total++;
         const lookAlike = [0, 1, 2, 3].every((r) => pc.goals.some((q) => q.rot === r));
         if (!pc.goals.some((q) => q.rot === p.rot)) other++;
-        else assert(lookAlike || p.y === g.h - 1 - p.type.rotBounds[p.rot].maxY, 'in its own turn only when every turn looks the same, or the top is full');
-        assert(M.reach(g.board, p.type, { rot: p.rot, x: p.x, y: p.y }, pc.goals) >= 0, 'its place can be reached');
+        else assert(lookAlike || p.y === x.top(g) - 1 - p.type.rotBounds[p.rot].maxY, 'in its own turn only when every turn looks the same, or the top is full');
+        assert(M.reach(g.board, p.type, { rot: p.rot, x: p.x, y: p.y }, pc.goals, x.turn()) >= 0, 'its place can be reached');
         assert(setIt(g));
       }
       assert.strictEqual(g.endKind, 'finished');
     }
     assert(other / total > 0.85, other + ' of ' + total);
+  });
+
+  /**
+   * Can the piece in play reach its place with the engine's own moves and turns, turning only `turn` (1 or -1) and only
+   * in place or nudged sideways off a wall (no kick down, up or across a gap)? Searched with g.move, g.rotate and a
+   * row down; the piece is left where it was.
+   */
+  const oneWay = (g, pc, turn) => {
+    const p = g.piece, at = [p.rot, p.x, p.y], maxKick = p.type.n >= 4 ? 2 : 1, key = (r, x, y) => r + ',' + x + ',' + y;
+    const goal = new Set(pc.goals.map((q) => key(q.rot, q.x, q.y))), seen = new Set([key(...at)]), todo = [at];
+    let ok = false;
+    while (todo.length && !ok) {
+      const [r, x, y] = todo.pop();
+      if (goal.has(key(r, x, y))) { ok = true; break; }
+      const put = () => { p.rot = r; p.x = x; p.y = y; };
+      const add = () => { const k = key(p.rot, p.x, p.y); if (!seen.has(k)) { seen.add(k); todo.push([p.rot, p.x, p.y]); } };
+      for (const dx of [-1, 1]) { put(); if (g.move(dx)) add(); }
+      put(); if (g.fitsAt(p, r, x, y - 1)) { p.y--; add(); }
+      put(); if (g.rotate(turn) && p.y === y && Math.abs(p.x - x) <= maxKick) add();
+    }
+    p.rot = at[0]; p.x = at[1]; p.y = at[2];
+    return ok;
+  };
+
+  test('mural: one turn button places every piece, as in puzzles — clockwise, or counter-clockwise under Inverted Controls: each appears one press (at most two) of it from its place, reached turning only that way and never by a kick that hops it (every built-in picture, levels 1-5)', () => {
+    for (const turn of [1, -1]) {
+      let one = 0, two = 0, same = 0, total = 0, tops = 0;
+      for (const pic of ['coast', 'still', 'soft']) for (let level = 1; level <= 5; level++) {
+        const r = R(pic, level), z = Recipe.clampSize({}, r);
+        const g = new Game({ w: z.w, h: z.h, seed: level * 7 + 1, recipe: r, muralTurn: turn }), x = X(g);
+        assert.strictEqual(x.turn(), turn);
+        // The Next tray shows each piece in the turn it will appear in.
+        assert.strictEqual(g.queue[0].rot, M.prefOf(x.plan().pieces[1], turn)[0]);
+        while (!g.over) {
+          const pc = x.current(g), p = g.piece;
+          total++;
+          const n = M.presses(pc.goals, p.rot, turn);
+          const lookAlike = [0, 1, 2, 3].every((q) => pc.goals.some((gq) => gq.rot === q));
+          if (n === 1) one++; else if (n === 2) two++;
+          else {
+            // Its own turn only when every turn looks the same, or right over its place when no turn at the top reaches it.
+            assert.strictEqual(n, 0, pic + ' ' + level + ': ' + n + ' presses');
+            if (lookAlike) total--; else { assert.strictEqual(p.y, x.top(g) - 1 - p.type.rotBounds[p.rot].maxY); same++; }
+          }
+          // The picture's top rows: the buffer is open and the piece appears at its top, over the picture.
+          const PH = x.plan().H;
+          if (pc.cells.some(([, cy]) => cy >= PH - M.BUF)) { assert(x.open(g), 'the buffer open for a top row'); tops++; }
+          if (x.open(g)) assert.strictEqual(p.y + p.type.rotBounds[p.rot].maxY, g.h - 1, 'appears at the buffer\'s top');
+          else assert(p.y + p.type.rotBounds[p.rot].maxY < PH, 'under a shut buffer');
+          assert(M.reach(g.board, p.type, { rot: p.rot, x: p.x, y: p.y }, pc.goals, turn) >= 0, 'reached one way');
+          assert(oneWay(g, pc, turn), pic + ' ' + level + ' piece ' + X(g).M.i + ': placed with the one turn button (' + turn + ')');
+          assert(setIt(g));
+        }
+        assert.strictEqual(g.endKind, 'finished');
+      }
+      // None falls back to its own turn over its place (the look-alikes aside).
+      assert(one / total > 0.95 && same === 0 && tops > 100, turn + ': ' + one + ' one press, ' + two + ' two, ' + same + ' none, of ' + total + '; ' + tops + ' at the top');
+    }
+    // The bot, turning only the one way, finishes too.
+    const g = mk('soft', 4, 5);
+    assert.strictEqual(X(g).turn(), 1, 'clockwise without a setting');
+    assert(M.bot(g).done);
+  });
+
+  test('mural: the buffer — shut while the stack is low, open (and staying open) once it nears the top; a board saved before it is grown, its stack and piece kept', () => {
+    const g = mk('coast', 2, 4), x = X(g), PH = x.plan().H;
+    let was = false, opened = -1;
+    while (!g.over) {
+      const o = x.open(g);
+      assert(!was || o, 'stays open');
+      if (o && !was) opened = g.board.stackHeight();
+      was = o;
+      assert(setIt(g));
+    }
+    assert(opened >= PH - M.BUF - 3 && opened <= PH, 'opens near the top: ' + opened);
+    // An old save: the board as tall as the picture.
+    const h = mk('still', 1, 3);
+    for (let k = 0; k < 6; k++) setIt(h);
+    const j = JSON.parse(JSON.stringify(h.toJSON())), PH1 = X(h).plan().H;
+    j.h = PH1; j.cells = j.cells.slice(0, j.w * PH1);
+    assert(L.Library.playable(j), 'an old save still opens');
+    const back = new Game({ saved: j });
+    assert.strictEqual(back.h, PH1 + M.BUF);
+    assert.deepStrictEqual(Array.from(back.board.cells.slice(0, j.w * PH1)), Array.from(h.board.cells.slice(0, j.w * PH1)));
+    assert.strictEqual(back.piece.type.id, h.piece.type.id);
+    while (!back.over) assert(setIt(back));
+    assert.strictEqual(back.endKind, 'finished');
+  });
+
+  test('mural: with Settings ▸ Controls ▸ Counter-clockwise puzzles on (turn 0), pieces appear turned either way or a half turn, every place reachable', () => {
+    const seen = { 1: 0, '-1': 0, 2: 0 };
+    let total = 0;
+    for (const pic of ['coast', 'still', 'soft']) for (const level of [1, 3, 5]) {
+      const r = R(pic, level), z = Recipe.clampSize({}, r);
+      const g = new Game({ w: z.w, h: z.h, seed: level, recipe: r, muralTurn: 0 }), x = X(g);
+      assert.strictEqual(x.turn(), 0);
+      while (!g.over) {
+        const pc = x.current(g), p = g.piece;
+        total++;
+        const cw = M.presses(pc.goals, p.rot, 1);
+        if (cw === 1) seen[1]++; else if (cw === 3) seen[-1]++; else if (cw === 2) seen[2]++;
+        assert(M.reach(g.board, p.type, { rot: p.rot, x: p.x, y: p.y }, pc.goals, 0) >= 0);
+        assert(setIt(g));
+      }
+    }
+    assert(seen[1] > total * 0.3 && seen[-1] > total * 0.3, JSON.stringify(seen) + ' of ' + total);
+    // The setting is read through the view's hook, and only a game's own muralTurn outranks it.
+    M.setTurnMode(() => 0);
+    try { assert.strictEqual(X(mk('coast', 1, 1)).turn(), 0); } finally { M.setTurnMode(null); }
+    assert.strictEqual(X(mk('coast', 1, 1)).turn(), 1);
   });
 
   test('mural: Finished once the last piece is set (kept in the save; no piece after it); the Next queue is the mural\'s own, counting down', () => {
@@ -179,8 +294,9 @@ module.exports = function muralUnit({ L, test }) {
     assert(back.over && back.endKind === 'finished');
     assert.deepStrictEqual(Recipe.summary(g).mural, { pic: 'soft', level: 1, placed: n, total: n, done: true });
     assert.deepStrictEqual(Recipe.summary(g.toJSON()).mural, { pic: 'soft', level: 1, placed: n, total: n, done: true });
-    // Every cell is set, each a picture's block.
-    assert(g.board.cells.every((v) => v !== 0));
+    // Every cell of the picture is set, each a picture's block; the buffer over it is empty.
+    const PH = x.plan().H;
+    assert(g.board.cells.every((v, i) => (i < g.w * PH) === (v !== 0)));
   });
 
   test('mural: saved and resumed mid-mural: the same piece in play, the same queue, the same plan; it plays on to the end', () => {

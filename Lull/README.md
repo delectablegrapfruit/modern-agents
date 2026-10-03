@@ -1082,12 +1082,30 @@ time counts only while the board is used (its own `timeMs.mural`).
 *Its place.* The spot the piece in play belongs in is outlined on the board (an accent line over a soft halo, its
 quarters lightly in it; the ghost is a plain outline). The outline says whether the piece's turn is right: dashed while
 it is in another turn, solid once its turn matches. A small badge on the place's top corner, drawn over the piece, says
-the same plainly: an arrow round the way to turn it (clockwise, or counter-clockwise: one turn), a 2 for a half turn,
-a tick once the turn is right, filled when a drop would set it there. Nothing in it moves (the same under reduced
-motion), and it reads on either theme (`turnBadge` in `js/muralview.js`). The piece
-appears at the top in another turn than its place wherever that looks different (its shape, or its quarters), nearest
-the middle, where its place can still be reached by moves and turns (searched as the engine moves and kicks); with none,
-in its own turn right over its place. It must be turned and moved there by hand: a drop or a set anywhere else, or in
+the same plainly: an arrow round the way to turn it, with the presses in it past one, or a tick once the turn is right,
+filled when a drop would set it there. Nothing in it moves (the same under reduced motion), and it reads on either theme
+(`turnBadge` in `js/muralview.js`).
+
+*One turn button*, as in puzzles: by default the single turn button (Up, or a right-click) places every piece:
+clockwise, or counter-clockwise under Inverted Controls. The piece appears at the top in another turn than its place
+wherever that looks different (its shape, or its quarters), one press of that button away (two only when one press away
+cannot reach its place), nearest the middle, where its place can be reached turning only that way and only in place or
+nudged sideways off a wall (one column, two for a long piece), never by a kick that hops it down or through a gap
+(`reach` with a turn, `prefOf`, `spawnSpot`); with none, in its own turn right over its place (on the built-in
+pictures, never). So the badge only ever shows that button's arrow (or a tick); the other key turned three times is
+the arrow with a 3. Settings ▸ Controls ▸ Counter-clockwise puzzles on: pieces appear turned either way or a half turn,
+reached by turns either way and any kick, and the badge shows either arrow or a 2. A piece whose every turn looks the
+same appears in its place's turn. The turn is read as each piece appears (`setTurnMode`, from the settings).
+
+*The buffer*, as Race's: 4 rows over the picture (`R.k`; the board's size is the picture's, the buffer on top of it),
+where nothing ever sets. While the stack is low it is hidden and pieces appear at the picture's top; once the stack (or
+the piece's place) comes within 4 rows of the top it opens for good: the board grows smoothly to show it (cells a little
+smaller so all of it fits; at once under reduced motion; it shows too whenever the piece is turned up into it), drawn as
+a soft band over a dashed top edge, and pieces appear at its top, so the picture's last rows are reached by the same
+moves and the same one-button turns as the rest. A finished mural shows only its picture. A board saved before the
+buffer opens with it added.
+
+A piece must be turned and moved into its place by hand: a drop or a set anywhere else, or in
 another turn, simply does not happen (the piece stays where it was; no sound, no shake, no note; the outline brightens
 once). Hold is off; Undo, the hints and every power-up are off ("Not in Mural"). The last piece set: the **Finished**
 card (Boards; Look, which hides it to show the whole picture, Space or a tap brings it back; New board, which keeps the

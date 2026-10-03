@@ -110,7 +110,7 @@ module.exports = async function muralTests({ browser, check, PAGE, OUT }) {
   check('Physics and Mirror are off ("Not in Mural"), so are the other shapes; Size has the level\'s one size', off.sw.every((s) => s[1] === 'true' && s[2] === 'Not in Mural') && off.chips.length > 0 && off.chips.every((c) => c === 'true') && off.presets.join() === 'Level 312 × 18', JSON.stringify(off));
   await ev(() => { [...document.querySelectorAll('.modal .btn')].find((b) => b.textContent.trim() === 'Create').click(); });
   await page.waitForTimeout(200);
-  const made = await ev(() => { const m = Lull.app.modes.play, g = m.game; return { label: Lull.Recipe.label(g.recipe), w: g.w, h: g.h, ext: g.ext.map((e) => e.key).join(), parts: m.view.parts.map((p) => p.key).join(), card: m.cardOpen, bar: document.querySelector('#itembar').classList.contains('mu-bar') && !!document.querySelector('#itembar .mu-prog'), next: (g.queue || []).length, fixed: g.fixed }; });
+  const made = await ev(() => { const m = Lull.app.modes.play, g = m.game; return { label: Lull.Recipe.label(g.recipe), w: g.w, h: g.h - Lull.Mural.BUF, ext: g.ext.map((e) => e.key).join(), parts: m.view.parts.map((p) => p.key).join(), card: m.cardOpen, bar: document.querySelector('#itembar').classList.contains('mu-bar') && !!document.querySelector('#itembar .mu-prog'), next: (g.queue || []).length, fixed: g.fixed }; });
   const st0 = await status(ev);
   check('Create: a Mural board (12 × 18, Still life, Level 3) in play at once; Placed and Level in the status bar; the progress under the board; Next counts down', made.label === 'Mural · Still life · Level 3' && made.w === 12 && made.h === 18 && made.ext === 'mural' && made.parts === 'mural' && !made.card && made.bar && made.fixed && made.next > 40 && /^Placed\s*0 of \d+$/.test(st0[0]) && /^Level\s*3$/.test(st0[1]), JSON.stringify({ made, st0 }));
 
@@ -158,7 +158,7 @@ module.exports = async function muralTests({ browser, check, PAGE, OUT }) {
       const [sx, sy] = v.toScreen(x, y);
       [[0.3, 0.3], [0.7, 0.3], [0.3, 0.7], [0.7, 0.7]].forEach(([fx, fy], k) => { if (near(at(sx + s * fx, sy + s * fy), rgb(pic.pal[q[k]]))) ok++; else bad++; });
     };
-    for (let y = 0; y < 2; y++) for (let x = 0; x < g.w; x++) if (g.board.get(x, y)) cellOk(x, y, Lull.Mural.quartersAt(pic, g.h, x, y));
+    for (let y = 0; y < 2; y++) for (let x = 0; x < g.w; x++) if (g.board.get(x, y)) cellOk(x, y, Lull.Mural.quartersAt(pic, pic.QH / 2, x, y));
     const stack = { ok, bad }; ok = 0; bad = 0;
     const p = g.piece, pc = X.current(g);
     g.absCells(p).forEach(([x, y], i) => cellOk(x, y, Lull.Mural.cellQ(pc, p.rot, i)));
@@ -259,7 +259,7 @@ module.exports = async function muralTests({ browser, check, PAGE, OUT }) {
   await D.shot('mural-photo-newboard-520x760');
   await ev(() => { [...document.querySelectorAll('.modal .btn')].find((b) => b.textContent.trim() === 'Create').click(); });
   await page.waitForTimeout(200);
-  const ownMade = await ev(() => { const g = Lull.app.modes.play.game; return { label: Lull.Recipe.label(g.recipe), w: g.w, h: g.h, saved: JSON.stringify(Lull.app.store.state.boards.recipe).length }; });
+  const ownMade = await ev(() => { const g = Lull.app.modes.play.game; return { label: Lull.Recipe.label(g.recipe), w: g.w, h: g.h - Lull.Mural.BUF, saved: JSON.stringify(Lull.app.store.state.boards.recipe).length }; });
   await D.shot('mural-photo-play-520x760');
   check('Use photo: the picture is the photo (its grid only, a few KB); Create makes a 14 × 22 mural of it', used.pic === 'own' && used.w === 28 && used.pressed === 'own' && used.size.w === 14 && used.json < 4000 && ownMade.label === 'Mural · Photo · Level 4' && ownMade.w === 14 && ownMade.h === 22 && ownMade.saved < 4000, JSON.stringify({ used, ownMade }));
   // The level changed with the photo still at hand: cropped again for it.
@@ -311,29 +311,76 @@ module.exports = async function muralTests({ browser, check, PAGE, OUT }) {
     });
     check(vw + ' × ' + vh + ' ' + theme + ': level 5 in play fits (status bar, board, progress, no sideways scroll); a quarter is 5 px or more', fit.bar && fit.page && fit.board && fit.items && fit.quarter >= 5, JSON.stringify(fit));
     await F.shot('mural-play-' + vw + 'x' + vh + '-' + theme);
-    if (phone) {
-      // The turn badge on the place: the arrow (or a 2) while the turn is wrong, a tick once it is right, filled when a
-      // drop would set it there.
-      const cue = {};
-      for (const want of ['cw', 'ccw', 'half', 'right', 'ready']) {
-        cue[want] = await F.ev((want) => {
-          const m = Lull.app.modes.play, g = m.game, X = Lull.Mural.extOf(g), p = g.piece, pc = X.current(g), q = pc.goals[0];
-          const d = { cw: -1, ccw: 1, half: 2, right: 0, ready: 0 }[want], rot = (q.rot + d + 4) % 4, top = g.h - 1 - p.type.rotBounds[rot].maxY;
-          // Its own column over its place when ready, else a column away from it.
-          const xs = want === 'ready' ? [q.x] : [q.x + 3, q.x - 3, q.x + 4, q.x - 4, q.x + 2, q.x - 2];
-          const x = xs.find((x) => g.fitsAt(p, rot, x, top));
-          if (x == null) return null;
-          p.rot = rot; p.x = x; p.y = top;
-          m.view.dirty = true; m.view.render(performance.now());
-          const st = Lull.MuralView.placeState(m.view);
-          return { turns: st.turns, ready: st.ready, all: pc.goals.length };
-        }, want);
-        await F.page.waitForTimeout(40);
-        if (cue[want]) await F.shot('mural-turn-' + want + '-' + vw + 'x' + vh + '-' + theme);
+    // The buffer open (the stack near the top): the board grows to show it, the cells a little smaller, and all still fits.
+    const buf = await F.ev(() => { const m = Lull.app.modes.play, g = m.game, X = Lull.Mural.extOf(g); m.view.render(performance.now()); return { n: X.plan().pieces.length, low: !X.open(g) && m.view.lay.gh === X.plan().H && g.h === X.plan().H + Lull.Mural.BUF }; });
+    await F.ev(SCENE, { pic: 'coast', level: 5, seed: 2, placed: buf.n - 6 });
+    await F.page.waitForTimeout(650);
+    const fitB = await F.ev(() => {
+      const m = Lull.app.modes.play, g = m.game, X = Lull.Mural.extOf(g), cv = m.view.canvas.getBoundingClientRect(), ib = document.querySelector('#itembar').getBoundingClientRect();
+      m.view.dirty = true; m.view.render(performance.now());
+      const L0 = m.view.lay, wells = L0.board, btns = [...document.querySelectorAll('#play-status button, #itembar button')].filter((b) => b.offsetParent).map((b) => b.getBoundingClientRect());
+      return { open: X.open(g), shown: L0.gh, h: g.h, inside: wells.y >= 0 && wells.y + wells.h <= cv.height + 0.5, board: cv.bottom <= window.innerHeight, items: ib.bottom <= window.innerHeight + 0.5, page: document.documentElement.scrollWidth <= window.innerWidth, quarter: L0.s / 2, small: btns.filter((r) => r.height < 43.5 && r.width < 43.5).length, top: g.piece && g.piece.y + g.piece.type.rotBounds[g.piece.rot].maxY };
+    });
+    check(vw + ' × ' + vh + ' ' + theme + ': the buffer hidden while the stack is low; near the top it shows (all its rows, the piece at its top) and the board still fits (no clipping or sideways scroll, quarters 4 px or more; on a phone 44 px controls)',
+      buf.low && fitB.open && fitB.shown === fitB.h && fitB.top === fitB.h - 1 && fitB.inside && fitB.board && fitB.items && fitB.page && fitB.quarter >= 4 && (!phone || fitB.small === 0), JSON.stringify({ buf, fitB }));
+    await F.shot('mural-buffer-' + vw + 'x' + vh + '-' + theme);
+    if (vw === 520 && theme === 'light') {
+      // As each piece appears (set in place one after another, as the real controls would): by default its badge shows
+      // one press of the single turn button (or a tick for a look-alike); under Inverted Controls the counter-clockwise
+      // one; with Counter-clockwise puzzles on, either way.
+      const spawn = {};
+      for (const [mode, ccw, inv] of [['one', false, false], ['inv', false, true], ['both', true, false]]) {
+        spawn[mode] = await F.ev(([ccw, inv, SC]) => {
+          Lull.app.settings.ccwPuzzles = ccw; Lull.app.modes.play.inverted = inv;
+          (0, eval)('(' + SC + ')')({ pic: 'still', level: 3, seed: 5, placed: 0 });
+          const m = Lull.app.modes.play, g = m.game, X = Lull.Mural.extOf(g), seen = {};
+          while (!g.over) {
+            const t = Lull.MuralView.placeState(m.view).turns;
+            seen[t] = (seen[t] || 0) + 1;
+            const q = X.current(g).goals[0], p = g.piece; p.rot = q.rot; p.x = q.x; p.y = g.h - 1 - p.type.rotBounds[q.rot].maxY; m.action('drop');
+          }
+          Lull.app.settings.ccwPuzzles = false; m.inverted = false;
+          return seen;
+        }, [ccw, inv, SCENE.toString()]);
       }
+      const only = (o, keys) => Object.keys(o).every((k) => keys.includes(k));
+      check('each piece appears one press of the single turn button from its place (clockwise; counter-clockwise under Inverted Controls); both ways with Counter-clockwise puzzles on',
+        only(spawn.one, ['1', '0']) && spawn.one[1] > 40 && only(spawn.inv, ['-1', '0']) && spawn.inv[-1] > 40 && spawn.both[1] > 10 && spawn.both[-1] > 10, JSON.stringify(spawn));
+      await F.ev(SCENE, { pic: 'coast', level: 5, seed: 2, placed: 70 });
+    }
+    await F.ev(SCENE, { pic: 'coast', level: 5, seed: 2, placed: 70 });
+    if (phone) {
+      // The turn badge on the place: a tick once the turn is right (filled when a drop would set it there), else the
+      // arrow round the way to turn. By default only the single turn button's arrow (clockwise; counter-clockwise under
+      // Inverted Controls), with the presses in it past one; with Counter-clockwise puzzles on, either arrow or a 2.
+      const MODES = { one: [false, false], inv: [false, true], both: [true, false] };
+      const WANT = { one: { cw: 1, ccw: 3, half: 2 }, inv: { cw: -3, ccw: -1, half: -2 }, both: { cw: 1, ccw: -1, half: 2 } };
+      const cues = {};
+      for (const mode of Object.keys(MODES)) {
+        const cue = cues[mode] = {};
+        for (const want of ['cw', 'ccw', 'half', 'right', 'ready']) {
+          cue[want] = await F.ev(([want, ccw, inv]) => {
+            const m = Lull.app.modes.play, g = m.game, X = Lull.Mural.extOf(g), p = g.piece, pc = X.current(g), q = pc.goals[0];
+            Lull.app.settings.ccwPuzzles = ccw; m.inverted = inv;
+            const d = { cw: -1, ccw: 1, half: 2, right: 0, ready: 0 }[want], rot = (q.rot + d + 4) % 4, top = g.h - 1 - p.type.rotBounds[rot].maxY;
+            // Its own column over its place when ready, else a column away from it.
+            const xs = want === 'ready' ? [q.x] : [q.x + 3, q.x - 3, q.x + 4, q.x - 4, q.x + 2, q.x - 2];
+            const x = xs.find((x) => g.fitsAt(p, rot, x, top));
+            if (x == null) return null;
+            p.rot = rot; p.x = x; p.y = top;
+            m.view.dirty = true; m.view.render(performance.now());
+            const st = Lull.MuralView.placeState(m.view);
+            return { turns: st.turns, ready: st.ready, all: pc.goals.length };
+          }, [want, ...MODES[mode]]);
+          await F.page.waitForTimeout(40);
+          if (cue[want] && mode !== 'both') await F.shot('mural-turn-' + mode + '-' + want + '-' + vw + 'x' + vh + '-' + theme);
+        }
+      }
+      await F.ev(() => { Lull.app.settings.ccwPuzzles = false; Lull.app.modes.play.inverted = false; });
       const ok = (c, t, r) => !c || (c.turns === t && c.ready === r) || c.all > 1;
-      check(vw + ' × ' + vh + ' ' + theme + ': the turn badge says the turn to make (clockwise, counter-clockwise, a half turn), a tick once right, filled when a drop sets it',
-        !!cue.right && !!cue.ready && ok(cue.cw, 1, false) && ok(cue.ccw, -1, false) && ok(cue.half, 2, false) && cue.right.turns === 0 && !cue.right.ready && cue.ready.turns === 0 && cue.ready.ready, JSON.stringify(cue));
+      const good = (mode) => { const c = cues[mode], w = WANT[mode]; return !!c.right && !!c.ready && ok(c.cw, w.cw, false) && ok(c.ccw, w.ccw, false) && ok(c.half, w.half, false) && c.right.turns === 0 && !c.right.ready && c.ready.turns === 0 && c.ready.ready; };
+      check(vw + ' × ' + vh + ' ' + theme + ': the turn badge shows only the one turn button\'s arrow (clockwise; counter-clockwise under Inverted Controls; the presses in it past one), either way or a 2 with Counter-clockwise puzzles on, a tick once right, filled when a drop sets it',
+        good('one') && good('inv') && good('both'), JSON.stringify(cues));
       await F.ev(SCENE, { pic: 'coast', level: 5, seed: 2, placed: 70 });
     }
     if (phone) {
