@@ -47,6 +47,7 @@
     plus: svg('<path d="M8 3.75v8.5M3.75 8h8.5"/>'),
     newBoard: svg('<rect x="2.25" y="2.25" width="11.5" height="11.5" rx="2.5"/><path d="M8 5.25v5.5M5.25 8h5.5"/>'),
     // The board library: a board in front of another, holding a small stack; retire files it away; rename, delete.
+    menu: svg('<path d="M2.75 4h10.5M2.75 8h10.5M2.75 12h10.5"/>'),
     boards: svg('<path d="M6 1.75h6.25a1.5 1.5 0 0 1 1.5 1.5v8"/><rect x="2.25" y="4.25" width="8.5" height="10" rx="1.6"/>' + blk(4, 10.6, 2.4, 0.6) + blk(6.6, 10.6, 2.4, 0.6) + blk(6.6, 8, 2.4, 0.6)),
     // Full view (a retired board at play size): the four corners of a screen.
     expand: svg('<path d="M2 5.5V2h3.5M10.5 2H14v3.5M14 10.5V14h-3.5M5.5 14H2v-3.5"/>'),

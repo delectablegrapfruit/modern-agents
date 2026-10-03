@@ -64,7 +64,7 @@
   function sizeLabel(w, h) { return w + ' \u00d7 ' + h; }
 
   const defaultRecipe = () => (L.Recipe ? JSON.parse(JSON.stringify(L.Recipe.DEFAULT)) : null);
-  function blank() { return { seq: 0, cur: null, list: [], retired: [], taper: {}, size: { w: STANDARD.w, h: STANDARD.h }, recipe: defaultRecipe() }; }
+  function blank() { return { seq: 0, cur: null, list: [], retired: [], taper: {}, size: { w: STANDARD.w, h: STANDARD.h }, recipe: defaultRecipe(), menu: {} }; }
 
   const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
   const num = (v, d) => (typeof v === 'number' && isFinite(v) ? v : d);
@@ -116,6 +116,9 @@
     });
     if (B.retired.length > MAX_RETIRED) B.retired.length = MAX_RETIRED;
     if (!isObj(B.taper)) B.taper = {};
+    // The Play menu's last setup of each mode ({ recipe, size }, made whole where it is read: js/menu.js).
+    if (!isObj(B.menu)) B.menu = {};
+    for (const k of Object.keys(B.menu)) if (!isObj(B.menu[k])) delete B.menu[k];
     B.recipe = L.Recipe ? L.Recipe.normalize(B.recipe) : null;
     B.size = clampSize(B.size, L.Recipe ? B.recipe : undefined);
     B.seq = Math.max(num(B.seq, 0), ...B.list.concat(B.retired).map((r) => (/^b(\d+)$/.test(r.id) ? +r.id.slice(1) : 0)));
@@ -372,5 +375,32 @@
     return { json: out, game: g };
   }
 
-  L.Library = { STANDARD, LIMITS, scale, worth, bank, validSize, clampSize, sizeLabel, playable, MAX_ACTIVE, MAX_RETIRED, NAME_MAX, NEXT_KEPT, ADJ, NOUN, blank, ensure, find, findRetired, current, full, cleanName, uniqueName, makeName, add, shelve, take, startNew, open, rename, summarize, encodeCells, decodeCells, retire, remove, removeRetired, newCurrent, taper, ordered, reshape, rebuild };
+  // ---- the Play menu: Solo or Multiplayer, and resume by rules -------------------------------------------------------
+
+  /** The modes played against an opponent: their boards are Multiplayer (the menu and the library's tabs). */
+  const MULTI_MODES = Object.freeze(['race', 'battle']);
+  /** Which side a board of this recipe is on: 'multi' (Race, Battle) or 'solo' (everything else). */
+  function side(recipe) { return isObj(recipe) && MULTI_MODES.includes(recipe.mode) ? 'multi' : 'solo'; }
+  /** A saved board's size as it is shown and chosen: its height less the buffer its recipe keeps on top (R.k: Race's). */
+  function shownSize(g) { const k = L.Recipe ? L.Recipe.rules(g.recipe, g.w).k || 0 : 0; return { w: g.w, h: g.h - k }; }
+  /** A saved board still to be played: neither full nor ended by its mode (a cleared stage, a finished picture). */
+  const unfinished = (g) => isObj(g) && !g.over && !g.ended;
+  /**
+   * Resume by rules: the saved board (not retired) still to be played whose rules are `recipe` at `size` (the same
+   * rules: Recipe.editPrice finds nothing to change, so what changes for free, Classic's music, does not count). The
+   * board in play first (curJSON, Game.toJSON, marked over when full), then the most recently played. The record, or null.
+   */
+  function match(B, curJSON, recipe, size) {
+    if (!L.Recipe || !isObj(B) || !Array.isArray(B.list)) return null;
+    for (const rec of ordered(B)) {
+      const g = rec.id === B.cur ? curJSON : rec.game;
+      if (!unfinished(g) || !validSize(g.w, g.h)) continue;
+      if (L.Recipe.editPrice(g.recipe, recipe, shownSize(g), size).cost === 0) return rec;
+    }
+    return null;
+  }
+  /** The last `n` boards played other than the one in play (the menu's Recent), most recent first. */
+  function recent(B, n) { return ordered(B).filter((r) => r.id !== B.cur && r.game).slice(0, n == null ? 3 : n); }
+
+  L.Library = { MULTI_MODES, side, shownSize, unfinished, match, recent, STANDARD, LIMITS, scale, worth, bank, validSize, clampSize, sizeLabel, playable, MAX_ACTIVE, MAX_RETIRED, NAME_MAX, NEXT_KEPT, ADJ, NOUN, blank, ensure, find, findRetired, current, full, cleanName, uniqueName, makeName, add, shelve, take, startNew, open, rename, summarize, encodeCells, decodeCells, retire, remove, removeRetired, newCurrent, taper, ordered, reshape, rebuild };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

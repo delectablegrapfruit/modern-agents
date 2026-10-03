@@ -359,7 +359,7 @@ kbd {
 .statusbar .gold b { color: var(--gold); }
 .statusbar .boost b { color: var(--gem); }
 .statusbar .acts { display: flex; align-items: center; gap: 6px; }
-@media (max-width: 460px) { .statusbar .stat { padding: 0 10px; } .statusbar .boards-btn .lbl { display: none; } }
+@media (max-width: 460px) { .statusbar .stat { padding: 0 10px; } .statusbar .menu-btn .lbl { display: none; } }
 @media (max-width: 400px) { .statusbar .opt { display: none; } .statusbar .stat b { font-size: 14px; } }
 @media (max-width: 330px) { .statusbar .stat { padding: 0 7px; } .statusbar { gap: 6px; } }
 .statusbar .btn.sm { height: 30px; padding: 0 11px; border-radius: 9px; }
@@ -1745,7 +1745,7 @@ body.touch-only #btn-collapse { display: none; }
   /* The column is about as wide as a phone held upright: its compact bars. */
   .group-btn .gl { display: none; }
   .statusbar .stat { padding: 0 10px; }
-  .statusbar .boards-btn .lbl { display: none; }
+  .statusbar .menu-btn .lbl { display: none; }
   .puz-actions kbd { display: none; }
   .puz-actions .btn { padding: 0 10px; }
   .view.active > .boardwrap { grid-column: 1; grid-row: 1 / -1; min-height: 0; }

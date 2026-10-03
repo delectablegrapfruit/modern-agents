@@ -236,7 +236,7 @@ module.exports = async function descentTests({ browser, check, PAGE, OUT }) {
     await F.page.waitForTimeout(80);
     const fit = await F.ev(() => {
       const bar = document.querySelector('#play-status'), r = bar.getBoundingClientRect(), cv = Lull.app.modes.play.view.canvas.getBoundingClientRect();
-      const boards = document.querySelector('#play-status .boards-btn').getBoundingClientRect();
+      const boards = document.querySelector('#play-status .menu-btn').getBoundingClientRect();
       return { bar: r.right <= window.innerWidth + 0.5 && boards.right <= window.innerWidth + 0.5, page: document.documentElement.scrollWidth <= window.innerWidth, board: cv.width > 100 && cv.bottom <= window.innerHeight };
     });
     check(vw + ' × ' + vh + ' ' + theme + ': the status bar and the board fit, no sideways scroll', fit.bar && fit.page && fit.board, JSON.stringify(fit));

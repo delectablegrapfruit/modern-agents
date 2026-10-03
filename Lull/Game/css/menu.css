@@ -1,0 +1,80 @@
+/* Lull — the Play menu (js/menu.js): Solo, Multiplayer, Recent and Escape, then a mode's short setup. One window with
+   pages; on a phone every target is 44 px or more, and nothing scrolls sideways. */
+.modal-menu .body { padding-top: 2px; }
+.mn-body { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.mn-areas, .mn-list { display: flex; flex-direction: column; gap: 6px; }
+.mn-row {
+  width: 100%; min-height: 54px; display: flex; align-items: center; gap: 10px; padding: 7px 10px 7px 14px; text-align: left;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--fg);
+}
+@media (hover: hover) { .mn-row:hover { background: var(--panel-2); } }
+.mn-row:active { background: var(--panel-3); }
+.mn-row .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.mn-row b { font-size: var(--fs-lg); font-weight: 650; }
+.mn-row .ln { color: var(--muted); font-size: var(--fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mn-row .ch { flex: none; display: grid; place-items: center; color: var(--faint); }
+.mn-row .ch svg { width: 16px; height: 16px; }
+.mn-row kbd { flex: none; }
+.mn-list .mn-row { min-height: 50px; }
+.mn-list .mn-custom { margin-top: 6px; border-style: dashed; }
+.mn-escape { background: transparent; }
+.mn-recent { display: flex; flex-direction: column; gap: 8px; }
+.mn-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; }
+.mn-head h3 { margin: 0; font-size: var(--fs-sm); font-weight: 650; color: var(--muted); letter-spacing: 0.02em; }
+.mn-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.mn-card {
+  min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 6px 7px;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--fg);
+}
+@media (hover: hover) { .mn-card:hover { background: var(--panel-2); } }
+.mn-card:active { background: var(--panel-3); }
+.mn-card .lib-thumb { margin-bottom: 4px; }
+.mn-card span { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; }
+.mn-card .nm { font-size: var(--fs-sm); font-weight: 650; }
+.mn-card .md, .mn-card .pg { font-size: var(--fs-xs); color: var(--muted); font-variant-numeric: tabular-nums; }
+.mn-empty { margin: 0 !important; padding: 14px 6px; text-align: center; color: var(--faint) !important; font-size: var(--fs-sm); border-radius: 12px; border: 1px dashed var(--line); }
+
+/* A mode's setup: only its own settings (the New board window's controls), a field a row. */
+.mn-setup { gap: 12px; }
+.mn-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.mn-lab { font-size: var(--fs-sm); color: var(--muted); }
+.mn-setup .nb-why:empty { display: none; }
+.mn-setup .nb-why { margin: 0 !important; }
+
+/* The footer: Resume (when these rules have a board) above Back and Start. */
+.modal footer.mn-foot { flex-direction: column; align-items: stretch; justify-content: flex-start; }
+.modal footer.mn-foot[hidden] { display: none; }
+.mn-btns { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.mn-btns .mn-start { min-width: 110px; }
+.mn-back { padding-left: 8px; }
+.mn-back .ico { width: 14px; height: 14px; }
+.mn-resume { width: 100%; min-width: 0; justify-content: center; }
+.mn-resume .lbl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (max-width: 380px) {
+  .modal-menu .body { padding-left: 12px; padding-right: 12px; }
+  .mn-row { padding-left: 12px; }
+  .mn-row .ln { font-size: var(--fs-xs); }
+  .mn-cards { gap: 4px; }
+  .mn-card { padding: 6px 3px; }
+}
+/* Touch: 44 px targets and more. */
+@media (hover: none) and (pointer: coarse) {
+  .mn-row { min-height: 56px; }
+  .mn-list .mn-row { min-height: 52px; }
+  .mn-head .btn.sm { height: 44px; min-width: 44px; border-radius: 12px; }
+  .mn-card { min-height: 44px; }
+}
+
+/* The library's two tabs (js/modes.js, openLibrary): Solo and Multiplayer, each with its Saved and Retired boards. */
+.lib-sides { flex: none; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px; margin-bottom: 10px; }
+.lib-side { height: 36px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0 8px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); font-weight: 650; font-size: var(--fs-sm); white-space: nowrap; }
+@media (hover: hover) { .lib-side:hover { background: var(--panel-2); } }
+.lib-side[aria-selected="true"] { border-color: var(--accent-line); background: var(--accent-soft); }
+@media (hover: none) and (pointer: coarse) { .lib-side { height: 44px; } }
+/* By touch: the library's Saved and Retired, New board, and a setup's small choices (Classic's Next) are 44 px. */
+@media (hover: none) and (pointer: coarse) {
+  .lib-head .seg button { min-height: 44px; }
+  .lib-head .lib-new { min-width: 44px; height: 44px; border-radius: 12px; }
+  .mn-setup .cl-seg button, .mn-setup .nb-level { min-width: 44px; }
+}

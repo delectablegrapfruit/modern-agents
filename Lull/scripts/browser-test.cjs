@@ -119,8 +119,9 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await shot('10a-chain');
   // Retiring a board shows its whole life, and logs it.
   await ev(() => { const m = Lull.app.modes.play; m.game.s.items = { bomb: 2, laser: 1 }; m.game.s.startedAt = Date.now() - 3 * 86400e3; });
-  await page.click('#play-status .boards-btn');
-  check('the Boards button opens the library', await page.isVisible('.modal-lib .lib-row.current'));
+  await page.click('#play-status .menu-btn');
+  await page.click('.modal-menu .mn-manage');
+  check('Menu, then Manage, opens the library', await page.isVisible('.modal-lib .lib-row.current'));
   await page.click('.modal-lib .lib-row.current [aria-label="Retire"]');
   const sum = await ev(() => { const c = document.querySelector('.modal-retire .board-sum'); return c ? c.textContent : ''; });
   check('retiring asks, showing the board\'s life', /Lifetime/.test(sum) && /3 used/.test(sum) && /Bomb ×2/.test(sum), sum.slice(0, 200));
@@ -2929,7 +2930,8 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     m.renderStatus();
     return { id: Lull.app.store.state.boards.cur, json: JSON.stringify(g.toJSON()), n: Lull.app.store.state.boards.list.length, pieces: g.s.pieces };
   });
-  await page.click('#play-status .boards-btn');
+  await page.click('#play-status .menu-btn');
+  await page.click('.modal-menu .mn-manage');
   await page.waitForTimeout(250);
   const lib0 = await ev(() => ({ rows: document.querySelectorAll('.modal-lib .lib-row').length, cur: !!document.querySelector('.modal-lib .lib-row.current .tag.on'), thumb: (() => { const i = document.querySelector('.modal-lib .lib-thumb'); return i && i.complete && i.naturalWidth > 0; })(), counts: document.querySelector('.lib-tabs').textContent }));
   check('the library lists the board in play, with a thumbnail and the counts', lib0.rows === libA.n && lib0.cur && lib0.thumb && /Saved/.test(lib0.counts) && /Retired/.test(lib0.counts), JSON.stringify(lib0));
@@ -2958,7 +2960,8 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   check('Enter resumes it: cells, piece, hold, queue, bag, RNG and stats exactly as left', libA2.id === libA.id && noMs(libA2.json) === noMs(libA.json) && !libA2.modal, libA2.id);
   check('its gold and figures come back to the status bar', /Gold/.test(libA2.status));
   // Rename: inline, Enter keeps it, Esc leaves it, at most 24 characters, never empty.
-  await page.click('#play-status .boards-btn');
+  await page.click('#play-status .menu-btn');
+  await page.click('.modal-menu .mn-manage');
   await page.click('.modal-lib .lib-row.current [aria-label="Rename"]');
   check('Rename turns the name into a field, focused', await ev(() => document.activeElement && document.activeElement.classList.contains('lib-name')));
   await page.keyboard.press('Control+A');
@@ -3020,9 +3023,10 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     return out;
   });
   check('twelve boards at most; the thirteenth is refused', cap.n === 12 && cap.again === false && cap.names === 12, JSON.stringify(cap));
-  await page.click('#play-status .boards-btn');
+  await page.click('#play-status .menu-btn');
+  await page.click('.modal-menu .mn-manage');
   await page.waitForTimeout(250);
-  check('a full library disables New board', await ev(() => { const b = document.querySelector('.modal-lib .lib-new'); return b.disabled && b.dataset.tip === 'Library full' && /12\/12/.test(document.querySelector('.lib-tabs').textContent); }));
+  check('a full library disables New board', await ev(() => { const b = document.querySelector('.modal-lib .lib-new'); return b.disabled && b.dataset.tip === 'Library full' && /12/.test(document.querySelector('.lib-tabs [data-k="saved"]').textContent); }));
   for (const [w, hgt] of [[520, 760], [400, 700]]) {
     await page.setViewportSize({ width: w, height: hgt });
     await page.waitForTimeout(200);
@@ -3156,14 +3160,17 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   check('a T twisted into its slot, shelved and resumed, still spins', spin.lastRot && spin.tspin && spin.lines === 2, JSON.stringify(spin));
   // Keyboard: Boards opened with Enter takes focus; once only; a Delete asked for by key takes focus into the question,
   // with the library under it out of reach.
-  await page.focus('#play-status .boards-btn');
+  await page.focus('#play-status .menu-btn');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(120);
+  await page.focus('.modal-menu .mn-manage');
   await page.keyboard.press('Enter');
   await page.waitForTimeout(120);
   const kb1 = await ev(() => ({ inLib: !!(document.activeElement && document.activeElement.closest('.modal-lib')), cls: document.activeElement && document.activeElement.className, main: document.getElementById('main').inert }));
   await page.keyboard.press('Enter'); // resumes the board in play: the library closes, it does not open twice
   await page.waitForTimeout(80);
   const kb1b = await ev(() => document.querySelectorAll('.modal-lib').length);
-  check('Boards by keyboard: focus goes to the board in play; the app underneath is inert; never two libraries', kb1.inLib && /lib-open/.test(kb1.cls) && kb1.main && kb1b === 0, JSON.stringify([kb1, kb1b]));
+  check('Menu, Manage by keyboard: focus goes to the board in play; the app underneath is inert; never two libraries', kb1.inLib && /lib-open/.test(kb1.cls) && kb1.main && kb1b === 0, JSON.stringify([kb1, kb1b]));
   const twice = await ev(() => { const m = Lull.app.modes.play; m.openLibrary(); m.openLibrary(); return document.querySelectorAll('.modal-lib').length; });
   check('asked twice, the library opens once', twice === 1);
   await ev(() => document.querySelectorAll('.modal-lib .lib-row')[1].querySelector('[aria-label="Delete"]').focus());
@@ -4339,6 +4346,8 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await require('./device-test.cjs')({ browser, check, PAGE, OUT });
   // ---- Undo is 5 everywhere; the Board full card's Undo; the result cards on the smallest phone (undo-test.cjs) --------
   await require('./undo-test.cjs')({ browser, check, PAGE, OUT });
+  // ---- the Play menu: never by itself, Solo, Multiplayer, Recent, Escape, setups, resume by rules, Manage (menu-test.cjs)
+  await require('./menu-test.cjs')({ browser, check, PAGE, OUT });
   // ---- a retired board in full view: at play size, read-only, stepping, back exactly (retired-test.cjs) ----------------
   await require('./retired-test.cjs')({ browser, check, PAGE, OUT });
   // ---- Shapes: the chips, Custom and its picker, a board of picks, the trays and the fit on a phone (shapes-browser-test.cjs)

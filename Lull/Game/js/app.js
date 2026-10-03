@@ -207,7 +207,8 @@
         // M mutes on every tab and over any open window (a plain M only: ⌘M and friends belong to the system).
         if (!typing && e.code === 'KeyM' && !e.metaKey && !e.ctrlKey && !e.altKey) { if (!e.repeat) this.toggleMute(); e.preventDefault(); return; }
         if (UI.modalOpen()) {
-          if (e.key === 'Escape') { UI.closeTopModal(); e.preventDefault(); }
+          // (A held Escape closes one window, not the one it opened and then the next.)
+          if (e.key === 'Escape') { if (!e.repeat) UI.closeTopModal(); e.preventDefault(); }
           else if (e.key === 'Enter' && !(t && t.tagName === 'TEXTAREA')) { if (UI.submitTopModal()) e.preventDefault(); }
           return;
         }
@@ -222,6 +223,8 @@
         if (e.key === 'Escape' && this.tab === 'play' && this.modes.play.closeTray()) { e.preventDefault(); return; }
         // A board's controller can take Escape first (Battle: it cancels an aim).
         if (e.key === 'Escape' && this.tab === 'play' && this.modes.play.ctl && typeof this.modes.play.ctl.escape === 'function' && this.modes.play.ctl.escape()) { e.preventDefault(); return; }
+        // Nothing else took Escape: in a browser it opens the Play menu (js/menu.js; the native panel hides, as before).
+        if (e.key === 'Escape' && !native.available && this.tab === 'play' && !e.repeat) { this.modes.play.openMenu(); e.preventDefault(); return; }
         if (e.key === 'Escape' && native.available) { this.saveNow(); native.post('hide'); return; }
         if (this.tab === 'factory' && !e.metaKey && !e.ctrlKey && this.modes.factory.key(e)) { e.preventDefault(); return; }
         // A Free Play board's controller takes its own keys first (Race's S and Shift+S, Battle's T).

@@ -1386,13 +1386,15 @@
      * summary; View (or its thumbnail) shows it in full view; it can be deleted. New board shelves the one in play.
      * One at a time: asked again, the open one stays.
      */
-    openLibrary() {
+    openLibrary(sideAt) {
       if (this.libHandle && this.libHandle.el.isConnected) return this.libHandle;
       const st = this.app.store;
       Library.ensure(st.state, Date.now());
       this.hideCard();
-      let tab = 'saved', handle = null, editing = null;
-      const list = h('div', { class: 'lib-list' });
+      // Solo or Multiplayer (Race and Battle boards: Library.side), opened on the side of the board in play.
+      let tab = 'saved', handle = null, editing = null, side = sideAt === 'multi' || sideAt === 'solo' ? sideAt : Library.side(this.game.recipe);
+      const sideOf = (rec) => Library.side(rec.id === st.state.boards.cur ? this.game.recipe : rec.game && rec.game.recipe);
+      const list = h('div', { class: 'lib-list', role: 'tabpanel', id: 'lib-panel' });
       const when = (t) => {
         if (!t) return '';
         const d = new Date(t), now = new Date();
@@ -1490,16 +1492,33 @@
       const newBtn = h('button', { class: 'btn sm primary lib-new', 'aria-label': 'New board', onclick: () => this.openNewBoard((made) => { if (made && handle && handle.el.isConnected) { tab = 'saved'; editing = null; draw(st.state.boards.cur); } }) }, ico('newBoard'), h('span', { class: 'lbl' }, 'New board'));
       const seg = h('div', { class: 'seg lib-tabs' }, [['saved', 'Saved'], ['retired', 'Retired']].map(([k, l]) =>
         h('button', { 'data-k': k, 'aria-pressed': String(k === tab), onclick: () => { tab = k; editing = null; draw(); } }, l, h('span', { class: 'c' }))));
+      const SIDES = [['solo', 'Solo'], ['multi', 'Multiplayer']];
+      const sideBtns = SIDES.map(([k, l]) => h('button', { type: 'button', role: 'tab', class: 'lib-side', id: 'lib-side-' + k, 'data-side': k, 'aria-controls': 'lib-panel', onclick: () => { side = k; editing = null; draw(); } }, l));
+      const sides = h('div', { class: 'lib-sides', role: 'tablist', 'aria-label': 'Boards' }, sideBtns);
+      sides.addEventListener('keydown', (e) => {
+        const i = SIDES.findIndex(([k]) => k === side), j = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: SIDES.length - 1 }[e.key];
+        if (j == null) return;
+        e.preventDefault(); e.stopPropagation();
+        side = SIDES[(j + SIDES.length) % SIDES.length][0]; editing = null; draw();
+        sideBtns.find((b) => b.dataset.side === side).focus();
+      });
       const draw = (focusId) => {
         const B = st.state.boards;
+        const mine = Library.ordered(B).filter((r) => sideOf(r) === side), gone = B.retired.filter((e) => Library.side(e.recipe) === side);
+        sideBtns.forEach((b) => {
+          const on = b.dataset.side === side;
+          b.setAttribute('aria-selected', String(on)); b.tabIndex = on ? 0 : -1;
+        });
+        list.setAttribute('aria-labelledby', 'lib-side-' + side);
         seg.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.k === tab)));
-        seg.querySelector('[data-k="saved"] .c').textContent = B.list.length + '/' + Library.MAX_ACTIVE;
-        seg.querySelector('[data-k="retired"] .c').textContent = String(B.retired.length);
+        // Saved: this side's boards (the library holds 12, Solo and Multiplayer together: New board says when it is full).
+        seg.querySelector('[data-k="saved"] .c').textContent = String(mine.length);
+        seg.querySelector('[data-k="retired"] .c').textContent = String(gone.length);
         // Full, a board that was played cannot be shelved; an untouched one can still be made again at another size.
         const isFull = Library.full(B) && !this.untouched();
         newBtn.disabled = isFull;
         newBtn.dataset.tip = isFull ? 'Library full' : 'New board';
-        const rows = tab === 'saved' ? Library.ordered(B).map((r) => savedRow(r, B)) : B.retired.map(retiredRow);
+        const rows = tab === 'saved' ? mine.map((r) => savedRow(r, B)) : gone.map(retiredRow);
         list.replaceChildren(...(rows.length ? rows : [h('p', { class: 'empty' }, 'None')]));
         const field = list.querySelector('input.lib-name');
         if (field) { field.focus(); field.select(); }
@@ -1516,7 +1535,7 @@
       });
       draw();
       handle = UI.openModal({
-        title: 'Boards', icon: 'boards', width: 460, cls: 'modal-lib', body: h('div', { class: 'lib-wrap' }, h('div', { class: 'lib-head' }, seg, newBtn), list),
+        title: 'Boards', icon: 'boards', width: 460, cls: 'modal-lib', body: h('div', { class: 'lib-wrap' }, sides, h('div', { class: 'lib-head' }, seg, newBtn), list),
         // Closed on a full board (from its card's Boards button): the card comes back.
         onClose: () => {
           this.libHandle = null;
@@ -1526,8 +1545,9 @@
         },
       });
       this.libHandle = handle;
-      // Focus on the board in play, so ↑ ↓ and Enter work straight away (however the window was opened).
-      const first = list.querySelector('button.lib-open');
+      // Focus on the board in play, so ↑ ↓ and Enter work straight away (however the window was opened); on a side
+      // without it, its first board, or its tab.
+      const first = list.querySelector('button.lib-open') || sideBtns.find((b) => b.dataset.side === side);
       if (first) first.focus();
       return handle;
     }
@@ -1585,8 +1605,11 @@
         h('div', { class: 'stats' }, this.ctl.status(parts, { stat })),
         h('div', { class: 'acts' },
           this.giftBtn(),
-          h('button', { class: 'btn sm boards-btn', 'aria-label': 'Boards', 'data-tip': 'Boards', onclick: () => this.openLibrary() }, ico('boards'), h('span', { class: 'lbl' }, 'Boards'))));
+          h('button', { class: 'btn sm menu-btn', 'aria-label': 'Menu', 'aria-haspopup': 'dialog', 'data-tip': 'Menu', 'data-tip-foot': L.native && L.native.available ? null : 'Esc', onclick: () => this.openMenu() }, ico('menu'), h('span', { class: 'lbl' }, 'Menu'))));
     }
+
+    /** The Play menu (js/menu.js): Solo, Multiplayer, Recent and Escape; `page` a page or a mode's setup to open on. */
+    openMenu(page) { return L.Menu ? L.Menu.open(this, page) : null; }
 
     // ---- the daily gift ------------------------------------------------------------------------------------------------
 
