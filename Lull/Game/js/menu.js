@@ -1,9 +1,10 @@
-// Lull — the Play menu (PlayMode.openMenu): four areas over the board in play, opened only by hand (the Menu button
-// under the board, or Esc in a browser) and never by itself.
+// Lull — the Play menu (PlayMode.openMenu): a page over the Play tab, opened only by hand (the Menu button under the
+// board, or Esc in a browser) and never by itself. Its home is two big tiles side by side and one button under them:
 //   Solo         Relaxed, Classic, Descent, Mural, then Custom (the full New board window)
 //   Multiplayer  Race and Battle, against the computer
-//   Recent       the last three boards played (not the one in play), a tap resumes one; Manage opens the library
-//   Escape       closes the menu: back to the board in play, as it was
+//   Manage       the library (its Solo and Multiplayer tabs)
+// The X at the top right (or Esc) closes it: back to the board in play, as it was. Solo and Multiplayer are pages of
+// big tiles too, one a mode, with Back beside the X.
 // A mode opens a short setup with only that mode's settings (the parts' own controls, from Recipe.uiPart: a level row,
 // a panel, presets, chips), then Start. Resume by rules: when a saved board still to be played has exactly these rules
 // (Library.match), the setup offers "Resume: <name> (<progress>)" above Start new, and Enter resumes it; a new board is
@@ -14,6 +15,15 @@
   const { Library, fmtInt } = L;
   // (The page's UI is read when the menu opens, so the rules here load without a page: scripts/test.cjs.)
   const h = (...a) => L.UI.h(...a);
+
+  /** The two areas' pictures, drawn in blocks like the places to play: one piece, and two that face each other. */
+  const svg = (body) => '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + body + '</svg>';
+  const blk = (x, y, s) => '<rect x="' + x + '" y="' + y + '" width="' + s + '" height="' + s + '" rx="0.7" fill="currentColor" stroke="none"/>';
+  const PICS = {
+    solo: svg(blk(4, 1.5, 4) + blk(4, 6, 4) + blk(4, 10.5, 4) + blk(8.5, 10.5, 4)),
+    multi: svg(blk(1.25, 3.5, 3) + blk(1.25, 6.75, 3) + blk(1.25, 10, 3) + blk(4.5, 10, 3) + blk(11.75, 3.5, 3) + blk(11.75, 6.75, 3) + blk(11.75, 10, 3) + blk(8.5, 10, 3)),
+  };
+  const ICON_OF = { plain: 'play', classic: 'classic', descent: 'descent', mural: 'mural', race: 'race', battle: 'battle', custom: 'newBoard' };
 
   const SOLO = [
     { mode: 'plain', name: 'Relaxed', line: 'Endless, no clock' },
@@ -75,7 +85,7 @@
   }
 
   /**
-   * The menu, one window with pages: home (the four areas), solo, multi and a mode's setup. Esc closes it from any
+   * The menu, one page over the Play tab with pages: home (Solo, Multiplayer, Manage), solo, multi and a mode's setup. Esc closes it from any
    * page (Back steps back a page). One at a time: asked again, the open one stays. Returns its handle.
    */
   function open(play, startAt) {
@@ -92,9 +102,10 @@
     const close = () => { if (handle) handle.close(); };
     const lk = L.UI.lookWith(app), look = { skin: lk.skin, color: (c) => lk.colors[c], colors: lk.colors, t: 0, alpha: 1 };
 
-    const chev = () => h('span', { class: 'ch', 'aria-hidden': 'true', html: L.Icons.icon('chevRight') });
-    const row = (cls, name, line, onclick, extra) => h('button', Object.assign({ type: 'button', class: 'mn-row ' + cls, onclick }, extra || {}),
-      h('span', { class: 'grow' }, h('b', null, name), line ? h('span', { class: 'ln' }, line) : null), chev());
+    /** A big tile: a calm picture in a soft round, the name, and one short muted line. */
+    const tile = (cls, pic, name, line, onclick, extra) => h('button', Object.assign({ type: 'button', class: 'mn-tile ' + cls, onclick }, extra || {}),
+      h('span', { class: 'pic', 'aria-hidden': 'true', html: pic || '' }), h('b', null, name), line ? h('span', { class: 'ln' }, line) : null);
+    const modeTile = (x) => tile('mn-mode', L.Icons.icon(ICON_OF[x.mode]) || L.Icons.icon('play'), x.name, x.line, () => openSetup(x.mode), { 'data-mode': x.mode });
 
     // ---- what the setup chooses (as the New board window does: Recipe.resolve, the last choice wins) ----
     const idOf = (path, v) => path + '=' + (typeof v === 'string' ? v : JSON.stringify(v));
@@ -166,54 +177,40 @@
 
     // ---- the pages ----
     const pages = {
-      home: () => {
-        const recs = Library.recent(B(), 3);
-        const cur = Library.current(B());
-        const cards = recs.map((rec) => {
-          const g = rec.game, text = modeLabel(g.recipe) + ', ' + progress(g);
-          return h('button', { type: 'button', class: 'mn-card', 'data-id': rec.id, 'aria-label': 'Resume ' + rec.name + ', ' + text, onclick: () => resume(rec) },
-            play.thumb(rec.id, g.cells, g.w, g.h, g.recipe),
-            h('span', { class: 'nm' }, rec.name), h('span', { class: 'md' }, modeLabel(g.recipe)), h('span', { class: 'pg' }, progress(g)));
-        });
-        return {
-          title: 'Menu',
-          body: [
-            h('div', { class: 'mn-areas' },
-              row('mn-solo', 'Solo', here(SOLO).map((x) => x.name).join(', '), () => go('solo')),
-              row('mn-multi', 'Multiplayer', here(MULTI).map((x) => x.name).join(' and ') + ', against the computer', () => go('multi'))),
-            h('section', { class: 'mn-recent', 'aria-labelledby': 'mn-recent-h' },
-              h('div', { class: 'mn-head' }, h('h3', { id: 'mn-recent-h' }, 'Recent'), h('button', { type: 'button', class: 'btn sm mn-manage', onclick: manage }, L.UI.icon('boards'), 'Manage')),
-              cards.length ? h('div', { class: 'mn-cards' }, cards) : h('p', { class: 'mn-empty' }, 'No other boards yet')),
-            h('button', { type: 'button', class: 'mn-row mn-escape', onclick: close },
-              h('span', { class: 'grow' }, h('b', null, 'Escape'), h('span', { class: 'ln' }, 'Back to ' + (cur ? cur.name : 'the board'))), h('kbd', null, 'Esc')),
-          ],
-          foot: null,
-        };
-      },
+      home: () => ({
+        title: 'Menu',
+        body: [h('div', { class: 'mn-page mn-home' },
+          h('div', { class: 'mn-tiles mn-two' },
+            tile('mn-solo', PICS.solo, 'Solo', here(SOLO).map((x) => x.name).join(', '), () => go('solo')),
+            tile('mn-multi', PICS.multi, 'Multiplayer', here(MULTI).map((x) => x.name).join(', '), () => go('multi'))),
+          h('button', { type: 'button', class: 'btn mn-manage', onclick: manage }, L.UI.icon('boards'), 'Manage'))],
+        foot: null,
+      }),
       solo: () => ({
-        title: 'Solo',
-        body: [h('div', { class: 'mn-list' }, here(SOLO).map((x) => row('mn-mode', x.name, x.line, () => openSetup(x.mode), { 'data-mode': x.mode })),
-          row('mn-mode mn-custom', 'Custom', 'Any size, shapes, modifiers and mode', custom, { 'data-mode': 'custom' }))],
-        foot: [h('div', { class: 'mn-btns' }, backBtn('home'))],
+        title: 'Solo', back: 'home',
+        body: [h('div', { class: 'mn-page' }, h('div', { class: 'mn-tiles mn-modes' }, here(SOLO).map(modeTile),
+          tile('mn-mode mn-custom', L.Icons.icon(ICON_OF.custom), 'Custom', 'Any size, shapes, modifiers and mode', custom, { 'data-mode': 'custom' })))],
+        foot: null,
       }),
       multi: () => ({
-        title: 'Multiplayer',
-        body: [h('div', { class: 'mn-list' }, here(MULTI).map((x) => row('mn-mode', x.name, x.line, () => openSetup(x.mode), { 'data-mode': x.mode })))],
-        foot: [h('div', { class: 'mn-btns' }, backBtn('home'))],
+        title: 'Multiplayer', back: 'home',
+        body: [h('div', { class: 'mn-page' }, h('div', { class: 'mn-tiles mn-two' }, here(MULTI).map(modeTile)))],
+        foot: null,
       }),
       setup: () => {
         const m = setup.mode, hit = matchNow();
         const resumeBtn = hit ? h('button', { type: 'button', class: 'btn primary mn-resume', onclick: () => resume(hit) },
           h('span', { class: 'lbl' }, 'Resume: ' + hit.name + ' (' + progress(jsonOf(hit)) + ')')) : null;
         return {
-          title: (info(m) || { name: m }).name,
+          title: (info(m) || { name: m }).name, back: Library.side(setup.recipe) === 'multi' ? 'multi' : 'solo',
           body: [h('div', { class: 'nb-body mn-setup', 'data-mode': m }, ...setupControls().filter(Boolean), why)],
-          foot: [resumeBtn, h('div', { class: 'mn-btns' }, backBtn(Library.side(setup.recipe) === 'multi' ? 'multi' : 'solo'),
+          foot: [h('div', { class: 'mn-btns' }, resumeBtn,
             h('button', { type: 'button', class: 'btn mn-start' + (hit ? '' : ' primary'), onclick: start }, hit ? 'Start new' : 'Start'))],
         };
       },
     };
-    function backBtn(to) { return h('button', { type: 'button', class: 'btn ghost mn-back', onclick: () => go(to) }, L.UI.icon('chevLeft'), 'Back'); }
+    let backTo = null;
+    const backBtn = h('button', { type: 'button', class: 'btn ghost mn-back', onclick: () => { if (backTo) go(backTo); } }, L.UI.icon('chevLeft'), 'Back');
     function openSetup(mode) { setup = setupOf(B(), mode); memo = {}; showWhy(''); go('setup'); }
     function custom() { close(); play.openNewBoard(); }
     function manage() { close(); play.openLibrary(); }
@@ -227,6 +224,8 @@
       const again = focused && (focused.dataset.focus ? '[data-focus="' + CSS.escape(focused.dataset.focus) + '"]' : focused.dataset.path ? '[data-path="' + focused.dataset.path + '"]' + (focused.getAttribute('role') === 'switch' ? '' : '[data-value="' + CSS.escape(focused.dataset.value) + '"]')
         : focused.dataset.w ? '[data-w="' + focused.dataset.w + '"][data-h="' + focused.dataset.h + '"]' : focused.classList.contains('mn-start') ? '.mn-start' : focused.classList.contains('mn-back') ? '.mn-back' : null);
       handle.el.querySelector('header .ttl').textContent = pg.title;
+      backTo = pg.back || null;
+      backBtn.hidden = !backTo;
       handle.el.setAttribute('aria-label', pg.title);
       handle.el.dataset.page = page;
       body.replaceChildren(...pg.body.filter(Boolean), live);
@@ -244,8 +243,13 @@
       }
     }
 
-    handle = L.UI.openModal({ title: 'Menu', icon: null, width: 440, cls: 'modal-menu', body, onClose: () => { play.menuHandle = null; } });
+    handle = L.UI.openModal({ title: 'Menu', icon: null, cls: 'modal-menu', body, onClose: () => { play.menuHandle = null; } });
     handle.el.appendChild(foot);
+    // A page over the Play tab: below the title bar (which stays in sight, still), the X at the top right.
+    const bar = document.getElementById('titlebar');
+    handle.scrim.classList.add('mn-scrim');
+    handle.scrim.style.top = (bar ? bar.offsetHeight : 0) + 'px';
+    handle.el.querySelector('header').prepend(backBtn);
     // Enter on a button other than the page's primary presses that button (the app's Enter is the primary one).
     handle.el.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.closest && e.target.closest('button') && !e.target.closest('.btn.primary')) e.stopPropagation(); });
     play.menuHandle = handle;

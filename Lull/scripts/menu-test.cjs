@@ -1,9 +1,10 @@
 // The Play menu (js/menu.js): it never opens by itself (at start, after a reload, on a tab switch); the Menu button
-// and Esc open it, Esc and its Escape area close it with the board exactly as it was; its four areas; each mode's short
-// setup and Start; resume by rules (the same settings resume the board, other settings make a new one, Start new
-// always does); Recent (the last three boards, a tap resumes one); Manage (the library's Solo and Multiplayer tabs);
-// Custom (the full New board window). Then the phones by touch (44 px targets, nothing sideways) and both themes, with
-// frames of the menu, Solo, Multiplayer, a setup with Resume and the library's tabs at four sizes.
+// and Esc open it, Esc and its X close it with the board exactly as it was; its home (a page over the Play tab: Solo and
+// Multiplayer as two big tiles side by side, Manage under them, nothing else); each mode's short setup and Start;
+// resume by rules (the same settings resume the board, other settings make a new one, Start new always does); Manage
+// (the library's Solo and Multiplayer tabs); Custom (the full New board window). Then the phones by touch (44 px
+// targets, nothing sideways, the home never scrolls, the tiles side by side) and both themes, with frames of the home,
+// Solo, Multiplayer, a setup with Resume and the library's tabs at four sizes.
 // Run by browser-test.cjs: require('./menu-test.cjs')({ browser, check, PAGE, OUT }).
 'use strict';
 const path = require('path');
@@ -58,8 +59,13 @@ module.exports = async function menuTests({ browser, check, PAGE, OUT }) {
     check('under the board: the Menu button (the Boards button is gone)', btn && btn.label === 'Menu' && /Menu/.test(btn.text) && !btn.boards, JSON.stringify(btn));
     await page.click('#play-status .menu-btn');
     await page.waitForTimeout(120);
-    const areas = await ev(() => ({ solo: !!document.querySelector('.modal-menu .mn-solo'), multi: !!document.querySelector('.modal-menu .mn-multi'), recent: !!document.querySelector('.modal-menu .mn-recent'), esc: !!document.querySelector('.modal-menu .mn-escape'), title: document.querySelector('.modal-menu header .ttl').textContent, focus: document.activeElement && document.activeElement.className, paused: !Lull.app.modes.play.canRun() }));
-    check('the Menu button opens the menu: Solo, Multiplayer, Recent and Escape; focus on Solo; the board waits', areas.solo && areas.multi && areas.recent && areas.esc && areas.title === 'Menu' && /mn-solo/.test(areas.focus) && areas.paused, JSON.stringify(areas));
+    const areas = await ev(() => {
+      const md = document.querySelector('.modal-menu'), vis = [...md.querySelectorAll('button')].filter((b) => b.getClientRects().length && getComputedStyle(b).visibility !== 'hidden');
+      const r = md.getBoundingClientRect(), view = document.getElementById('view-play').getBoundingClientRect();
+      return { buttons: vis.map((b) => b.classList.contains('x') ? 'X' : b.querySelector('b') ? b.querySelector('b').textContent : b.textContent), title: md.querySelector('header .ttl').textContent,
+        focus: document.activeElement && document.activeElement.className, paused: !Lull.app.modes.play.canRun(), covers: r.left <= view.left + 1 && r.right >= view.right - 1 && r.bottom >= view.bottom - 1 && Math.abs(r.top - view.top) <= 2 };
+    });
+    check('the Menu button opens the menu: a page over the Play tab with Solo, Multiplayer, Manage and the X, nothing else; focus on Solo; the board waits', areas.buttons.join() === 'X,Solo,Multiplayer,Manage' && areas.title === 'Menu' && /mn-solo/.test(areas.focus) && areas.paused && areas.covers, JSON.stringify(areas));
     check('its words are plain: no emoji', await ev(() => !/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(document.querySelector('.modal-menu').textContent)));
     await page.keyboard.press('Escape');
     const esc1 = await state(ev);
@@ -67,9 +73,9 @@ module.exports = async function menuTests({ browser, check, PAGE, OUT }) {
     await page.keyboard.press('Escape');
     await page.waitForTimeout(80);
     check('Esc on the board opens it', (await state(ev)).page === 'home');
-    await page.click('.modal-menu .mn-escape');
+    await page.click('.modal-menu header .x');
     const esc2 = await state(ev);
-    check('the Escape area closes it, back to the same board', !esc2.page && esc2.cur === before.cur && esc2.json === esc1.json);
+    check('the X closes it, back to the same board', !esc2.page && esc2.cur === before.cur && esc2.json === esc1.json);
     // A held Esc opens it once (its repeats do not close it again at once).
     await ev(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true })); window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', repeat: true, bubbles: true })); });
     check('a held Esc opens it and leaves it open', (await state(ev)).page === 'home');
@@ -144,15 +150,6 @@ module.exports = async function menuTests({ browser, check, PAGE, OUT }) {
     check('another size: no Resume', !(await ev(() => !!document.querySelector('.modal-menu .mn-resume'))));
     await page.keyboard.press('Escape');
 
-    // ---- Recent -------------------------------------------------------------------------------------------------------
-    await page.click('#play-status .menu-btn');
-    const rec = await ev(() => ({ cards: [...document.querySelectorAll('.modal-menu .mn-card')].map((c) => c.dataset.id), want: Lull.Library.recent(Lull.app.store.state.boards, 3).map((r) => r.id), cur: Lull.app.store.state.boards.cur, text: [...document.querySelectorAll('.modal-menu .mn-card')].map((c) => c.textContent), thumbs: [...document.querySelectorAll('.modal-menu .mn-card img.lib-thumb')].length }));
-    check('Recent: the last three boards (not the one in play), each with a preview, its mode and progress', rec.cards.length === 3 && rec.cards.join() === rec.want.join() && !rec.cards.includes(rec.cur) && rec.thumbs === 3 && rec.text.every((t) => /(Lines \d+|placed|vs |Full|Cleared|Finished)/.test(t)), JSON.stringify(rec));
-    const pick = rec.cards[1];
-    await page.click('.modal-menu .mn-card[data-id="' + pick + '"]');
-    const s4 = await state(ev);
-    check('a tap on a Recent card resumes that board', !s4.page && s4.cur === pick, s4.cur + ' ' + pick);
-
     // ---- Manage -------------------------------------------------------------------------------------------------------
     await page.click('#play-status .menu-btn');
     await page.click('.modal-menu .mn-manage');
@@ -183,14 +180,17 @@ module.exports = async function menuTests({ browser, check, PAGE, OUT }) {
     // ---- Custom and Back ----------------------------------------------------------------------------------------------
     await page.click('#play-status .menu-btn');
     await page.click('.modal-menu .mn-solo');
-    const solo = await ev(() => [...document.querySelectorAll('.modal-menu .mn-list .mn-row')].map((b) => b.querySelector('b').textContent));
-    check('Solo: Relaxed, Classic, Descent, Mural, then Custom', solo.join() === 'Relaxed,Classic,Descent,Mural,Custom', solo.join());
+    const solo = await ev(() => [...document.querySelectorAll('.modal-menu .mn-tiles .mn-tile')].map((b) => b.querySelector('b').textContent));
+    const backX = await ev(() => { const hd = document.querySelector('.modal-menu header'), b = hd.querySelector('.mn-back'), x = hd.querySelector('.x'); return !b.hidden && b.getBoundingClientRect().right < x.getBoundingClientRect().left; });
+    check('Solo: a tile a mode, Relaxed, Classic, Descent, Mural, then Custom; Back and the X at the top', solo.join() === 'Relaxed,Classic,Descent,Mural,Custom' && backX, solo.join());
     await page.click('.modal-menu .mn-back');
     check('Back returns to the menu, focus on the area it left', await ev(() => document.querySelector('.modal-menu').dataset.page === 'home' && document.activeElement.classList.contains('mn-solo')));
     await page.click('.modal-menu .mn-multi');
-    const multi = await ev(() => [...document.querySelectorAll('.modal-menu .mn-list .mn-row')].map((b) => b.querySelector('b').textContent));
+    const multi = await ev(() => [...document.querySelectorAll('.modal-menu .mn-tiles .mn-tile')].map((b) => b.querySelector('b').textContent));
     check('Multiplayer: Race and Battle', multi.join() === 'Race,Battle', multi.join());
-    await page.click('.modal-menu .mn-back');
+    await page.keyboard.press('Escape');
+    check('Esc closes it from a page too', !(await menuOpen(ev)));
+    await page.click('#play-status .menu-btn');
     await page.click('.modal-menu .mn-solo');
     await page.click('.modal-menu [data-mode="custom"]');
     await page.waitForTimeout(100);
@@ -228,9 +228,14 @@ module.exports = async function menuTests({ browser, check, PAGE, OUT }) {
     const name = (k) => 'menu-' + k + '-' + w + 'x' + hh + '-' + theme;
     await press('#play-status .menu-btn');
     await page.waitForTimeout(300);
-    const look = await ev(() => { const b = document.querySelector('.modal-menu .mn-row b'), lum = (c) => { const [r, g, bb] = c.match(/[\d.]+/g).map(Number); return (0.2126 * r + 0.7152 * g + 0.0722 * bb) / 255; }; return { fg: lum(getComputedStyle(b).color), theme: document.documentElement.dataset.theme }; });
+    const look = await ev(() => { const b = document.querySelector('.modal-menu .mn-tile b'), lum = (c) => { const [r, g, bb] = c.match(/[\d.]+/g).map(Number); return (0.2126 * r + 0.7152 * g + 0.0722 * bb) / 255; }; return { fg: lum(getComputedStyle(b).color), theme: document.documentElement.dataset.theme }; });
     check(tag + ': the menu follows the theme', look.theme === theme && (theme === 'dark' ? look.fg > 0.6 : look.fg < 0.4), JSON.stringify(look));
     await fits('menu');
+    const home = await ev(() => {
+      const md = document.querySelector('.modal-menu'), bd = md.querySelector('.body'), s = md.querySelector('.mn-solo').getBoundingClientRect(), m = md.querySelector('.mn-multi').getBoundingClientRect(), g = md.querySelector('.mn-manage').getBoundingClientRect();
+      return { still: bd.scrollHeight <= bd.clientHeight + 1, side: Math.abs(s.top - m.top) < 1 && s.right <= m.left && Math.abs(s.height - m.height) < 1, tall: s.height >= s.width * 0.95, under: g.top >= s.bottom && Math.abs((g.left + g.right) / 2 - (s.left + m.right) / 2) < 2, sz: [Math.round(s.width), Math.round(s.height)] };
+    });
+    check(tag + ': the home does not scroll; Solo and Multiplayer side by side, tall; Manage centred under them', home.still && home.side && home.tall && home.under, JSON.stringify(home));
     await D.shot(name('home'));
     await press('.modal-menu .mn-solo');
     await fits('Solo');
