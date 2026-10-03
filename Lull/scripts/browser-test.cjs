@@ -1121,9 +1121,9 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     const p1 = await ev(() => document.querySelector('.modal-edit footer .btn.primary').textContent);
     await page.click('.modal-edit .nb-tab[data-tab="mode"]');
     await page.click('.modal-edit .nb-mode[data-value="classic"]');
-    const p2 = await ev(() => ({ text: document.querySelector('.modal-edit footer .btn.primary').textContent, protect: document.querySelector('.modal-edit .nb-mode[data-value="protect"]').getAttribute('aria-disabled') }));
+    const p2 = await ev(() => ({ text: document.querySelector('.modal-edit footer .btn.primary').textContent, descent: document.querySelector('.modal-edit .nb-mode[data-value="descent"]').getAttribute('aria-disabled') }));
     await shot('16-edit-rules');
-    check('the price is on Apply: 20 lines for the size, 40 with the mode too; Protect is off (it starts on a new board)', /20$/.test(p1) && /40$/.test(p2.text) && p2.protect === 'true', JSON.stringify([p1, p2]));
+    check('the price is on Apply: 20 lines for the size, 40 with the mode too; Descent is off (it starts on a new board)', /20$/.test(p1) && /40$/.test(p2.text) && p2.descent === 'true', JSON.stringify([p1, p2]));
     await page.click('.modal-edit footer .btn.primary');
     await page.waitForTimeout(150);
     const ap = await ev(() => { const g = Lull.app.modes.play.game; return { open: !!document.querySelector('.modal-edit'), lines: Lull.app.store.state.lines, mode: g.recipe.mode, h: g.h, count: g.board.count(), hist: g.history.length, piece: !!g.piece, card: Lull.app.modes.play.cardOpen }; });
@@ -2840,7 +2840,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await shot('51-achievements');
   const ach = await ev(() => ({ legends: document.querySelectorAll('.ach.legend').length, got: document.querySelectorAll('.ach.got').length, all: document.querySelectorAll('.ach').length, groups: document.querySelectorAll('.ach-group').length, partGroups: Lull.Achievements.GROUPS.filter((g) => g.part).length, open: document.querySelectorAll('.ach-group[open]').length, quad: !!Lull.app.store.state.achievements.quad, paid: Lull.app.store.state.stats.lines.achievements }));
   check('achievements: earned in play, listed in their own tab (legendary ones too), and paid', ach.quad && ach.got >= 1 && ach.all >= 85 && ach.legends >= 28 && ach.paid >= 15, JSON.stringify(ach));
-  // (Five places, and a group for each board option loaded that has one: Protect's.)
+  // (Five places, and a group for each board option loaded that has one: Descent's, Battle's.)
   check('achievements: five groups (and the board options’), folded away at first', ach.groups === 5 + ach.partGroups && ach.open === 0, JSON.stringify(ach));
   await page.click('.ach-group[data-group="play"] > summary');
   await page.waitForTimeout(60);
@@ -4325,8 +4325,8 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await require('./recipe-test.cjs')({ browser, check, PAGE, OUT });
   // ---- the Mirror modifier: made, drawn, the mouse and a touch on the copy's side, screenshots (mirror-test.cjs) --------
   await require('./mirror-test.cjs')({ browser, check, PAGE, OUT });
-  // ---- Protect: made, played, wilted and undone, reloaded, retired; the window at 320 × 568; screenshots (protect-test.cjs)
-  await require('./protect-test.cjs')({ browser, check, PAGE, OUT });
+  // ---- Descent: made, its cards, the clock and its pauses, shots, Rewind 5 s, reloaded, the phones; screenshots (descent-test.cjs)
+  await require('./descent-test.cjs')({ browser, check, PAGE, OUT });
   // ---- Battle: made, the Ready card and 3-2-1, Send, pausing, the End card, both boards' cells, slices (battle-test.cjs)
   await require('./battle-test.cjs')({ browser, check, PAGE, OUT });
   // ---- touch: an emulated phone, played with gestures (scripts/touch-test.cjs) -----------------------------------------

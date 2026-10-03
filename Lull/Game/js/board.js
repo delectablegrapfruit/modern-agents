@@ -4,17 +4,18 @@
   const L = (root.Lull = root.Lull || {});
 
   // A cell is 16 bits. One table, owned here: features use the names, never the numbers.
-  //   COLOR    0–31   colour slot (0 = empty; 31 is the sprout's green, drawn only in thumbnails)
+  //   COLOR    0–31   colour slot (0 = empty)
   //   GEM      32     a puzzle's gem
   //   HIDDEN   64     set while invisible (Vanishing)
   //   FOREIGN  128    never placed by the player: it never pays, and a row holding one is plain (js/engine.js, score)
-  //   (256 and 512 are free)
-  //   ASSET    1024   Protect's sprout
-  //   MOLE     2048   Protect: a mole, its slot in MOLE_SLOT (bits 12–13, SLOT_SHIFT)
+  //   HANG     256    Descent: a hanging block, or the rod a short lane hangs from (always with FOREIGN)
+  //   STONE    512    Descent: stone, where a hanging block fused (always with FOREIGN)
+  //   SHOT     1024–4096   Descent: the shot a cell of yours fires when its row clears (bits 10–12, SHOT_SHIFT)
+  //   (8192 is free)
   //   FILL     16384  Battle's gap filler (always with FOREIGN)
   //   WALL     32768  what get() returns outside the board; never stored
   // Anything that reads a colour masks with COLOR.
-  const CELL = Object.freeze({ COLOR: 31, GEM: 32, HIDDEN: 64, FOREIGN: 128, ASSET: 1024, MOLE: 2048, MOLE_SLOT: 4096 | 8192, SLOT_SHIFT: 12, FILL: 16384, WALL: 32768, SPROUT: 31 });
+  const CELL = Object.freeze({ COLOR: 31, GEM: 32, HIDDEN: 64, FOREIGN: 128, HANG: 256, STONE: 512, SHOT: 1024 | 2048 | 4096, SHOT_SHIFT: 10, FILL: 16384, WALL: 32768 });
 
   class Board {
     constructor(w, h, opts) {

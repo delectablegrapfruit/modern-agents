@@ -1391,6 +1391,8 @@ body.fv-open header#titlebar { opacity: 0.45; }
 .nb-modes button, .nb-lvl button { flex: 1 1 0; min-width: 0; justify-content: center; height: 34px; padding: 0 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (hover: none) and (pointer: coarse) {
   .nb-modes button, .nb-lvl button { height: 44px; }
+  /* The tallest panel at 44 px targets: the modes, a level and Descent's stage, and the line for why. */
+  .nb-body { --nb-panel-h: 182px; }
 }
 @media (prefers-reduced-motion: reduce) { .nb-switch .sw, .nb-switch .sw::after { transition: none; } }
 /* Narrow: the sample shrinks and goes above the name, so a name keeps its line whole (never broken inside a word,

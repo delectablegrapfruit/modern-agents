@@ -36,8 +36,8 @@ module.exports = function mirrorUnit({ L, test }) {
     assert.strictEqual(mk(10).allow('flip'), 'Not on a Mirror board');
     assert.strictEqual(mk(10).allow('tornado'), null);
     assert.strictEqual(std(10).allow('flip'), null, 'a plain board keeps Mirror World');
-    // (Physics, a modifier that does not go with Mirror, is ruled out beside it.)
-    const phys = Recipe.get('physics') ? { 'mods.physics=true': 'Not with Mirror' } : {};
+    // (Physics, a modifier that does not go with Mirror, and Descent, a mode that does not, are ruled out beside it.)
+    const phys = Object.assign(Recipe.get('physics') ? { 'mods.physics=true': 'Not with Mirror' } : {}, Recipe.get('descent') ? { 'mode=descent': 'Not with Mirror' } : {});
     // (In Battle, the shapes it rules out are the shapes part's own.)
     const inB = Recipe.conflicts({ mods: { mirror: true }, mode: 'battle' });
     for (const k of Object.keys(inB)) if (k.startsWith('shapes.')) delete inB[k];

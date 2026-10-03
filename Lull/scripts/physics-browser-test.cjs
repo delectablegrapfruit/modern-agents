@@ -74,16 +74,16 @@ module.exports = async function physicsTests({ browser, check, PAGE, OUT }) {
       const mirrorOff = mirror && mirror.getAttribute('aria-disabled');
       const modes = [...document.querySelectorAll('.nb-tab[data-tab="mode"]')].length;
       document.querySelector('.nb-tab[data-tab="mode"]').click();
-      const protect = document.querySelector('.nb-mode[data-value="protect"]');
-      const protectOff = protect && protect.getAttribute('aria-disabled');
+      const descent = document.querySelector('.nb-mode[data-value="descent"]');
+      const descentOff = descent && descent.getAttribute('aria-disabled');
       const modeNames = [...document.querySelectorAll('.nb-mode')].map((b) => b.textContent.trim());
       [...document.querySelectorAll('.modal .btn')].find((b) => b.textContent.trim() === 'Create').click();
       await new Promise((r) => setTimeout(r, 150));
       const g = m.game;
-      return { name, before, after, noMaterial, mat, mirrorOff, protectOff, modeNames, modes, on: !!g.recipe.mods.physics, ext: g.ext.map((e) => e.key).join(), parts: m.view.parts.map((p) => p.key).join(), label: Lull.Recipe.label(g.recipe) };
+      return { name, before, after, noMaterial, mat, mirrorOff, descentOff, modeNames, modes, on: !!g.recipe.mods.physics, ext: g.ext.map((e) => e.key).join(), parts: m.view.parts.map((p) => p.key).join(), label: Lull.Recipe.label(g.recipe) };
     });
     check('New board ▸ Modifiers: a Physics switch; on, its Material (Jelly); Create makes a Physics board', made.name === 'Physics' && made.before === 'false' && made.after === 'true' && made.noMaterial && made.mat.join() === 'Jelly' && made.on && made.ext === 'physics' && made.parts === 'physics' && made.label === 'Physics', JSON.stringify(made));
-    check('with Physics on, Mirror and Protect are off (aria-disabled); the modes stay Plain, Protect, Classic', made.mirrorOff === 'true' && made.protectOff === 'true' && !made.modeNames.includes('Physics') && made.modeNames.includes('Classic'), JSON.stringify(made));
+    check('with Physics on, Mirror and Descent are off (aria-disabled); the modes stay Plain, Classic, Descent, Battle', made.mirrorOff === 'true' && made.descentOff === 'true' && !made.modeNames.includes('Physics') && made.modeNames.includes('Classic'), JSON.stringify(made));
     const bar = await ev(() => {
       const m = Lull.app.modes.play, out = {};
       for (const tray of ['tool', 'board', 'choice', 'luck']) {

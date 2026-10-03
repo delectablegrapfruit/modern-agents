@@ -232,7 +232,7 @@
    */
   function summarize(s, now, size) {
     s = s || {};
-    // A board's recipe can add its own numbers (Protect's waves, Battle's rounds): Recipe.summary, from a Game or a
+    // A board's recipe can add its own numbers (Descent's rows broken, Battle's rounds): Recipe.summary, from a Game or a
     // saved one (size is the board).
     const ext = size && L.Recipe ? L.Recipe.summary(size) : {};
     return Object.assign(size ? { w: size.w, h: size.h } : {}, Object.keys(ext).length ? { ext } : {}, {
@@ -348,7 +348,7 @@
     if (size && (size.w !== j.w || size.h !== j.h)) { const r = reshape(j, size.w, size.h); if (r.why) return r; j = r.json; }
     const from = R.normalize(j.recipe), to = R.normalize(recipe);
     if (!R.sizeOk(j.w, j.h, to)) { const lim = R.limits(to); return { why: 'Smallest here is ' + sizeLabel(lim.w[0], lim.h[0]) }; }
-    // What the board keeps for life (Recipe.editConflicts: Protect) is refused here too, whatever the window allowed.
+    // What the board keeps for life (Recipe.editConflicts: Descent) is refused here too, whatever the window allowed.
     const fixed = R.editConflicts(from, to);
     for (const [id, why] of Object.entries(fixed)) {
       const at = id.indexOf('='), path = id.slice(0, at), v = R.getPath(to, path);

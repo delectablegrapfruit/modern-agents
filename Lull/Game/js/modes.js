@@ -441,7 +441,7 @@
    *                                 plays the sound and checks achievements (r.heardLater, set before it: rows the
    *                                 part plays out and sounds itself later, left out of the lock's sound)
    *   onEnd(kind, silent)           the board ended ('topout'): kind is 'full', or the part's own that ended it (its
-   *                                 engine calls game.end('wilted') in its step: game.endKind, kept in the save); its card
+   *                                 engine calls game.end('cleared') in its step: game.endKind, kept in the save); its card
    *   cards: { kind(play, kind) -> content }   a card by kind (full: the Board full card)
    *   status(parts, { stat, prev }) -> [elements]   the status bar's figures; parts: { lines, score, chain, side }, the
    *                                 plain ones; stat(label, value, cls, tip) makes one more; prev: the list before it
@@ -819,7 +819,7 @@
 
     /**
      * A library row's tags: Playing, Full (a board that ended full: not one a part ended its own way), then each part's
-     * (a uiPart's tags(recipe, x, info) -> [{ text, cls }]: Protect's Wilted, Battle's "vs Steady 3–2"; x is the part's
+     * (a uiPart's tags(recipe, x, info) -> [{ text, cls }]: Descent's Cleared, Battle's "vs Steady 3–2"; x is the part's
      * saved state, or its summary numbers on a retired record; info: { cur, over, ended, reason, retired }).
      */
     rowTags(recipe, xs, info) {
@@ -883,7 +883,7 @@
 
     /**
      * True for a board nothing has been done on yet (a new board from it would be the same board): no piece set, an
-     * empty stack (as the recipe sees it: Protect's sprout does not count, Game.isClean) and no power-up used on it
+     * empty stack (as the recipe sees it: Descent's hanging blocks do not count, Game.isClean) and no power-up used on it
      * (gold, a net or a Giant waiting there would be lost with it).
      */
     untouched() {
@@ -954,7 +954,7 @@
      *   chips: [{ value, name, piece | sample(ctx, px, look) }]   Shapes chips (path 'shapes.preset'); Normal is built in
      *   tab: 'shapes' | 'mods' | 'mode' | 'size', panel(r, api) -> element   more in that tab's panel, under its options
      *   value(r) -> text          the Shapes tab's short value ("Frantic", "Custom")
-     *   mod: 'physics', name        Modifiers: its switch's name        mode: 'protect', name   Mode: its button's name
+     *   mod: 'physics', name        Modifiers: its switch's name        mode: 'descent', name   Mode: its button's name
      *   levels(r) -> { path, values: [[value, label]] } | null      the level row of its mode
      *   stepper(r, key) -> { label } | null   a stepper's name ('w', 'h': Battle's Height is Rows)
      *   presets(r) -> [[name, w, h]] | null   the Size tab's presets
@@ -971,7 +971,7 @@
      * With `edit` ({ id, recipe, size, json }: a saved board), it is Edit rules: the same window on that board's
      * recipe and size, with Apply in place of Create. Apply's price is on it (Recipe.editPrice: a flat price for each
      * section changed; nothing when nothing did); a size that would cut the stack, or rules the board cannot take as
-     * it stands, are refused with the reason (Library.rebuild); a mode a board keeps for life (Protect) can be neither
+     * it stands, are refused with the reason (Library.rebuild); a mode a board keeps for life (Descent) can be neither
      * entered nor left (Recipe.editConflicts). Apply spends the lines and changes the board (applyEdit).
      */
     openNewBoard(done, edit) {
@@ -1310,7 +1310,7 @@
 
     retire(id) {
       const st = this.app.store, B = st.state.boards;
-      // Why it ended: full, or a part's own end (Protect's 'wilted'), or retired by hand.
+      // Why it ended: full, or a part's own end (Descent's 'cleared'), or retired by hand.
       if (id === B.cur) { this.newBoard(this.game.over ? this.game.endKind || 'full' : 'manual'); return; }
       const rec = Library.find(B, id);
       if (!rec || !rec.game) return;
@@ -1358,7 +1358,7 @@
       const eq = this.app.store.state.equipped, theme = this.app.theme;
       const dpr = Math.min(3, root.devicePixelRatio || 1);
       const str = typeof cells === 'string' ? cells : Library.encodeCells(cells);
-      // A view part can draw its option over the stack (Render.previewBoard: Mirror's line, the sprout): by recipe too.
+      // A view part can draw its option over the stack (Render.previewBoard: Mirror's line, the descent): by recipe too.
       const rk = recipe && L.Recipe && !L.Recipe.isDefault(recipe) ? L.Recipe.key(recipe) : '';
       const key = [id, eq.palette, theme.name, theme.wellTop, dpr, w, hh, str, rk].join('|');
       let url = this.thumbs.get(id);
@@ -1573,7 +1573,7 @@
         : s.net > 0 ? stat('Luck', 'Net', 'opt boost', ITEMS.net.desc)
         : s.boost ? stat('Boost', Chain.fmt(s.boost.x) + ' · ' + Pay.clearsLeft(s.boost.left, this.game.rules), 'opt boost', 'Next ' + Pay.clearsLeft(s.boost.left, this.game.rules) + ' clears pay ' + Chain.fmt(s.boost.x))
         : stat('Pieces', fmtInt(s.pieces), 'opt');
-      // The plain figures; the board's controller lays out the bar from them (Protect's Leaves in place of Score).
+      // The plain figures; the board's controller lays out the bar from them (Descent's Stage, Broken and Next in place of Score).
       const parts = {
         lines: stat('Lines', fmtInt(s.lines)),
         score: stat('Score', fmtInt(s.score)),

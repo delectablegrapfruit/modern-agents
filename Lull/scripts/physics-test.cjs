@@ -1,4 +1,4 @@
-// Physics (js/physics.js): the material's numbers; the recipe (a modifier: its Material, Mirror and Protect ruled out,
+// Physics (js/physics.js): the material's numbers; the recipe (a modifier: its Material, Mirror and Descent ruled out,
 // Classic's garbage too); the piece in play, rigid and the player's until let go (no fall by itself, touching never sets
 // it, ↓ rests it, ↓ again or held, or Space, lets it go), shoving bodies aside as it moves and refused when they are
 // pinned, never passed through; bodies that never lose a mino but to a clear, never tear, never merge or sink into each
@@ -85,7 +85,7 @@ module.exports = function physicsTests(test, L) {
     assert.strictEqual(Physics.material('nope'), m, 'an unknown material is Jelly');
   });
 
-  test('physics: a modifier with a Material; Mirror and Protect ruled out both ways, Classic B garbage too; kept for the board\'s life', () => {
+  test('physics: a modifier with a Material; Mirror and Descent ruled out both ways, Classic B garbage too; kept for the board\'s life', () => {
     assert.deepStrictEqual(PHYS.physics, { material: 'jelly' });
     assert.strictEqual(PHYS.mods.physics, true);
     assert.strictEqual(PHYS.mode, 'plain', 'not a mode');
@@ -95,9 +95,9 @@ module.exports = function physicsTests(test, L) {
     assert(Recipe.options().some((o) => o.path === 'mods.physics'));
     assert(Recipe.options().some((o) => o.path === 'physics.material'));
     const c = Recipe.conflicts(PHYS);
-    assert(c['mods.mirror=true'] && c['mode=protect']);
+    assert(c['mods.mirror=true'] && c['mode=descent']);
     assert(Recipe.conflicts({ mods: { mirror: true } })['mods.physics=true']);
-    assert(Recipe.conflicts({ mode: 'protect' })['mods.physics=true']);
+    assert(Recipe.conflicts({ mode: 'descent' })['mods.physics=true']);
     assert(!Recipe.conflicts(PHYS)['mode=classic'], 'Physics + Classic plays');
     assert(Recipe.conflicts({ mods: { physics: true }, mode: 'classic' })['classic.height=3']);
     const r = Recipe.resolve({ mods: { physics: true, mirror: true } }, 'mods.physics', {});
@@ -112,7 +112,7 @@ module.exports = function physicsTests(test, L) {
     for (const [id, why] of Object.entries(Physics.REFUSE)) {
       assert(ITEMS[id], id);
       assert.strictEqual(g.allow(id), why, id);
-      for (const r of [{}, { mods: { mirror: true } }, { mode: 'protect' }, { shapes: { preset: 'tiny' } }]) {
+      for (const r of [{}, { mods: { mirror: true } }, { mode: 'descent' }, { shapes: { preset: 'tiny' } }]) {
         const o = new Game({ w: 10, h: 20, seed: 1, recipe: r });
         assert.notStrictEqual(o.allow(id), why, id + ' on ' + JSON.stringify(r));
       }

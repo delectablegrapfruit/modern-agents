@@ -522,7 +522,7 @@ board its own way: `game.end(kind)`, told after the lock and kept in the save un
 Horizon count what an item took: `comboCount`, or by default one copy's share, `R.copies`, so a Mirror Bomb counts
 one half), its view and its window. An
 unrated board (shapes other than the seven) has no difficult clears: no quad, no back-to-back streak, no bonus, ×1. Parts always run in a fixed
-order (shapes, mirror, physics, protect, classic, battle), whatever order they load in. What pays and counts is measured in own
+order (shapes, mirror, physics, classic, descent, battle), whatever order they load in. What pays and counts is measured in own
 cells: a row holding a cell the player never placed is plain and pays only the player's cells, and no option pays more
 per piece or per action than a Standard board (`f = min(1, 4 / E)`, E the mean cells a piece). Outside the board,
 `Board.get` reads as a wall (`CELL.WALL`); every cell bit has one name in `CELL` (`js/board.js`), and anything that
@@ -546,9 +546,9 @@ Create), so the window's code never changes for them; a panel's control keeps fo
 `data-focus`, and focus never falls out of the window (where Enter is Create). A board of another recipe than the
 default says so: after its size and when on its library row (the short label last, so an ellipsis only takes it, the
 full one as its tip; Lines and Score on a line of their own; on a phone, the label too), as a Board tile on its summary,
-and as a muted second line in Past boards. A part can add tags to its rows (`tags`: Wilted, "vs Steady 3–2"), its
+and as a muted second line in Past boards. A part can add tags to its rows (`tags`: Cleared, "vs Steady 3–2"), its
 own numbers to a board's summary (`tiles`, from the summary's `ext`), and a name for its own end, which a retired
-board's full view says in place of "Retired by hand" (`endName`: Wilted).
+board's full view says in place of "Retired by hand" (`endName`: Cleared).
 Retire, Delete and a full board's Retire start the next board with the same recipe; an untouched board asked for again
 with another recipe is made again, in its own record.
 
@@ -624,7 +624,7 @@ first few pieces, faint, on its floor.
 L+4), M the largest short side of its shapes and L the longest, doubled with Big), raised to where a plain bot
 (`scripts/shapes-bot.cjs`) lives as long, as the median of 20 boards, as it does with Normal shapes on 4 × 8
 (`js/minsize.js`, measured by `scripts/minsize.cjs`: Pentominoes 6 × 10, Big 8 × 16, 12 blocks 13 × 26); Big shapes of 9
-to 12 blocks and Big clusters of 8 never do, and are dealt only on 20 × 40. Protect keeps two rows more.
+to 12 blocks and Big clusters of 8 never do, and are dealt only on 20 × 40. Descent keeps six rows more (14 at least).
 
 *Pay.* Only a set of the seven is rated (Normal; Big; Custom with the seven alone, none doubled or all): Big's quad is
 eight rows (four Big lines), its feats need 20 columns. Every other set pays ×1, with no difficult clear, no skill combo,
@@ -758,8 +758,8 @@ cleared; no quad, T-spin, combo or chain tiles), Rewind 5 s (while there is a mo
 Away from the board (another window or app, the pointer gone with Pause when the pointer leaves) it waits at a Paused
 card (Space or Resume); a window over it only holds it.
 
-*Combinations.* Physics + Plain and Physics + Classic play; Physics rules out Mirror and Protect, both ways
-(`Recipe.conflicts`, "Not with Physics" / "Not with Mirror" / "Not in Protect"), and an edit never switches it on or off
+*Combinations.* Physics + Plain and Physics + Classic play; Physics rules out Mirror and Descent, both ways
+(`Recipe.conflicts`, "Not with Physics" / "Not with Mirror" / "Not in Descent"), and an edit never switches it on or off
 (a Physics board stays Physics). With Classic, Classic drives the piece in play (its gravity curve, levels, level lock,
 Next count, randomizer, lock delay, hold and hard drop settings), Physics the bodies; bands count as Classic's lines (its
 level, B type's 25). Shapes, sizes 4 × 8 to 20 × 40 and Big play as they are.
@@ -790,83 +790,6 @@ its minos, light along its top, a deeper tone low down, a gloss on its highest m
 drawn the same way, rigid, where it is. A clear's minos swell and fade where they were (reduced motion: they only fade). Tests:
 `scripts/physics-test.cjs` (Node) and `scripts/physics-browser-test.cjs` (the page, a phone, light and dark).
 
-### Protect
-A mode: shield a sprout from meteors and burrowing moles, and keep building its shelter as they wear it away
-(`js/guard.js`). The sprout sits on the floor in the middle of the well, 2 wide on an even width and 3 on an odd one, 2
-tall, with 3 leaves; the two rows it stands in are its bed and never clear, no power-up removes it (Drill stops on it,
-Bomb and Black Hole go round it, Laser leaves the bed rows) and Settle leaves it where it is. Tornado, Trapdoor and
-Mirror World are refused ("Not in Protect"). A board is at least 6 × 12, and the shapes must fit in the rows above the
-bed (a shape set's minimum height plus 2).
-
-*The clock.* Protect runs in real time, not by pieces: its clock ticks ten times a second (`Guard.TPS`) while the board
-is in play, and the pieces still never fall by themselves (Relaxed play), so the threats keep coming while you think. A
-new board waits at its Ready card ("Protect Hard", Start, Space); after that, away from the board (another tab, window
-or app, the page hidden, the pointer gone with Pause when the pointer leaves) it pauses at a Paused card (its time and
-wave, Resume, Space), as do P and the Pause button in the status bar; a window over the board only holds the clock.
-While it waits, the board takes no moves (a tap or Space starts it). A piece set is no time at all, Settle runs no tick,
-and Undo goes back to just before the last piece was set, the clock and every threat with it.
-
-*A tick* (`Guard.tick`, in this order): the moles are read off the board (one a clear took was swept away, one a
-power-up took is gone); the clock moves on; threats that are due come (a meteor shows its column, a mole comes in at a
-side wall, on top of that column's stack, at most four out); each falling meteor drops, and one that reaches the top of
-its column(s) breaks the cells round where it strikes (Easy: only the block it hits; Medium and Hard a diamond of radius
-1, the sprout aside) and any mole there, and costs a leaf when it reaches the sprout; each mole whose time has come
-takes its next cell: next to the sprout it nibbles a leaf and leaves, an empty cell it walks into, a block it eats (the
-level's dig time) and then moves into, leaving its tunnel open behind it; then the wave or calm moves on, and at 0
-leaves the board wilts. A mole goes the cheapest way (Dijkstra: a move through an empty cell that touches something
-solid, never along the open top of the well; a dig and a move through any block, yours included; never the sprout,
-another mole or the walls). Against a mole: thicker shelter (each block is a dig), or clear the row it is in (a mole in
-a cleared row is swept away; the bed rows never clear, so stop it above them).
-
-| | Easy | Medium | Hard |
-|---|---|---|---|
-| Quiet start, then waves / calms (s) | 10, 30 / 8 | 8, 30 / 6 | 6, 30 / 5 |
-| Meteors a wave at 10 wide (by w/10) | 3, +1 a wave to 8 | 4, +1.5 to 14 | 5, +2 to 20 |
-| Meteor sizes | 1 | 1 | 2 wide from wave 3 (a third) |
-| Aimed at the sprout and one column either side | 50% | 60% | 70% |
-| Column shown before it falls (s); fall (rows a second) | 2.5; 10 | 2; 12 | 1.5; 14 |
-| Blast | the block it hits | a diamond, radius 1 | a diamond, radius 1 |
-| Moles a wave | from wave 2: 1, +0.5 a wave to 3 | 1, +0.75 to 5 | 2, +1 to 8 |
-| A mole's step / eating a block (s) | 0.8 / 2.4, 0.1 less a wave to 1.6 | 0.6 / 1.6 to 0.9 | 0.5 / 1.4 to 0.6 |
-| A leaf grows back | every wave | every 2nd wave | never |
-| Score a second survived | 5 | 10 | 20 |
-
-A wave's threats are drawn when it starts, spread through its 30 seconds, on the guard's own random stream (the board's
-seed, apart from the pieces'): saved with the board (`x.protect`: the clock, the plan, meteors in flight, moles and
-their digs), so a resume, mid-wave, plays on exactly as an unbroken run, and an Undo brings the same threats. Moles are
-`FOREIGN | MOLE | slot`, the sprout `ASSET | 31`; meteors are never cells.
-
-*How hard* (`scripts/protect-unit.cjs`): a defending bot that sets a piece a second and keeps a roof two deep over the
-sprout survives, on 5 seeds at 10 × 20, Easy 295–740 s (mean 504), Medium 115–213 s (mean 177) and Hard 67–114 s
-(mean 101): Hard beats it within two minutes every time.
-
-*Pay* — rated as its shape set is (a Protect board on Normal shapes keeps the streak, the bonus and the feats): a row
-pays only its own cells, and a row holding a mole is plain (never part of a quad, never a streak link). Time survived
-adds to the score (above) but pays nothing; meteors, moles, waves and leaves pay nothing. Measured with the same bot at
-a piece a second and at two a second (`scripts/protect-unit.cjs`), a Protect board earns no more per piece or per
-action than Standard: 0.371 / 0.294 / 0.306 lines a piece (Easy / Medium / Hard) against Standard's 0.395, and 0.084 /
-0.068 / 0.068 an action against 0.092.
-
-*Achievements* (their own group, any Protect board 6 wide or more): **Green Thumb** (60) keep a sprout alive for 3
-minutes; **Night Watch** (200) 5 minutes on Hard with no power-ups; **Swept Away** (100) clear 25 moles away in lines,
-Medium or Hard; **Not a Leaf** (300, legend) 3 minutes on Hard with no leaf lost and no power-ups. Power-ups other than
-Luck, Undo included, start the Hard runs over (and Undo takes the clock back anyway).
-
-*The look* (`js/guardview.js`) — the sprout is a soil mound, a stem and its leaves (a lost leaf a faint outline), in its
-own greens and browns in each theme. A meteor's column is a faint band down to where it would land, deepening as it
-comes (rose when it would reach the sprout), the cells it would break outlined; then a small warm stone falls down it
-and breaks them in shards (reduced motion: a short fade). A mole is a small round body with a pale nose the way it
-goes, stepping from cell to cell (it jumps with reduced motion), a bite growing in the block it is eating, a soft
-earthy tunnel fading behind it, a notch at the wall a moment before one comes in, and its next two cells as faint dots.
-A lost leaf drifts off; "Wave 3" and "Calm" show quietly; nothing shakes. *In Free Play* — Leaves takes Score's place in
-the status bar (its tip the wave and the seconds left in it: "Wave 4 · 12 s left", "Calm · 5 s to wave 4"), Time
-follows it, and a Pause button ends the row; a board at 0 leaves shows the Wilted card (its summary, Undo, Boards and
-Retire), is tagged Wilted in the library and its full view says so; its summary adds Time, Waves, Leaves lost and
-Meteors, and Stats ▸ Free Play a Protect section (time, waves, meteors, moles, moles swept away, leaves lost, boards
-wilted, the longest board on each level). The New board window's Mode tab has Protect and its level row, and the
-preview shows the sprout. Tests: `scripts/protect-unit.cjs` (Node) and `scripts/protect-test.cjs` (the page, phones,
-light and dark).
-
 ### Classic
 A mode (`js/classic.js`, its controller and settings `js/classicview.js`): the board plays by Classic's rules (see
 **Classic** under Play) and is a Relaxed board in every other way — made in New board, named, saved and shelved in the
@@ -886,7 +809,7 @@ lines, as from level 1, so a high start level is no shortcut. The Best shown (st
 size, `stats.classic.bests`), so a new board of the same rules shows it, and the board's own (carried on by Play
 again); Stats ▸ Classic keeps the best of all boards.
 
-*Its settings* — the Mode tab, under Plain, Protect and Classic, once Classic is chosen, in the spirit of the NES and
+*Its settings* — the Mode tab, under Plain, Classic, Descent and Battle, once Classic is chosen, in the spirit of the NES and
 Game Boy Advance games:
 
 | Setting | Values | |
@@ -904,7 +827,107 @@ Game Boy Advance games:
 Left out: the NES's own speed table and 0–19 levels (the levels stay the guideline curve Classic has always had, so
 its records and achievements keep meaning what they did), DAS and ARE timing (movement is the keyboard's repeat and
 the touch gestures, as everywhere in Lull), and B type's NES "height" variants beyond the six. It composes with the
-board size, the shape sets (unrated ones pay without a streak), Mirror and Physics; Protect is another mode.
+board size, the shape sets (unrated ones pay without a streak), Mirror and Physics; Descent is another mode.
+
+### Descent
+A mode (`js/descent.js`, its controller, look and window `js/descentview.js`): a second stack hangs upside down from
+the top of the well and lowers, lane by lane (each column is a lane). Your line clears are the weapon: every cell of a
+cleared row fires one shot up its lane at the lowest hanging block, and the piece the cell came from decides the shot.
+Where a hanging block reaches your stack it fuses into the board as stone, and the play space closes in from above; the
+board ends as any Relaxed board does, when the next piece has no room (Topped out). A stage has a set depth: when none
+of it is left (broken, or fused) the stage is Cleared; Endless never runs out. Pieces never fall by themselves: the
+descent sets the pace. A board is at least 8 × 14 (the shapes' own minimum height plus 6); it is kept for its life
+(no Edit rules into or out of it). Physics and Mirror are not in Descent ("Not in Descent" / "Not with Physics" /
+"Not with Mirror", the last choice wins); it combines with every shape set.
+
+*Lanes.* Each lane lowers on its own timer, always announced: a short bar over the lane's top fills toward its next
+lowering, and in its last two seconds the cell it moves into is outlined (warm where the block would fuse). The rows
+still to come wait above the well, so a lane fills its column from its lowest block to the ceiling; a lane running short
+hangs from a thin rod, so nothing of yours ever gets above it. Lowering onto your stack, stone or the floor: the lowest
+block fuses where it is, into stone (`FOREIGN | STONE`: a row's cell like any other, so it always clears with its row,
+pays nothing, and fires nothing). The piece in play right under a lane is nudged down a row; where it cannot be, the
+lane waits for it. Pieces appear under the descent, as high as they fit with nothing but hanging cells over them (never
+in a pocket of the stack). A row holding a hanging cell never clears, hanging cells stay put through a clear, and no
+power-up removes one; Tornado, Trapdoor, Mirror World and Best Fit are refused ("Not in Descent").
+
+*Shots* (each cell remembers its piece in `CELL.SHOT`, bits 10–12):
+
+| Piece | Shot |
+|---|---|
+| I | pierce: two hits up its lane |
+| O | heavy: 2 damage |
+| T | spread: its lane and both beside it |
+| S, Z | push: its lane's hanging stack back up a row |
+| L, J | angle: the lane its foot points to (L right, J left; at a wall its own) |
+| stone | nothing |
+| other shapes | by their form, on their spawn turn: one line pierces (I5, I3, the domino, the mono); a 2 × 2 inside is heavy (P); a cell with three neighbours spreads (X, F, Y, T5); one bend angles toward its corner's side (L5, V); more bends push (N, W, Z5, U); a cluster fires a plain hit; Big pieces as their base |
+
+*Clears.* Double, Triple, Tetris: a volley a row. A T-spin's volley (Mini too) breaks armour. Back-to-back adds 1 to
+every hit. Each clear of a combo holds every lane's next lowering back a second. A perfect clear (hanging blocks do not
+count against it) breaks every lane's lowest block outright, armour and locks too.
+
+*Blocks* (glass and stone, no creatures):
+
+| Block | Look | Rule |
+|---|---|---|
+| Glass | a clear pane, a slow shimmer | 1 hit |
+| Dense | smoky and thicker, cracked once hit | 2 hits |
+| Armoured | banded top and bottom | only a T-spin volley (or a perfect clear) breaks it; it shields its lane |
+| Prism | faceted | when broken, also hits both lanes beside it |
+| Drip | a bead underneath | as the lowest block, lets a single stone fall into its lane every 8 s (the bead swells and the landing cell shows 2 s before; it waits for the piece in play) |
+| Weight | dark, two chevrons | as the lowest block, its lane lowers 2 rows at a time, half as often again |
+| Echo | a doubled outline | fusing, leaves a second stone beside it |
+| Lock | a keyhole, a notch toward a neighbour | cannot be hit while the lane it points to hangs lower (two locks never hold each other) |
+
+*Stages* — 12, laid out the same every time (their own stream: level, stage and width), each teaching one block or clear,
+then mixing: 1 Glass, 2 Dense, 3 Push, 4 Prism, 5 Weight, 6 Armour, 7 Combo, 8 Drip, 9 Echo, 10 Lock, 11 Back to back, 12
+The deep; and Endless (on the board's own stream, kinds coming in as rows are broken, a hundredth faster a row to 0.55 of
+its pace; its score is rows broken). The Ready card says the stage's one line ("Dense blocks take two hits. An O hits for
+two."). On shapes with no T, armour is dense.
+
+| | Easy | Medium | Hard |
+|---|---|---|---|
+| A lane's seconds between lowerings (10 × 20) | 13 | 9.5 | 7.5 |
+| Lanes' paces | one | ±12% | ±30% (uneven, fixed per stage) |
+| Hanging at the start | a quarter of the well | 0.3 | 0.3 |
+| Kinds a stage | 1–2 | 1–4 | up to all 8 |
+| Depth (rows) | 5–9 | 6–10 | 7–11 |
+
+Stages 3 and 7 run faster (0.85, 0.8), 6 slower (1.1). Narrower boards' lanes are no slower than by width (×w/10, 0.6–1.4),
+taller ones slower by height.
+
+*How hard* (`scripts/descent-unit.cjs`, 10 × 20, a piece every 2 s, 2 seeds a stage): a careful bot (El-Tetris weights
+with the room under the descent, T-spins where armour hangs lowest) clears Easy 23/24, Medium 22/24 and Hard 15/24 (Hard
+11 and 12 mostly beat it); a careless one (any spot) clears none of Hard's 24, topping out within half a minute.
+
+*Pay* — lines as usual for clears, by the board's rules (rated as its shape set is); only own cells pay, and a row
+holding stone is plain (never a quad, no streak link). The descent itself pays nothing. Measured with the bot at a piece
+every 1 and 2 s on stages 1, 4, 7, 10 and Endless: 0.368 / 0.372 / 0.353 lines a piece (Easy / Medium / Hard) against
+Standard's 0.403, and 0.088 / 0.089 / 0.085 an action against 0.097.
+
+*Rewind 5 s* — Undo's place (no exact Undo): a snapshot of the whole game every 0.2 s of play; it goes back five seconds
+of play (the board, the descent, the piece, the queue, the numbers and what was banked since), costs an Undo (5), and
+waits at the Paused card. From the Topped out card too.
+
+*In Free Play* — a new board waits at its Ready card (Descent, "Stage 3 · Hard", the stage's line; Boards, Start,
+Space or a tap). Away from the board (another tab, window or app, the page hidden, a window over it, the window losing
+focus, rolled up) and on P it pauses at the Paused card ("Stage 3 · Hard · 1:24"; Resume). Stage, Broken (rows broken:
+blocks broken over the lanes; its tip the rows left) and Next (the next lowering, its tip the lane) take Score's place
+in the status bar, Lines steps aside on a phone, and a Pause button ends the row. Cleared: the stage, its rows and time,
+Boards and the next stage (Space: this board retired as cleared, the next stage of the same level and size at its Ready
+card; after 12, Endless). Topped out: the rows broken, Rewind 5 s, Boards and Try again (Space: the same stage anew). The
+library tags a cleared board Cleared (an Endless one its rows); its summary adds Rows broken, Stone and Time; Stats ▸
+Free Play has a Descent section (time, stages cleared, blocks broken, turned to stone, topped out, stages cleared on each
+level, Endless best). The New board window's Mode tab has Descent between Classic and Battle, its level row and a Stage
+stepper (1–12, Endless) with how many of the 12 are cleared on that level (the stage's number marked when cleared); the
+preview shows the hanging rows. Shots are thin lines of light from the cleared cells to what they hit; a broken block
+fades out; with reduced motion nothing shimmers. No red rim. Tests: `scripts/descent-unit.cjs` (Node) and
+`scripts/descent-test.cjs` (the page, phones, both themes).
+
+*Achievements* (their own group): **Daylight** (30) clear a stage; **Unlocked** (40) break a lock; **Through the Armour**
+(80) break an armoured block with a T-spin; **Clean Sky** (100) a perfect clear on a Descent board; **Fifty Down** (120)
+break 50 rows on one Endless board; **All Twelve** (200) clear all 12 stages on one level; **The Deep** (250, legend)
+clear stage 12 on Hard.
 
 ### Editing a board's rules
 Every saved board that has not ended (the board in play too, and from a Classic board's Start and Paused card) has
@@ -913,7 +936,7 @@ Edit rules on its library row: the New board window on that board's size and rec
 music alone is free), nothing when nothing changed (`Recipe.editPrice`, `EDIT_PRICE`). A size keeps the stack:
 columns come and go on the right, rows at the top, and a size that would cut a block is refused with the reason
 ("Blocks stand in the rows it would lose"), Apply quiet (`Library.reshape`); the preview shows the stack at the size
-chosen. Protect is kept for a board's life: an edit neither makes a board Protect nor changes one
+chosen. Descent is kept for a board's life: an edit neither makes a board Descent nor changes one
 (`Recipe.editConflicts`: a part's `editFixed`). Apply rebuilds the board (`Library.rebuild`): the stack, its numbers
 and every other part's state stay, the piece in play comes again first as the new rules place it (no room: refused),
 another dealer starts its own bag, the mode it left drops its state, and the Undo history is cleared; short of lines,
@@ -926,7 +949,7 @@ first to fill every cell of its board wins the round. No row ever clears. A boar
 Height stepper is named Rows; presets Quick 8 × 8, Standard 10 × 10, Long 10 × 12), and over its rows sits a buffer of
 k rows (4 for Normal shapes, 3 Tiny, 5 Frantic and Pentominoes; `R.k`), where pieces come in, move and turn. A piece
 must touch the board to set ("Set it on your board"); what it leaves in the buffer is trimmed away (and fades). Big,
-Custom with groups over 5 blocks or Clusters, Mirror and Physics are not in Battle; Classic and Protect are other modes.
+Custom with groups over 5 blocks or Clusters, Mirror and Physics are not in Battle; Classic and Descent are other modes.
 A Battle board keeps its rules (no Edit rules); the opponent can be changed between rounds.
 
 *Send* — S sends the piece in play to the opponent; Shift+S, or a tap or click on the first Next slot, sends the first

@@ -1,14 +1,14 @@
 // Lull — the board recipe: what a Relaxed board is made of, beyond its size. Its shapes, its modifiers (Mirror)
-// and its mode (Plain, Physics, Protect, Classic, Battle), chosen in the New board window and fixed for the board's life. Pure data and
+// and its mode (Plain, Classic, Descent, Battle), chosen in the New board window and fixed for the board's life. Pure data and
 // rules, no DOM; the parts that give each option its behaviour register here (Recipe.part) and are always run in
 // ascending `order`, never in script load order.
 //
 //   recipe = { v: 1, shapes: { preset: 'normal' }, mods: { mirror: false }, mode: 'plain', physics?: { material }
-//              (js/physics.js), protect?: { level }, classic?: { type, level, … } (js/classic.js), battle?: { level, size: { w, rows } } }
+//              (js/physics.js), classic?: { type, level, … } (js/classic.js), descent?: { level, stage } (js/descent.js), battle?: { level, size: { w, rows } } }
 //
 // The default recipe is today's board exactly: the seven in a 7-bag, no modifier, plain play. A part:
 //   { key, order, owns: [paths it writes], mod?: 'mirror' (a modifier it brings: its switch, modName its name),
-//     mode?: 'protect' (a mode it brings),
+//     mode?: 'descent' (a mode it brings),
 //     options?: { path: [values] } (what the New board window offers, for resolve),
 //     normalize(raw, out) (writes its own keys of the recipe from raw), label(r, short), thin(r), valid(g, r),
 //     rules(r, R, w), limits(r, lim), clampSize(size, r, lim, asked), conflicts(r, out),
@@ -16,7 +16,7 @@
 //     are listed in js/engine.js), controller(play, game) -> ctl | null (Free Play's; every part's is composed over
 //     the plain one: Recipe.compose), summary(saved, g), stats? (store.js merges it under state.stats) }
 // Achievements a part adds go through Achievements.group / Achievements.add (js/achievements.js).
-// Orders: core 0, shapes 10, mirror 20, physics 35, protect 40, classic 45, battle 50.
+// Orders: core 0, shapes 10, mirror 20, physics 30, classic 45, descent 47, battle 50.
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
@@ -116,13 +116,13 @@
   function isDefault(r) { return equal(r, DEFAULT); }
 
   /**
-   * What a board is, in words: '' for the default. Each part adds its own ("Frantic", "Mirror", "Protect Easy"),
+   * What a board is, in words: '' for the default. Each part adds its own ("Frantic", "Mirror", "Descent Easy · Stage 3"),
    * in order; short is the library row's form.
    */
   function label(r, short) {
     r = normalize(r);
     if (equal(r, DEFAULT)) return '';
-    // The modifiers ("Mirror", the core's) read after the shapes: "Frantic · Mirror · Protect Easy".
+    // The modifiers ("Mirror", the core's) read after the shapes: "Frantic · Physics · Classic A".
     const segs = PARTS.map((p) => ({ at: p === CORE ? 15 : p.order || 0, text: p.label ? p.label(r, !!short) : '' }));
     return segs.sort((a, b) => a.at - b.at).map((x) => x.text).filter(Boolean).join(' \u00b7 ');
   }
@@ -383,7 +383,7 @@
   }
   /**
    * The options an edit of a board made as `from` may not choose, beyond the recipe's own conflicts: a mode a part
-   * keeps for the board's life (editFixed: Protect) is neither entered nor left, nor are its settings changed; a
+   * keeps for the board's life (editFixed: Descent) is neither entered nor left, nor are its settings changed; a
    * modifier kept so (editFixed: Physics) is neither switched on nor off.
    * { 'path=value': reason }.
    */

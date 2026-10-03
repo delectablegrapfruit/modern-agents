@@ -1,0 +1,22 @@
+/* Lull — Descent (js/descentview.js): its achievements' place colour (a cool slate blue, 4.5:1 on its own tint in both
+   themes, as the other places'), the Pause button in the status bar, the stage picker in the New board window, and its
+   cards (Ready, Paused, Cleared, Topped out). */
+:root { --area-descent: #9fb8e6; }
+:root[data-theme="light"] { --area-descent: #34507f; }
+[data-area="descent"] { --area: var(--area-descent); }
+
+/* The status bar's Pause: a 28 px icon with a 44 px hit area. */
+.statusbar .ds-pause { position: relative; align-self: center; margin-left: 4px; }
+.statusbar .ds-pause::after { content: ""; position: absolute; inset: -8px; }
+
+/* The stage: a stepper (1–12, then Endless) with how many of the 12 are cleared on this level, muted, before it. */
+.ds-row { flex-wrap: nowrap; }
+.ds-row .cl-nm { flex: none; }
+.ds-done { flex: 1; min-width: 0; text-align: right; color: var(--muted); font-size: var(--fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.ds-val { position: relative; min-width: 66px; }
+/* A stage cleared on this level: a small mark under its number (the count beside it steps aside on a phone). */
+.ds-val.done::after { content: ""; position: absolute; left: 50%; bottom: 1px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: currentColor; opacity: 0.5; }
+@media (max-width: 400px) { .ds-done { display: none; } .ds-row { justify-content: space-between; } }
+
+/* Cards: the stage's line, muted and kept short. */
+.card .ds-line { color: var(--muted); max-width: 30ch; margin-left: auto; margin-right: auto; }

@@ -144,7 +144,7 @@
           }
         }
         this.fillQueue();
-        // Ended by a part (Game.end: Protect's wilt): it stays ended, with no new piece.
+        // Ended by a part (Game.end: a Descent stage cleared): it stays ended, with no new piece.
         if (sv.ended) { this.over = true; this.endKind = String(sv.ended); }
         else if (!this.piece) this.spawnNext();
         // Saved with the board full: the piece has nowhere to be.
@@ -152,7 +152,7 @@
         return;
       }
       this.board = o.board ? o.board.clone() : new Board(o.w || 10, o.h || 20, { wrap: o.wrap });
-      // The seed is kept on the game (a part can seed its own stream from it: Protect's guard); the stream exists
+      // The seed is kept on the game (a part can seed its own stream from it: Descent's Endless); the stream exists
       // before the parts' engines run.
       this.seed = o.seed == null ? (Date.now() ^ (Math.random() * 4294967296)) >>> 0 : o.seed;
       this.rng = new RNG(this.seed);
@@ -523,7 +523,7 @@
 
     /** Where an item acts (bomb and black hole centres, the drill's column, the patch, the laser's cells): the recipe's parts can add to them. */
     targets(kind, cells) { return this.hooks.targets ? this.chain('targets', cells, (e, v) => e.targets(this, this.board, kind, v)) : cells; }
-    /** A cell no item removes (the recipe's `keep`: Protect's sprout). */
+    /** A cell no item removes (the recipe's `keep`: Descent's hanging blocks). */
     kept(v) { return !!this.hooks.keep && this.hooks.keep.some((e) => e.keep(this, this.board, v)); }
 
     drop() {
@@ -708,7 +708,7 @@
     }
 
     /**
-     * A part ends the board (Protect's wilt): over, with its own kind (game.endKind, kept in the save and by Free Play's
+     * A part ends the board (a Descent stage cleared): over, with its own kind (game.endKind, kept in the save and by Free Play's
      * card: ctl.onEnd(kind)); 'topout' is emitted now, or, from a step, after the lock's own event. Undo and a reset
      * take it back.
      */
@@ -720,7 +720,7 @@
       return true;
     }
 
-    /** The rows that clear on a board: its full rows, as the recipe's parts decide (rows: Protect's bed never clears). */
+    /** The rows that clear on a board: its full rows, as the recipe's parts decide (rows: a row holding a Descent block never clears). */
     fullRows(board) {
       board = board || this.board;
       const rows = board.fullRows();
@@ -751,7 +751,7 @@
       return false;
     }
 
-    /** Is the board empty, as the recipe's parts see it (clean: Protect's sprout does not count)? */
+    /** Is the board empty, as the recipe's parts see it (clean: Descent's hanging blocks do not count)? */
     isClean(board) {
       board = board || this.board;
       if (this.hooks.clean) { const r = this.ask('clean', board); if (r !== null) return !!r; }
@@ -771,7 +771,7 @@
         for (let yy = by; yy >= 0; yy--) {
           const old = this.board.get(bx, yy);
           if (!old) continue;
-          // Down to a cell no item removes (Protect's sprout), and no further.
+          // Down to a cell no item removes (a Descent block), and no further.
           if (this.kept(old)) break;
           result.drilled.push([bx, yy, old]); this.board.set(bx, yy, 0);
         }
@@ -1030,7 +1030,7 @@
      */
     settle() {
       if (!this.piece || this.board.isEmpty()) return null;
-      // Cells no item removes (the recipe's keep: Protect's sprout) stay put, and what is above them lands on them.
+      // Cells no item removes (the recipe's keep: Descent's hanging blocks) stay put, and what is above them lands on them.
       const fixed = this.hooks.keep ? (v) => this.kept(v) : undefined;
       if (!this.roomAfter(() => { this.board.compact(fixed); this.board.clearRows(this.fullRows()); })) return null;
       this.pushHistory();

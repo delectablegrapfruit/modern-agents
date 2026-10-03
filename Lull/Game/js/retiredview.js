@@ -40,7 +40,7 @@
 
   /** "Sep 27", with the year when it was another year. */
   const day = (t) => { const d = new Date(t); return d.toLocaleDateString([], { month: 'short', day: 'numeric', year: d.getFullYear() === new Date().getFullYear() ? undefined : 'numeric' }); };
-  /** How a board ended, in a word: Full, or a board option's own end (a uiPart's endName(reason): Protect's Wilted). */
+  /** How a board ended, in a word: Full, or a board option's own end (a uiPart's endName(reason): Descent's Cleared). */
   const ended = (e) => {
     if (e.reason === 'full') return 'Full';
     for (const u of L.Recipe ? L.Recipe.uis() : []) { const t = typeof u.endName === 'function' ? u.endName(e.reason) : null; if (t) return String(t); }

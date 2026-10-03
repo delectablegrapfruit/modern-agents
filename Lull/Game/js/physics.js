@@ -1535,16 +1535,13 @@
       R.physics = true;
     },
     conflicts(r, out) {
-      // Mirror copies a piece cell for cell across the grid, Protect's sprout and moles live on the grid:
-      // Physics bodies have none.
+      // Mirror copies a piece cell for cell across the grid: Physics bodies have none (Descent says its own).
       if (on(r)) {
         out['mods.mirror=true'] = 'Not with Physics';
-        out['mode=protect'] = 'Not with Physics';
         // Classic B type's garbage is grid cells the bodies could not stand on.
         if (classicOn(r)) for (let k = 1; k <= 5; k++) out['classic.height=' + k] = 'No garbage with Physics';
       }
       if (r.mods && r.mods.mirror) out['mods.physics=true'] = 'Not with Mirror';
-      if (r.mode === 'protect') out['mods.physics=true'] = 'Not in Protect';
     },
     valid(g, r) {
       if (!on(r)) return true;

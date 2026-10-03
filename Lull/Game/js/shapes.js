@@ -626,10 +626,8 @@
     limits(r, lim) {
       if (presetOf(r) === 'normal') return;
       const m = minSize(r.shapes);
-      // Protect keeps two rows over the set's tallest piece for its sprout.
-      const extra = r.mode === 'protect' ? 2 : 0;
       lim.w[0] = Math.max(lim.w[0], m.w);
-      lim.h[0] = Math.max(lim.h[0], Math.min(40, m.h + extra));
+      lim.h[0] = Math.max(lim.h[0], Math.min(40, m.h));
     },
     conflicts(r, out) {
       if (r.mode !== 'battle') return;

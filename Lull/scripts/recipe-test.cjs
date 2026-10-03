@@ -88,7 +88,7 @@ async function pixelsOf(browser, gameDir, query) {
 
 // ---- stand-in parts: what the feature branches will register, enough to exercise every seam ---------------------------
 
-/** Registers stand-ins for the five parts (shapes, mirror, jelly, protect, battle), their UI and view halves. */
+/** Registers stand-ins for the five parts (shapes, mirror, jelly, tide, battle), their UI and view halves. */
 const STAND_INS = () => {
   const R = Lull.Recipe, UI = Lull.UI, h = UI.h;
   // The real Physics modifier is left out of this world of stand-ins (its own tests are physics-browser-test.cjs).
@@ -122,15 +122,15 @@ const STAND_INS = () => {
     } : null),
     controller: (play, game) => (game.recipe.mods.mirror ? { id: 'mirror', input(kind, v) { if (kind === 'aim') window.__aims = (window.__aims || 0) + 1; return v; } } : null) });
   R.part({ key: 'jelly', order: 30, mod: 'jelly', owns: ['mods.jelly'], rules(r, Rr) { if (r.mods.jelly) { Rr.noFeats = true; Rr.refuse.tornado = 'Not on a Jelly board'; } }, engine: (game) => (game.recipe.mods.jelly ? { key: 'jelly' } : null) });
-  const LV = { protect: ['easy', 'medium', 'hard'], battle: ['easy', 'steady', 'brisk', 'swift'] };
+  const LV = { tide: ['easy', 'medium', 'hard'], battle: ['easy', 'steady', 'brisk', 'swift'] };
   R.part({
-    key: 'protect', order: 40, mode: 'protect', owns: ['protect'], options: { 'protect.level': LV.protect },
-    normalize(raw, out) { if (out.mode === 'protect') out.protect = { level: LV.protect.includes(raw.protect && raw.protect.level) ? raw.protect.level : 'easy' }; },
-    label: (r) => (r.mode === 'protect' ? 'Protect ' + r.protect.level.charAt(0).toUpperCase() + r.protect.level.slice(1) : ''),
-    limits(r, lim) { if (r.mode === 'protect') { lim.w[0] = Math.max(lim.w[0], 6); lim.h[0] = Math.max(lim.h[0], 12); } },
-    rules(r, Rr) { if (r.mode === 'protect') for (const id of ['tornado', 'trapdoor', 'flip']) Rr.refuse[id] = 'Not in Protect'; },
+    key: 'tide', order: 40, mode: 'tide', owns: ['tide'], options: { 'tide.level': LV.tide },
+    normalize(raw, out) { if (out.mode === 'tide') out.tide = { level: LV.tide.includes(raw.tide && raw.tide.level) ? raw.tide.level : 'easy' }; },
+    label: (r) => (r.mode === 'tide' ? 'Tide ' + r.tide.level.charAt(0).toUpperCase() + r.tide.level.slice(1) : ''),
+    limits(r, lim) { if (r.mode === 'tide') { lim.w[0] = Math.max(lim.w[0], 6); lim.h[0] = Math.max(lim.h[0], 12); } },
+    rules(r, Rr) { if (r.mode === 'tide') for (const id of ['tornado', 'trapdoor', 'flip']) Rr.refuse[id] = 'Not in Tide'; },
     // A controller named with a string key (as every registry names its parts): a name, never the key hook.
-    controller: (play, game) => (game.recipe.mode === 'protect' ? { key: 'protect', leaves: 3, tiles: () => [['3', 'Leaves']], status(parts, o) { return o.prev.slice(0, 1).concat([o.stat('Leaves', String(this.leaves))]); } } : null),
+    controller: (play, game) => (game.recipe.mode === 'tide' ? { key: 'tide', tides: 3, tiles: () => [['3', 'Tides']], status(parts, o) { return o.prev.slice(0, 1).concat([o.stat('Tides', String(this.tides))]); } } : null),
   });
   R.part({
     key: 'battle', order: 50, mode: 'battle', owns: ['battle'], options: { 'battle.level': LV.battle },
@@ -169,7 +169,7 @@ const STAND_INS = () => {
   R.uiPart({ key: 'mirror', order: 20, mod: 'mirror', name: 'Mirror' });
   R.uiPart({ key: 'jelly', order: 30, mod: 'jelly', name: 'Jelly' });
   const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
-  R.uiPart({ key: 'protect', order: 40, mode: 'protect', name: 'Protect', levels: () => ({ path: 'protect.level', values: LV.protect.map((v) => [v, cap(v)]) }) });
+  R.uiPart({ key: 'tide', order: 40, mode: 'tide', name: 'Tide', levels: () => ({ path: 'tide.level', values: LV.tide.map((v) => [v, cap(v)]) }) });
   R.uiPart({
     key: 'battle', order: 50, mode: 'battle', name: 'Battle', levels: () => ({ path: 'battle.level', values: LV.battle.map((v) => [v, cap(v)]) }),
     stepper: (r, k) => (r.mode === 'battle' && k === 'h' ? { label: 'Rows' } : null),
@@ -194,7 +194,7 @@ const STAND_INS = () => {
     // A line down the middle, as Mirror's will be (a pixel probe finds it).
     preview(ctx, geom, recipe, theme) { if (recipe && recipe.mods && recipe.mods.jelly) { window.__vp.preview++; ctx.globalAlpha = 0.5; ctx.fillStyle = theme.accent; ctx.fillRect(geom.x + Math.floor(geom.w / 2) * geom.c - 1, geom.y, 2, geom.h * geom.c); } },
   });
-  UI.statRow('protect', { sub: 'free', at: 'end', render: () => h('h4', { class: 'stand-in-row' }, 'Protect') });
+  UI.statRow('tide', { sub: 'free', at: 'end', render: () => h('h4', { class: 'stand-in-row' }, 'Tide') });
 };
 
 module.exports = async function recipeTests({ browser, check, PAGE, OUT }) {
@@ -409,14 +409,14 @@ module.exports = async function recipeTests({ browser, check, PAGE, OUT }) {
   // The Board full card: a Board tile with the label, and the controller's own tiles.
   await ev(() => {
     const m = Lull.app.modes.play, R = Lull.Recipe;
-    m.setGame(new Lull.Game({ w: 10, h: 20, recipe: R.normalize({ shapes: { preset: 'frantic' }, mods: { jelly: true }, mode: 'protect', protect: { level: 'easy' } }), seed: 4, previewCount: 5 }));
+    m.setGame(new Lull.Game({ w: 10, h: 20, recipe: R.normalize({ shapes: { preset: 'frantic' }, mods: { jelly: true }, mode: 'tide', tide: { level: 'easy' } }), seed: 4, previewCount: 5 }));
     const g = m.game;
     for (let i = 0; i < 12; i++) g.drop();
     g.over = true; m.onTopout();
   });
   await ev(() => document.getElementById('toasts').replaceChildren());
   const card = await ev(() => { const t = document.querySelector('.card.topout .board-tile'); return t ? { v: t.querySelector('.v').textContent, l: t.querySelector('.l').textContent, title: t.title } : null; });
-  check('the Board full card has a Board tile: "Frantic · Jelly · Protect Easy"', card && card.v === 'Frantic · Jelly · Protect Easy' && card.l === 'Board', JSON.stringify(card));
+  check('the Board full card has a Board tile: "Frantic · Jelly · Tide Easy"', card && card.v === 'Frantic · Jelly · Tide Easy' && card.l === 'Board', JSON.stringify(card));
   await shot('recipe-03-520x760-board-full-light');
   await page.emulateMedia({ colorScheme: 'dark' });
   await ev(() => { Lull.app.settings.theme = 'dark'; Lull.app.applySettings(); });
@@ -427,7 +427,7 @@ module.exports = async function recipeTests({ browser, check, PAGE, OUT }) {
   await ev(() => { Lull.app.statsSub = 'free'; Lull.app.setTab('stats'); });
   await page.waitForTimeout(150);
   const stats = await ev(() => ({ row: !!document.querySelector('#stats-body .stand-in-row'), labels: [...document.querySelectorAll('#stats-body .past-lbl')].map((e) => e.textContent) }));
-  check('Stats: a part\'s row (UI.statRow); Past boards show a board\'s recipe under its size', stats.row && stats.labels.includes('Frantic · Jelly · Protect Easy') && stats.labels.includes('Jelly'), JSON.stringify(stats));
+  check('Stats: a part\'s row (UI.statRow); Past boards show a board\'s recipe under its size', stats.row && stats.labels.includes('Frantic · Jelly · Tide Easy') && stats.labels.includes('Jelly'), JSON.stringify(stats));
   const pastEl = await page.$('#stats-body table.st.cols');
   if (shotDir && pastEl) { await pastEl.scrollIntoViewIfNeeded(); await shot('recipe-04-520x760-past-boards-light'); }
   await ev(() => Lull.app.setTab('play'));
@@ -491,10 +491,10 @@ module.exports = async function recipeTests({ browser, check, PAGE, OUT }) {
     return { taken, turned: m.game.piece.rot !== rot || !m.game.piece };
   });
   check('a tap the controller takes (null) turns nothing; any other tap turns as before', tap.taken.ok && tap.taken.rot && tap.taken.sent === 3 && tap.turned, JSON.stringify(tap));
-  // Two parts' controllers on one board (Mirror and Protect): both are asked; the one named by a string key keeps the keys.
+  // Two parts' controllers on one board (Mirror and Tide): both are asked; the one named by a string key keeps the keys.
   const both = await ev(() => {
     const m = Lull.app.modes.play, R = Lull.Recipe;
-    m.setGame(new Lull.Game({ w: 10, h: 20, recipe: R.normalize({ mods: { mirror: true }, mode: 'protect' }), seed: 4, previewCount: 5 }));
+    m.setGame(new Lull.Game({ w: 10, h: 20, recipe: R.normalize({ mods: { mirror: true }, mode: 'tide' }), seed: 4, previewCount: 5 }));
     m.view.render(performance.now());
     window.__aims = 0;
     m.pointer = [m.view.lay.board.x + 3, m.view.lay.board.y + 20]; m.settings.mouse = true; m.follow();
@@ -503,7 +503,7 @@ module.exports = async function recipeTests({ browser, check, PAGE, OUT }) {
   });
   await page.keyboard.press('ArrowRight');
   const bothKey = await ev(() => Lull.app.modes.play.game.piece.x);
-  check('Mirror and Protect together: Mirror’s input and Protect’s tiles and status both run; keys still work', both.aims >= 1 && both.tiles === 'Leaves' && /Leaves/.test(both.status) && !/Score/.test(both.status) && both.id === 'protect' && both.hook === 'function' && bothKey === both.x0 + 1, JSON.stringify({ both, bothKey }));
+  check('Mirror and Tide together: Mirror’s input and Tide’s tiles and status both run; keys still work', both.aims >= 1 && both.tiles === 'Tides' && /Tides/.test(both.status) && !/Score/.test(both.status) && both.id === 'tide' && both.hook === 'function' && bothKey === both.x0 + 1, JSON.stringify({ both, bothKey }));
   // A Mirror board: the copy is drawn fainter (pieceAlpha), and paired items play at each spot.
   const faint = await ev(() => {
     const m = Lull.app.modes.play, v = m.view, g = m.game, dpr = v.dpr;
@@ -581,7 +581,7 @@ module.exports = async function recipeTests({ browser, check, PAGE, OUT }) {
   await page.focus('.stand-in-keep');
   await page.keyboard.press('Space');
   const fKeep = await ev(() => document.activeElement.dataset.focus || document.activeElement.className);
-  check('a part’s panel control that chooses leaves focus on its tab, so Enter does not Create; one with data-focus keeps focus', fPlain.inWin && fPlain.tab === 'mode' && fEnter.open && fEnter.n === nb0 && fKeep === 'keep', JSON.stringify({ fPlain, fEnter, fKeep }));
+  check('a part’s panel control that chooses tides focus on its tab, so Enter does not Create; one with data-focus keeps focus', fPlain.inWin && fPlain.tab === 'mode' && fEnter.open && fEnter.n === nb0 && fKeep === 'keep', JSON.stringify({ fPlain, fEnter, fKeep }));
   await ev(() => { window.__standInPanel = false; });
   // 10 × 20 asked; Battle shows 10 × 12; More columns there; Plain again: 11 × 20.
   await ev(() => { document.querySelector('.nb-tab[data-tab="size"]').click(); Lull.app.modes.play.lastNB.nb.choose('shapes.preset', 'normal'); });
@@ -661,9 +661,9 @@ module.exports = async function recipeTests({ browser, check, PAGE, OUT }) {
         await P.ev(() => {
           const m = Lull.app.modes.play, R = Lull.Recipe, st = Lull.app.store.state;
           const mk = (r, w, h) => { m.game.drop(); st.boards.recipe = R.normalize(r); m.shelveAndNew({ w, h }, st.boards.recipe); m.game.drop(); };
-          mk({ shapes: { preset: 'frantic' }, mods: { jelly: true }, mode: 'protect', protect: { level: 'easy' } }, 12, 24);
+          mk({ shapes: { preset: 'frantic' }, mods: { jelly: true }, mode: 'tide', tide: { level: 'easy' } }, 12, 24);
           mk({ shapes: { preset: 'big' }, mods: { mirror: true } }, 6, 12);
-          mk({ shapes: { preset: 'pentominoes' }, mods: { jelly: true, mirror: true }, mode: 'protect', protect: { level: 'medium' } }, 16, 16);
+          mk({ shapes: { preset: 'pentominoes' }, mods: { jelly: true, mirror: true }, mode: 'tide', tide: { level: 'medium' } }, 16, 16);
           mk({}, 10, 20);
           m.openLibrary();
         });
@@ -677,7 +677,7 @@ module.exports = async function recipeTests({ browser, check, PAGE, OUT }) {
         }));
         const narrow = vp.name === '320x568';
         check(vp.name + ' ' + theme + ': library rows show the recipe after the size and when (the size and when never cut), Lines and Score whole' + (narrow ? ', the label on a line of its own' : ''),
-          rows.filter((r) => r.lab).length === 3 && rows.some((r) => /Frantic · Jelly · Protect Easy/.test(r.title)) && rows.some((r) => /^6 × 12 · .+ · Big · Mirror$/.test(r.t) && r.title === 'Big · Mirror') && rows.every((r) => r.fits && r.head && r.st && (!narrow || r.own)), JSON.stringify(rows));
+          rows.filter((r) => r.lab).length === 3 && rows.some((r) => /Frantic · Jelly · Tide Easy/.test(r.title)) && rows.some((r) => /^6 × 12 · .+ · Big · Mirror$/.test(r.t) && r.title === 'Big · Mirror') && rows.every((r) => r.fits && r.head && r.st && (!narrow || r.own)), JSON.stringify(rows));
         if (narrow || vp.name === '520x760') await P.shot('recipe-lib-' + vp.name + '-' + theme);
         await P.ev(() => { while (Lull.UI.modalOpen()) Lull.UI.closeTopModal(); });
       }
