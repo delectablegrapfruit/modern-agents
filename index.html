@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>livenet</title>
+<meta name="description" content="livenet: free utilities that fix what's broken in the software you already use. No accounts, no tracking, nothing leaves your device.">
+<style>
+  :root {
+    --bg: #f7f7f5; --surface: #ffffff; --text: #18181b; --muted: #6b6b73; --line: #e4e4e7;
+    --ink: #18181b; --ink-text: #ffffff; --live: #16a34a; --live-soft: #dcfce7; --chip: #f1f1f3; --warn: #a16207;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f0f11; --surface: #18181b; --text: #f4f4f5; --muted: #a1a1aa; --line: #2a2a30;
+      --ink: #f4f4f5; --ink-text: #0f0f11; --live: #4ade80; --live-soft: #14301f; --chip: #232328; --warn: #facc15;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f0f11; --surface: #18181b; --text: #f4f4f5; --muted: #a1a1aa; --line: #2a2a30;
+    --ink: #f4f4f5; --ink-text: #0f0f11; --live: #4ade80; --live-soft: #14301f; --chip: #232328; --warn: #facc15;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 16.5px/1.55 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Helvetica Neue", Arial, sans-serif; }
+  a { color: inherit; }
+  code { font: 0.88em ui-monospace, "SF Mono", Menlo, monospace; background: var(--chip); padding: 0.1em 0.35em; border-radius: 5px; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 16px; }
+
+  header.top { display: flex; align-items: center; justify-content: space-between; padding: 20px 0; }
+  .logo { display: inline-flex; align-items: center; gap: 9px; font-weight: 700; font-size: 21px; letter-spacing: -0.02em; text-decoration: none; }
+  .pulse { position: relative; width: 11px; height: 11px; border-radius: 50%; background: var(--live); }
+  .pulse::after { content: ""; position: absolute; inset: -5px; border-radius: 50%; border: 2px solid var(--live); opacity: 0; animation: ping 2.4s ease-out infinite; }
+  @keyframes ping { 0% { transform: scale(.4); opacity: .7; } 80%, 100% { transform: scale(1.4); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .pulse::after { animation: none; } }
+  nav a { color: var(--muted); text-decoration: none; margin-left: 22px; font-size: 15px; }
+  nav a:hover { color: var(--text); }
+
+  .hero { padding: 64px 0 56px; max-width: 760px; }
+  h1 { font-size: clamp(36px, 6vw, 60px); line-height: 1.04; letter-spacing: -0.03em; margin: 0 0 20px; }
+  .lede { font-size: 20px; color: var(--muted); margin: 0 0 28px; max-width: 46ch; }
+  .promises { display: flex; flex-wrap: wrap; gap: 8px; padding: 0; margin: 0; list-style: none; }
+  .promises li { display: inline-flex; align-items: center; gap: 7px; background: var(--surface); border: 1px solid var(--line);
+                 border-radius: 999px; padding: 6px 13px; font-size: 14.5px; }
+  .promises li::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--live); }
+
+  section { padding: 56px 0; border-top: 1px solid var(--line); }
+  h2 { font-size: clamp(26px, 3.6vw, 34px); letter-spacing: -0.02em; margin: 0 0 8px; }
+  .sub { color: var(--muted); margin: 0 0 30px; max-width: 62ch; }
+
+  .apps { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
+  .app { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 22px; display: flex; flex-direction: column; gap: 12px; }
+  .app-head { display: flex; align-items: center; gap: 12px; }
+  .icon { width: 44px; height: 44px; border-radius: 11px; display: grid; place-items: center; flex: none; background: var(--ink); color: var(--ink-text); }
+  .icon svg { width: 24px; height: 24px; }
+  .app h3 { margin: 0; font-size: 19px; letter-spacing: -0.01em; }
+  .meta { font-size: 13.5px; color: var(--muted); }
+  .area { font-size: 12.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-left: auto; align-self: flex-start; }
+  .row { display: grid; grid-template-columns: 74px 1fr; gap: 10px; font-size: 15.5px; }
+  .row b { font-size: 12.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding-top: 3px; }
+  .row.fix span { font-weight: 500; }
+  .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: auto; padding-top: 6px; align-items: center; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; padding: 0 16px; border-radius: 999px;
+         font-weight: 600; font-size: 14.5px; text-decoration: none; border: 1px solid var(--line); background: var(--surface); color: var(--text); cursor: pointer; }
+  .btn.primary { background: var(--ink); border-color: var(--ink); color: var(--ink-text); }
+  .btn:hover { filter: brightness(1.08); }
+  .note { font-size: 13px; color: var(--muted); }
+
+  .board-head { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+  .preview { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--warn); border: 1px dashed currentColor; border-radius: 999px; padding: 4px 11px; }
+  form.ask { display: flex; gap: 10px; margin: 0 0 18px; }
+  form.ask input { flex: 1; min-width: 0; min-height: 44px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font: inherit; }
+  form.ask input:focus { outline: 2px solid var(--live); outline-offset: 1px; }
+  .tabs { display: flex; gap: 6px; margin: 0 0 14px; flex-wrap: wrap; }
+  .tab { border: 1px solid var(--line); background: transparent; color: var(--muted); border-radius: 999px; padding: 6px 13px; font: inherit; font-size: 14px; cursor: pointer; }
+  .tab[aria-pressed="true"] { background: var(--ink); color: var(--ink-text); border-color: var(--ink); }
+  ol.requests { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); overflow: hidden; }
+  ol.requests li { display: flex; gap: 14px; align-items: center; padding: 14px 16px; border-top: 1px solid var(--line); }
+  ol.requests li:first-child { border-top: 0; }
+  .vote { flex: none; width: 54px; min-height: 54px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--text);
+          display: flex; flex-direction: column; align-items: center; justify-content: center; font: inherit; font-weight: 700; cursor: pointer; line-height: 1.1; }
+  .vote small { font-size: 10px; font-weight: 600; color: var(--muted); }
+  .vote[aria-pressed="true"] { border-color: var(--live); background: var(--live-soft); color: var(--live); }
+  .vote:disabled { cursor: default; opacity: .55; }
+  .req { flex: 1; min-width: 0; }
+  .req p { margin: 0; font-weight: 500; }
+  .req .where { font-size: 13px; color: var(--muted); }
+  .status { flex: none; font-size: 12.5px; font-weight: 600; border-radius: 999px; padding: 4px 10px; background: var(--chip); color: var(--muted); }
+  .status.shipped { background: var(--live-soft); color: var(--live); }
+  .empty { padding: 18px 16px; color: var(--muted); }
+
+  footer { padding: 34px 0 56px; color: var(--muted); font-size: 14px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 8px 24px; }
+
+  @media (max-width: 760px) {
+    .apps { grid-template-columns: 1fr; }
+    .hero { padding: 32px 0 40px; }
+    nav a.optional { display: none; }
+    section { padding: 44px 0; }
+    form.ask { flex-direction: column; }
+    .status { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="logo" href="#"><span class="pulse" aria-hidden="true"></span>livenet</a>
+    <nav>
+      <a href="#apps">Apps</a>
+      <a href="#board">What's broken?</a>
+      <a class="optional" href="https://github.com/delectablegrapfruit/modern-agents">Source</a>
+    </nav>
+  </header>
+
+  <div class="hero">
+    <h1>Small fixes for software that should have worked.</h1>
+    <p class="lede">Free utilities that each fix one thing that's broken in the software you already use, and fix it thoroughly.</p>
+    <ul class="promises">
+      <li>Free, no catch</li>
+      <li>Open source</li>
+      <li>No accounts</li>
+      <li>No tracking</li>
+      <li>Nothing leaves your device</li>
+    </ul>
+  </div>
+</div>
+
+<section id="apps">
+  <div class="wrap">
+    <h2>The fixes</h2>
+    <p class="sub">Each app names the problem it fixes.</p>
+    <div class="apps" id="app-list"></div>
+  </div>
+</section>
+
+<section id="board">
+  <div class="wrap">
+    <div class="board-head">
+      <div>
+        <h2>What's broken?</h2>
+        <p class="sub" style="margin:0">Name something in your software that annoys you every day. The most-voted problems get fixed next.</p>
+      </div>
+      <span class="preview" title="The shared board is not live yet">Preview · votes stay in this browser</span>
+    </div>
+    <form class="ask" id="ask">
+      <input id="ask-text" maxlength="140" placeholder="e.g. Finder forgets the window size I set" aria-label="Describe a problem" required>
+      <button class="btn primary" type="submit">Add problem</button>
+    </form>
+    <div class="tabs" role="group" aria-label="Show">
+      <button class="tab" data-filter="open" aria-pressed="true">Open</button>
+      <button class="tab" data-filter="shipped" aria-pressed="false">Fixed</button>
+      <button class="tab" data-filter="all" aria-pressed="false">All</button>
+    </div>
+    <ol class="requests" id="requests"></ol>
+    <p class="note" style="margin-top:12px">The open items are examples to show how the board works; they aren't real submissions.</p>
+  </div>
+</section>
+
+<div class="wrap">
+  <footer>
+    <span><strong style="color:var(--text)">livenet</strong> · free utilities, made to last</span>
+    <span>Every app is MIT licensed</span>
+  </footer>
+</div>
+
+<script>
+  const REPO = "https://github.com/delectablegrapfruit/modern-agents";
+  const raw = (branch, path) => `${REPO}/raw/${branch}/${path}`;
+  const tree = (branch) => `${REPO}/tree/${branch}`;
+
+  const ICONS = {
+    sift: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16"/><path d="M7 12h10"/><path d="M10 17h4"/></svg>',
+    audio: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10v4h4l5 4V6L8 10z"/><path d="M17 9.5a3.5 3.5 0 0 1 0 5"/><path d="M3 4h18" stroke-dasharray="2 2.5"/></svg>',
+    books: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 5.5C6.5 4.5 9.5 4.5 12 6c2.5-1.5 5.5-1.5 8-.5v13c-2.5-1-5.5-1-8 .5-2.5-1.5-5.5-1.5-8-.5z"/><path d="M12 6v13"/></svg>',
+    scrub: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M6 20h12"/><path d="M10 20v-2"/><path d="M8 11h8"/><path d="M14 9l2 2-2 2"/></svg>',
+  };
+
+  // The apps, each with the problem it fixes. Downloads are the builds CI commits on each app's branch.
+  const APPS = [
+    { id: "sift", name: "Sift", area: "Finder & disks", platform: "macOS 13+",
+      problem: "Finder leaves .DS_Store and ._ files on every disk you touch, and keeps forgetting how you set your folders to look.",
+      fix: "Removes that junk the moment it appears, on every disk, and gives every folder the view you chose.",
+      download: raw("claude/sift-pro", "dist/Sift.app.zip"), source: tree("claude/sift-pro"), mac: true },
+    { id: "audio", name: "Audio Limiter", area: "Sound", platform: "macOS 14.2+",
+      problem: "Good headphones are already loud at half volume, so the whole volume slider is crammed into its first few steps.",
+      fix: "Caps each output device's maximum volume, so the full slider and every volume-key press covers the range you actually listen at.",
+      download: raw("audio-limiter", "dist/AudioLimiter.dmg"), source: tree("audio-limiter"), mac: true },
+    { id: "books", name: "Books", area: "Reading", platform: "macOS 14+",
+      problem: "DRM-free EPUB, Kindle files and PDFs need different apps on a Mac, and small-print PDFs are unreadable on a laptop screen.",
+      fix: "One offline reader for all of them. PDFs can be re-flowed so small print reads at any size, with two pages side by side.",
+      download: raw("main", "dist/Books.dmg"), source: tree("main"), mac: true },
+    { id: "scrub", name: "Scroll to Scrub", area: "Web & video", platform: "Chrome 114+",
+      problem: "Seeking in a web video means dragging a thin timeline, which is hard to aim and jumps too far.",
+      fix: "Hover any video on any site and scroll sideways to move through it in fine steps, with undo.",
+      download: `${REPO}/archive/refs/heads/claude/horizontal-video-scrub-extension-ww3dr6.zip`,
+      source: tree("claude/horizontal-video-scrub-extension-ww3dr6"),
+      note: "Unzip, then chrome://extensions ▸ Developer mode ▸ Load unpacked ▸ the extension folder." },
+  ];
+
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  document.getElementById("app-list").innerHTML = APPS.map((a) => `
+    <article class="app">
+      <div class="app-head">
+        <div class="icon">${ICONS[a.id]}</div>
+        <div><h3>${esc(a.name)}</h3><div class="meta">${esc(a.platform)}</div></div>
+        <span class="area">${esc(a.area)}</span>
+      </div>
+      <div class="row"><b>Problem</b><span>${esc(a.problem)}</span></div>
+      <div class="row fix"><b>Fix</b><span>${esc(a.fix)}</span></div>
+      <div class="actions">
+        <a class="btn primary" href="${a.download}">Download</a>
+        <a class="btn" href="${a.source}">Source</a>
+      </div>
+      <div class="note">${a.mac ? "First launch: right-click the app ▸ Open (signed builds are on the way)." : esc(a.note)}</div>
+    </article>`).join("");
+
+  // The board. Fixed items come from the apps above; open items are examples until the shared board is live.
+  const SEED = [
+    ...APPS.map((a) => ({ id: "fixed-" + a.id, text: a.problem, where: "Fixed by " + a.name, status: "shipped" })),
+    { id: "ex-1", text: "Bluetooth headphones drop to call-quality sound whenever any app turns on the microphone.", where: "macOS · example", status: "open" },
+    { id: "ex-2", text: "Menu bar icons disappear behind the notch with no way to reach them.", where: "macOS · example", status: "open" },
+    { id: "ex-3", text: "Copied links carry tracking junk (utm_, fbclid) into every message I paste them in.", where: "Any OS · example", status: "open" },
+    { id: "ex-4", text: "An app steals focus while I'm typing and my keystrokes land in its window.", where: "macOS · example", status: "open" },
+    { id: "ex-5", text: "Screenshots pile up on the Desktop with names that say nothing about what's in them.", where: "macOS · example", status: "open" },
+  ];
+
+  // Per-browser memory for the preview only; the page works the same when storage is unavailable.
+  const KEY = "livenet-board-v1";
+  const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } };
+  const save = (state) => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {} };
+  const state = Object.assign({ votes: {}, added: [] }, load());
+  let filter = "open";
+
+  function items() {
+    const list = [...state.added.map((t) => ({ ...t, status: "open", where: "Added by you · this browser only" })), ...SEED];
+    const shown = list.filter((i) => filter === "all" || i.status === filter);
+    // Open problems by votes, newest first among equals; fixed ones in the order the apps are listed.
+    return shown.sort((a, b) => (a.status === "open" && b.status === "open") ? (state.votes[b.id] ? 1 : 0) - (state.votes[a.id] ? 1 : 0) : 0);
+  }
+
+  function render() {
+    const list = items();
+    document.getElementById("requests").innerHTML = list.length ? list.map((i) => {
+      const voted = !!state.votes[i.id];
+      const shipped = i.status === "shipped";
+      return `<li>
+        <button class="vote" data-id="${esc(i.id)}" aria-pressed="${voted}" ${shipped ? "disabled" : ""}
+                aria-label="${voted ? "Remove your vote" : "Vote"}">${shipped ? "✓" : (voted ? 1 : 0)}<small>${shipped ? "fixed" : (voted ? "vote" : "votes")}</small></button>
+        <div class="req"><p>${esc(i.text)}</p><div class="where">${esc(i.where)}</div></div>
+        <span class="status ${shipped ? "shipped" : ""}">${shipped ? "Fixed" : "Open"}</span>
+      </li>`;
+    }).join("") : `<li class="empty">Nothing here yet.</li>`;
+  }
+
+  document.getElementById("requests").addEventListener("click", (e) => {
+    const button = e.target.closest(".vote");
+    if (!button || button.disabled) return;
+    const id = button.dataset.id;
+    if (state.votes[id]) delete state.votes[id]; else state.votes[id] = true;
+    save(state);
+    render();
+  });
+
+  document.getElementById("ask").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const field = document.getElementById("ask-text");
+    const text = field.value.trim();
+    if (!text) return;
+    const id = "mine-" + Date.now();
+    state.added.unshift({ id, text });
+    state.votes[id] = true;
+    save(state);
+    field.value = "";
+    filter = "open";
+    syncTabs();
+    render();
+  });
+
+  function syncTabs() {
+    for (const tab of document.querySelectorAll(".tab")) tab.setAttribute("aria-pressed", String(tab.dataset.filter === filter));
+  }
+  for (const tab of document.querySelectorAll(".tab")) {
+    tab.addEventListener("click", () => { filter = tab.dataset.filter; syncTabs(); render(); });
+  }
+
+  render();
+</script>
+</body>
+</html>
