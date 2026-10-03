@@ -1099,19 +1099,38 @@ rounds in a row on one board; **Fastest Arm** (250, legend) beat Swift.
 A mode (`js/mural.js`, its controller, look and window `js/muralview.js`, `css/mural.css`): a picture becomes the
 board's target. It is cut into pieces that cover the whole well with no gap, and they come in one fixed order, bottom up,
 each already carrying its colours. Every block is split into 2 × 2 quarter cells, each its own colour, so the picture has
-twice the board's resolution each way (16 × 20 quarters at level 1, 32 × 52 at level 5); a piece's quarters turn with it,
+twice the board's resolution each way (16 × 20 quarters on level 1's 8 × 10, 40 × 72 on the largest board, 20 × 36: a
+bigger board shows more detail); a piece's quarters turn with it,
 on the board, in play and in Next. Nothing falls by itself, no line ever clears, there is no clock and nothing to lose:
 time counts only while the board is used (its own `timeMs.mural`).
 
 *Its place.* The spot the piece in play belongs in is outlined on the board (an accent line over a soft halo, its
 quarters lightly in it; the ghost is a plain outline). The outline says whether the piece's turn is right: dashed while
 it is in another turn, solid once its turn matches. A small badge on the place's top corner, drawn over the piece, says
-the same plainly: an arrow round the way to turn it (clockwise, or counter-clockwise: one turn), a 2 for a half turn,
-a tick once the turn is right, filled when a drop would set it there. Nothing in it moves (the same under reduced
-motion), and it reads on either theme (`turnBadge` in `js/muralview.js`). The piece
-appears at the top in another turn than its place wherever that looks different (its shape, or its quarters), nearest
-the middle, where its place can still be reached by moves and turns (searched as the engine moves and kicks); with none,
-in its own turn right over its place. It must be turned and moved there by hand: a drop or a set anywhere else, or in
+the same plainly: an arrow round the way to turn it, with the presses in it past one, or a tick once the turn is right,
+filled when a drop would set it there. Nothing in it moves (the same under reduced motion), and it reads on either theme
+(`turnBadge` in `js/muralview.js`).
+
+*One turn button*, as in puzzles: by default the single turn button (Up, or a right-click) places every piece:
+clockwise, or counter-clockwise under Inverted Controls. The piece appears at the top in another turn than its place
+wherever that looks different (its shape, or its quarters), one press of that button away (two only when one press away
+cannot reach its place), nearest the middle, where its place can be reached turning only that way and only in place or
+nudged sideways off a wall (one column, two for a long piece), never by a kick that hops it down or through a gap
+(`reach` with a turn, `prefOf`, `spawnSpot`); with none, in its own turn right over its place (rare: a few
+pieces in a thousand, Pentominoes on large boards). So the badge only ever shows that button's arrow (or a tick); the other key turned three times is
+the arrow with a 3. Settings ▸ Controls ▸ Counter-clockwise puzzles on: pieces appear turned either way or a half turn,
+reached by turns either way and any kick, and the badge shows either arrow or a 2. A piece whose every turn looks the
+same appears in its place's turn. The turn is read as each piece appears (`setTurnMode`, from the settings).
+
+*The buffer*, as Race's: 4 rows over the picture (`R.k`; the board's size is the picture's, the buffer on top of it),
+where nothing ever sets. While the stack is low it is hidden and pieces appear at the picture's top; once the stack (or
+the piece's place) comes within 4 rows of the top it opens for good: the board grows smoothly to show it (cells a little
+smaller so all of it fits; at once under reduced motion; it shows too whenever the piece is turned up into it), drawn as
+a soft band over a dashed top edge, and pieces appear at its top, so the picture's last rows are reached by the same
+moves and the same one-button turns as the rest. A finished mural shows only its picture. A board saved before the
+buffer opens with it added.
+
+A piece must be turned and moved into its place by hand: a drop or a set anywhere else, or in
 another turn, simply does not happen (the piece stays where it was; no sound, no shake, no note; the outline brightens
 once). Hold is off; Undo, the hints and every power-up are off ("Not in Mural"). The last piece set: the **Finished**
 card (Boards; Look, which hides it to show the whole picture, Space or a tap brings it back; New board, which keeps the
@@ -1119,12 +1138,27 @@ mural in the library, tagged Finished, and opens the New board window). A finish
 stays viewable in the library (its thumbnail and full view in the picture's colours). Status bar: Placed "n of N" and
 Level; under the board, a slim progress track.
 
-*Tiling.* The cells are taken bottom up, left to right; a piece starts at the first free cell and grows (left, right or
-up) only into a cell whose cell below is already taken. So every cell under a piece belongs to an earlier one (or is the
-floor) and every cell over it to a later one: the order made is the order dealt, each piece drops straight down into its
-place and rests there, and no order can cycle. Seeded by the board's seed (kept in the save, `x.mural = { v, seed, i }`).
+*The cut, different every time.* Every new mural is cut from a fresh random seed, so its pieces, their order and their
+places differ each time, even for the same picture, level, size and set; started over (Retry), it is cut anew. A saved
+board keeps its seed (`x.mural = { v: 2, seed, i }`) and resumes exactly. The cells are taken bottom up, left to right,
+and the first free cell is covered next, by a piece whose every cell rests on the floor, on an earlier piece or on its
+own cells: every cell under a piece belongs to an earlier one and every cell over it to a later one, so the order made is
+the order dealt, each piece drops straight down into its place, and no order can cycle. **Mixed** grows each piece from
+that cell (left, right or up) to a size drawn from the level's shares (the table). **Normal**, **Pentominoes** and
+**Frantic** search (`cut`): candidates in a weighted, shuffled order from the seed, backtracking wherever a closed gap is
+left whose size the set's pieces cannot make; a piece may reach up to 2 rows over the picture into the buffer, and what
+it leaves there is trimmed as it sets and fades (Race's rule), so the top row never needs exact small pieces. Past a
+budget of tries a gap with no piece left would take a single block (counted: none in any test so far). Each cut is then
+**checked by playing it** (`verify`): every piece, in order, from where it appears, reached turning only clockwise and
+again only counter-clockwise (both ways reaches at least as much), the picture covered exactly once; a cut that failed
+would be cut again from the next seed (at most 4; deterministic, so a resumed board gets the same one). So a dealt mural
+is always solvable with the one turn button. A plan is cached by recipe, seed and size. Times (cut and checked, a fresh
+seed): about 30-45 ms at 16 × 26 and 85-135 ms at 20 × 36 in Node; in Chromium at 4 × CPU throttle 120-270 ms at
+16 × 26 and 420-510 ms at 20 × 36 (`scripts/mural-unit.cjs`, `scripts/mural-test.cjs`). Unit tests cut every built-in
+picture at levels 1-5 in each set (exact cover, order, the check, the same cut for the same seed, fallbacks reported),
+and 200 random seeds a set over pictures, sizes and levels, with no unsolvable plan.
 
-| Level | Board | Colours (a photo) | Pieces (1 / 2 / 3 / 4 blocks aimed for) |
+| Level | Size (default) | Colours (a photo) | Mixed: pieces of 1 / 2 / 3 / 4 blocks aimed for |
 |---|---|---|---|
 | 1 | 8 × 10 | 3 (5) | 24 / 34 / 28 / 14 % |
 | 2 | 10 × 14 | 4 (7) | 14 / 28 / 32 / 26 % |
@@ -1132,7 +1166,9 @@ place and rests there, and no order can cycle. Seeded by the board's seed (kept 
 | 4 | 14 × 22 | 8 (13) | 5 / 14 / 28 / 53 % |
 | 5 | 16 × 26 | 10 (16) | 3 / 10 / 22 / 65 % |
 
-Level 5 keeps a quarter at 5 px or more at 320 × 568. No pentominoes.
+The level sets the colours (and Mixed's share of small pieces); the size is free. A board can be 6-20 wide and 8-36 tall
+(the picture's rows; the buffer's 4 are on top). The largest, 20 × 36, keeps a quarter at 4 px at 320 × 568 (7.5 px at
+390 × 844), its buffer open, everything fitting.
 
 *Pictures.* Three of Lull's own, drawn as functions of the point (4 × 4 samples a quarter): **Coast** (a coastline at
 dusk: a headland and lighthouse, a setting sun on the sea, sand), **Still life** (a bowl of fruit before a window) and
@@ -1140,7 +1176,8 @@ dusk: a headland and lighthouse, a setting sun on the sea, sand), **Still life**
 the first K (OKLab), each then the mean of its quarters, so a bowl stays blue at three. A **Photo**: the Photo chip
 opens the system's file picker (the macOS app answers the page's file input with an open panel for images,
 `Sources/Lull/PhotoPicker.swift`; the Home Screen web app and browsers their own), then the Photo window: the photo with a
-frame of the board's shape (drag it, or the arrows; Zoom), the frame showing the mural it makes. On the device, the crop
+frame of the board's shape (the size chosen in the window; drag it, or the arrows; Zoom), the frame showing the mural
+it makes. On the device, the crop
 is read at the photo's own pixels and area-averaged to quarters in linear light (as light mixes, so edges and fine
 patterns never go muddy), then quantised to the level's photo colours (more than a built-in picture's: the table) in
 OKLab, the same every time: the quarters gathered in small boxes, each weighed by the root of its count and by how vivid
@@ -1150,15 +1187,22 @@ colour out). The colours are drawn exactly as kept: no theme, palette or skin to
 (vivid primaries, skin tones, a face, a street at dusk, a small flower and door on a dull field: `scripts/mural-photos.cjs`),
 the mean OKLab error a quarter, the chroma kept on vivid quarters and the distance of each feature colour from the
 palette each meet a mark at levels 1, 3 and 5 (`scripts/mural-unit.cjs`). Use photo keeps only the small grid in the recipe
-(`mural.own = { w, h, pal, px }`, one base-36 digit a quarter: about 1-2 KB), never the photo. Another level with the
-photo still at hand crops it again; without it, the grid is resampled and quantised again.
+(`mural.own = { w, h, pal, px }`, one base-36 digit a quarter: about 1-2 KB), never the photo. Another level or size with the
+photo still at hand crops it again (Create too, for the size chosen); without it, the grid is resampled and quantised
+again.
 
-*Recipe and window.* `mural: { pic: 'coast' | 'still' | 'soft' | 'own', level: 1-5, own? }`; label "Mural · Coast ·
-Level 3". Mode ▸ Mural shows four picture chips and Level 1-5; the size is the level's (Size has that one preset), and
-the preview is the picture. It combines with nothing: Physics, Mirror and every other shape set are off ("Not in
-Mural"; choosing Mural turns them off), and it keeps its picture for life (no Edit rules).
+*Recipe and window.* `mural: { pic: 'coast' | 'still' | 'soft' | 'own', level: 1-5, own? }` and its piece set in
+`shapes.preset`: `'normal'` (the seven tetrominoes, the default), `'pentominoes'` (the 18), `'frantic'` (both, the
+trominoes, a domino and a single block, weighted as Free Play's Frantic) or `'mixed'` (Mural's own: 1-4 blocks, the
+level's shares; its chip shows only on a Mural board, and it is Normal anywhere else); label "Mural · Coast · Level 3", with the set after it
+unless Normal. Mode ▸ Mural shows four picture chips and Level 1-5; Shapes offers Normal, Frantic, Pentominoes and
+Mixed (no other chip shows there); Size offers the level's size first, then Detailed 16 × 26, Large 18 × 30 and Largest 20 × 36 (those larger than
+the level's), and the steppers any size in the limits; choosing Mural or a level brings the level's size unless a size of
+its own was set. The preview is the picture at the size shown. It combines with nothing else: Physics, Mirror and the
+other shape sets (Tiny, Big, Custom) are off ("Not in Mural"; choosing Mural turns them off), and it keeps its picture
+for life (no Edit rules). A board from before sizes and sets (`v: 1`) keeps its level's size and its Mixed cut.
 
-*Pay* — 0.04 of a line for each block set (0.04 to 0.16 a piece): a mural bot earns 0.10–0.14 a piece and
+*Pay* — 0.04 of a line for each block set inside the picture (0.04 to 0.2 a piece): a mural bot earns 0.10–0.14 a piece and
 0.02–0.03 an action, against a careful Standard bot's 0.41 and 0.10 (`scripts/mural-unit.cjs`). *Achievements* (their
 own group): **First Mural** (30) finish a mural; **Sketch**, **Study**, **Panel**, **Fresco**, **Masterwork** (20, 30,
 50, 80, 250 legend) finish one at level 1 to 5; **Your Own** (60) finish one from a photo. *Stats* (Free Play): time,

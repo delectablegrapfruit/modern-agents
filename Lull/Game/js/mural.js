@@ -8,16 +8,29 @@
 //
 //   Recipe     mural: { pic: 'coast' | 'still' | 'soft' | 'own', level: 1-5, own?: { w, h, pal, px } }: own is an
 //              imported photo as its quantised grid only (w × h quarters, pal its colours '#rrggbb', px one base-36
-//              digit a quarter, row by row from the top), never the photo.
-//   Levels     the board's size, its colours and its pieces: 1 8 × 10, 3 colours, mostly 1-3 blocks; 2 10 × 14, 4;
-//              3 12 × 18, 6; 4 14 × 22, 8; 5 16 × 26, 10, mostly tetrominoes (LEVELS).
-//   Tiling     the cells are taken bottom up, left to right; a piece starts at the first free cell and grows (left,
-//              right or up) only into a cell whose cell below is already taken, so every cell under a piece belongs to
-//              an earlier one (or is the floor) and every cell over it to a later one: the order made is the order dealt,
-//              each piece drops straight down into its place and rests there, and no order can cycle.
+//              digit a quarter, row by row from the top), never the photo. Its piece set is shapes.preset (SETS).
+//   Size       any in SIZE, the level's by default; the picture is drawn at twice it each way (more detail, bigger).
+//   Levels     the colours, Mixed's share of small pieces and the default size: 1 8 × 10, 3 colours, mostly 1-3 blocks;
+//              2 10 × 14, 4; 3 12 × 18, 6; 4 14 × 22, 8; 5 16 × 26, 10, mostly tetrominoes (LEVELS).
+//   Cut        a fresh seed every new board (and every start over). The cells are taken bottom up, left to right; the
+//              first free cell is covered next by a piece resting on the floor, earlier pieces or itself, so every cell
+//              under a piece belongs to an earlier one and every cell over it to a later one: the order made is the
+//              order dealt, each piece drops straight down into its place, and no order can cycle. Mixed grows pieces
+//              (tile); the other sets search with backtracking (cut), a piece reaching up to UP rows over the picture
+//              (trimmed as it sets). Each plan is played through to check it (verify), cut again from the next seed if
+//              it failed. A board from before sizes and sets (v 1) keeps its level's size and its Mixed cut.
 //   Turns      a piece appears in another turn than its place whenever that looks different (its shape, or its
 //              quarters), at the top, nearest the middle, where its place can still be reached by moves and turns
-//              (searched: reach); with none, in its own turn right over its place.
+//              (searched: reach); with none, in its own turn right over its place. As in puzzles, a single turn button
+//              places every piece (turn 1: clockwise; -1, counter-clockwise, under Inverted Controls): the piece
+//              appears one press of it away from its place's turn (two only when one press away cannot reach it), and
+//              the search counts only that direction and turns in place or nudged sideways off a wall (never a kick
+//              that hops it down or through a gap). Settings ▸ Controls ▸ Counter-clockwise puzzles (turn 0) allows
+//              both ways and half turns (the view tells the turn: setTurnMode).
+//   Buffer     BUF rows over the picture (the board is the picture's height + BUF; nothing ever sets there). Shut while
+//              the stack is low: a piece appears at the picture's top and its search stays under it. Open once the stack
+//              (or the piece's place) comes within BUF rows of the top, and from then on: pieces appear at the buffer's
+//              top, so the picture's last rows are reached by the same moves and turns as the rest (the view shows it).
 //   Pay        PAY_CELL lines for each block set (a Standard board pays more per piece and per action: mural-unit.cjs).
 (function (root) {
   'use strict';
@@ -36,13 +49,24 @@
   const PIC_IDS = PICS.concat(['own']);
   const PIC_NAMES = { coast: 'Coast', still: 'Still life', soft: 'Abstract', own: 'Photo' };
   const PAY_CELL = 0.04;
-  /** The most quarters an imported picture keeps each way (level 5's grid, with room), and its colours. */
-  const OWN_MAX = { w: 40, h: 60, k: 16 };
+  /** The buffer: rows over the picture (R.k, as Race's) where pieces appear and turn once the stack nears the top. */
+  const BUF = 4;
+  /** A board's size (the picture's, the buffer over it): any in these, the level's by default (SIZE). */
+  const SIZE = { w: [6, 20], h: [8, 36] };
+  /** The most quarters an imported picture keeps each way (the largest board's grid), and its colours. */
+  const OWN_MAX = { w: 40, h: 72, k: 16 };
+  /** The piece sets (Shapes): Mixed (1-4 blocks, the level's share of small ones), Normal (the seven tetrominoes),
+   *  Pentominoes (the 18), Frantic (all of them, trominoes, a domino and a single block). */
+  const SETS = ['mixed', 'normal', 'pentominoes', 'frantic'];
+  const SET_NAMES = { mixed: 'Mixed', normal: 'Normal', pentominoes: 'Pentominoes', frantic: 'Frantic' };
+  /** Rows a planned piece may reach over the picture (into the buffer; what is there is trimmed when it sets). */
+  const UP = 2;
 
   const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
   const clone = (v) => JSON.parse(JSON.stringify(v));
   const on = (r) => !!r && r.mode === 'mural';
   const levelOf = (r) => LEVELS[(r && r.mural && r.mural.level) || 1] || LEVELS[1];
+  const setOf = (r) => (r && r.shapes && SETS.includes(r.shapes.preset) ? r.shapes.preset : 'normal');
 
   // ---- colour ---------------------------------------------------------------------------------------------------------
 
@@ -346,13 +370,13 @@
 
   const PIC_CACHE = new Map();
   /**
-   * The target picture of a recipe: { QW, QH, pal, q (Uint8Array QW × QH of colour numbers, row by row from the top) },
-   * twice the board's size each way, in the level's colours. A built-in one is drawn; an imported one is resampled and
+   * The target picture of a recipe on a board W × H (the level's size by default): { QW, QH, pal, q (Uint8Array QW × QH
+   * of colour numbers, row by row from the top) }, twice the board's size each way, in the level's colours. A built-in one is drawn; an imported one is resampled and
    * quantised again only when it was kept at another size or with more colours.
    */
-  function picture(r) {
-    const m = r.mural, lv = levelOf(r), QW = lv.w * 2, QH = lv.h * 2;
-    const key = m.pic === 'own' ? 'own:' + m.level + ':' + m.own.w + 'x' + m.own.h + ':' + m.own.pal.join() + ':' + m.own.px : m.pic + ':' + m.level;
+  function picture(r, W, H) {
+    const m = r.mural, lv = levelOf(r), QW = (W || lv.w) * 2, QH = (H || lv.h) * 2;
+    const key = (m.pic === 'own' ? 'own:' + m.level + ':' + m.own.w + 'x' + m.own.h + ':' + m.own.pal.join() + ':' + m.own.px : m.pic + ':' + m.level) + ':' + QW + 'x' + QH;
     let p = PIC_CACHE.get(key);
     if (p) return p;
     if (m.pic === 'own' && m.own.w === QW && m.own.h === QH && m.own.pal.length <= lv.pk) {
@@ -429,39 +453,189 @@
     return t.id === id ? t : null;
   });
 
-  const PLAN_CACHE = new Map();
+  // ---- the cut: a set's pieces over the picture, by backtracking ----------------------------------------------------------
+
+  const SHAPES_CACHE = {};
+  /** A set's shapes: [{ w (weight), turns: [offsets from the turn's first cell, bottom up then left to right] }]. */
+  function shapesOf(set) {
+    if (SHAPES_CACHE[set]) return SHAPES_CACHE[set];
+    const T = Pieces.TETROMINOES, P5 = Pieces.PENTO18;
+    const src = set === 'pentominoes' ? [[P5, 1]] : set === 'frantic' ? [[T, 7], [P5, 7], [['I3'], 2], [['V3'], 2], [['D2'], 2], [['M1'], 1]] : [[T, 1]];
+    const out = [];
+    for (const [ids, q] of src) for (const id of ids) {
+      const t = Pieces.get(id), seen = new Set(), turns = [];
+      for (let r = 0; r < 4; r++) {
+        const cells = t.rots[r], k = Pieces.shapeKey(cells);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        const a = cells.reduce((m, c) => (c[1] < m[1] || (c[1] === m[1] && c[0] < m[0]) ? c : m), cells[0]);
+        turns.push(cells.map(([x, y]) => [x - a[0], y - a[1]]));
+      }
+      out.push({ w: q / ids.length, n: t.rots[0].length, turns });
+    }
+    return (SHAPES_CACHE[set] = out);
+  }
+  const gcd = (a, b) => (b ? gcd(b, a % b) : a);
+
   /**
-   * A mural's plan, from its recipe and seed: { W, H, pic, pieces: [{ id, rt, x, y, cells (its board cells, in its
-   * type's cell order at rt), qt (each cell's quarters at rt), goals ([{ rot, x, y }]: every turn and spot that sets it
-   * exactly), pref ([rot]: the turns it would rather appear in) }] }.
+   * The picture W × H cut into pieces of a set, in the order they are dealt: { pieces: [[[x, y], …]], fallbacks }. The
+   * first free cell (bottom up, left to right) is covered next, by a piece whose every cell rests on the floor, on an
+   * earlier piece or on its own cells (the same order rule as the tiling: each drops straight down into place); a
+   * piece may reach UP rows over the picture (trimmed when it sets). Candidates are tried in a weighted shuffled order
+   * (rng), backtracking where a gap is left that the set cannot fill (a closed gap whose size the set's sizes cannot
+   * make); past a budget of tries, a gap with no piece left takes a single block (counted: fallbacks).
    */
-  function plan(r, seed) {
+  function cut(W, H, set, rng) {
+    const S = shapesOf(set), N = W * H, filled = new Uint8Array(N), budget = N * 8;
+    const g = S.reduce((m, s) => gcd(m, s.n), 0), minN = Math.min(...S.map((s) => s.n));
+    let nodes = 0, fallbacks = 0;
+    const first = (from) => { for (let i = from; i < N; i++) if (!filled[i]) return i; return -1; };
+    const fits = (cells) => {
+      for (const [x, y] of cells) {
+        if (x < 0 || x >= W || y >= H + UP) return false;
+        if (y < H && filled[y * W + x]) return false;
+        if (y > 0 && !(y - 1 < H && filled[(y - 1) * W + x]) && !cells.some(([u, v]) => u === x && v === y - 1)) return false;
+      }
+      return true;
+    };
+    const set1 = (cells, v) => { for (const [x, y] of cells) if (y < H) filled[y * W + x] = v; };
+    const comp = new Int32Array(N), queue = new Int32Array(N);
+    // Every closed gap (one that does not reach the picture's top row) must be a size the set can make.
+    const sound = () => {
+      if (g <= 1 && minN <= 1) return true;
+      comp.fill(0);
+      for (let i = 0; i < N; i++) {
+        if (filled[i] || comp[i]) continue;
+        let n = 0, open = false, qh = 0, qt = 0;
+        queue[qt++] = i; comp[i] = 1;
+        while (qh < qt) {
+          const j = queue[qh++], x = j % W, y = (j / W) | 0;
+          n++;
+          if (y === H - 1) open = true;
+          if (x > 0 && !filled[j - 1] && !comp[j - 1]) { comp[j - 1] = 1; queue[qt++] = j - 1; }
+          if (x < W - 1 && !filled[j + 1] && !comp[j + 1]) { comp[j + 1] = 1; queue[qt++] = j + 1; }
+          if (y > 0 && !filled[j - W] && !comp[j - W]) { comp[j - W] = 1; queue[qt++] = j - W; }
+          if (y < H - 1 && !filled[j + W] && !comp[j + W]) { comp[j + W] = 1; queue[qt++] = j + W; }
+        }
+        if (!open && (n % g || n < minN)) return false;
+      }
+      return true;
+    };
+    const cands = (c) => {
+      const cx = c % W, cy = (c / W) | 0, list = [];
+      for (const sh of S) for (const turn of sh.turns) {
+        const cells = turn.map(([dx, dy]) => [cx + dx, cy + dy]);
+        if (fits(cells)) list.push({ cells, k: Math.pow(rng.next(), 1 / sh.w) });
+      }
+      return list.sort((a, b) => b.k - a.k);
+    };
+    const frames = [];
+    let c = first(0);
+    if (c >= 0) frames.push({ c, list: cands(c), i: 0, cur: null });
+    while (frames.length) {
+      const f = frames[frames.length - 1];
+      nodes++;
+      if (f.cur) { set1(f.cur, 0); f.cur = null; if (f.fb) { f.fb = false; fallbacks--; } }
+      while (f.i < f.list.length) {
+        const cells = f.list[f.i++].cells;
+        nodes++;
+        set1(cells, 1);
+        if (sound()) { f.cur = cells; break; }
+        set1(cells, 0);
+      }
+      if (!f.cur) {
+        if (nodes <= budget && frames.length > 1) { frames.pop(); continue; }
+        // No piece of the set fits this gap (within the budget): a single block.
+        f.cur = [[f.c % W, (f.c / W) | 0]]; f.fb = true; fallbacks++;
+        set1(f.cur, 1);
+      }
+      c = first(f.c + 1);
+      if (c < 0) break;
+      frames.push({ c, list: cands(c), i: 0, cur: null });
+    }
+    return { pieces: frames.map((f) => f.cur), fallbacks, nodes };
+  }
+
+  // ---- the plan --------------------------------------------------------------------------------------------------------
+
+  const PLAN_CACHE = new Map();
+  /** A board's picture size: { W, H } — the level's for a mural from before sizes and sets (v 1), else the board's. */
+  function dims(v, r, w, h) {
+    const lv = levelOf(r);
+    return v === 1 || !w || !h ? { W: lv.w, H: lv.h } : { W: w, H: h };
+  }
+  /**
+   * A mural's plan, from its recipe and seed, on a picture W × H (the level's size by default; v 1: a mural from before
+   * sizes and sets, always the level's size and Mixed, as it was cut then): { W, H, set, pic, fallbacks, tries,
+   * pieces: [{ id, rt, x, y, cells (its board cells, in its type's cell order at rt; a cell at H or over is over the
+   * picture), qt (each cell's quarters at rt), goals ([{ rot, x, y }]: every turn and spot that sets it exactly), pref
+   * ([rot]: the turns it would rather appear in) }], check (verify's answer) }. Cut, then checked by playing it (verify);
+   * a cut that fails is cut again from the next seed (at most 4 tries; the cut is the same every time for the same seed).
+   */
+  function plan(r, seed, W, H, v) {
     r = Recipe.normalize(r);
-    const key = Recipe.key(r) + '|' + (seed >>> 0);
+    v = v === 1 ? 1 : 2;
+    ({ W, H } = dims(v, r, W, H));
+    const set = v === 1 ? 'mixed' : setOf(r), key = Recipe.key(r) + '|' + (seed >>> 0) + '|' + W + 'x' + H + '|' + v;
     let P = PLAN_CACHE.get(key);
     if (P) return P;
-    const lv = levelOf(r), W = lv.w, H = lv.h, pic = picture(r);
-    const rng = new RNG('mural:' + (seed >>> 0) + ':' + r.mural.level);
-    const pieces = tile(W, H, lv.mix, rng).map((cells, k) => {
-      const t = typeOf(k, cells), want = Pieces.shapeKey(cells), b = Pieces.boundsOf(cells);
-      const rt = [0, 1, 2, 3].find((q) => Pieces.shapeKey(t.rots[q]) === want);
-      const tb = t.rotBounds[rt], x = b.minX - tb.minX, y = b.minY - tb.minY;
-      const abs = t.rots[rt].map(([cx, cy]) => [x + cx, y + cy]);
-      const qt = abs.map(([ax, ay]) => quartersAt(pic, H, ax, ay));
-      const piece = { id: t.id, rt, x, y, cells: abs, qt, goals: [], pref: [] };
-      for (let q = 0; q < 4; q++) {
-        if (t.keys[q] !== t.keys[rt]) continue;
-        const qb = t.rotBounds[q], gx = b.minX - qb.minX, gy = b.minY - qb.minY;
-        if (exactAt(piece, t, q, gx, gy, pic, H)) piece.goals.push({ rot: q, x: gx, y: gy });
-      }
-      const others = (k % 2 ? [3, 1, 2] : [1, 3, 2]).map((d) => (rt + d) % 4).filter((q) => !piece.goals.some((g) => g.rot === q));
-      piece.pref = others.concat([rt]);
-      return piece;
-    });
-    P = { W, H, pic, pieces };
+    const lv = levelOf(r), pic = picture(r, W, H);
+    for (let tries = 1; tries <= 4; tries++) {
+      const rng = new RNG('mural:' + (seed >>> 0) + ':' + r.mural.level + (v === 1 ? '' : ':' + set + ':' + W + 'x' + H + ':' + tries));
+      const c = set === 'mixed' ? { pieces: tile(W, H, lv.mix, rng), fallbacks: 0 } : cut(W, H, set, rng);
+      P = { W, H, set, pic, pieces: c.pieces.map((cells, k) => pieceOf(k, cells, pic, H)), fallbacks: c.fallbacks, tries };
+      if (v === 1) break;
+      P.check = verify(P);
+      if (P.check.ok) break;
+    }
     PLAN_CACHE.set(key, P);
     if (PLAN_CACHE.size > 12) PLAN_CACHE.delete(PLAN_CACHE.keys().next().value);
     return P;
+  }
+  /** Piece k of a plan, from its cells. */
+  function pieceOf(k, cells, pic, H) {
+    const t = typeOf(k, cells), want = Pieces.shapeKey(cells), b = Pieces.boundsOf(cells);
+    const rt = [0, 1, 2, 3].find((q) => Pieces.shapeKey(t.rots[q]) === want);
+    const tb = t.rotBounds[rt], x = b.minX - tb.minX, y = b.minY - tb.minY;
+    const abs = t.rots[rt].map(([cx, cy]) => [x + cx, y + cy]);
+    // A cell over the picture shows the picture's top row under it (it is trimmed when the piece sets).
+    const qt = abs.map(([ax, ay]) => quartersAt(pic, H, ax, Math.min(ay, H - 1)));
+    const piece = { id: t.id, rt, x, y, cells: abs, qt, goals: [], pref: [] };
+    for (let q = 0; q < 4; q++) {
+      if (t.keys[q] !== t.keys[rt]) continue;
+      const qb = t.rotBounds[q], gx = b.minX - qb.minX, gy = b.minY - qb.minY;
+      if (exactAt(piece, t, q, gx, gy, pic, H)) piece.goals.push({ rot: q, x: gx, y: gy });
+    }
+    const others = (k % 2 ? [3, 1, 2] : [1, 3, 2]).map((d) => (rt + d) % 4).filter((q) => !piece.goals.some((g) => g.rot === q));
+    piece.pref = others.concat([rt]);
+    return piece;
+  }
+  /**
+   * A plan played through as a player would, once for each one-button turn (clockwise; counter-clockwise under Inverted
+   * Controls; both ways reach at least as much): every piece, in order, appears where spawnSpot puts it and can be
+   * brought to its place turning only that way (reach), the picture is covered exactly once and nothing rests on air.
+   * { ok, own (pieces that appear already in their place's turn though another looks different), why }.
+   */
+  function verify(P) {
+    const { W, H } = P;
+    let own = 0;
+    for (const turn of [1, -1]) {
+      const b = new L.Board(W, H + BUF), cover = new Uint8Array(W * H);
+      for (let k = 0; k < P.pieces.length; k++) {
+        const pc = P.pieces[k], t = Pieces.get(pc.id), sp = spawnSpot(P, k, b, turn);
+        if (!b.fits(t.rots[sp.rot], sp.x, sp.y)) return { ok: false, why: 'piece ' + k + ' cannot appear' };
+        if (!(sp.d >= 0) && reach(b, t, sp, pc.goals, turn, topOf(P, k, b)) < 0) return { ok: false, why: 'piece ' + k + ' cannot be reached' };
+        if (turn === 1 && pc.goals.some((g) => g.rot === sp.rot) && pc.goals.length < 4) own++;
+        if (!pc.cells.some(([x, y]) => y === 0 || (y - 1 < H && b.get(x, y - 1)) || pc.cells.some(([u, w]) => u === x && w === y - 1))) return { ok: false, why: 'piece ' + k + ' rests on air' };
+        for (const [x, y] of pc.cells) {
+          if (y >= H) continue;
+          if (cover[y * W + x]++) return { ok: false, why: 'cell ' + x + ',' + y + ' twice' };
+          b.set(x, y, 1);
+        }
+      }
+      if (cover.some((c) => !c)) return { ok: false, why: 'a cell left' };
+    }
+    return { ok: true, own };
   }
   /** Is piece (type t) at turn rot and (x, y) exactly in its place, quarters and all? */
   function exactAt(piece, t, rot, x, y, pic, H) {
@@ -470,6 +644,7 @@
     for (let i = 0; i < t.rots[rot].length; i++) {
       const ax = x + t.rots[rot][i][0], ay = y + t.rots[rot][i][1];
       if (!set.has(ax + ',' + ay)) return false;
+      if (ay >= H) continue;
       const want = quartersAt(pic, H, ax, ay), got = turnQ(piece.qt[i], d);
       for (let k = 0; k < 4; k++) if (want[k] !== got[k]) return false;
     }
@@ -480,43 +655,104 @@
 
   // ---- reaching a place: moves and turns, as the engine makes them ----------------------------------------------------------
 
+  /** The turns a piece may make: 1 (clockwise only), -1 (counter-clockwise only) or 0 (both ways). */
+  const turnOk = (v) => (v === -1 || v === 0 ? v : 1);
+  /** Presses of the one turn button (turn 1 or -1) from rot to the nearest of goals' turns: 0-3. */
+  const presses = (goals, rot, turn) => goals.reduce((m, g) => Math.min(m, ((((g.rot - rot) * turn) % 4) + 4) % 4), 4) % 4;
+
   /**
-   * The fewest moves (a step left or right, a row down, a turn either way, kicks as the engine takes them) from `from`
-   * ({ rot, x, y }) to any of goals on board b for type t; -1 when none can be reached.
+   * The fewest moves (a step left or right, a row down, a turn, kicks as the engine takes them) from `from`
+   * ({ rot, x, y }) to any of goals on board b for type t; -1 when none can be reached. turn 0 (the default): turns
+   * either way, any kick. turn 1 or -1: turns that way only, and only in place or nudged sideways off a wall (one
+   * column, two for a long shape), as puzzles count them: never a kick that hops the piece down or through a gap.
    */
-  function reach(b, t, from, goals) {
-    const W = b.w, H = b.h, key = (r, x, y) => (r * 64 + (x + 16)) * 128 + (y + 16);
-    const fits = (r, x, y) => b.fits(t.rots[r], x, y);
+  let SCRATCH = null;
+  function scratch(N) {
+    if (!SCRATCH || SCRATCH.n < N || SCRATCH.stamp > 2e9) {
+      SCRATCH = { n: N, stamp: 0, fit: new Uint8Array(N), fitAt: new Uint32Array(N), seen: new Uint32Array(N), goal: new Uint32Array(N), qr: new Int8Array(N), qx: new Int16Array(N), qy: new Int16Array(N) };
+    }
+    SCRATCH.stamp++;
+    return SCRATCH;
+  }
+  function reach(b, t, from, goals, turn, top) {
+    turn = turn == null ? 0 : turnOk(turn);
+    const dirs = turn ? [turn] : [1, -1], maxKick = t.n >= 4 ? 2 : 1;
+    // top: the rows it may use (under a shut buffer), the whole board by default.
+    const W = b.w, H = b.h, T = top == null ? H : top, PX = W + 8, PY = H + 8, N = 4 * PX * PY;
+    const idx = (r, x, y) => (r * PY + (y + 4)) * PX + (x + 4);
+    // Scratch kept between searches, told apart by a stamp (a search runs often: every spawn, every plan's check).
+    const Z = scratch(N), st = Z.stamp;
+    // Whether the piece fits at (r, x, y), worked out once each (a piece's box is at most 5: its spot within 4 of the board).
+    const fits = (r, x, y) => {
+      if (x < -4 || x >= W + 4 || y < -4 || y >= H + 4) return false;
+      const i = idx(r, x, y);
+      if (Z.fitAt[i] !== st) { Z.fitAt[i] = st; Z.fit[i] = y + t.rotBounds[r].maxY < T && b.fits(t.rots[r], x, y) ? 1 : 0; }
+      return Z.fit[i] === 1;
+    };
     if (!fits(from.rot, from.x, from.y)) return -1;
-    const goal = new Set(goals.map((g) => key(g.rot, g.x, g.y)));
-    const seen = new Set([key(from.rot, from.x, from.y)]);
-    let front = [[from.rot, from.x, from.y]], d = 0;
-    while (front.length) {
-      const next = [];
-      for (const [r, x, y] of front) {
-        if (goal.has(key(r, x, y))) return d;
-        const go = (nr, nx, ny) => { const k = key(nr, nx, ny); if (!seen.has(k)) { seen.add(k); next.push([nr, nx, ny]); } };
+    for (const g of goals) if (g.x >= -4 && g.x < W + 4 && g.y >= -4 && g.y < H + 4) Z.goal[idx(g.rot, g.x, g.y)] = st;
+    const kicks = [0, 1, 2, 3].map((r) => dirs.map((dir) => { const to = (r + dir + 4) % 4; return [to, Pieces.kicksFor(t, r, to)]; }));
+    const seen = Z.seen, goal = Z.goal, qr = Z.qr, qx = Z.qx, qy = Z.qy;
+    let head = 0, tail = 0;
+    const go = (r, x, y) => { const i = idx(r, x, y); if (seen[i] !== st) { seen[i] = st; qr[tail] = r; qx[tail] = x; qy[tail] = y; tail++; } };
+    go(from.rot, from.x, from.y);
+    for (let d = 0; head < tail; d++) {
+      const end = tail;
+      for (; head < end; head++) {
+        const r = qr[head], x = qx[head], y = qy[head];
+        if (goal[idx(r, x, y)] === st) return d;
         if (fits(r, x - 1, y)) go(r, x - 1, y);
         if (fits(r, x + 1, y)) go(r, x + 1, y);
         if (fits(r, x, y - 1)) go(r, x, y - 1);
-        for (const dir of [1, -1]) {
-          const to = (r + dir + 4) % 4, kicks = Pieces.kicksFor(t, r, to);
-          for (const [kx, ky] of kicks) if (fits(to, x + kx, y + ky)) { go(to, x + kx, y + ky); break; }
+        for (const [to, ks] of kicks[r]) {
+          for (const [kx, ky] of ks) {
+            if (!fits(to, x + kx, y + ky)) continue;
+            // The engine takes the first kick that fits; one way, only a turn a person expects counts.
+            if (!turn || (ky === 0 && Math.abs(kx) <= maxKick)) go(to, x + kx, y + ky);
+            break;
+          }
         }
       }
-      front = next; d++;
-      if (d > W * H * 4) break;
     }
     return -1;
   }
 
   /**
-   * Where piece k appears on board b: at the top, in the first turn it would rather appear in whose place can still be
-   * reached from there (the column nearest the middle first); else in its own turn, right over its place. { x, y, rot }.
+   * The turns piece pc would rather appear in, best first. turn 0: pc.pref (one way, the other, a half turn, its own).
+   * turn 1 or -1: one press of that turn button from its place's turn, then two, then its own.
    */
-  function spawnSpot(P, k, b) {
-    const pc = P.pieces[k], t = Pieces.get(pc.id), W = b.w, H = b.h;
-    for (const rot of pc.pref) {
+  function prefOf(pc, turn) {
+    turn = turnOk(turn);
+    if (!turn) return pc.pref;
+    const out = [];
+    for (const n of [1, 2]) for (let r = 0; r < 4; r++) if (presses(pc.goals, r, turn) === n) out.push(r);
+    return out.concat([pc.rt]);
+  }
+
+  /**
+   * Is the buffer open for piece k on board b: has the stack (or k's place) come within BUF rows of the picture's top?
+   * Once open it stays open (the stack only grows, and covers every earlier place).
+   */
+  function bufferOpen(P, k, b) {
+    if (b.h <= P.H) return false;
+    let top = 0;
+    for (let y = P.H - 1; y >= 0 && !top; y--) for (let x = 0; x < b.w; x++) if (b.get(x, y)) { top = y + 1; break; }
+    const pc = P.pieces[k];
+    if (pc) for (const [, y] of pc.cells) top = Math.max(top, y + 1);
+    return top > P.H - BUF;
+  }
+  /** The rows piece k may appear and move in on board b: the whole board once the buffer is open, else the picture's. */
+  const topOf = (P, k, b) => (bufferOpen(P, k, b) ? b.h : Math.min(b.h, P.H));
+
+  /**
+   * Where piece k appears on board b: at the top (topOf), in the first turn it would rather appear in (prefOf) whose
+   * place can still be reached from there with turn's turns (reach; the column nearest the middle first); else in its
+   * own turn, right over its place. { x, y, rot }.
+   */
+  function spawnSpot(P, k, b, turn) {
+    turn = turnOk(turn);
+    const pc = P.pieces[k], t = Pieces.get(pc.id), W = b.w, H = topOf(P, k, b);
+    for (const rot of prefOf(pc, turn)) {
       if (pc.goals.some((g) => g.rot === rot) && rot !== pc.rt) continue;
       const bnd = t.rotBounds[rot], y = H - 1 - bnd.maxY, x0 = Math.floor((W - bnd.w) / 2) - bnd.minX;
       const xs = [x0];
@@ -525,7 +761,8 @@
         if (x + bnd.minX < 0 || x + bnd.maxX >= W) continue;
         if (!b.fits(t.rots[rot], x, y)) continue;
         if (rot === pc.rt && pc.goals.some((g) => g.rot === rot && g.x === x && g.y === y)) continue;
-        if (reach(b, t, { rot, x, y }, pc.goals) >= 0) return { x, y, rot };
+        const d = reach(b, t, { rot, x, y }, pc.goals, turn, H);
+        if (d >= 0) return { x, y, rot, d };
       }
     }
     // Right over its place, in its own turn: the way down is clear (every cell over it is a later piece's).
@@ -536,25 +773,49 @@
 
   // ---- the engine's extension -----------------------------------------------------------------------------------------------
 
-  /** A mural as saved: { v: 1, seed, i (pieces set) }. */
-  function valid(M, r) {
-    if (!isObj(M) || M.v !== 1 || !Number.isInteger(M.seed) || M.seed < 0 || !Number.isInteger(M.i) || M.i < 0) return false;
-    return M.i <= plan(r, M.seed).pieces.length;
+  /** A mural as saved: { v (1: from before sizes and sets; 2), seed, i (pieces set) }, on a picture W × H (v 2). */
+  function valid(M, r, W, H) {
+    if (!isObj(M) || (M.v !== 1 && M.v !== 2) || !Number.isInteger(M.seed) || M.seed < 0 || !Number.isInteger(M.i) || M.i < 0) return false;
+    if (M.v === 2 && !(W >= SIZE.w[0] && W <= SIZE.w[1] && H >= 6 && H <= SIZE.h[1])) return false;
+    return M.i <= plan(r, M.seed, W, H, M.v).pieces.length;
   }
+  /** A fresh seed: every new mural (and every one started over) is cut anew. */
+  const freshSeed = () => ((Math.random() * 4294967296) >>> 0) || 1;
   const summaryOf = (M, P, r) => ({ pic: r.mural.pic, level: r.mural.level, placed: M.i, total: P.pieces.length, done: M.i >= P.pieces.length });
 
-  function extension(game, saved) {
-    const r = game.recipe;
-    const M = saved !== undefined && valid(saved, r) ? clone(saved) : { v: 1, seed: (Number(game.seed) >>> 0) || 1, i: 0 };
+  // The turn a mural is built for (turnOk), told by the view from the settings; clockwise without one.
+  let turnMode = () => 1;
+  function setTurnMode(f) { turnMode = typeof f === 'function' ? f : () => 1; }
+
+  function extension(game, saved, o) {
+    const r = game.recipe, lv = levelOf(r), old = isObj(saved) && saved.v === 1;
+    // The buffer over the picture: a new board grows it; a board saved before it had one (v 1, the level's size) is
+    // grown too, cells kept. A board saved since has it.
+    const want = old ? lv.h + BUF : o && o.saved ? game.board.h : game.board.h + BUF;
+    if (game.board.h < want) {
+      const b0 = game.board, b = new L.Board(b0.w, want);
+      for (let y = 0; y < b0.h; y++) for (let x = 0; x < b0.w; x++) b.set(x, y, b0.get(x, y));
+      game.board = b;
+    }
+    const W = game.board.w, H = game.board.h - BUF;
+    // A game's own (o.muralTurn: the tests'), else the settings' as they are now.
+    const turn = () => turnOk(o && o.muralTurn != null ? o.muralTurn : turnMode(game));
+    const M = saved !== undefined && valid(saved, r, W, H) ? clone(saved) : { v: 2, seed: (Number(game.seed) >>> 0) || 1, i: 0 };
     let made = null;
-    const P = () => made || (made = plan(r, M.seed));
+    const P = () => made || (made = plan(r, M.seed, W, H, M.v));
     // No hold: the pieces come in their one order.
     game.mods.noHold = true;
     let dealt = M.i;
-    const entries = (from) => P().pieces.slice(from).map((p) => ({ id: p.id, rot: p.pref[0] }));
+    const entries = (from) => { const tn = turn(); return P().pieces.slice(from).map((p) => ({ id: p.id, rot: prefOf(p, tn)[0] })); };
     const X = {
       M,
       plan: P,
+      /** The turns this mural is played with now: 1, -1 or 0 (turnOk). */
+      turn,
+      /** Is the buffer open (bufferOpen) for the piece in play? */
+      open(g) { return bufferOpen(P(), M.i, g.board); },
+      /** The rows the piece in play may use (topOf). */
+      top(g) { return topOf(P(), M.i, g.board); },
       // The pieces in their order (the queue is made the mural's own, fixed, at the first piece).
       dealer: {
         next() { const ps = P().pieces; return ps[Math.min(dealt++, ps.length - 1)].id; },
@@ -566,7 +827,7 @@
         g.fixed = true;
         g.queue = entries(M.i + 1);
         if (M.i >= ps.length || type.id !== ps[M.i].id) return pos;
-        return spawnSpot(P(), M.i, b);
+        { const sp = spawnSpot(P(), M.i, b, turn()); return { x: sp.x, y: sp.y, rot: sp.rot }; }
       },
       // Set only exactly in its place: anywhere else the set does not happen (a drop leaves the piece where it was).
       refuseLock(g, b, abs) {
@@ -575,13 +836,21 @@
         if (p && g.pendingDrop) p.y += g.pendingDrop.dist;
         return 'Not its place';
       },
-      afterPlace(g, b, abs, v, res) { res.mural = { k: M.i, cells: abs.length }; M.i++; },
+      // What a piece leaves over the picture is trimmed away (res.trimmed: it fades), as in Race.
+      afterPlace(g, b, abs, v, res) {
+        const PH = P().H, cut = [];
+        for (const [x, y] of abs) if (y >= PH && b.get(x, y)) { b.set(x, y, 0); cut.push([x, y]); }
+        if (cut.length) res.trimmed = cut;
+        res.mural = { k: M.i, cells: abs.length - cut.length };
+        M.i++;
+      },
       // No row ever clears.
       rows() { return []; },
       step(g) { if (M.i >= P().pieces.length) g.end('finished'); },
       allow() { return 'Not in Mural'; },
+      // Started over: cut anew (a fresh seed).
       reset(g) {
-        M.i = 0; dealt = 0;
+        M.i = 0; dealt = 0; M.v = 2; M.seed = freshSeed(); made = null;
         g.queue = entries(0);
         g.piece = null;
       },
@@ -611,19 +880,21 @@
     o = Object.assign({ pieces: Infinity }, o || {});
     const X = extOf(g);
     let acts = 0, paid = 0, n = 0;
+    const tn = X.turn();
     while (!g.over && g.piece && n < o.pieces) {
       const pc = X.current(g), p = g.piece;
       if (!pc) break;
-      const d = reach(g.board, p.type, { rot: p.rot, x: p.x, y: p.y }, pc.goals);
+      const d = reach(g.board, p.type, { rot: p.rot, x: p.x, y: p.y }, pc.goals, tn, X.top(g));
       if (d < 0) break;
       // As a player makes it: the turns and the steps across (never fewer), then the drop.
-      const cost = (q) => Math.min((q.rot - p.rot + 4) % 4, (p.rot - q.rot + 4) % 4) + Math.abs(q.x - p.x);
+      const cost = (q) => (tn ? presses([q], p.rot, tn) : Math.min((q.rot - p.rot + 4) % 4, (p.rot - q.rot + 4) % 4)) + Math.abs(q.x - p.x);
       const g0 = pc.goals.reduce((a, q) => (cost(q) < cost(a) ? q : a), pc.goals[0]);
       acts += cost(g0) + 1;
       p.rot = g0.rot; p.x = g0.x; p.y = g0.y;
       const res = g.lock();
       if (!res) break;
-      paid += L.Library ? L.Library.bank(res.placed * PAY_CELL) : res.placed * PAY_CELL;
+      const cells = res.mural ? res.mural.cells : res.placed;
+      paid += L.Library ? L.Library.bank(cells * PAY_CELL) : cells * PAY_CELL;
       n++;
     }
     return { pieces: n, acts, paid, perPiece: paid / Math.max(1, n), perAct: paid / Math.max(1, acts), done: g.endKind === 'finished' };
@@ -638,46 +909,59 @@
     editFixed: true,
     noEdit: (r) => (on(r) ? 'A mural keeps its picture' : null),
     normalize(raw, out) {
-      if (out.mode !== 'mural') return;
+      // Mixed is Mural's own set: anywhere else it is Normal.
+      if (out.mode !== 'mural') { if (out.shapes && out.shapes.preset === 'mixed') out.shapes = { preset: 'normal' }; return; }
       const m = isObj(raw.mural) ? raw.mural : {};
       const level = LEVEL_IDS.includes(m.level) ? m.level : 2;
       let pic = PIC_IDS.includes(m.pic) ? m.pic : 'coast';
       if (pic === 'own' && !ownOk(m.own)) pic = 'coast';
       out.mural = { pic, level };
       if (pic === 'own') out.mural.own = { w: m.own.w, h: m.own.h, pal: m.own.pal.slice(), px: m.own.px };
-      // Combines with nothing: Normal shapes, no modifier.
-      if (Recipe.DEFAULT) out.shapes = clone(Recipe.DEFAULT.shapes);
+      // Combines with nothing but its piece set (SETS: Normal unless one of them was asked for), no modifier.
+      const sh = isObj(raw.shapes) ? raw.shapes.preset : null;
+      out.shapes = { preset: SETS.includes(sh) ? sh : 'normal' };
       for (const k of Object.keys(out.mods || {})) out.mods[k] = false;
       delete out.physics;
     },
-    label: (r, short) => (on(r) ? (short ? 'Mural' : 'Mural · ' + PIC_NAMES[r.mural.pic] + ' · Level ' + r.mural.level) : ''),
-    // Its size is its level's.
+    label: (r, short) => (on(r) ? (short ? 'Mural' : 'Mural · ' + PIC_NAMES[r.mural.pic] + ' · Level ' + r.mural.level + (setOf(r) !== 'normal' ? ' · ' + SET_NAMES[setOf(r)] : '')) : ''),
+    // Any size in SIZE (the picture is drawn at twice it each way: a bigger board, more detail); the level's by default.
+    // (6 rows: a board saved before the buffer, the level's size and BUF rows shorter as saved, still opens.)
     limits(r, lim) {
       if (!on(r)) return;
-      const lv = levelOf(r);
-      lim.w = [lv.w, lv.w]; lim.h = [lv.h, lv.h];
+      lim.w = SIZE.w.slice(); lim.h = [6, SIZE.h[1]];
     },
-    clampSize(size, r) { if (!on(r)) return size; const lv = levelOf(r); return { w: lv.w, h: lv.h }; },
+    clampSize(size, r, lim, asked) {
+      if (!on(r)) return size;
+      const lv = levelOf(r), a = asked || {};
+      const pick = (v, [lo, hi], d) => (typeof v === 'number' && isFinite(v) ? Math.max(lo, Math.min(hi, Math.round(v))) : d);
+      return { w: pick(a.w, SIZE.w, lv.w), h: pick(a.h, SIZE.h, lv.h) };
+    },
     rules(r, R) {
       if (!on(r)) return;
       for (const id of Object.keys(L.ITEMS || {})) R.refuse[id] = 'Not in Mural';
       R.undo = false; R.hints = false; R.rated = false; R.noFeats = true; R.mural = true;
+      // The buffer's rows, over the board's size (as Race's).
+      R.k = BUF;
     },
     conflicts(r, out) {
       if (!on(r)) return;
       out['mods.physics=true'] = 'Not in Mural';
       out['mods.mirror=true'] = 'Not in Mural';
-      for (const o of Recipe.options()) if (o.path === 'shapes.preset') for (const v of o.values) if (v !== 'normal') out['shapes.preset=' + v] = 'Not in Mural';
+      for (const o of Recipe.options()) if (o.path === 'shapes.preset') for (const v of o.values) if (!SETS.includes(v)) out['shapes.preset=' + v] = 'Not in Mural';
       if (r.mural.pic !== 'own') out['mural.pic=own'] = 'Choose a photo';
     },
     valid(g, r) {
       if (!on(r)) return true;
       const x = isObj(g.x) ? g.x.mural : undefined;
-      return valid(x, r);
+      return valid(x, r, g.w, g.h - BUF);
     },
-    engine(game, saved) { return on(game.recipe) ? extension(game, saved) : null; },
+    engine(game, saved, o) { return on(game.recipe) ? extension(game, saved, o) : null; },
     controller(play, game) { return game && on(game.recipe) && L.MuralView ? L.MuralView.controller(play, game) : null; },
-    summary(x, g) { if (!isObj(x) || !g || !on(Recipe.normalize(g.recipe)) || !valid(x, Recipe.normalize(g.recipe))) return null; const r = Recipe.normalize(g.recipe); return summaryOf(x, plan(r, x.seed), r); },
+    summary(x, g) {
+      if (!isObj(x) || !g || !on(Recipe.normalize(g.recipe))) return null;
+      const r = Recipe.normalize(g.recipe), W = g.w, H = g.h - BUF;
+      return valid(x, r, W, H) ? summaryOf(x, plan(r, x.seed, W, H, x.v), r) : null;
+    },
     stats: { free: { mural: { placed: 0, finished: 0, own: 0, levels: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }, pics: { coast: 0, still: 0, soft: 0, own: 0 } } }, timeMs: { mural: 0 } },
   };
   Recipe.part(PART);
@@ -701,8 +985,8 @@
   }
 
   L.Mural = {
-    LEVELS, LEVEL_IDS, PICS, PIC_IDS, PIC_NAMES, PAY_CELL, OWN_MAX, B36,
-    on, levelOf, quantise, toKeys, KEYS, render, picture, quartersAt, turnQ, tile, plan, exactAt, cellQ, reach, spawnSpot, typeOf,
+    LEVELS, LEVEL_IDS, PICS, PIC_IDS, PIC_NAMES, PAY_CELL, OWN_MAX, B36, BUF, SIZE, SETS, SET_NAMES, UP, bufferOpen, topOf, setOf, cut, verify, shapesOf, dims,
+    on, levelOf, quantise, toKeys, KEYS, render, picture, quartersAt, turnQ, tile, plan, exactAt, cellQ, reach, spawnSpot, prefOf, presses, turnOk, setTurnMode, typeOf,
     ownOk, ownRgb, resample, fromPixels, valid, summaryOf, extOf, bot, hexRgb, rgbHex, oklab, fromLab, PART,
     of: (game) => { const e = extOf(game); return e ? e.M : null; },
   };

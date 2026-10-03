@@ -22,6 +22,8 @@
   //                              cell (stack) or the colour slot; at: { x, y } on the board, or { cells } of the piece
   //   overStack / overPiece / overRim (ctx, view, now)   drawn after the stack, after the piece, after the rim
   //   busy(view, now) -> bool    it is animating (ORed into needsFrame)
+  //   shownRows(view) -> rows    the rows shown from the floor up, when fewer than the board's (Mural's shut buffer;
+  //                              fractional while it opens): the board is laid out for them, the rows over them clipped
   //   onLock(view, r, reduced) / onMove / onRotate / onLower (view, act, reduced)   animation triggers (Free Play's moves)
   //   dangerRim: false           no red rim near the top
   //   trayRot(entry, view) -> rot   which turn the Hold and Next trays draw
@@ -1116,10 +1118,18 @@
      * The board as one composed unit: a plate holding the well, with Hold and Next in recessed trays beside it (or,
      * when the window is tall and narrow, above it). The side columns are slim so the grid gets the room.
      */
+    /** The rows shown (shownRows): the board's height unless a view part shows fewer. */
+    shownRows() {
+      const g = this.game;
+      let v = g.h;
+      for (const p of this.parts || []) if (typeof p.shownRows === 'function') { const r = p.shownRows(this); if (r > 0 && r < v) v = r; }
+      return v;
+    }
+
     layout(box) {
       const g = this.game;
-      const rot = this.view.rot;
-      const cols = rot % 180 === 0 ? g.w : g.h, rows = rot % 180 === 0 ? g.h : g.w;
+      const rot = this.view.rot, gh = this.shownRows();
+      const cols = rot % 180 === 0 ? g.w : gh, rows = rot % 180 === 0 ? gh : g.w;
       // Into a part of the canvas when given one (a view with more than one board), else the whole of it.
       const W = box ? box.w : this.cssW, H = box ? box.h : this.cssH, m = 8, ox = box ? box.x : 0, oy = box ? box.y : 0;
       const side = 2.7, gap = 0.4, pad = 0.42, wp = 0.2, top = 2.9;
@@ -1169,7 +1179,7 @@
       }
       // A wide board's plate can be shorter than the Next tray it holds (a short board beside a column of trays).
       if (wide) plate.h = Math.max(plate.h, next.y + next.h + P - plate.y);
-      this.lay = { s, ts, cols, rows, board: { x: bx, y: by, w: bw, h: bh }, hold, next, nextDir, wide, plate, lab, pad: P, box: box || null };
+      this.lay = { s, ts, cols, rows, board: { x: bx, y: by, w: bw, h: bh }, hold, next, nextDir, wide, plate, lab, pad: P, box: box || null, gh };
       // Words over the board (PERFECT CLEAR, a combo's name) are kept within the well (its walls included).
       this.fx.maxW = bw + WP * 2;
       this.lay.well = wellRect(this.lay.board, s);
@@ -1178,12 +1188,12 @@
 
     /** Top-left of logical cell (x, y) on screen. */
     toScreen(x, y) {
-      const { s, board } = this.lay, g = this.game, rot = this.view.rot;
+      const { s, board } = this.lay, g = this.game, rot = this.view.rot, gh = this.lay.gh || g.h;
       let c, r;
-      if (rot === 0) { c = x; r = g.h - 1 - y; }
+      if (rot === 0) { c = x; r = gh - 1 - y; }
       else if (rot === 180) { c = g.w - 1 - x; r = y; }
       else if (rot === 90) { c = y; r = x; }
-      else { c = g.h - 1 - y; r = g.w - 1 - x; }
+      else { c = gh - 1 - y; r = g.w - 1 - x; }
       return [board.x + c * s, board.y + r * s];
     }
 
@@ -1191,13 +1201,13 @@
     /** Logical cell under a screen point (CSS px), or null outside the board. */
     cellAt(px, py) {
       if (!this.lay || !this.game) return null;
-      const { s, board } = this.lay, g = this.game, rot = this.view.rot;
+      const { s, board } = this.lay, g = this.game, rot = this.view.rot, gh = this.lay.gh || g.h;
       if (px < board.x || py < board.y || px >= board.x + board.w || py >= board.y + board.h) return null;
       const c = Math.floor((px - board.x) / s), r = Math.floor((py - board.y) / s);
-      if (rot === 0) return { x: c, y: g.h - 1 - r };
+      if (rot === 0) return { x: c, y: Math.floor(gh - 1 - r) };
       if (rot === 180) return { x: g.w - 1 - c, y: r };
       if (rot === 90) return { x: r, y: c };
-      return { x: g.w - 1 - r, y: g.h - 1 - c };
+      return { x: g.w - 1 - r, y: Math.floor(gh - 1 - c) };
     }
 
     /** The logical cell nearest a screen point — off the grid it clamps to the edge. */
@@ -1287,7 +1297,7 @@
     paint(ctx, box, now) {
       const look = this.look, g = this.game;
       const same = (a, b) => (!a && !b) || (a && b && a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h);
-      if (!this.lay || !same(this.lay.box, box)) this.layout(box);
+      if (!this.lay || !same(this.lay.box, box) || this.lay.gh !== this.shownRows()) this.layout(box);
       const { s, board, cols, rows } = this.lay;
       // Shake moves only the board and its effects (never the hold and queue beside it), and stays small.
       const shake = FREEZE != null ? 0 : Math.min(8, this.fx.shake), shx = shake > 0.2 ? (Math.random() - 0.5) * shake : 0, shy = shake > 0.2 ? (Math.random() - 0.5) * shake : 0;
@@ -1298,6 +1308,9 @@
       this.fx.light = look.theme.name === 'light';
       if (look.prism && !look.still) look.colors = forWell(paletteColors(look.palette, now), look.theme.name);
       const wr = drawWell(ctx, look.backdrop, board, s, cols, rows, look.theme, tl);
+      // Rows over the ones shown (a shut or opening buffer) are clipped away until the rim.
+      const clipped = this.lay.gh < g.h;
+      if (clipped) { ctx.save(); ctx.beginPath(); ctx.rect(board.x, board.y, board.w, board.h); ctx.clip(); }
       const p = g.piece;
       const pieceCells = p ? g.absCells(p) : [];
       const gy = p ? g.ghostY(p) : null;
@@ -1422,6 +1435,7 @@
       if (this.pileup) this.drawPileup(ctx, s);
       else if (p && (p.special || (g.s && g.s.gold > 0))) this.ambient(p, pieceCells, now);
 
+      if (clipped) ctx.restore();
       drawRim(ctx, wr, look.theme);
       drawFrame(ctx, look.frame, wr, look.theme.accent, tl, look.theme);
       // Close to the top: the rim breathes red (unless a view part says the rim means nothing here: dangerRim false).

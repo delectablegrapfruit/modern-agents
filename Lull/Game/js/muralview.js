@@ -48,7 +48,7 @@
   function picOf(game) {
     const X = Mural.extOf(game);
     if (X) return X.plan().pic;
-    return game && game.recipe && Mural.on(game.recipe) ? Mural.picture(game.recipe) : null;
+    return game && game.recipe && Mural.on(game.recipe) ? Mural.picture(game.recipe, game.w, Math.max(6, game.h - Mural.BUF)) : null;
   }
   const kOf = (id) => { const m = /^U:(\d+):/.exec(id || ''); return m ? +m[1] : -1; };
   const idxIn = (cells, x, y) => cells.findIndex((c) => c[0] === x && c[1] === y);
@@ -69,10 +69,11 @@
 
   /** A recipe's picture over a box: c pixels a cell (each quarter c / 2), only the cells set where vals is given. */
   function paintPicture(ctx, pic, w, hh, x0, y0, c, vals) {
-    const q = c / 2;
-    for (let y = 0; y < hh; y++) for (let x = 0; x < w; x++) {
+    // hh rows drawn (a board's, its buffer on top: nothing is drawn there); the picture's own rows from the floor.
+    const q = c / 2, PH = pic.QH / 2;
+    for (let y = 0; y < Math.min(hh, PH); y++) for (let x = 0; x < w; x++) {
       if (vals && !vals[y * w + x]) continue;
-      const qs = Mural.quartersAt(pic, hh, x, y), px = x0 + x * c, py = y0 + (hh - 1 - y) * c;
+      const qs = Mural.quartersAt(pic, PH, x, y), px = x0 + x * c, py = y0 + (hh - 1 - y) * c;
       for (let k = 0; k < 4; k++) {
         ctx.fillStyle = pic.pal[qs[k]];
         const ax = px + (k % 2) * q, ay = py + (k >> 1) * q;
@@ -82,10 +83,13 @@
   }
 
   /**
-   * The quarter turns from rot to the nearest turn its place is set in: 0 (right), 1 (clockwise), -1 (counter-clockwise)
-   * or 2 (a half turn, either way).
+   * The quarter turns from rot to the nearest turn its place is set in. turn 1 or -1 (one turn button, the default):
+   * presses of it, signed its way (0 right, then 1, 2, 3 clockwise; -1, -2, -3 counter-clockwise), so the badge only
+   * ever shows that button's arrow. turn 0 (both ways): 0, 1 (clockwise), -1 (counter-clockwise) or 2 (a half turn).
    */
-  function turnsTo(pc, rot) {
+  function turnsTo(pc, rot, turn) {
+    turn = turn == null ? 1 : Mural.turnOk(turn);
+    if (turn) return Mural.presses(pc.goals, rot, turn) * turn;
     let best = null;
     for (const g of pc.goals) {
       const d = (((g.rot - rot) % 4) + 4) % 4, v = d === 3 ? -1 : d;
@@ -100,19 +104,19 @@
     const pc = X.current(g);
     if (!pc) return null;
     const gy = g.ghostY(p), ready = gy != null && X.exact(g, p.rot, p.x, gy);
-    return { pc, pic: X.plan().pic, ready, turns: ready ? 0 : turnsTo(pc, p.rot) };
+    return { pc, pic: X.plan().pic, ready, turns: ready ? 0 : turnsTo(pc, p.rot, X.turn()) };
   }
   /**
    * The turn badge, a small disc on the top right corner of the place (kept inside the well): a tick when the piece's
    * turn is right (filled once a drop would set it), else an arrow round the way to turn it (clockwise, or counter-
-   * clockwise), with a 2 inside for a half turn. Still: nothing in it moves.
+   * clockwise), with the presses inside when more than one (a 2 for a half turn). Still: nothing in it moves.
    */
   function turnBadge(ctx, view, st) {
     const { pc, ready, turns } = st, s = view.lay.s, th = view.look.theme, g = view.game;
     let top = pc.cells[0];
     for (const c of pc.cells) if (c[1] > top[1] || (c[1] === top[1] && c[0] > top[0])) top = c;
     const R = Math.max(7, Math.min(13, s * 0.4)), [sx, sy] = view.toScreen(top[0], top[1]);
-    const [lx, ty] = view.toScreen(0, g.h - 1), [rx] = view.toScreen(g.w - 1, 0);
+    const lx = view.lay.board.x, ty = view.lay.board.y, rx = lx + view.lay.board.w - s;
     const cx = Math.max(lx + R + 1, Math.min(rx + s - R - 1, sx + s - R * 0.35)), cy = Math.max(ty + R + 1, sy + R * 0.35);
     const light = th.name === 'light', bg = th.well || (light ? '#ffffff' : '#14161c');
     ctx.save();
@@ -133,7 +137,7 @@
       // An arrow round the way to turn: three quarters of a circle, its head at the end (mirrored for counter-clockwise).
       ctx.translate(cx, cy);
       if (turns < 0) ctx.scale(-1, 1);
-      const r = R * (turns === 2 ? 0.62 : 0.5), a0 = -Math.PI * 0.85, a1 = Math.PI * 0.45;
+      const n = Math.abs(turns), r = R * (n > 1 ? 0.62 : 0.5), a0 = -Math.PI * 0.85, a1 = Math.PI * 0.45;
       ctx.strokeStyle = ink; ctx.fillStyle = ink;
       ctx.beginPath(); ctx.arc(0, 0, r, a0, a1); ctx.stroke();
       const hx = r * Math.cos(a1), hy = r * Math.sin(a1), tx = -Math.sin(a1), ty2 = Math.cos(a1), nx = Math.cos(a1), ny = Math.sin(a1), hl = R * 0.42;
@@ -141,12 +145,53 @@
       ctx.lineTo(hx - tx * hl * 0.45 + nx * hl * 0.5, hy - ty2 * hl * 0.45 + ny * hl * 0.5);
       ctx.lineTo(hx - tx * hl * 0.45 - nx * hl * 0.5, hy - ty2 * hl * 0.45 - ny * hl * 0.5);
       ctx.closePath(); ctx.fill();
-      if (turns === 2) {
+      if (n > 1) {
+        ctx.scale(turns < 0 ? -1 : 1, 1);
         ctx.font = '700 ' + Math.round(R * 0.95) + 'px ' + (Render.FONT || 'system-ui, sans-serif');
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText('2', 0, R * 0.04);
+        ctx.fillText(String(n), 0, R * 0.04);
       }
     }
+    ctx.restore();
+  }
+
+  // ---- the buffer -----------------------------------------------------------------------------------------------------
+
+  const BUF_MS = 420;
+  /**
+   * The rows shown: the picture's while the buffer is shut, the whole board once it is open (or the piece is in it),
+   * eased between the two over BUF_MS (at once under reduced motion; a finished mural shows only its picture).
+   */
+  function bufferRows(view) {
+    const g = view.game, X = Mural.extOf(g);
+    if (!X || !g) return g ? g.h : 0;
+    const PH = X.plan().H, p = g.piece;
+    const open = !(g.over && g.endKind === 'finished') && (X.open(g) || (!!p && g.absCells(p).some(([, y]) => y >= PH)));
+    const to = open ? g.h : PH, t = now(), B = view.muralBuf;
+    if (!B || B.game !== g) { view.muralBuf = { game: g, from: to, to, t0: t, t1: t }; return to; }
+    if (B.to !== to) {
+      const cur = bufAt(B, t);
+      const still = view.reducedMotion || (view.look && view.look.still) || Render.FREEZE != null;
+      Object.assign(B, { from: cur, to, t0: t, t1: still ? t : t + BUF_MS });
+    }
+    return bufAt(B, t);
+  }
+  const bufAt = (B, t) => { if (t >= B.t1) return B.to; const k = (t - B.t0) / (B.t1 - B.t0), e = k * k * (3 - 2 * k); return B.from + (B.to - B.from) * e; };
+
+  /** The buffer as Race's: a soft band over the picture, its top edge dashed (where pieces set up to). */
+  function buffer(ctx, view) {
+    const g = view.game, X = Mural.extOf(g);
+    if (!X) return;
+    const PH = X.plan().H, s = view.lay.s, th = view.look.theme, light = th.name === 'light';
+    if ((view.lay.gh || g.h) <= PH + 0.01) return;
+    const [x0, y0] = view.toScreen(0, g.h - 1), [x1, y1] = view.toScreen(g.w - 1, PH);
+    const bx = Math.min(x0, x1), by = Math.min(y0, y1), bw = Math.abs(x1 - x0) + s, bh = Math.abs(y1 - y0) + s;
+    ctx.save();
+    ctx.fillStyle = light ? 'rgba(40,50,70,0.05)' : 'rgba(255,255,255,0.035)';
+    ctx.fillRect(bx, by, bw, bh);
+    const ey = Math.round(by + bh) + 0.5;
+    ctx.strokeStyle = Render.rgba(th.accent, light ? 0.45 : 0.4); ctx.lineWidth = 1; ctx.setLineDash([Math.max(2, s * 0.25), Math.max(2, s * 0.2)]);
+    ctx.beginPath(); ctx.moveTo(bx, ey); ctx.lineTo(bx + bw, ey); ctx.stroke();
     ctx.restore();
   }
 
@@ -162,7 +207,7 @@
       const g = view.game, pic = picOf(g);
       if (!pic || !at) return false;
       const X = Mural.extOf(g), P = X && X.plan();
-      if (kind === 'stack') { drawBlock(ctx, sx, sy, s, Mural.quartersAt(pic, g.h, at.x, at.y), pic.pal, 1, !X || (g.over && g.endKind === 'finished')); return true; }
+      if (kind === 'stack') { drawBlock(ctx, sx, sy, s, Mural.quartersAt(pic, pic.QH / 2, at.x, at.y), pic.pal, 1, !X || (g.over && g.endKind === 'finished')); return true; }
       if (kind === 'piece') {
         const p = g.piece, pc = P && P.pieces[kOf(p && p.type.id)], i = pc ? idxIn(at.cells, at.x, at.y) : -1;
         if (i < 0) return false;
@@ -198,6 +243,7 @@
      * another turn than its place, solid once its turn is right (full strength when a drop would set it there).
      */
     overStack(ctx, view) {
+      buffer(ctx, view);
       const st = placeState(view);
       if (!st) return;
       const { pc, pic, ready, turns } = st, s = view.lay.s, th = view.look.theme;
@@ -223,13 +269,16 @@
       const st = placeState(view);
       if (st) turnBadge(ctx, view, st);
     },
-    busy(view) { return !!view.muralNudge && now() - view.muralNudge < NUDGE_MS; },
+    busy(view) { return (!!view.muralNudge && now() - view.muralNudge < NUDGE_MS) || !!(view.muralBuf && view.muralBuf.t1 + 60 > now()); },
+    /** The picture's rows, and the buffer's as it opens (bufferRows). */
+    shownRows(view) { return bufferRows(view); },
     /** The New board preview: the whole picture; a library thumbnail: the picture where the board has blocks. */
     preview(ctx, gm, recipe) {
       if (!Mural.on(recipe)) return;
-      const r = Recipe.normalize(recipe), pic = Mural.picture(r);
-      if (gm.style === 'thumb') { if (gm.cells) paintPicture(ctx, pic, gm.w, gm.h, gm.x, gm.y, gm.c, gm.cells); return; }
-      paintPicture(ctx, pic, gm.w, gm.h, gm.x, gm.y, gm.c, null);
+      const r = Recipe.normalize(recipe);
+      // A thumbnail is a saved board's (its buffer on top); the New board window's is the picture's size.
+      if (gm.style === 'thumb') { if (gm.cells) paintPicture(ctx, Mural.picture(r, gm.w, Math.max(6, gm.h - Mural.BUF)), gm.w, gm.h, gm.x, gm.y, gm.c, gm.cells); return; }
+      paintPicture(ctx, Mural.picture(r, gm.w, gm.h), gm.w, gm.h, gm.x, gm.y, gm.c, null);
     },
   };
   Recipe.viewPart(VIEW);
@@ -243,6 +292,14 @@
     return B;
   };
   const subOf = (r) => Mural.PIC_NAMES[r.mural.pic] + ' · Level ' + r.mural.level;
+
+  // The turns a mural is built for: both ways under Settings ▸ Controls ▸ Counter-clockwise puzzles, else the single
+  // turn button's (counter-clockwise under Inverted Controls), as puzzles.
+  Mural.setTurnMode(() => {
+    const app = L.app, m = app && app.modes && app.modes.play;
+    if (app && app.settings && app.settings.ccwPuzzles) return 0;
+    return m && m.inverted ? -1 : 1;
+  });
 
   function controller(play) {
     const app = play.app;
@@ -287,7 +344,12 @@
         this.base.onLock(r);
         if (!r.mural || !X()) return;
         const st = app.store, gm = g();
-        const pay = Library.bank(r.placed * Mural.PAY_CELL);
+        // What it left over the picture fades (as Race's trim), in the picture's colour under it.
+        if (r.trimmed && r.trimmed.length && !play.reduced && play.view.lay) {
+          const s = play.view.lay.s, pic = X().plan().pic, H = X().plan().H;
+          play.view.fx.fadeCells(r.trimmed.map(([x, y]) => { const [sx, sy] = play.view.toScreen(x, y); return { x: sx, y: sy, s, color: pic.pal[Mural.quartersAt(pic, H, x, H - 1)[0]] }; }), play.view.look.skin, 0.6);
+        }
+        const pay = Library.bank(r.mural.cells * Mural.PAY_CELL);
         if (pay) { st.addLines(pay, 'play'); gm.s.banked = Library.bank((gm.s.banked || 0) + pay); app.refreshWallet(true); }
         statsOf(st).placed++;
         st.touch();
@@ -410,18 +472,21 @@
     ph.cx = (x + cw / 2) / ph.w; ph.cy = (y + ch / 2) / ph.h;
     return { x, y, w: cw, h: ch };
   }
+  /** The board size a photo is cropped for: the New board window's (api.size), else the level's. */
+  const sizeOf = (api, level) => { const lv = Mural.LEVELS[level], z = api && api.size; return z && z.w && z.h ? { w: z.w, h: z.h } : { w: lv.w, h: lv.h }; };
   /**
-   * The photo, as cropped, made a mural's grid at a level: { w, h, pal, px }. The crop is read at the photo's own pixels
-   * (no canvas scaling, which mixes colours in gamma and dulls them) and area-averaged to quarters in linear light.
+   * The photo, as cropped, made a mural's grid at a level, for a board of size ({ w, h }; the level's by default):
+   * { w, h, pal, px }. The crop (the board's shape) is read at the photo's own pixels (no canvas scaling, which mixes
+   * colours in gamma and dulls them) and area-averaged to quarters in linear light.
    */
-  function ownFrom(ph, level) {
-    const lv = Mural.LEVELS[level], c = cropOf(ph, lv.w / lv.h), W = Math.max(lv.w * 2, Math.round(c.w)), H = Math.max(lv.h * 2, Math.round(c.h));
+  function ownFrom(ph, level, size) {
+    const lv = Mural.LEVELS[level], z = size || lv, c = cropOf(ph, z.w / z.h), W = Math.max(z.w * 2, Math.round(c.w)), H = Math.max(z.h * 2, Math.round(c.h));
     const cv = document.createElement('canvas');
     cv.width = W; cv.height = H;
     const ctx = cv.getContext('2d', { willReadFrequently: true });
     ctx.imageSmoothingEnabled = W > Math.round(c.w);
     ctx.drawImage(ph.cv, c.x, c.y, c.w, c.h, 0, 0, W, H);
-    return Mural.fromPixels(ctx.getImageData(0, 0, W, H).data, W, H, lv.w, lv.h, lv.pk);
+    return Mural.fromPixels(ctx.getImageData(0, 0, W, H).data, W, H, z.w, z.h, lv.pk);
   }
 
   /**
@@ -429,7 +494,7 @@
    * colours (a photo has more than a built-in picture: LEVELS pk); Use photo makes it the picture. api: the New board window's.
    */
   function openCrop(api) {
-    const r = api.recipe, level = r.mural.level, lv = Mural.LEVELS[level], a = lv.w / lv.h, ph = PHOTO;
+    const r = api.recipe, level = r.mural.level, size = sizeOf(api, level), a = size.w / size.h, ph = PHOTO;
     const vw = Math.min(root.innerWidth || 520, 560), BOX = Math.max(200, Math.min(320, vw - 72)), BOXH = Math.max(180, Math.min(300, (root.innerHeight || 700) - 300));
     const k = Math.min(BOX / ph.w, BOXH / ph.h), cw = Math.round(ph.w * k), chh = Math.round(ph.h * k);
     const dpr = Math.min(3, root.devicePixelRatio || 1);
@@ -452,7 +517,7 @@
       ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
       ctx.strokeRect(c.x * k + 1, c.y * k + 1, c.w * k - 2, c.h * k - 2);
     };
-    const quant = () => { own = ownFrom(ph, level); draw(); };
+    const quant = () => { own = ownFrom(ph, level, size); draw(); };
     let drag = null;
     cv.addEventListener('pointerdown', (e) => { drag = { id: e.pointerId, x: e.clientX, y: e.clientY, cx: ph.cx, cy: ph.cy }; dragging = true; try { cv.setPointerCapture(e.pointerId); } catch (err) { /* no capture */ } e.preventDefault(); });
     cv.addEventListener('pointermove', (e) => {
@@ -508,6 +573,13 @@
     ctx.restore();
   }
 
+  /** The Mixed chip's picture: a single block, a domino and a tromino, in the accent's family. */
+  function mixedSample(ctx, px, look) {
+    const c = Math.max(4, Math.floor(px / 5)), x0 = Math.round((px - c * 4) / 2), y0 = Math.round((px - c * 3) / 2);
+    const cells = [[0, 2, 2], [1, 2, 3], [2, 2, 3], [3, 2, 4], [3, 1, 4], [1, 1, 5]];
+    for (const [x, y, k] of cells) Render.drawCell(ctx, look.skin, look.color ? look.color(k) : '#7aa2f7', x0 + x * c, y0 + y * c, c);
+  }
+
   Recipe.uiPart({
     key: 'mural', order: 60, mode: 'mural', name: 'Mural',
     tab: 'mode',
@@ -525,17 +597,40 @@
             pickPhoto(() => openCrop(api));
           } }, kids);
       };
-      // A photo chosen at another level: cropped again for this one (its own grid and colours).
+      // A photo chosen at another level or size: cropped again for this one (its own grid, shape and colours).
       if (r.mural.pic === 'own' && PHOTO) {
-        const lv = Mural.levelOf(r);
-        if (r.mural.own.w !== lv.w * 2 || r.mural.own.h !== lv.h * 2) setTimeout(() => { const own = ownFrom(PHOTO, r.mural.level); LAST_OWN = own; api.choose('mural', { pic: 'own', level: r.mural.level, own }); }, 0);
+        const z = sizeOf(api, r.mural.level);
+        if (r.mural.own.w !== z.w * 2 || r.mural.own.h !== z.h * 2) setTimeout(() => { const own = ownFrom(PHOTO, r.mural.level, z); LAST_OWN = own; api.choose('mural', { pic: 'own', level: r.mural.level, own }); }, 0);
       }
       return h('div', { class: 'mu-panel' },
         h('div', { class: 'nb-chips mu-pics', role: 'group', 'aria-label': 'Picture' }, Mural.PIC_IDS.map(chip)),
         h('div', { class: 'cl-row mu-lvrow' }, h('span', { class: 'cl-nm' }, 'Level'),
           h('div', { class: 'seg cl-seg mu-lv', role: 'group', 'aria-label': 'Level' }, Mural.LEVEL_IDS.map((n) => api.option('mural.level', n, 'nb-level', String(n))))));
     },
-    presets(r) { if (!Mural.on(r)) return null; const lv = Mural.levelOf(r); return [['Level ' + r.mural.level, lv.w, lv.h]]; },
+    // The level's size first (the default), then larger ones: twice the board, twice the detail each way.
+    presets(r) {
+      if (!Mural.on(r)) return null;
+      const lv = Mural.levelOf(r), out = [['Level ' + r.mural.level, lv.w, lv.h]];
+      for (const [name, w, hh] of [['Detailed', 16, 26], ['Large', 18, 30], ['Largest', Mural.SIZE.w[1], Mural.SIZE.h[1]]]) if (w > lv.w || hh > lv.h) out.push([name, w, hh]);
+      return out;
+    },
+    // Into Mural, or another level: the level's size, unless a size of its own was set (one that is no level's).
+    sizeFor(r, asked) {
+      if (!Mural.on(r) || !asked) return null;
+      const lv = Mural.levelOf(r), std = Library.STANDARD;
+      const preset = Mural.LEVEL_IDS.some((n) => Mural.LEVELS[n].w === asked.w && Mural.LEVELS[n].h === asked.h) || (asked.w === std.w && asked.h === std.h);
+      return preset ? { w: lv.w, h: lv.h } : null;
+    },
+    // Create: a photo cropped for another size is cropped again for this one.
+    commit(r, size) {
+      if (!Mural.on(r) || r.mural.pic !== 'own' || !PHOTO || !size) return null;
+      if (r.mural.own.w === size.w * 2 && r.mural.own.h === size.h * 2) return null;
+      const own = ownFrom(PHOTO, r.mural.level, size);
+      LAST_OWN = own;
+      return { recipe: Recipe.normalize(Object.assign({}, r, { mural: { pic: 'own', level: r.mural.level, own } })), size };
+    },
+    // Mural's own set: 1-4 blocks, the level's share of small ones (shown only on a Mural board).
+    chips: [{ value: 'mixed', name: 'Mixed', sample: (ctx, px, look) => mixedSample(ctx, px, look), when: (r) => Mural.on(r) }],
     said(path, v) {
       if (path === 'mural.level') return 'Level ' + v;
       if (path === 'mural.pic') return Mural.PIC_NAMES[v] || null;
@@ -563,5 +658,5 @@
     },
   });
 
-  L.MuralView = { controller, drawBlock, VIEW, turnsTo, placeState, openCrop, pickPhoto, setPhoto, ownFrom, cropOf, get photo() { return PHOTO; }, lastCrop: null };
+  L.MuralView = { controller, drawBlock, VIEW, turnsTo, placeState, bufferRows, openCrop, pickPhoto, setPhoto, ownFrom, cropOf, get photo() { return PHOTO; }, lastCrop: null };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
