@@ -166,7 +166,9 @@
     const g = view.game, X = Mural.extOf(g);
     if (!X || !g) return g ? g.h : 0;
     const PH = X.plan().H, p = g.piece;
-    const open = !(g.over && g.endKind === 'finished') && (X.open(g) || (!!p && g.absCells(p).some(([, y]) => y >= PH)));
+    // Opens once, at the very end (X.open is monotonic): never for a moment because a piece was turned up.
+    void p;
+    const open = !(g.over && g.endKind === 'finished') && X.open(g);
     const to = open ? g.h : PH, t = now(), B = view.muralBuf;
     if (!B || B.game !== g) { view.muralBuf = { game: g, from: to, to, t0: t, t1: t }; return to; }
     if (B.to !== to) {

@@ -172,7 +172,7 @@ module.exports = async function muralTests({ browser, check, PAGE, OUT }) {
   await ev(SCENE, { pic: 'still', level: 3, seed: 3, placed: 5 });
   await ev(() => {
     const m = Lull.app.modes.play, g = m.game, X = Lull.Mural.extOf(g);
-    while (!g.over) { const q = X.current(g).goals[0], p = g.piece; p.rot = q.rot; p.x = q.x; p.y = g.h - 1 - p.type.rotBounds[q.rot].maxY; m.action('drop'); }
+    while (!g.over) { const q = X.current(g).goals[0], p = g.piece; p.rot = q.rot; p.x = q.x; p.y = X.top(g) - 1 - p.type.rotBounds[q.rot].maxY; m.action('drop'); }
   });
   await page.waitForTimeout(150);
   const fin = { card: await card(ev), st: await status(ev), stats: await ev(() => Lull.app.store.state.stats.free.mural), ach: await ev(() => Object.keys(Lull.app.store.state.achievements || {}).filter((k) => /^mu_/.test(k)).sort()) };
@@ -353,7 +353,7 @@ module.exports = async function muralTests({ browser, check, PAGE, OUT }) {
           while (!g.over) {
             const t = Lull.MuralView.placeState(m.view).turns;
             seen[t] = (seen[t] || 0) + 1;
-            const q = X.current(g).goals[0], p = g.piece; p.rot = q.rot; p.x = q.x; p.y = g.h - 1 - p.type.rotBounds[q.rot].maxY; m.action('drop');
+            const q = X.current(g).goals[0], p = g.piece; p.rot = q.rot; p.x = q.x; p.y = X.top(g) - 1 - p.type.rotBounds[q.rot].maxY; m.action('drop');
           }
           Lull.app.settings.ccwPuzzles = false; m.inverted = false;
           return seen;
@@ -378,7 +378,7 @@ module.exports = async function muralTests({ browser, check, PAGE, OUT }) {
           cue[want] = await F.ev(([want, ccw, inv]) => {
             const m = Lull.app.modes.play, g = m.game, X = Lull.Mural.extOf(g), p = g.piece, pc = X.current(g), q = pc.goals[0];
             Lull.app.settings.ccwPuzzles = ccw; m.inverted = inv;
-            const d = { cw: -1, ccw: 1, half: 2, right: 0, ready: 0 }[want], rot = (q.rot + d + 4) % 4, top = g.h - 1 - p.type.rotBounds[rot].maxY;
+            const d = { cw: -1, ccw: 1, half: 2, right: 0, ready: 0 }[want], rot = (q.rot + d + 4) % 4, top = X.top(g) - 1 - p.type.rotBounds[rot].maxY;
             // Its own column over its place when ready, else a column away from it.
             const xs = want === 'ready' ? [q.x] : [q.x + 3, q.x - 3, q.x + 4, q.x - 4, q.x + 2, q.x - 2];
             const x = xs.find((x) => g.fitsAt(p, rot, x, top));
@@ -475,7 +475,7 @@ module.exports = async function muralTests({ browser, check, PAGE, OUT }) {
   const setPlayed = await S2.ev(() => {
     const m = Lull.app.modes.play, g = m.game, X = Lull.Mural.extOf(g);
     let n = 0;
-    while (!g.over && n < 400) { const q = X.current(g).goals[0], p = g.piece; p.rot = q.rot; p.x = q.x; p.y = g.h - 1 - p.type.rotBounds[q.rot].maxY; m.action('drop'); n++; }
+    while (!g.over && n < 400) { const q = X.current(g).goals[0], p = g.piece; p.rot = q.rot; p.x = q.x; p.y = X.top(g) - 1 - p.type.rotBounds[q.rot].maxY; m.action('drop'); n++; }
     let left = 0; for (let y = g.h - Lull.Mural.BUF; y < g.h; y++) for (let x = 0; x < g.w; x++) if (g.board.get(x, y)) left++;
     return { done: g.endKind === 'finished', n, left };
   });

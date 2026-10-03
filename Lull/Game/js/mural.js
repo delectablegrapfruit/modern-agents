@@ -51,6 +51,8 @@
   const PAY_CELL = 0.04;
   /** The buffer: rows over the picture (R.k, as Race's) where pieces appear and turn once the stack nears the top. */
   const BUF = 4;
+  /** The buffer opens when the stack, or the next piece's place, reaches the picture's top OPEN rows. */
+  const OPEN = 2;
   /** A board's size (the picture's, the buffer over it): any in these, the level's by default (SIZE). */
   const SIZE = { w: [6, 20], h: [8, 36] };
   /** The most quarters an imported picture keeps each way (the largest board's grid), and its colours. */
@@ -730,8 +732,8 @@
   }
 
   /**
-   * Is the buffer open for piece k on board b: has the stack (or k's place) come within BUF rows of the picture's top?
-   * Once open it stays open (the stack only grows, and covers every earlier place).
+   * Is the buffer open for piece k on board b: has the stack (or k's place) reached the picture's top OPEN rows (the very
+   * end)? Once open it stays open: the stack only grows, and covers every earlier place, so it opens once a board.
    */
   function bufferOpen(P, k, b) {
     if (b.h <= P.H) return false;
@@ -739,7 +741,7 @@
     for (let y = P.H - 1; y >= 0 && !top; y--) for (let x = 0; x < b.w; x++) if (b.get(x, y)) { top = y + 1; break; }
     const pc = P.pieces[k];
     if (pc) for (const [, y] of pc.cells) top = Math.max(top, y + 1);
-    return top > P.H - BUF;
+    return top > P.H - OPEN;
   }
   /** The rows piece k may appear and move in on board b: the whole board once the buffer is open, else the picture's. */
   const topOf = (P, k, b) => (bufferOpen(P, k, b) ? b.h : Math.min(b.h, P.H));
@@ -816,6 +818,12 @@
       open(g) { return bufferOpen(P(), M.i, g.board); },
       /** The rows the piece in play may use (topOf). */
       top(g) { return topOf(P(), M.i, g.board); },
+      // While the buffer is shut the piece in play stays in the picture's rows: a cell over them does not fit (so a turn
+      // or a nudge never carries it into the hidden rows, and the buffer never flickers open).
+      placed(g, b, abs) {
+        if (!g.piece || b !== g.board || bufferOpen(P(), M.i, b)) return abs;
+        return abs.some(([, y]) => y >= H) ? abs.map(([x, y]) => (y >= H ? [x, b.h + 1] : [x, y])) : abs;
+      },
       // The pieces in their order (the queue is made the mural's own, fixed, at the first piece).
       dealer: {
         next() { const ps = P().pieces; return ps[Math.min(dealt++, ps.length - 1)].id; },
@@ -985,7 +993,7 @@
   }
 
   L.Mural = {
-    LEVELS, LEVEL_IDS, PICS, PIC_IDS, PIC_NAMES, PAY_CELL, OWN_MAX, B36, BUF, SIZE, SETS, SET_NAMES, UP, bufferOpen, topOf, setOf, cut, verify, shapesOf, dims,
+    LEVELS, LEVEL_IDS, PICS, PIC_IDS, PIC_NAMES, PAY_CELL, OWN_MAX, B36, BUF, OPEN, SIZE, SETS, SET_NAMES, UP, bufferOpen, topOf, setOf, cut, verify, shapesOf, dims,
     on, levelOf, quantise, toKeys, KEYS, render, picture, quartersAt, turnQ, tile, plan, exactAt, cellQ, reach, spawnSpot, prefOf, presses, turnOk, setTurnMode, typeOf,
     ownOk, ownRgb, resample, fromPixels, valid, summaryOf, extOf, bot, hexRgb, rgbHex, oklab, fromLab, PART,
     of: (game) => { const e = extOf(game); return e ? e.M : null; },

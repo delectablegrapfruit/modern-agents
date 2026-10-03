@@ -16,7 +16,7 @@ module.exports = function muralUnit({ L, test }) {
   const mk = (pic, level, seed, own) => { const r = R(pic, level, own), z = Recipe.clampSize({}, r); return new Game({ w: z.w, h: z.h, seed: seed == null ? 1 : seed, recipe: r }); };
   const X = (g) => M.extOf(g);
   /** Sets the piece in play in its place (as a player would: turned, moved, dropped from above). */
-  const setIt = (g) => { const pc = X(g).current(g), q = pc.goals[0], p = g.piece; p.rot = q.rot; p.x = q.x; p.y = g.h - 1 - p.type.rotBounds[q.rot].maxY; return g.drop(); };
+  const setIt = (g) => { const pc = X(g).current(g), q = pc.goals[0], p = g.piece; p.rot = q.rot; p.x = q.x; p.y = X(g).top(g) - 1 - p.type.rotBounds[q.rot].maxY; return g.drop(); };
 
   console.log('mural');
 
@@ -277,7 +277,7 @@ module.exports = function muralUnit({ L, test }) {
           }
           // The picture's top rows: the buffer is open and the piece appears at its top, over the picture.
           const PH = x.plan().H;
-          if (pc.cells.some(([, cy]) => cy >= PH - M.BUF)) { assert(x.open(g), 'the buffer open for a top row'); tops++; }
+          if (pc.cells.some(([, cy]) => cy >= PH - M.OPEN)) { assert(x.open(g), 'the buffer open for a top row'); tops++; }
           if (x.open(g)) assert.strictEqual(p.y + p.type.rotBounds[p.rot].maxY, g.h - 1, 'appears at the buffer\'s top');
           else assert(p.y + p.type.rotBounds[p.rot].maxY < PH, 'under a shut buffer');
           assert(M.reach(g.board, p.type, { rot: p.rot, x: p.x, y: p.y }, pc.goals, turn) >= 0, 'reached one way');
@@ -295,6 +295,27 @@ module.exports = function muralUnit({ L, test }) {
     assert(M.bot(g).done);
   });
 
+  test('mural: the buffer opens once, at the very end (the top ' + M.OPEN + ' rows), and a piece can never be turned or moved into it while it is shut', () => {
+    for (const [pic, level] of [['coast', 2], ['still', 3], ['soft', 4]]) {
+      const g = mk(pic, level, 7), x = X(g), PH = x.plan().H;
+      let flips = 0, was = x.open(g), firstOpenAt = -1;
+      while (!g.over && g.piece) {
+        const open = x.open(g);
+        if (open !== was) { flips++; was = open; if (open) firstOpenAt = x.M.i; }
+        if (!open) {
+          // Every spot with a cell over the picture is refused while it is shut.
+          const p = g.piece;
+          for (let r = 0; r < 4; r++) for (let px = -2; px < g.w + 2; px++) {
+            const cells = p.type.rots[r].map(([cx, cy]) => [px + cx, PH - p.type.rotBounds[r].minY + cy - p.type.rotBounds[r].minY]);
+            if (cells.some(([, cy]) => cy >= PH)) assert(!g.fitsAt(p, r, px, PH - p.type.rotBounds[r].minY), pic + ': a cell over a shut buffer');
+          }
+        }
+        assert(setIt(g), pic + ' ' + level + ': piece ' + x.M.i + ' set');
+      }
+      assert.strictEqual(flips, 1, pic + ': the buffer changed ' + flips + ' times');
+      assert(firstOpenAt > 0, pic + ': shut at the start');
+    }
+  });
   test('mural: the buffer — shut while the stack is low, open (and staying open) once it nears the top; a board saved before it is grown, its stack and piece kept', () => {
     const g = mk('coast', 2, 4), x = X(g), PH = x.plan().H;
     let was = false, opened = -1;

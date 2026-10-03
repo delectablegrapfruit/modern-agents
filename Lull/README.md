@@ -1100,8 +1100,9 @@ same appears in its place's turn. The turn is read as each piece appears (`setTu
 
 *The buffer*, as Race's: 4 rows over the picture (`R.k`; the board's size is the picture's, the buffer on top of it),
 where nothing ever sets. While the stack is low it is hidden and pieces appear at the picture's top; once the stack (or
-the piece's place) comes within 4 rows of the top it opens for good: the board grows smoothly to show it (cells a little
-smaller so all of it fits; at once under reduced motion; it shows too whenever the piece is turned up into it), drawn as
+the piece's place) reaches the picture's top 2 rows it opens, once, for good: the board grows smoothly to show it (cells
+a little smaller so all of it fits; at once under reduced motion). While it is shut a piece can't be moved or turned into
+it (such a move simply doesn't happen), so it never shows for a moment; it is drawn as
 a soft band over a dashed top edge, and pieces appear at its top, so the picture's last rows are reached by the same
 moves and the same one-button turns as the rest. A finished mural shows only its picture. A board saved before the
 buffer opens with it added.
