@@ -23,7 +23,7 @@ module.exports = function battleUnit({ L, test }) {
 
   test('battle: the recipe (a mode after Race, levels Easy to Swift, Steady by default), its label, sizes 6–12 by 10–16, rules, Mirror, Physics and Big ruled out', () => {
     const modes = Recipe.options().find((o) => o.path === 'mode').values;
-    assert.deepStrictEqual(modes.slice(-2), ['race', 'battle'], 'Race, then Battle');
+    assert.deepStrictEqual(modes.filter((m) => m !== 'mural').slice(-2), ['race', 'battle'], 'Race, then Battle');
     assert.deepStrictEqual(Recipe.normalize({ mode: 'battle' }).battle, { level: 'steady' });
     assert.strictEqual(Recipe.normalize({ battle: { level: 'swift' } }).battle, undefined, 'its settings only in Battle');
     assert.strictEqual(Recipe.label(R0({ battle: { level: 'swift' } })), 'Battle · Swift');
