@@ -6,10 +6,9 @@
 <title>Sift for Mac</title>
 <meta name="description" content="Sift removes .DS_Store, ._ files and the hidden folders macOS leaves on every disk, the moment they appear, and makes Finder show folders your way.">
 <script>
-  // The two links this page needs: the Lemon Squeezy checkout for Sift Pro, and the app download.
-  const BUY_URL = "https://YOUR-STORE.lemonsqueezy.com/buy/YOUR-PRODUCT";
+  // Where the app is downloaded from, and its source.
   const DOWNLOAD_URL = "https://github.com/delectablegrapfruit/modern-agents/raw/claude/sift-pro/dist/Sift.app.zip";
-  const PRICE = "$12";
+  const SOURCE_URL = "https://github.com/delectablegrapfruit/modern-agents/tree/claude/sift-pro";
 </script>
 <style>
   :root {
@@ -83,16 +82,6 @@
   .card p { margin: 0; color: var(--muted); font-size: 15.5px; }
   .junklist { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
 
-  .pricing { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 760px; }
-  .plan { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 26px; display: flex; flex-direction: column; }
-  .plan.pro { border: 2px solid var(--accent); }
-  .plan h3 { margin: 0; font-size: 20px; }
-  .price { font-size: 40px; font-weight: 700; letter-spacing: -0.02em; margin: 8px 0 2px; }
-  .price small { font-size: 16px; font-weight: 500; color: var(--muted); }
-  .plan ul { padding: 0; margin: 16px 0 22px; list-style: none; flex: 1; }
-  .plan li { padding: 6px 0 6px 26px; position: relative; font-size: 15.5px; }
-  .plan li::before { content: "✓"; position: absolute; left: 2px; color: var(--good); font-weight: 700; }
-
   .faq { max-width: 760px; }
   details { border-bottom: 1px solid var(--line); padding: 16px 0; }
   summary { cursor: pointer; font-weight: 600; list-style: none; }
@@ -105,7 +94,7 @@
 
   @media (max-width: 820px) {
     .hero { grid-template-columns: 1fr; gap: 36px; padding: 28px 0 48px; }
-    .grid, .pricing { grid-template-columns: 1fr; }
+    .grid { grid-template-columns: 1fr; }
     nav a:not(.keep) { display: none; }
     section { padding: 48px 0; }
   }
@@ -120,7 +109,7 @@
     </a>
     <nav>
       <a href="#what">What it removes</a>
-      <a href="#pricing" class="keep">Pricing</a>
+      <a data-link="source" href="#" class="keep">Source</a>
       <a href="#faq">FAQ</a>
     </nav>
   </header>
@@ -130,10 +119,10 @@
       <h1>Your Mac litters every disk. Sift cleans up the moment it does.</h1>
       <p class="lede">.DS_Store, ._ files, .Spotlight-V100, .fseventsd — gone from USB drives, network shares, cloud folders and repos as soon as they appear. And Finder finally shows folders the way you set them.</p>
       <div class="ctas">
-        <a class="btn primary" data-link="download" href="#">Download free</a>
-        <a class="btn" data-link="buy" href="#"><span>Buy Sift Pro · <b data-price>$12</b></span></a>
+        <a class="btn primary" data-link="download" href="#">Download for Mac</a>
+        <a class="btn" data-link="source" href="#">View source</a>
       </div>
-      <p class="fine">macOS 13 or later · Apple silicon and Intel · 14-day Pro trial, no account</p>
+      <p class="fine">Free · open source · macOS 13 or later · Apple silicon and Intel</p>
     </div>
     <div class="window" aria-label="A USB drive being cleaned">
       <div class="titlebar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span>KINGSTON — USB</span></div>
@@ -158,45 +147,14 @@
     <p class="sub">Finder drops them wherever you browse. Windows PCs, TVs, cameras, car stereos and your teammates' <code>git status</code> see every one.</p>
     <div class="grid">
       <div class="card"><h3>Cleans by itself</h3><p>Junk is removed the instant macOS writes it — on your home folder, iCloud Drive, Dropbox, OneDrive, Google Drive and every connected disk, internal, external or network. Idle cost: nothing; disks still sleep.</p></div>
-      <div class="card"><h3>Sweep on demand</h3><p>One click looks through everything, lists what it found with sizes, and removes it only when you say so. Free, forever, and also on the command line.</p></div>
+      <div class="card"><h3>Sweep on demand</h3><p>One click looks through everything, lists what it found with sizes, and removes it only when you say so. Also on the command line.</p></div>
       <div class="card"><h3>Finder views, your way</h3><p>One view for every folder on every disk — list, columns, sort, grouping, icon size — plus folders with views of their own. No more windows remembering whatever they last looked like.</p></div>
       <div class="card"><h3>Safe by design</h3><p>Never touches system folders, apps, <code>~/Library</code>, Time Machine disks, read-only disks, <code>node_modules</code>, custom volume icons or anything of yours.</p></div>
       <div class="card"><h3>Root-owned junk too</h3><p>Disk-level folders that belong to the system go with one administrator password, through a tiny helper that removes only catalogued junk.</p></div>
-      <div class="card"><h3>Private</h3><p>No account, no analytics. The only thing Sift ever sends is your license key, once, when you activate it.</p></div>
+      <div class="card"><h3>Private</h3><p>No account, no analytics, no network. Nothing about your disks or files ever leaves your Mac.</p></div>
     </div>
     <div class="junklist">
       <code>.DS_Store</code><code>._*</code><code>.apdisk</code><code>.Spotlight-V100</code><code>.fseventsd</code><code>.Trashes</code><code>.TemporaryItems</code>
-    </div>
-  </div>
-</section>
-
-<section id="pricing">
-  <div class="wrap">
-    <h2>Pay once. Keep it.</h2>
-    <p class="sub">Every download starts with 14 days of Pro. After that, Sweep stays free.</p>
-    <div class="pricing">
-      <div class="plan">
-        <h3>Sift</h3>
-        <div class="price">Free</div>
-        <ul>
-          <li>Sweep every disk on demand</li>
-          <li>See everything before it goes</li>
-          <li><code>sift-cli</code> scan and sweep</li>
-          <li>Administrator helper</li>
-        </ul>
-        <a class="btn" data-link="download" href="#">Download</a>
-      </div>
-      <div class="plan pro">
-        <h3>Sift Pro</h3>
-        <div class="price"><span data-price>$12</span> <small>once</small></div>
-        <ul>
-          <li>Everything in Sift</li>
-          <li>Removes junk the moment it appears</li>
-          <li>Finder views for every folder</li>
-          <li>All future updates</li>
-        </ul>
-        <a class="btn primary" data-link="buy" href="#">Buy Sift Pro</a>
-      </div>
     </div>
   </div>
 </section>
@@ -206,21 +164,17 @@
     <h2>Questions</h2>
     <details><summary>Will it delete anything I need?</summary><p>Sift removes only files from a fixed catalogue of macOS bookkeeping files, and never in system folders, apps, <code>~/Library</code>, Time Machine or read-only disks. A disk's Trash and in-progress saves are only offered in a Sweep, with what removing them means.</p></details>
     <details><summary>Why do .DS_Store files keep coming back without it?</summary><p>Finder writes one into every folder you open to remember its view, and ._ files whenever a Mac copies to a disk that cannot store Mac metadata. Sift removes each the moment it is written, and turns on Finder's own switches for not writing them on network and USB disks.</p></details>
-    <details><summary>What happens when the trial ends?</summary><p>Cleaning by itself and Finder views pause; views already applied stay. Sweep keeps working, free. Enter a key at any time to turn Pro back on.</p></details>
-    <details><summary>How many Macs can I use it on?</summary><p>Your key works on your own Macs; <em>Deactivate on This Mac</em> moves it to a new one.</p></details>
-    <details><summary>How do I get my license key?</summary><p>It is on the receipt emailed right after purchase. Paste it into Sift ▸ Sift Pro… ▸ Activate.</p></details>
-    <details><summary>Is it open source?</summary><p>Yes, MIT licensed. Buying Pro pays for the signed, notarized build and for its development.</p></details>
+    <details><summary>Why is it free?</summary><p>No catch: no ads, no account, no upsell. It is MIT licensed; read the source, build it yourself, or download the signed build.</p></details>
   </div>
 </section>
 
 <footer>
-  <div class="wrap">Sift · Made for macOS · Payments by Lemon Squeezy</div>
+  <div class="wrap">Sift · Free and open source · Made for macOS</div>
 </footer>
 
 <script>
-  for (const a of document.querySelectorAll('[data-link="buy"]')) a.href = BUY_URL;
   for (const a of document.querySelectorAll('[data-link="download"]')) a.href = DOWNLOAD_URL;
-  for (const el of document.querySelectorAll("[data-price]")) el.textContent = PRICE;
+  for (const a of document.querySelectorAll('[data-link="source"]')) a.href = SOURCE_URL;
 </script>
 </body>
 </html>

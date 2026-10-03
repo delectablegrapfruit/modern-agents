@@ -33,13 +33,6 @@ if command -v swiftc >/dev/null && command -v iconutil >/dev/null; then
     || echo "icon skipped"
 fi
 
-# The Lemon Squeezy product this build sells Sift Pro as. Left empty, the app sells nothing and has every feature.
-if command -v plutil >/dev/null; then
-  plutil -replace SiftCheckoutURL -string "${SIFT_CHECKOUT_URL:-}" "$APP/Contents/Info.plist"
-  plutil -replace SiftStoreID -string "${SIFT_STORE_ID:-}" "$APP/Contents/Info.plist"
-  plutil -replace SiftProductID -string "${SIFT_PRODUCT_ID:-}" "$APP/Contents/Info.plist"
-fi
-
 if [ -n "${SIFT_SIGN_IDENTITY:-}" ]; then
   # Developer ID with the hardened runtime and a secure timestamp, as notarization asks. The executables inside
   # are signed before the bundle that seals them.

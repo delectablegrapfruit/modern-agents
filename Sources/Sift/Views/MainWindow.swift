@@ -20,7 +20,7 @@ struct MainWindow: View {
             ToolbarItem(placement: .primaryAction) {
                 Button { showsAbout.toggle() } label: { Image(systemName: "info.circle") }
                     .help("About Sift")
-                    .popover(isPresented: $showsAbout, arrowEdge: .bottom) { About().environmentObject(model) }
+                    .popover(isPresented: $showsAbout, arrowEdge: .bottom) { About() }
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -30,7 +30,6 @@ struct MainWindow: View {
         .sheet(isPresented: sheetShown) { SweepSheet().environmentObject(model) }
         .sheet(isPresented: $model.editingWatch) { WatchSheet().environmentObject(model) }
         .sheet(item: $model.editing) { folder in FolderEditor(folder: folder).environmentObject(model) }
-        .sheet(isPresented: $model.showsPro) { ProSheet().environmentObject(model) }
         .alert("Sift", isPresented: errorShown, presenting: model.error) { _ in
             Button("OK") {}
         } message: { message in
@@ -50,8 +49,6 @@ struct MainWindow: View {
 
 /// What Sift does, in three short paragraphs, behind the toolbar's ⓘ.
 struct About: View {
-    @EnvironmentObject private var model: Model
-
     private var version: String {
         let info = Bundle.main.infoDictionary
         let short = info?["CFBundleShortVersionString"] as? String ?? ""
@@ -68,14 +65,6 @@ struct About: View {
             Text("Makes Finder show folders your way: one view for every folder on every disk, folders with a view of their own, and no more remembering whatever view a window last had.")
             Text("Never touched: system folders, apps, Time Machine disks, and anything of yours.")
                 .foregroundStyle(.secondary)
-            if model.licensing.storefront.sells {
-                HStack {
-                    Text(model.proStatus).font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                    Button(model.offersPro ? "Sift Pro…" : "License…") { model.showsPro = true }
-                        .controlSize(.small)
-                }
-            }
         }
         .padding(16)
         .frame(width: 340)
@@ -89,30 +78,13 @@ struct StatusSection: View {
 
     var body: some View {
         Section {
-            // Sift Pro, while there is a trial running or over.
-            switch model.entitlement {
-            case .trial(let days):
-                Need("Sift Pro trial · \(days) day\(days == 1 ? "" : "s") left",
-                     "Cleaning by itself and Finder views are Sift Pro. Sweep is always free.") {
-                    Button("Enter Key…") { model.showsPro = true }
-                    Button("Buy…") { model.buyPro() }
-                }
-            case .expired:
-                Need("Your Sift Pro trial has ended",
-                     "Sweep still works. Sift Pro removes junk the moment it appears and keeps Finder's views.") {
-                    Button("Upgrade…") { model.showsPro = true }
-                        .buttonStyle(.borderedProminent)
-                }
-            case .unsold, .licensed:
-                EmptyView()
-            }
             // Watching.
             HStack(spacing: 10) {
-                Light(model.isPaused || model.roots.isEmpty || !model.entitlement.isPro ? .off : .good)
-                Captioned(model.statusText, model.isPaused || model.unwatchedNames.isEmpty || !model.entitlement.isPro ? nil
+                Light(model.isPaused || model.roots.isEmpty ? .off : .good)
+                Captioned(model.statusText, model.isPaused || model.unwatchedNames.isEmpty ? nil
                           : "Not watched: " + model.unwatchedNames.joined(separator: ", "))
                 Spacer()
-                Button(!model.entitlement.isPro ? "Turn On…" : (model.isPaused ? "Resume" : "Pause")) { model.togglePause() }
+                Button(model.isPaused ? "Resume" : "Pause") { model.togglePause() }
                     .disabled(model.applyPhase != nil)
                 Button("Disks…") { model.editingWatch = true }
             }

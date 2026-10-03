@@ -63,36 +63,20 @@ again. One window, top to bottom: what is being watched and what needs you · th
 options · folders with their own view · what happened. View changes are applied from a bar that stays at
 the bottom. The menu bar item pauses everything automatic (cleaning and views) and quits.
 
-## Sift Pro
+## Signing and notarization
 
-Sweeping by hand is free. **Sift Pro** — cleaning by itself the moment junk appears, and Finder views — is free
-for 14 days from the first launch, then a one-time purchase. Past the trial nothing is taken away: the views
-already applied stay, Sweep keeps working, and the window and menu offer *Turn On…* / *Sift Pro…*. The license
-key from the receipt goes into *Sift Pro…* ▸ *Activate*; it is checked with the store (Lemon Squeezy) once, then
-kept in `~/Library/Application Support/Sift/license.json`. *Deactivate on This Mac* frees it for another Mac.
-Nothing else is ever sent anywhere. A build made without a store (below) sells nothing and has every feature.
-
-## Selling it
-
-1. **Store.** In [Lemon Squeezy](https://www.lemonsqueezy.com) (merchant of record: it collects tax/VAT and pays
-   out), create a product *Sift Pro*, single payment, with **license keys** on (activation limit 2–3). Note the
-   store ID and product ID (Settings ▸ Stores; the product's ⋯ ▸ Copy ID) and the product's checkout link
-   (Share ▸ `https://<store>.lemonsqueezy.com/buy/<id>`).
-2. **Repository variables** (Settings ▸ Secrets and variables ▸ Actions ▸ Variables): `SIFT_CHECKOUT_URL`,
-   `SIFT_STORE_ID`, `SIFT_PRODUCT_ID`. CI builds them into the app; locally, export them before `make app`.
-3. **Developer ID and notarization** (Apple Developer Program, $99/year) so the app opens with no warning.
-   Repository secrets: `DEVELOPER_ID_P12` (the *Developer ID Application* certificate and key exported as .p12,
-   base64: `base64 -i cert.p12 | pbcopy`), `DEVELOPER_ID_P12_PASSWORD`, `APPLE_ID`, `APPLE_TEAM_ID`,
-   `APPLE_APP_PASSWORD` (an app-specific password from account.apple.com). CI then signs with the hardened
-   runtime, notarizes, staples and commits the zip to `dist/`. Without them the app is signed ad hoc, as before.
-4. **Page.** [`site/index.html`](site/index.html) is a one-file product page; set its two links (`BUY_URL`,
-   `DOWNLOAD_URL` at the top) and host it anywhere static (GitHub Pages, Netlify, Cloudflare Pages).
+With a Developer ID (Apple Developer Program) CI signs the app with the hardened runtime, notarizes and staples
+it, so it opens with no warning. Repository secrets: `DEVELOPER_ID_P12` (the *Developer ID Application*
+certificate and key exported as .p12, base64: `base64 -i cert.p12 | pbcopy`), `DEVELOPER_ID_P12_PASSWORD`,
+`APPLE_ID`, `APPLE_TEAM_ID`, `APPLE_APP_PASSWORD` (an app-specific password from account.apple.com). Without
+them the app is signed ad hoc, as before. Locally, `SIFT_SIGN_IDENTITY="Developer ID Application: …" make app`
+signs the same way.
 
 ## Install
 
 A prebuilt app is committed at [`dist/Sift.app.zip`](dist/Sift.app.zip), rebuilt by CI on every push.
-Unzip, move `Sift.app` to Applications, open it. Built with a Developer ID (see *Selling it*) it is
-notarized and opens at once. Built without one it is ad-hoc signed, so macOS blocks the first launch
+Unzip, move `Sift.app` to Applications, open it. Built with a Developer ID (see *Signing and notarization*) it
+is notarized and opens at once. Built without one it is ad-hoc signed, so macOS blocks the first launch
 of the downloaded copy: on macOS 15 and later go to System Settings → Privacy & Security and choose
 *Open Anyway*; on earlier versions right-click → Open. Or clear the quarantine first:
 `xattr -d com.apple.quarantine /Applications/Sift.app`. Sift adds itself to your login items; turn that
@@ -126,8 +110,8 @@ The command line ships inside the app at `Sift.app/Contents/MacOS/sift-cli` and 
 
 | Path | Purpose |
 |------|---------|
-| `Sources/SiftCore` | Catalog, safety, scanner, remover, volumes, watcher, views, Finder preferences, `.DS_Store` codec, folder stores, window guard, engine, licensing (trial, Lemon Squeezy keys). Foundation only; builds on Linux. |
-| `Sources/Sift` | Menu bar app and its one window; `Views/ProSheet.swift` is the Sift Pro sheet. |
+| `Sources/SiftCore` | Catalog, safety, scanner, remover, volumes, watcher, views, Finder preferences, `.DS_Store` codec, folder stores, window guard, engine. Foundation only; builds on Linux. |
+| `Sources/Sift` | Menu bar app and its one window. |
 | `Sources/SiftCLI` | Command line (`sift-cli`). |
 | `Sources/SiftHelper` | Root helper (`sift-helper`), installed once as a launchd daemon. |
 | `Tests/SiftCoreTests` | Core tests. CI also checks `.DS_Store` files against the independent `ds_store` package. |

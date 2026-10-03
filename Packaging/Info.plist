@@ -38,11 +38,5 @@
 	<false/>
 	<key>NSSupportsSuddenTermination</key>
 	<false/>
-	<key>SiftCheckoutURL</key>
-	<string></string>
-	<key>SiftStoreID</key>
-	<string></string>
-	<key>SiftProductID</key>
-	<string></string>
 </dict>
 </plist>

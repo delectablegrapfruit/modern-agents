@@ -39,13 +39,7 @@ jobs:
           identity="$(security find-identity -v -p codesigning "$keychain" | sed -n 's/.*"\(Developer ID Application: .*\)"/\1/p' | head -n 1)"
           if [ -z "$identity" ]; then echo "::error::DEVELOPER_ID_P12 holds no Developer ID Application identity"; exit 1; fi
           echo "SIFT_SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
-      - name: Build the app
-        env:
-          # The Lemon Squeezy product Sift Pro is sold as (repository variables); unset, the app sells nothing.
-          SIFT_CHECKOUT_URL: ${{ vars.SIFT_CHECKOUT_URL }}
-          SIFT_STORE_ID: ${{ vars.SIFT_STORE_ID }}
-          SIFT_PRODUCT_ID: ${{ vars.SIFT_PRODUCT_ID }}
-        run: scripts/make-app.sh release
+      - run: scripts/make-app.sh release
       - name: Package
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}

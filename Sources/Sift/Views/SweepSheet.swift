@@ -37,21 +37,6 @@ struct SweepSheet: View {
             case .finished(let outcome):
                 Text("Removed \(outcome.removed.count) item\(outcome.removed.count == 1 ? "" : "s") · \(Format.bytes(outcome.bytes))")
                     .font(.headline)
-                if !model.entitlement.isPro, !outcome.removed.isEmpty {
-                    HStack {
-                        Text("Sift Pro removes these the moment they appear, so none pile up.")
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Button("Sift Pro…") {
-                            model.dismissSweep()
-                            // One sheet at a time: the next opens once this one has gone.
-                            Task { @MainActor in
-                                try? await Task.sleep(nanoseconds: 300_000_000)
-                                model.showsPro = true
-                            }
-                        }
-                    }
-                }
                 if outcome.failed.isEmpty {
                     Spacer()
                 } else {
