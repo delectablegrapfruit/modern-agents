@@ -146,7 +146,7 @@
     /** Relaxed's shapes: Normal and each shapes part's chip, but Custom (that is in Custom). */
     const shapeChips = () => {
       const chips = [{ path: 'shapes.preset', value: 'normal', name: 'Normal', piece: 'T' }];
-      for (const u of R.uis()) for (const c of u.chips || []) if (c.value !== 'custom' && !c.path) chips.push(Object.assign({ path: 'shapes.preset' }, c));
+      for (const u of R.uis()) for (const c of u.chips || []) if (c.value !== 'custom' && !c.path && !(c.when && !c.when(setup.recipe))) chips.push(Object.assign({ path: 'shapes.preset' }, c));
       return field('Shapes', h('div', { class: 'nb-chips', role: 'group', 'aria-label': 'Shapes' }, chips.map((c) => option(c.path, c.value, 'nb-chip',
         [L.UI.canvasFor(28, 28, (ctx) => { if (c.sample) c.sample(ctx, 28, look); else if (c.piece) L.Render.drawPieceIn(ctx, { id: c.piece }, { x: 0, y: 0, w: 28, h: 28 }, 7, look); }), h('span', { class: 'nm' + (/\S{10,}/.test(c.name) ? ' long' : '') }, c.name)]))));
     };
