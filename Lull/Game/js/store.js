@@ -113,7 +113,7 @@
     sparkle:  { name: 'Sparkle', price: 450 },
     ripple:   { name: 'Ripple', price: 850 },
     bloom:    { name: 'Bloom', price: 1300 },
-    sparks:   { name: 'Welding Sparks', price: 0, reward: 'Build the longest factory conveyor' },
+    sparks:   { name: 'Welding Sparks', price: 0, reward: 'Build the fastest factory belt' },
   };
 
   const GHOSTS = {

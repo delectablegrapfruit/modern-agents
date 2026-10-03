@@ -752,11 +752,11 @@
     } else if (sub === 'factory') {
       const f = st.factory, fs = f.stats;
       els.push(h('div', { class: 'kpis three' },
-        kpi(fmtInt(Math.floor(fs.paid / Factory.PTS)), 'Lines delivered'), kpi(fmtInt(fs.collected), 'Lines collected'), kpi(fmtInt(fs.delivered), 'Pieces delivered'),
-        kpi(fmtInt(fs.made), 'Minos dropped'), kpi(fmtInt(fs.collects), 'Collects'), kpi(fmtInt(fs.best), 'Best collect')));
+        kpi(fmtInt(Factory.linesOf(fs.paid)), 'Lines earned'), kpi(fmtInt(fs.lines), 'Board lines cleared'), kpi(fmtInt(fs.delivered), 'Pieces delivered'),
+        kpi(fmtInt(fs.made), 'Minos dropped'), kpi(fmtInt(fs.sold), 'Minos sold'), kpi(fmtInt(fs.best), 'Most lines at once')));
       els.push(h('h4', null, 'Pieces delivered by size'), hbars(Factory.SIZES.map((n, i) => [Factory.NAMES[n] + 's', fs.bySize[i] || 0])));
       const rows = [
-        ['Days collected', fmtInt(fs.days)], ['Pieces built while away', fmtInt(fs.backlog)],
+        ['Days visited', fmtInt(fs.days)], ['Pieces built while away', fmtInt(fs.away)],
         ['Time running smoothly', fmtDuration(fs.smoothMs)], ['Lines spent', fmtInt(fs.spent)], ['Time watched', fmtDuration(S.timeMs.factory)],
       ];
       els.push(h('h4', null, 'Totals'), table(rows));

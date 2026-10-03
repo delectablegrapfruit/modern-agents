@@ -72,15 +72,11 @@
       <div class="puz-actions" id="puz-actions"></div>
     </section>
 
-    <!-- Factory -->
+    <!-- Factory: the floor fills the tab; its parts are buttons, each opening a small card with its upgrade -->
     <section class="view" id="view-factory" data-tab="factory">
-      <div class="fac-col">
-        <div class="fac-plate" id="fac-plate">
-          <div class="fac-clip"><canvas id="cv-floor" aria-hidden="true"></canvas></div>
-          <div class="fac-hots" id="fac-hots"></div>
-        </div>
-        <div class="fac-collect" id="fac-collect"></div>
-        <div class="fac-list" id="fac-list"></div>
+      <div class="fac-plate" id="fac-plate">
+        <div class="fac-clip"><canvas id="cv-floor" aria-hidden="true"></canvas></div>
+        <div class="fac-hots" id="fac-hots" role="group" aria-label="Factory"></div>
       </div>
     </section>
 

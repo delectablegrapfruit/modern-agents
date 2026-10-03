@@ -2605,36 +2605,21 @@
     { kind: 'frame', id: 'hazard', test: (f) => f.droppers >= 3 },
     { kind: 'skin', id: 'steel', test: (f) => f.asm.length >= 3 },
     { kind: 'backdrop', id: 'belt', test: (f) => f.stats.delivered >= 500 },
-    { kind: 'effect', id: 'sparks', test: (f) => f.beltLen >= Factory.BELT_LEN.length - 1 },
+    { kind: 'effect', id: 'sparks', test: (f) => f.beltSpeed >= Factory.topOf('beltSpeed') },
   ];
 
   // What the line sounds like (existing ids only; each at most every 0.4 s, and only with the window in front).
-  const LINE_SOUNDS = { drop: 'stamp', build: 'pack', pay: 'land', full: 'bell' };
-  // Nobody around: Lull hidden, or untouched this long. The drop-off closes and pieces wait on the conveyor.
+  const LINE_SOUNDS = { drop: 'stamp', build: 'pack', clear: 'land', full: 'bell' };
+  // Nobody around: Lull hidden, or untouched this long. The line runs on for Factory.AWAY_H, then rests.
   const AWAY_IDLE_MS = 10 * 60e3;
-  // The sign's name for a screen reader (the sign itself has no words).
-  const SIGN_SAYS = { smooth: 'Factory running smoothly', working: 'Factory working', full: 'Factory held up: something is full', idle: 'Factory idle' };
+  // The sign's name for a screen reader (the sign itself shows no words).
+  const SIGN_SAYS = { smooth: 'Factory running smoothly', working: 'Factory working', full: 'Factory held up: the store is full', idle: 'Factory idle' };
   const PLURAL = { 2: 'dominoes', 3: 'trominoes', 4: 'tetrominoes', 5: 'pentominoes' };
 
-  // The things to build, drawn in the icon set's manner (js/icons.js: a 16-unit grid, a 1.5 stroke, round caps and
-  // joins, currentColor), kept here since only the Factory uses them.
-  const facSvg = (body) => '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + body + '</svg>';
-  const MINO = (x, y) => '<rect x="' + x + '" y="' + y + '" width="3.5" height="3.5" rx="0.8" fill="currentColor" stroke="none"/>';
-  const FAC_ICONS = {
-    dropper: facSvg('<path d="M4.5 2.25h7l-1.5 3.5h-4z"/>' + MINO(6.25, 9.5)),
-    speed: facSvg('<circle cx="8" cy="8.5" r="5.25"/><path d="M8 8.5l2.25-2.25M8 1.75v1.5"/>'),
-    store: facSvg('<path d="M3.25 2.25v11.5h9.5V2.25"/>' + MINO(4.75, 9.25) + MINO(8.25, 9.25)),
-    assembler: facSvg('<rect x="2.25" y="4.25" width="11.5" height="7.5" rx="1.5"/>' + MINO(4.5, 6.25) + MINO(8, 6.25)),
-    size: facSvg(MINO(2.25, 9.5) + MINO(6.25, 9.5) + MINO(10.25, 9.5) + MINO(6.25, 5.5) + '<path d="M2.25 3h11.5"/>'),
-    beltSpeed: facSvg('<path d="M2.25 10.75h11.5M2.25 13.25h11.5"/><path d="M5 4.25l2.5 2.25L5 8.75M9 4.25l2.5 2.25L9 8.75"/>'),
-    beltLen: facSvg('<path d="M2.75 3.5h9a2 2 0 0 1 0 4.5h-7.5a2 2 0 0 0 0 4.5h9"/>'),
-  };
-  const facIcon = (name) => h('span', { class: 'fac-ico', html: FAC_ICONS[name] });
-
   /**
-   * The Factory: the floor on its plate (the two stages, the store and the sign, the conveyor and the drop-off),
-   * Collect under it, and the things to build as cards. The store is a button too (it collects). Lines from the
-   * drop-off go straight into the wallet; the store's minos are cashed in by hand.
+   * The Factory: the floor fills the tab, and its parts are the buttons. Tapping one opens a small card on it with its
+   * upgrade (what changes, the price, Buy); an empty spot offers the part itself; the store also sells its loose minos;
+   * the sign shows the board's lifetime lines. Lines the board clears go straight into the wallet.
    */
   class FactoryMode {
     constructor(app) {
@@ -2643,14 +2628,14 @@
       this.canvas = document.getElementById('cv-floor');
       this.view = new L.FloorView(this.canvas);
       this.plate = document.getElementById('fac-plate');
-      this.collectEl = document.getElementById('fac-collect');
-      this.list = document.getElementById('fac-list');
       this.hots = document.getElementById('fac-hots');
       this.visible = false;
       this.panelAt = 0; this.achAt = 0; this.soundAt = {};
-      this.away = null;   // time away not yet told: { seconds, built }
-      this.hotKey = ''; this.buildEls = {}; this.signSaid = '';
-      this.build();
+      this.away = null;   // time away not yet told: { seconds, lines, earned }
+      this.hotKey = ''; this.signSaid = ''; this.card = null; this.cardFor = null; this.labelsKey = '';
+      this.buildHots();
+      // A tap anywhere but the card or a part closes the card.
+      document.addEventListener('pointerdown', (e) => { if (this.card && !this.card.contains(e.target) && !this.hots.contains(e.target)) this.closeCard(false); }, true);
     }
 
     get f() { return this.app.store.state.factory; }
@@ -2664,27 +2649,28 @@
       return !!(document.hidden || performance.now() - (this.app.lastActivity || 0) > AWAY_IDLE_MS);
     }
 
-    /** Time away (more than five seconds since the line last ran): replayed in one go with the drop-off closed. */
+    /** Time away (more than five seconds since the line last ran): replayed in one go, nobody around. */
     catchUp(announce) {
       const f = this.f, now = Date.now();
       let res = null;
       if (now - f.lastTick > 5000 || now < f.lastTick) {
         res = Factory.catchUp(f, now);
         if (res) {
+          this.bank();
           if (this.visible) { this.view.settle(); this.away = null; }
-          else this.away = { seconds: (this.away ? this.away.seconds : 0) + res.seconds, built: (this.away ? this.away.built : 0) + res.built };
+          else { const a = this.away || { seconds: 0, lines: 0, earned: 0 }; this.away = { seconds: a.seconds + res.seconds, lines: a.lines + res.lines, earned: a.earned + res.earned }; }
           this.afterChange();
         }
       }
       if (announce && this.away && !this.visible) {
         const a = this.away;
         this.away = null;
-        if (a.seconds > 90 && a.built > 0) toast('While you were away the factory built ' + fmtInt(a.built) + (a.built === 1 ? ' piece' : ' pieces'), 'good', 5000);
+        if (a.seconds > 90 && a.lines > 0) toast('While you were away the factory cleared ' + fmtInt(a.lines) + (a.lines === 1 ? ' line' : ' lines') + ' · +' + fmtLines(a.earned) + ' ' + LINE, 'good', 5000);
       }
       return res;
     }
 
-    /** Runs the line up to now; pays what the drop-off took. */
+    /** Runs the line up to now; pays what the board cleared. */
     advance() {
       const f = this.f, now = Date.now();
       if (now - f.lastTick > 5000 || now < f.lastTick) { this.catchUp(this.visible && !document.hidden); return []; }
@@ -2694,7 +2680,7 @@
       return evs;
     }
 
-    /** Whole lines the drop-off has paid go into the wallet. */
+    /** Whole lines the board has paid go into the wallet. */
     bank() {
       const n = Factory.takeLines(this.f);
       if (!n) return 0;
@@ -2708,14 +2694,16 @@
       this.view.settle();
       this.catchUp(false);
       this.away = null;
-      this.build();
+      Factory.visit(this.f);
+      this.labelsKey = '';
       this.relayout();
+      this.update();
     }
 
     hide() {
       this.visible = false;
+      this.closeCard(false);
       this.view.settle();
-      this.view.preview = false;
     }
 
     /** Every second while the factory is not on screen (and Lull is not hidden): the line runs on. */
@@ -2729,9 +2717,9 @@
     frame(t, dt) {
       const evs = this.advance(), reduced = this.reduced;
       if (this.roomDirty || (root.devicePixelRatio || 1) !== this.dprSeen) { this.dprSeen = root.devicePixelRatio || 1; this.relayout(); }
-      this.view.events(evs, this.f, reduced);
+      this.view.events(evs, reduced);
       this.onEvents(evs, true);
-      this.view.render(dt, this.f, this.app.look());
+      this.view.render(dt, this.f, this.app.look(), { wallet: this.store.state.lines });
       this.placeHots();
       this.sayMood();
       if (this.el.classList.contains('fac-still') !== reduced) this.el.classList.toggle('fac-still', reduced);
@@ -2742,7 +2730,7 @@
       if (!evs.length) return;
       let paid = false;
       for (const e of evs) {
-        if (e.kind === 'pay') paid = true;
+        if (e.kind === 'clear') paid = true;
         if (audible) this.lineSound(LINE_SOUNDS[e.kind]);
       }
       if (paid) this.afterChange();
@@ -2770,157 +2758,220 @@
 
     // ---- verbs --------------------------------------------------------------------------------------------------------
 
-    /** Cashes the store's loose minos in, twenty to a line (the rest stay). */
-    collect() {
-      const res = Factory.collect(this.f);
-      if (!res) { this.app.sound.play('blocked'); return false; }
-      this.view.settle();
-      this.store.addLines(res.collected, 'factory');
-      this.app.sound.play('golden');
-      this.app.refreshWallet(true);
-      this.app.achieve({ mode: 'factory', collected: res.collected, left: res.left });
-      this.afterChange();
-      this.update();
-      return true;
-    }
-
     /** Builds the next of a kind; short of lines, it says so (a soft no, and the card's flash). */
     upgrade(kind) {
       const u = Factory.nextUpgrade(this.f, kind);
       if (!u) return false;
-      if (this.store.state.lines < u.cost || !this.store.spend(u.cost)) { this.app.sound.play('blocked'); this.flashBuild(kind); return false; }
+      if (this.store.state.lines < u.cost || !this.store.spend(u.cost)) { this.app.sound.play('blocked'); this.flashCard(); return false; }
       Factory.upgrade(this.f, kind);
       this.app.refreshWallet();
       this.app.sound.play('buy');
       this.afterChange();
-      this.build();
+      this.labelsKey = '';
+      this.update();
+      if (this.cardFor) this.renderCard(true);
       return true;
     }
 
-    flashBuild(kind) {
-      const b = this.buildEls[kind];
+    /** Sells every mino in the store at the loose rate. */
+    sell() {
+      const res = Factory.sell(this.f);
+      if (!res) { this.app.sound.play('blocked'); return false; }
+      this.bank();
+      this.app.sound.play('golden');
+      this.afterChange();
+      if (this.cardFor) this.renderCard(true);
+      return true;
+    }
+
+    /** The sign shows the board's lifetime lines for a few seconds (a second tap puts it back). */
+    tapSign() {
+      this.closeCard(false);
+      const on = this.view.toggleCount(this.f.stats.lines);
+      this.signSaid = '';
+      if (on) this.app.sound.play('rotate');
+      return on;
+    }
+
+    flashCard() {
+      const b = this.card;
       if (!b || this.reduced) return;
       b.classList.remove('flash'); void b.offsetWidth; b.classList.add('flash');
       b.addEventListener('animationend', () => b.classList.remove('flash'), { once: true });
     }
 
-    /** C collects, on the Factory tab (app.js skips it while a dialog or a text field has the keys). */
+    /** Escape closes the card, back on its part (app.js asks first, on the Factory tab). */
     key(e) {
-      if (e.code !== 'KeyC' || e.metaKey || e.ctrlKey || e.altKey || e.repeat) return false;
-      this.collect();
+      if (e.key !== 'Escape' || !this.card) return false;
+      this.closeCard(true);
       return true;
     }
 
-    // ---- the page -----------------------------------------------------------------------------------------------------
+    // ---- the parts ----------------------------------------------------------------------------------------------------
 
-    /** What building the next of a kind does, in plain words: its title and the line under it. */
-    describe(kind, u) {
-      switch (kind) {
-        case 'dropper': return { title: 'Dropper', meta: u.from + ' → ' + u.to + ' droppers' };
-        case 'speed': return { title: 'Faster droppers', meta: u.from + ' s → ' + u.to + ' s a mino' };
-        case 'store': return { title: 'Bigger store', meta: u.from + ' → ' + u.to + ' minos' };
-        case 'assembler': return { title: u.from ? 'Assembler' : 'First assembler', meta: u.from ? u.from + ' → ' + u.to + ' assemblers' : 'Builds ' + PLURAL[Factory.SIZES[this.f.size]] };
-        case 'size': return { title: 'Bigger pieces', meta: cap(PLURAL[u.from]) + ' → ' + PLURAL[u.to] };
-        case 'beltSpeed': return { title: 'Faster conveyor', meta: u.from + ' s → ' + u.to + ' s a slot' };
-        default: return { title: 'Longer conveyor', meta: u.from + ' → ' + u.to + ' pieces' };
-      }
+    /** A part's name, said by its button. */
+    partName(id) {
+      const f = this.f, k = Number(id.slice(-1));
+      if (id.startsWith('drop')) return k < f.droppers ? 'Dropper ' + (k + 1) : 'Empty dropper spot';
+      if (id.startsWith('bay')) return k < f.asm.length ? 'Assembler ' + (k + 1) : 'Empty assembler spot';
+      if (id === 'store') return 'Store';
+      if (id === 'belt') return 'Belt';
+      return SIGN_SAYS[this.view.signMood || 'working'] + '. Show lifetime lines';
     }
 
-    /** Builds Collect, the hotspots and the cards (on show, and after a purchase); update() keeps them fresh. */
-    build() {
-      const f = this.f;
-      const a = document.activeElement, keepUp = a && a.closest && a.closest('.fac-up') ? a.closest('.fac-up').dataset.up : null, keepC = a === this.cBtn;
-      const preview = (on) => () => { this.view.preview = on; };
-      this.cBtn = h('button', { class: 'btn primary', 'aria-keyshortcuts': 'C', onclick: () => this.collect(),
-        onmouseenter: preview(true), onmouseleave: preview(false), onfocus: preview(true), onblur: preview(false) });
-      this.cKey = null;
-      this.collectEl.replaceChildren(this.cBtn);
-      const buy = (kind) => (e) => { if (e.currentTarget.getAttribute('aria-disabled') === 'true') { this.app.sound.play('blocked'); this.flashBuild(kind); return; } this.upgrade(kind); };
-      const cards = [];
-      this.buildEls = {};
-      for (const kind of Factory.KINDS) {
-        const u = Factory.nextUpgrade(f, kind);
-        if (!u) continue;
-        const d = this.describe(kind, u), price = fmtInt(u.cost) + ' ' + LINE;
-        const words = 'Build ' + d.title.toLowerCase() + ': ' + d.meta.replace(' → ', ' to ') + ', ' + fmtInt(u.cost) + ' lines';
-        const el = h('button', { class: 'fac-up', 'data-up': kind, 'aria-label': words, onclick: buy(kind) },
-          facIcon(kind), h('span', { class: 'txt' }, h('span', { class: 't' }, d.title), h('span', { class: 'd' }, d.meta)), h('span', { class: 'p' }, price));
-        this.buildEls[kind] = el;
-        cards.push(el);
-      }
-      this.list.replaceChildren(...cards);
-      this.list.classList.toggle('hidden', !cards.length);
-      this.buildHots();
-      this.update();
-      if (this.visible) this.relayout();
-      if (keepUp) { const to = this.list.querySelector('.fac-up[data-up="' + keepUp + '"]') || this.list.querySelector('.fac-up') || this.cBtn; to.focus({ preventScroll: true }); }
-      else if (keepC) this.cBtn.focus({ preventScroll: true });
-    }
-
-    /** The floor's hotspots: the store (it collects) and the sign (its name, for a screen reader). */
+    /** One real button over each part of the floor (their order is the floor's, top to bottom). */
     buildHots() {
-      const preview = (on) => () => { this.view.preview = on; };
-      this.storeHot = h('button', { class: 'fac-hot', 'data-hot': 'store', 'aria-label': 'Store: collect', 'data-tip': 'Collect', 'data-tip-foot': 'C', onclick: () => this.collect(),
-        onmouseenter: preview(true), onmouseleave: preview(false), onfocus: preview(true), onblur: preview(false) });
-      this.signEl = h('div', { class: 'fac-sign', 'data-hot': 'sign', role: 'img', 'aria-label': SIGN_SAYS[this.view.signMood] || SIGN_SAYS.working });
-      this.signSaid = '';
-      this.hots.replaceChildren(this.storeHot, this.signEl);
-      this.hotKey = '';
+      this.hotEls = L.FactoryArt.PARTS.map((p) => h('button', {
+        class: 'fac-hot', 'data-part': p.id, 'aria-haspopup': p.id === 'sign' ? null : 'dialog', 'aria-expanded': p.id === 'sign' ? null : 'false',
+        onclick: () => (p.id === 'sign' ? this.tapSign() : this.openCard(p.id)),
+      }));
+      this.hots.replaceChildren(...this.hotEls);
+      this.hotKey = ''; this.labelsKey = '';
       this.placeHots();
+      this.nameHots();
+    }
+
+    nameHots() {
+      const f = this.f, key = f.droppers + '|' + f.asm.length + '|' + this.signSaid;
+      if (key === this.labelsKey) return;
+      this.labelsKey = key;
+      for (const b of this.hotEls) b.setAttribute('aria-label', this.partName(b.dataset.part));
     }
 
     placeHots() {
-      const key = this.view.layoutKey(this.f);
+      const key = this.view.layoutKey();
       if (key === this.hotKey) return;
       this.hotKey = key;
-      for (const el of [this.storeHot, this.signEl]) {
-        const r = this.view.rect(el.dataset.hot, this.f), x0 = Math.round(r.x), y0 = Math.round(r.y);
-        el.style.left = x0 + 'px'; el.style.top = y0 + 'px';
-        el.style.width = Math.round(r.x + r.w) - x0 + 'px'; el.style.height = Math.round(r.y + r.h) - y0 + 'px';
+      for (const b of this.hotEls) {
+        const r = this.view.rect(b.dataset.part, true), x0 = Math.round(r.x), y0 = Math.round(r.y);
+        b.style.left = x0 + 'px'; b.style.top = y0 + 'px';
+        b.style.width = Math.round(r.x + r.w) - x0 + 'px'; b.style.height = Math.round(r.y + r.h) - y0 + 'px';
       }
+      this.placeCard();
     }
 
-    /** The sign's name follows its mood. */
+    /** The sign's mood, held a moment so a passing state never flickers, and said by its button. */
     sayMood() {
-      const m = this.view.signMood;
-      if (m === this.signSaid || !this.signEl) return;
-      this.signSaid = m;
-      this.signEl.setAttribute('aria-label', SIGN_SAYS[m]);
-      this.signEl.dataset.mood = m;
+      const m = Factory.mood(this.f).mood, now = performance.now();
+      if (m !== this.moodNext) { this.moodNext = m; this.moodAt = now; }
+      if (m !== this.view.signMood && (now - this.moodAt > 1200 || !this.view.signMood)) this.view.signMood = m;
+      if (this.view.signMood === this.signSaid) return;
+      this.signSaid = this.view.signMood;
+      this.labelsKey = '';
+      this.nameHots();
+      this.el.dataset.mood = this.signSaid;
     }
 
-    /** Fits the plate to the view: whatever the column leaves above Collect and the cards, within sensible bounds. */
+    // ---- the card on a part -------------------------------------------------------------------------------------------
+
+    openCard(id) {
+      if (this.cardFor === id) { this.closeCard(true); return; }
+      this.closeCard(false);
+      this.cardFor = id;
+      this.card = h('div', { class: 'fac-card', role: 'dialog' });
+      this.plate.appendChild(this.card);
+      const hot = this.hotEls.find((b) => b.dataset.part === id);
+      if (hot) hot.setAttribute('aria-expanded', 'true');
+      this.renderCard(false);
+      const first = this.card.querySelector('button:not([aria-disabled="true"])') || this.card.querySelector('button');
+      if (first) first.focus({ preventScroll: true });
+      else this.card.setAttribute('tabindex', '-1'), this.card.focus({ preventScroll: true });
+    }
+
+    closeCard(focusBack) {
+      if (!this.card) return false;
+      const id = this.cardFor;
+      this.card.remove();
+      this.card = null; this.cardFor = null;
+      const hot = this.hotEls.find((b) => b.dataset.part === id);
+      if (hot) { hot.setAttribute('aria-expanded', 'false'); if (focusBack) hot.focus({ preventScroll: true }); }
+      return true;
+    }
+
+    /** One line of the card: a title, what it does, and its button (a price to buy, or a verb). */
+    option(title, meta, label, words, onclick, ok) {
+      return h('div', { class: 'fac-opt' }, h('b', null, title), h('small', null, meta),
+        h('button', { class: 'btn' + (ok ? ' primary' : ''), 'aria-label': words, 'aria-disabled': ok ? null : 'true',
+          onclick: (e) => { if (e.currentTarget.getAttribute('aria-disabled') === 'true') { this.app.sound.play('blocked'); this.flashCard(); return; } onclick(); } }, label));
+    }
+
+    /** An upgrade's line: what it changes, and its price (quiet while the wallet is short). */
+    upOption(kind, title, meta) {
+      const u = Factory.nextUpgrade(this.f, kind), wallet = this.store.state.lines;
+      return this.option(title, meta(u), fmtInt(u.cost) + ' ' + LINE, title + ': ' + meta(u).replace(' → ', ' to ') + '. Buy for ' + fmtInt(u.cost) + ' lines', () => this.upgrade(kind), wallet >= u.cost);
+    }
+
+    renderCard(keepFocus) {
+      const id = this.cardFor, f = this.f, card = this.card;
+      if (!card) return;
+      const k = Number(id.slice(-1)), kids = [], note = (t) => kids.push(h('p', null, t));
+      const focused = keepFocus && card.contains(document.activeElement) ? Array.from(card.querySelectorAll('button')).indexOf(document.activeElement) : -1;
+      let title;
+      if (id.startsWith('drop')) {
+        if (k < f.droppers) {
+          title = 'Dropper';
+          if (Factory.nextUpgrade(f, 'speed')) kids.push(this.upOption('speed', 'Faster droppers', (u) => u.from + ' s → ' + u.to + ' s a mino'));
+          else note('Every dropper at full speed: a mino every ' + Factory.DROP_T[f.speed] + ' s.');
+        } else if (k === f.droppers) { title = 'Empty spot'; kids.push(this.upOption('dropper', 'Add a dropper', (u) => u.from + ' → ' + u.to + ' droppers')); }
+        else { title = 'Empty spot'; note('Add the dropper to its left first.'); }
+      } else if (id.startsWith('bay')) {
+        if (k < f.asm.length) {
+          title = 'Assembler';
+          if (Factory.nextUpgrade(f, 'size')) kids.push(this.upOption('size', 'Bigger pieces', (u) => cap(PLURAL[u.from]) + ' → ' + PLURAL[u.to]));
+          else note('Every assembler builds ' + PLURAL[Factory.SIZES[f.size]] + ', the biggest pieces.');
+        } else if (k === f.asm.length) {
+          title = 'Empty spot';
+          kids.push(this.upOption('assembler', k ? 'Add an assembler' : 'First assembler', (u) => (u.from ? u.from + ' → ' + u.to + ' assemblers' : 'Builds ' + PLURAL[Factory.SIZES[f.size]])));
+        } else { title = 'Empty spot'; note('Add the assembler to its left first.'); }
+      } else if (id === 'store') {
+        title = 'Store';
+        if (Factory.nextUpgrade(f, 'store')) kids.push(this.upOption('store', 'Bigger store', (u) => u.from + ' → ' + u.to + ' minos'));
+        const n = Factory.pileCount(f), worth = (n * Factory.LOOSE_PTS) / Factory.PTS;
+        kids.push(this.option('Sell loose minos', n ? n + (n === 1 ? ' mino' : ' minos') + ' · +' + fmtLines(worth) + ' ' + LINE : 'The store is empty', 'Sell',
+          n ? 'Sell ' + n + ' loose minos for ' + fmtLines(worth) + ' lines' : 'Sell loose minos: the store is empty', () => this.sell(), n > 0));
+      } else {
+        title = 'Belt';
+        if (Factory.nextUpgrade(f, 'beltSpeed')) kids.push(this.upOption('beltSpeed', 'Faster belt', (u) => 'Whole ride ' + u.from + ' s → ' + u.to + ' s'));
+        else note('The belt at full speed: the whole ride in ' + Factory.BELT_T[f.beltSpeed] + ' s.');
+      }
+      card.setAttribute('aria-label', title);
+      card.replaceChildren(h('h3', null, title), ...kids);
+      this.cardKey = this.cardState();
+      this.placeCard();
+      if (focused >= 0) { const b = card.querySelectorAll('button')[focused] || card.querySelector('button'); if (b) b.focus({ preventScroll: true }); }
+    }
+
+    /** What the open card shows depends on: the wallet against its prices, and the store's minos. */
+    cardState() {
+      const f = this.f, w = this.store.state.lines;
+      return Factory.KINDS.map((k) => { const u = Factory.nextUpgrade(f, k); return u ? (w >= u.cost ? 1 : 0) : 2; }).join('') + '|' + Factory.pileCount(f) + '|' + f.droppers + '|' + f.asm.length;
+    }
+
+    /** The card sits under its part (over it when there is no room below), inside the floor. */
+    placeCard() {
+      const card = this.card;
+      if (!card) return;
+      const r = this.view.rect(this.cardFor, false), W = this.plate.clientWidth, H = this.plate.clientHeight, cw = card.offsetWidth, ch = card.offsetHeight, m = 6;
+      let x = r.x + r.w / 2 - cw / 2, y = r.y + r.h + m;
+      if (y + ch > H - m) y = r.y - ch - m;
+      if (y < m) y = Math.max(m, Math.min(H - ch - m, r.y + r.h / 2 - ch / 2));
+      x = Math.max(m, Math.min(W - cw - m, x));
+      card.style.left = Math.round(x) + 'px'; card.style.top = Math.round(y) + 'px';
+    }
+
+    /** Fits the floor to the tab. */
     relayout() {
       const el = this.el;
       if (!el.clientHeight || !el.clientWidth) { this.roomDirty = true; return; }
       this.roomDirty = false;
-      const st = getComputedStyle(el), inner = el.clientHeight - parseFloat(st.paddingTop) - parseFloat(st.paddingBottom);
-      const col = this.plate.parentElement, w = col.clientWidth;
-      const rest = this.collectEl.offsetHeight + (this.list.classList.contains('hidden') ? 0 : this.list.offsetHeight) + 2 * 10;
-      const hgt = Math.round(Math.max(240, Math.min(w * 1.6, 700, inner - rest)));
-      this.plate.style.height = hgt + 'px';
       this.view.resize(this.plate.clientWidth, this.plate.clientHeight);
       this.hotKey = '';
       this.placeHots();
     }
 
     update() {
-      const f = this.f, wallet = this.store.state.lines, lines = Math.floor(f.store / Factory.MPL);
-      const key = lines + '|' + (f.store >= Factory.storeCap(f));
-      if (key !== this.cKey) {
-        this.cKey = key;
-        this.cBtn.disabled = !lines;
-        this.cBtn.textContent = lines ? 'Collect ' + fmtInt(lines) + ' ' + LINE : 'Collect';
-        this.cBtn.classList.toggle('full', f.store >= Factory.storeCap(f));
-      }
-      for (const kind of Factory.KINDS) {
-        const b = this.buildEls[kind], u = b && Factory.nextUpgrade(f, kind);
-        if (!u) continue;
-        const ok = wallet >= u.cost;
-        b.classList.toggle('go', ok);
-        if (ok) b.removeAttribute('aria-disabled'); else b.setAttribute('aria-disabled', 'true');
-      }
-      this.app.setBadge('factory', f.store >= Factory.storeCap(f));
+      this.nameHots();
+      if (this.card && this.cardState() !== this.cardKey) this.renderCard(true);
     }
   }
   const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);

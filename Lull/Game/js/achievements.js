@@ -145,19 +145,19 @@
     { id: 'lu_all', group: 'lull', name: 'Lull', desc: 'Earn every other achievement.', pay: 1000, tier: 'legend', on: 'any', test: (s) => earnedOthers(s) >= others().length, progress: (s) => [earnedOthers(s), others().length] },
 
     // Factory — building it out takes a few hours of play; the counts take weeks.
-    { id: 'fac_first', group: 'factory', name: 'First Delivery', desc: 'Deliver a piece at the drop-off.', pay: 15, on: 'factory', test: (s) => fst(s).delivered >= 1 },
-    { id: 'fac_hand', group: 'factory', name: 'By Hand', desc: 'Collect 100 lines from the store.', pay: 20, on: 'factory', test: (s) => fst(s).collected >= 100, progress: (s) => [fst(s).collected, 100] },
+    { id: 'fac_first', group: 'factory', name: 'First Delivery', desc: 'Deliver a piece to the factory board.', pay: 15, on: 'factory', test: (s) => fst(s).delivered >= 1 },
+    { id: 'fac_hand', group: 'factory', name: 'Line by Line', desc: 'Clear 100 lines on the factory board.', pay: 20, on: 'factory', test: (s) => fst(s).lines >= 100, progress: (s) => [fst(s).lines, 100] },
     { id: 'fac_store', group: 'factory', name: 'Deep Store', desc: 'Build the biggest store.', pay: 30, on: 'factory', test: (s) => s.factory.storeLevel >= ftop('store'), progress: (s) => [s.factory.storeLevel, ftop('store')] },
     { id: 'fac_three', group: 'factory', name: 'Three Droppers', desc: 'Build all 3 droppers.', pay: 40, on: 'factory', test: (s) => s.factory.droppers >= 3, progress: (s) => [s.factory.droppers, 3] },
     { id: 'fac_penta', group: 'factory', name: 'Five Up', desc: 'Deliver a pentomino.', pay: 40, on: 'factory', test: (s) => fst(s).bySize[3] >= 1 },
-    { id: 'fac_belt', group: 'factory', name: 'The Long Way', desc: 'Build the longest conveyor.', pay: 40, on: 'factory', test: (s) => s.factory.beltLen >= ftop('beltLen'), progress: (s) => [s.factory.beltLen, ftop('beltLen')] },
+    { id: 'fac_belt', group: 'factory', name: 'Express Belt', desc: 'Build the fastest belt.', pay: 40, on: 'factory', test: (s) => s.factory.beltSpeed >= ftop('beltSpeed'), progress: (s) => [s.factory.beltSpeed, ftop('beltSpeed')] },
     { id: 'fac_crew', group: 'factory', name: 'Full Crew', desc: 'Build all 3 assemblers.', pay: 55, on: 'factory', test: (s) => s.factory.asm.length >= 3, progress: (s) => [s.factory.asm.length, 3] },
     { id: 'fac_1k', group: 'factory', name: 'A Thousand Pieces', desc: 'Deliver 1,000 pieces.', pay: 60, on: 'factory', test: (s) => fst(s).delivered >= 1000, progress: (s) => [fst(s).delivered, 1000] },
-    { id: 'fac_days30', group: 'factory', name: 'Shift Worker', desc: 'Collect on 30 days.', pay: 60, on: 'factory', test: (s) => fst(s).days >= 30, progress: (s) => [fst(s).days, 30] },
+    { id: 'fac_days30', group: 'factory', name: 'Shift Worker', desc: 'Visit the factory on 30 days.', pay: 60, on: 'factory', test: (s) => fst(s).days >= 30, progress: (s) => [fst(s).days, 30] },
     { id: 'fac_smooth', group: 'factory', name: 'Smooth Running', desc: 'Keep the factory running smoothly for an hour in all.', pay: 75, on: 'factory', test: (s) => fst(s).smoothMs >= 3600e3, progress: (s) => [Math.floor(fst(s).smoothMs / 60e3), 60] },
     { id: 'fac_all', group: 'factory', name: 'Fully Built', desc: 'Build every factory upgrade.', pay: 175, on: 'factory', test: (s) => !!L.Factory && L.Factory.maxed(s.factory) },
 
-    { id: 'fac_days100', group: 'factory', name: 'Old Hand', desc: 'Collect on 100 days.', pay: 325, tier: 'legend', on: 'factory', test: (s) => fst(s).days >= 100, progress: (s) => [fst(s).days, 100] },
+    { id: 'fac_days100', group: 'factory', name: 'Old Hand', desc: 'Visit the factory on 100 days.', pay: 325, tier: 'legend', on: 'factory', test: (s) => fst(s).days >= 100, progress: (s) => [fst(s).days, 100] },
     { id: 'fac_10k', group: 'factory', name: 'Ten Thousand Pieces', desc: 'Deliver 10,000 pieces.', pay: 350, tier: 'legend', on: 'factory', test: (s) => fst(s).delivered >= 10000, progress: (s) => [fst(s).delivered, 10000] },
     { id: 'fac_mountain', group: 'factory', name: 'Mino Mountain', desc: 'Drop 50,000 minos.', pay: 450, tier: 'legend', on: 'factory', test: (s) => fst(s).made >= 50000, progress: (s) => [fst(s).made, 50000] },
   ];

@@ -224,12 +224,13 @@
         // ⌘Z undoes like ⌫: once per press (each undo costs an Undo, so a held key never repeats it).
         if ((e.metaKey || e.ctrlKey) && e.code === 'KeyZ' && this.tab === 'puzzle') { if (!e.repeat) this.modes.puzzle.undo(); e.preventDefault(); return; }
         if (e.key === 'Escape' && this.tab === 'play' && this.modes.play.closeTray()) { e.preventDefault(); return; }
+        // On the Factory tab Escape closes a part's card first.
+        if (this.tab === 'factory' && this.modes.factory.key(e)) { e.preventDefault(); return; }
         // A board's controller can take Escape first (Battle: it cancels an aim).
         if (e.key === 'Escape' && this.tab === 'play' && this.modes.play.ctl && typeof this.modes.play.ctl.escape === 'function' && this.modes.play.ctl.escape()) { e.preventDefault(); return; }
         // Nothing else took Escape: in a browser it opens the Play menu (js/menu.js; the native panel hides, as before).
         if (e.key === 'Escape' && !native.available && this.tab === 'play' && !e.repeat) { this.modes.play.openMenu(); e.preventDefault(); return; }
         if (e.key === 'Escape' && native.available) { this.saveNow(); native.post('hide'); return; }
-        if (this.tab === 'factory' && !e.metaKey && !e.ctrlKey && this.modes.factory.key(e)) { e.preventDefault(); return; }
         // A Free Play board's controller takes its own keys first (Race's S and Shift+S, Battle's T).
         if (this.tab === 'play' && !e.metaKey && !e.ctrlKey && this.modes.play.key(e)) { e.preventDefault(); this.activity(); return; }
         if (this.keys.down(e)) this.activity();

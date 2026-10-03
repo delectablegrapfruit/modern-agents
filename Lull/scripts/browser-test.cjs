@@ -1920,140 +1920,292 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   // then the page rebuilt.
   const FAC = {
     fresh: (f, F) => { for (const k of Object.keys(f)) delete f[k]; Object.assign(f, F.create()); f.seed = 5; Lull.app.store.state.lines = 0; },
-    early: (f, F) => { for (const k of Object.keys(f)) delete f[k]; Object.assign(f, F.create()); f.seed = 5; F.run(f, 40e3, null, false); Lull.app.store.state.lines = 0; },
-    late: (f, F) => { for (const k of Object.keys(f)) delete f[k]; Object.assign(f, F.create()); f.seed = 5; for (const k of F.KINDS) while (F.upgrade(f, k)); F.run(f, 6 * 60e3, null, false); f.store = 50; Lull.app.store.state.lines = 0; },
+    early: (f, F) => { for (const k of Object.keys(f)) delete f[k]; Object.assign(f, F.create()); f.seed = 5; F.upgrade(f, 'assembler'); F.run(f, 4 * 60e3, null, false); Lull.app.store.state.lines = 0; },
+    late: (f, F) => { for (const k of Object.keys(f)) delete f[k]; Object.assign(f, F.create()); f.seed = 5; for (const k of F.KINDS) while (F.upgrade(f, k)); F.run(f, 25 * 60e3, null, false); Lull.app.store.state.lines = 0; },
   };
   const facSet = (fn, p) => (p || page).evaluate((src) => {
-    const f = Lull.app.store.state.factory;
+    const f = Lull.app.store.state.factory, M = Lull.app.modes.factory;
     new Function('return ' + src)()(f, Lull.Factory);
     f.lastTick = Date.now();
     Lull.app.activity();
-    Lull.app.refreshWallet(); Lull.app.modes.factory.view.settle(); Lull.app.modes.factory.build();
+    M.closeCard(false); M.view.settle(); M.labelsKey = '';
+    Lull.app.refreshWallet(); M.update();
   }, fn.toString());
+  // Runs the line ahead through the page's own frames, up to four seconds a frame (the most a frame runs without
+  // counting as time away), someone around all the while.
+  const facAhead = (ms, p) => (p || page).evaluate(async (ms) => {
+    const f = Lull.app.store.state.factory;
+    for (let left = ms; left > 0; left -= 4000) { f.lastTick -= Math.min(4000, left); Lull.app.activity(); await new Promise((r) => requestAnimationFrame(r)); }
+    await new Promise((r) => requestAnimationFrame(r));
+  }, ms);
   const facKeep = await ev(() => JSON.stringify({ f: Lull.app.store.state.factory, lines: Lull.app.store.state.lines, owned: Lull.app.store.state.owned, ach: Lull.app.store.state.achievements || {} }));
   await facSet(FAC.fresh);
   await page.click('.tabs button[data-tab="factory"]');
   await page.waitForTimeout(400);
-  // The floor is drawn (in many colours), and no words or numbers are drawn on it.
+  // Every slot is drawn from the first day and is a real button, named; the only words drawn are prices and +.
   const floor = await ev(async () => {
-    const v = Lull.app.modes.factory.view, ctx = v.ctx, orig = ctx.fillText, texts = [];
-    ctx.fillText = function (t) { texts.push(t); return orig.apply(this, arguments); };
-    await new Promise((r) => setTimeout(r, 500));
+    const v = Lull.app.modes.factory.view, ctx = v.ctx, orig = ctx.fillText, texts = new Set();
+    ctx.fillText = function (t) { texts.add(String(t)); return orig.apply(this, arguments); };
+    await new Promise((r) => setTimeout(r, 400));
     ctx.fillText = orig;
     const c = document.getElementById('cv-floor'), d = ctx.getImageData(0, 0, c.width, c.height).data, colors = new Set();
     for (let i = 0; i < d.length; i += 4 * 97) colors.add(d[i] + ',' + d[i + 1] + ',' + d[i + 2]);
-    const sign = document.querySelector('.fac-sign');
-    return { w: c.width, colors: colors.size, texts, sign: { role: sign.getAttribute('role'), label: sign.getAttribute('aria-label'), text: sign.textContent, kids: sign.children.length } };
+    const parts = Array.from(document.querySelectorAll('.fac-hot')).map((b) => [b.dataset.part, b.tagName, b.getAttribute('aria-label')]);
+    return { w: c.width, colors: colors.size, texts: [...texts].sort(), parts, collect: !!document.getElementById('fac-collect'), list: !!document.getElementById('fac-list') };
   });
-  check('the factory floor is drawn, with no words or numbers on it', floor.w > 0 && floor.colors > 8 && floor.texts.length === 0, JSON.stringify(floor));
-  check('the sign has no text: an image with a name for a screen reader only', floor.sign.role === 'img' && floor.sign.text === '' && floor.sign.kids === 0 && /^Factory /.test(floor.sign.label), JSON.stringify(floor.sign));
-  // The sign follows the line: a store left full holds the dropper up; collecting sets it going again.
-  const moods = await ev(async () => {
-    const M = Lull.app.modes.factory, f = Lull.app.store.state.factory, F = Lull.Factory, out = [];
-    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-    out.push([M.view.signMood, document.querySelector('.fac-sign').getAttribute('aria-label')]);
-    f.store = F.storeCap(f); f.drops[0].t = F.dropTicks(f);
-    await wait(1800);
-    out.push([M.view.signMood, document.querySelector('.fac-sign').getAttribute('aria-label')]);
-    M.collect();
-    await wait(1800);
-    out.push([M.view.signMood, document.querySelector('.fac-sign').getAttribute('aria-label')]);
-    return out;
+  const names = Object.fromEntries(floor.parts.map((p) => [p[0], p[2]]));
+  check('the floor is drawn whole from the first day: three dropper spots, three assembler spots, the store, the belt and the sign, each a named button',
+    floor.w > 0 && floor.colors > 8 && floor.parts.map((p) => p[0]).join() === 'drop0,drop1,drop2,store,bay0,bay1,bay2,belt,sign' && floor.parts.every((p) => p[1] === 'BUTTON')
+    && names.drop0 === 'Dropper 1' && names.drop1 === 'Empty dropper spot' && names.bay0 === 'Empty assembler spot' && names.store === 'Store' && names.belt === 'Belt' && /^Factory .*\. Show lifetime lines$/.test(names.sign)
+    && !floor.collect && !floor.list, JSON.stringify(floor));
+  check('the only words drawn on the floor are prices and the + of an empty spot (no Collect, no upgrade list)', floor.texts.every((t) => /^(\+|[\d,]+)$/.test(t)) && ['+', '5', '8', '10', '30'].every((t) => floor.texts.includes(t)), JSON.stringify(floor.texts));
+
+  // Buying on the parts: a card on the part, with what changes, the price and Buy; quiet while the wallet is short.
+  const card = (id) => ev(async (id) => {
+    document.querySelector('.fac-hot[data-part="' + id + '"]').click();
+    await new Promise((r) => setTimeout(r, 60));
+    const c = document.querySelector('.fac-card');
+    if (!c) return null;
+    const opts = Array.from(c.querySelectorAll('.fac-opt')).map((o) => ({ t: o.querySelector('b').textContent, d: o.querySelector('small').textContent, b: o.querySelector('button').textContent, off: o.querySelector('button').getAttribute('aria-disabled') === 'true', label: o.querySelector('button').getAttribute('aria-label') }));
+    return { title: c.querySelector('h3').textContent, role: c.getAttribute('role'), opts, note: (c.querySelector('p') || {}).textContent || '', focus: c.contains(document.activeElement), expanded: document.querySelector('.fac-hot[data-part="' + id + '"]').getAttribute('aria-expanded') };
+  }, id);
+  const broke = await card('bay0');
+  await page.click('.fac-card .fac-opt button', { force: true });
+  const stillNone = await ev(() => ({ asm: Lull.app.store.state.factory.asm.length, open: !!document.querySelector('.fac-card') }));
+  check('short of lines, an empty spot\'s card offers its part, quietly, and buying does nothing', broke && broke.title === 'Empty spot' && broke.role === 'dialog' && broke.opts.length === 1 && broke.opts[0].t === 'First assembler'
+    && /^5 /.test(broke.opts[0].b) && broke.opts[0].off && broke.expanded === 'true' && stillNone.asm === 0 && stillNone.open, JSON.stringify([broke, stillNone]));
+  // The header tags dim while the wallet is short and light up once it can pay.
+  const tags = await ev(async () => {
+    const v = Lull.app.modes.factory.view, orig = v.tag, seen = [];
+    v.tag = function (c, x, y, cost, ok) { seen.push(cost + ':' + ok); return orig.apply(this, arguments); };
+    await new Promise((r) => setTimeout(r, 120));
+    Lull.app.store.state.lines = 500; Lull.app.refreshWallet();
+    await new Promise((r) => setTimeout(r, 120));
+    v.tag = orig;
+    return [...new Set(seen)];
   });
-  check('the sign changes with the line: smooth, then held up by a full store, smooth again after Collect',
-    moods[0][0] === 'smooth' && moods[1][0] === 'full' && moods[2][0] === 'smooth' && moods[1][1] !== moods[0][1] && !/\d/.test(moods.map((m) => m[1]).join()), JSON.stringify(moods));
-  await shot('30-factory-fresh');
-
-  // Collect: twenty loose minos a line, the rest stay; by the button, the C key and the store itself.
-  await ev(() => { const f = Lull.app.store.state.factory; f.storeLevel = 1; f.store = 47; Lull.app.store.state.lines = 0; Lull.app.modes.factory.update(); });
-  const label = await ev(() => document.querySelector('#fac-collect .btn').textContent);
-  check('the store\'s 47 minos read Collect 2', /^Collect 2 ⦵$/.test(label), label);
-  await page.click('#fac-collect .btn');
-  const afterCollect = await ev(() => ({ lines: Lull.app.store.state.lines, store: Lull.app.store.state.factory.store, label: document.querySelector('#fac-collect .btn').textContent, disabled: document.querySelector('#fac-collect .btn').disabled }));
-  check('Collect pays 2 lines and leaves the 7 loose minos', afterCollect.lines === 2 && afterCollect.store <= 9 && afterCollect.store >= 7 && afterCollect.disabled && afterCollect.label === 'Collect', JSON.stringify(afterCollect));
-  await ev(() => { Lull.app.store.state.factory.store = 20; });
-  await page.keyboard.press('KeyC');
-  await ev(() => { Lull.app.store.state.factory.store = 40; });
-  await page.click('.fac-hot[data-hot=store]');
-  check('C collects, and so does the store', (await ev(() => Lull.app.store.state.lines)) === 5);
-  const hot = await ev(() => { const b = document.querySelector('.fac-hot[data-hot=store]').getBoundingClientRect(); return { w: b.width, h: b.height, label: document.querySelector('.fac-hot[data-hot=store]').getAttribute('aria-label') }; });
-  check('the store is a big target, named', hot.w >= 44 && hot.h >= 44 && /collect/i.test(hot.label), JSON.stringify(hot));
-
-  // Buying: short of lines a card says no; with lines, every card builds, prices rise, and the list empties at the top.
-  await facSet(FAC.fresh);
-  const broke = await ev(() => { const c = document.querySelector('.fac-up[data-up=assembler]'); c.click(); return { dis: c.getAttribute('aria-disabled'), asm: Lull.app.store.state.factory.asm.length, n: document.querySelectorAll('.fac-up').length }; });
-  check('short of lines, a card is quiet and builds nothing; all seven kinds are offered', broke.dis === 'true' && broke.asm === 0 && broke.n === 7, JSON.stringify(broke));
-  await ev(() => { Lull.app.store.state.lines = 5000; Lull.app.modes.factory.update(); });
-  const firstBuy = await ev(() => { const c = document.querySelector('.fac-up[data-up=assembler]'); return { label: c.getAttribute('aria-label'), price: c.querySelector('.p').textContent }; });
-  await page.click('.fac-up[data-up=assembler]');
-  const bought = await ev(() => ({ asm: Lull.app.store.state.factory.asm.length, lines: Lull.app.store.state.lines, next: document.querySelector('.fac-up[data-up=assembler] .p').textContent }));
-  check('the first assembler costs 5 and the next one more', bought.asm === 1 && bought.lines === 4995 && /^5 ⦵$/.test(firstBuy.price) && /^25 ⦵$/.test(bought.next) && /First assembler/i.test(firstBuy.label), JSON.stringify([firstBuy, bought]));
-  let clicks = 0;
-  while (clicks < 40 && (await ev(() => document.querySelectorAll('.fac-up').length)) > 0) { await page.click('.fac-up >> nth=0'); clicks++; }
-  const maxed = await ev(() => ({ maxed: Lull.Factory.maxed(Lull.app.store.state.factory), spent: Lull.app.store.state.factory.stats.spent, hidden: document.getElementById('fac-list').classList.contains('hidden'), owned: ['palette:assembly', 'skin:steel', 'frame:hazard', 'effect:sparks'].filter((k) => { const [a, b] = k.split(':'); return Lull.app.store.owns(a, b); }) }));
-  check('buying every card builds the whole factory; the list is gone; the build rewards are given', maxed.maxed && maxed.hidden && maxed.owned.length === 4 && clicks === 18, JSON.stringify(maxed) + ' clicks ' + clicks);
+  check('each part\'s price tag is dim while the wallet is short and lit once it can pay', tags.includes('30:false') && tags.includes('10:false') && tags.includes('30:true') && tags.includes('10:true'), JSON.stringify(tags));
+  await page.waitForTimeout(300);
+  await page.click('.fac-card .fac-opt button');
+  const bought = await ev(() => ({ asm: Lull.app.store.state.factory.asm.length, lines: Lull.app.store.state.lines, title: document.querySelector('.fac-card h3').textContent, opt: document.querySelector('.fac-card .fac-opt b').textContent, price: document.querySelector('.fac-card .fac-opt button').textContent, name: document.querySelector('.fac-hot[data-part="bay0"]').getAttribute('aria-label') }));
+  check('buying on the part builds it (5 lines); its card turns to the part\'s own upgrade, and its button is renamed', bought.asm === 1 && bought.lines === 495 && bought.title === 'Assembler' && bought.opt === 'Bigger pieces' && /^10 /.test(bought.price) && bought.name === 'Assembler 1', JSON.stringify(bought));
+  // Keys: Escape closes the card and puts the focus back on its part; Enter on a part opens it; a click elsewhere closes it.
+  await page.keyboard.press('Escape');
+  const esc = await ev(() => ({ open: !!document.querySelector('.fac-card'), focus: document.activeElement && document.activeElement.dataset.part, expanded: document.querySelector('.fac-hot[data-part="bay0"]').getAttribute('aria-expanded') }));
+  await page.focus('.fac-hot[data-part="store"]');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(80);
+  const viaKey = await ev(() => { const c = document.querySelector('.fac-card'); return c && { title: c.querySelector('h3').textContent, focus: c.contains(document.activeElement), opts: Array.from(c.querySelectorAll('.fac-opt b')).map((b) => b.textContent) }; });
+  await page.mouse.click(5, 5);
+  const outside = await ev(() => !!document.querySelector('.fac-card'));
+  check('the parts work by keys: Enter opens a card (focus in it), Escape closes it back onto its part; a click elsewhere closes it',
+    !esc.open && esc.focus === 'bay0' && esc.expanded === 'false' && viaKey && viaKey.title === 'Store' && viaKey.focus && viaKey.opts.join() === 'Bigger store,Sell loose minos' && !outside, JSON.stringify([esc, viaKey, outside]));
+  // Buy everything, part by part: the whole factory, 998 lines; the rewards follow.
+  const all = await ev(async () => {
+    const S = Lull.app.store.state;
+    S.lines = 5000; Lull.app.refreshWallet();
+    let clicks = 0;
+    for (let round = 0; round < 6; round++) {
+      for (const id of ['drop0', 'drop1', 'drop2', 'store', 'bay0', 'bay1', 'bay2', 'belt']) {
+        document.querySelector('.fac-hot[data-part="' + id + '"]').click();
+        await new Promise((r) => setTimeout(r, 30));
+        for (let i = 0; i < 5; i++) {
+          const b = Array.from(document.querySelectorAll('.fac-card .fac-opt button')).find((x) => x.textContent !== 'Sell' && x.getAttribute('aria-disabled') !== 'true');
+          if (!b) break;
+          b.click(); clicks++;
+          await new Promise((r) => setTimeout(r, 20));
+        }
+        Lull.app.modes.factory.closeCard(false);
+      }
+    }
+    const f = S.factory;
+    return { maxed: Lull.Factory.maxed(f), spent: f.stats.spent, lines: S.lines, clicks, owned: ['palette:assembly', 'skin:steel', 'frame:hazard', 'effect:sparks'].filter((k) => { const [a, b] = k.split(':'); return Lull.app.store.owns(a, b); }).length };
+  });
+  check('buying on every part builds the whole factory (998 lines in all, the other 16 buys here); the build rewards are given', all.maxed && all.spent === 998 && all.clicks === 16 && all.owned === 4, JSON.stringify(all));
+  const topped = await card('belt');
+  await ev(() => Lull.app.modes.factory.closeCard(false));
+  check('a part at its top says so in its card, with nothing to buy', topped && topped.opts.length === 0 && /full speed/.test(topped.note), JSON.stringify(topped));
   await shot('31-factory-maxed');
 
-  // Time away with the Factory in front: the drop-off was closed, so the belt fills; nothing to read.
+  // Minos ride the conveyors at a steady speed, a gap apart.
+  await facSet(FAC.early);
+  const ride = await ev(async () => {
+    const f = Lull.app.store.state.factory, F = Lull.Factory, out = [];
+    const take = () => f.top.filter((m) => !(m.y > 0) && !m.f).map((m) => m.s);
+    const a = take();
+    await new Promise((r) => setTimeout(r, 1500));
+    const b = take();
+    const gaps = b.slice(1).map((s, i) => b[i] - s);
+    return { a, b, gaps, moved: b.length && a.length ? Math.max(...b) - Math.max(...a) : 0, v: F.MINO_V };
+  });
+  check('minos ride the top conveyor, a gap apart, about eight units a second', ride.b.length > 0 && ride.gaps.every((g) => g >= 12) && (ride.moved >= 6 || ride.b.some((s) => s >= 238)), JSON.stringify(ride));
+  // The sand fill and the outlet: the store fills its lowest column first (nearest the lift on a tie), and an assembler
+  // in need takes from the bottom of the first column with any.
+  const sand = await ev(async () => {
+    const f = Lull.app.store.state.factory, F = Lull.Factory, M = Lull.app.modes.factory, out = [], orig = M.view.events;
+    f.pile = [0, 0, 0, 0, 0, 0, 0]; f.stats.made = 0; f.top = []; f.out = []; f.asm = []; f.droppers = 1; f.drops = [{ t: 0, held: false }]; f.speed = 3;
+    M.view.events = function (evs, reduced) { for (const e of evs) if (e.kind === 'land' || e.kind === 'out') out.push(e.kind + e.c + '@' + f.pile.join('')); return orig.call(this, evs, reduced); };
+    for (let i = 0; i < 80 && out.filter((x) => x.startsWith('land')).length < 9; i++) { f.lastTick -= 4000; Lull.app.activity(); await new Promise((r) => requestAnimationFrame(r)); }
+    F.upgrade(f, 'assembler');
+    for (let i = 0; i < 10 && !out.some((x) => x.startsWith('out')); i++) { f.lastTick -= 1000; await new Promise((r) => requestAnimationFrame(r)); }
+    M.view.events = orig;
+    return out;
+  });
+  const lands = sand.filter((x) => x.startsWith('land')), firstOut = sand.find((x) => x.startsWith('out'));
+  check('the store fills like sand (lowest column first, nearest the lift on a tie) and lets a mino out of the bottom of the first column with any',
+    lands.slice(0, 6).map((x) => x[4]).join('') === '012345' && lands[8].endsWith('@2211111') && lands.every((x) => { const h = x.split('@')[1].split('').map(Number); return h.every((v, i) => !i || v <= h[i - 1]) && Math.max(...h) - Math.min(...h) <= 1; })
+    && !!firstOut && firstOut.startsWith('out0'), JSON.stringify(sand));
+
+  // A full store backs the top conveyor up; the droppers wait, the sign turns amber; selling the store frees it.
+  await facSet(FAC.fresh);
+  await facAhead(12 * 60e3);
+  const backed = await ev(async () => {
+    const f = Lull.app.store.state.factory, F = Lull.Factory, M = Lull.app.modes.factory, v = M.view;
+    await new Promise((r) => setTimeout(r, 1500));
+    const q = f.top.filter((m) => !(m.y > 0)).map((m) => m.s);
+    const warn = getComputedStyle(document.documentElement).getPropertyValue('--warn').trim();
+    const g = v.G, d = v.dpr, s = Lull.Factory.GEO.sign, K = v.K, x0 = Math.round((v.OX + s.x * K) * d), y0 = Math.round((v.OY + s.y * K) * d);
+    const px = v.ctx.getImageData(x0, y0, Math.round(s.w * K * d), Math.round(s.h * K * d)).data, hex = (i) => '#' + [px[i], px[i + 1], px[i + 2]].map((n) => n.toString(16).padStart(2, '0')).join('');
+    let amber = 0;
+    const [wr, wg, wb] = [1, 3, 5].map((i) => parseInt(warn.slice(i, i + 2), 16));
+    for (let i = 0; i < px.length; i += 4) if (Math.abs(px[i] - wr) + Math.abs(px[i + 1] - wg) + Math.abs(px[i + 2] - wb) < 40) amber++;
+    return { inStore: F.inStore(f), cap: F.storeCap(f), first: q[0], queue: q.length, held: f.drops.every((x) => x.held), mood: v.signMood, label: document.querySelector('.fac-hot[data-part="sign"]').getAttribute('aria-label'), amber, hex: hex(0) };
+  });
+  check('a full store backs the top conveyor up to its door; the droppers wait; the sign turns amber and says so',
+    backed.inStore === backed.cap && backed.first === 238 && backed.queue >= 5 && backed.held && backed.mood === 'full' && backed.amber > 20 && /held up/.test(backed.label), JSON.stringify(backed));
+  const sold = await ev(async () => {
+    const S = Lull.app.store.state, l0 = S.lines;
+    document.querySelector('.fac-hot[data-part="store"]').click();
+    await new Promise((r) => setTimeout(r, 60));
+    const opt = Array.from(document.querySelectorAll('.fac-card .fac-opt')).find((o) => o.querySelector('b').textContent === 'Sell loose minos');
+    const said = opt.querySelector('small').textContent;
+    opt.querySelector('button').click();
+    await new Promise((r) => setTimeout(r, 60));
+    const f = S.factory;
+    Lull.app.modes.factory.closeCard(false);
+    return { said, gained: S.lines - l0, pile: Lull.Factory.pileCount(f), bank: f.bank, sold: f.stats.sold };
+  });
+  check('Sell loose minos sells the whole store at the loose rate: 21 minos, 1.05 lines (a line now, the rest kept)', /^21 minos · \+1\.05 /.test(sold.said) && sold.gained === 1 && sold.pile === 0 && sold.bank === 2 * 16 && sold.sold === 21, JSON.stringify(sold));
+
+  // The board plays the pieces itself and pays each line straight into the wallet; it never tops out.
+  await facSet(FAC.late);
+  const pays = await ev(async () => {
+    const S = Lull.app.store.state, f = S.factory, l0 = S.lines, b0 = f.stats.lines, pieces0 = f.stats.delivered, clears = [];
+    const M = Lull.app.modes.factory, orig = M.view.events;
+    M.view.events = function (evs, reduced) { for (const e of evs) if (e.kind === 'clear') clears.push(e.rows.length); return orig.call(this, evs, reduced); };
+    for (let i = 0; i < 300; i++) { f.lastTick -= 4000; Lull.app.activity(); await new Promise((r) => requestAnimationFrame(r)); }
+    M.view.events = orig;
+    return { gained: S.lines - l0, lines: f.stats.lines - b0, pieces: f.stats.delivered - pieces0, clears: clears.length, multi: clears.filter((n) => n > 1).length, resets: f.stats.resets, earned: Lull.Factory.linesOf(f.stats.paid) };
+  });
+  check('the board plays every piece itself and each line it clears pays straight into the wallet (no Collect), and it never tops out',
+    pays.lines >= 5 && pays.gained >= 5 && pays.pieces >= 50 && pays.resets === 0, JSON.stringify(pays));
+  await page.waitForTimeout(500);
+  await shot('32-factory-running');
+
+  // The sign: a tap shows the board's lifetime lines in dots for about four seconds (thousands as "12k"), then the chevrons.
+  const sign = await ev(async () => {
+    const M = Lull.app.modes.factory, v = M.view, f = Lull.app.store.state.factory, A = Lull.FactoryArt;
+    f.stats.lines = 12345;
+    document.querySelector('.fac-hot[data-part="sign"]').click();
+    const on = v.counting, count = v.count;
+    await new Promise((r) => setTimeout(r, 3500));
+    const still = v.counting;
+    await new Promise((r) => setTimeout(r, 900));
+    const after = v.counting;
+    document.querySelector('.fac-hot[data-part="sign"]').click();
+    const again = v.counting;
+    document.querySelector('.fac-hot[data-part="sign"]').click();
+    const off = v.counting;
+    const dots = (n) => A.signDots(n, 0).map((r) => r.map((b) => (b ? '#' : '.')).join('')).join('/');
+    return { on, count, still, after, again, off, text: [A.signText(12345), A.signText(9999), A.signText(42), A.signText(2e6)], k: dots(12345), card: !!document.querySelector('.fac-card') };
+  });
+  check('tapping the sign shows the lifetime lines (12k) for about four seconds, then the chevrons; a second tap puts them back at once',
+    sign.on && sign.count === 12345 && sign.still && !sign.after && sign.again && !sign.off && sign.text.join() === '12k,9999,42,999k' && !sign.card
+    && /^\.{16}\//.test(sign.k) && /\/\.{16}$/.test(sign.k) && (sign.k.match(/#/g) || []).length > 20, JSON.stringify(sign));
+
+  // Time away with the Factory in front: replayed at once (the same line as running), lines earned, nothing to read.
+  const same = await ev(() => {
+    const F = Lull.Factory, f = Lull.app.store.state.factory, a = JSON.parse(JSON.stringify(f)), b = JSON.parse(JSON.stringify(f));
+    F.catchUp(a, a.lastTick + 40 * 60e3);
+    for (let left = 40 * 60e3; left > 0; left -= 17000) F.run(b, Math.min(17000, left), null, true);
+    delete a.lastTick; delete b.lastTick;
+    return JSON.stringify(a) === JSON.stringify(b) && a.stats.lines > 0;
+  });
+  check('in the page too, time away replayed in one go is the line run in slices: the same line', same);
   const awayHere = await ev(async () => {
-    const f = Lull.app.store.state.factory;
+    const S = Lull.app.store.state, f = S.factory, l0 = S.lines, b0 = f.stats.lines;
     f.lastTick = Date.now() - 3 * 3600e3;
     document.getElementById('toasts').textContent = '';
     await new Promise((r) => setTimeout(r, 300));
-    return { belt: f.belt.length, len: Lull.Factory.beltLen(f), toast: document.getElementById('toasts').textContent, mood: Lull.Factory.mood(f).mood };
+    return { gained: S.lines - l0, lines: f.stats.lines - b0, away: f.away, toast: document.getElementById('toasts').textContent };
   });
-  check('time away on the Factory tab: the belt backs up to the drop-off, with no message', awayHere.belt === awayHere.len && !/away/.test(awayHere.toast), JSON.stringify(awayHere));
-  // Back, the drop-off pays the backlog into the wallet.
-  const backlog = await ev(async () => { const l0 = Lull.app.store.state.lines; Lull.app.activity(); await new Promise((r) => setTimeout(r, 6000)); return Lull.app.store.state.lines - l0; });
-  check('back at the factory, the backlog pays into the wallet', backlog >= 1, 'gained ' + backlog);
-  // Away from the tab, a return tells how much was built.
+  check('time away on the Factory tab: the line ran on for an hour (lines cleared, paid), then rested; no message', awayHere.lines > 0 && awayHere.gained > 0 && !/away/.test(awayHere.toast), JSON.stringify(awayHere));
   const awayElse = await ev(async () => {
     Lull.app.setTab('play');
     const f = Lull.app.store.state.factory;
-    for (const a of f.asm) a.held = false;
-    f.belt = []; f.store = 0;
     f.lastTick = Date.now() - 3 * 3600e3;
     document.getElementById('toasts').textContent = '';
     Lull.app.modes.factory.catchUp(true);
     await new Promise((r) => setTimeout(r, 100));
     return document.getElementById('toasts').textContent;
   });
-  check('time away seen from another tab is told in plain words', /While you were away the factory built \d+ pieces/.test(awayElse), awayElse);
+  check('time away seen from another tab is told in plain words', /While you were away the factory cleared \d+ lines · \+[\d.,]+/.test(awayElse), awayElse);
   await ev(() => Lull.app.setTab('factory'));
 
-  // Reduced motion: the sign holds one still frame for its mood.
+  // Reduced motion: the sign is one still frame, the treads stand, movers step with the line instead of gliding.
+  await facSet(FAC.fresh);
   const still = await ev(async () => {
     const app = Lull.app, M = app.modes.factory, v = M.view, keep = app.settings.motion;
     app.settings.motion = 'reduced'; app.applySettings();
-    const grab = () => { const G = v.G, d = v.dpr, s = G.sign; return Array.from(v.ctx.getImageData(Math.round(s.x * d), Math.round(s.y * d), Math.round(s.w * d), Math.round(s.h * d)).data).join(); };
+    const grab = () => { const d = v.dpr, s = Lull.Factory.GEO.sign, K = v.K; return Array.from(v.ctx.getImageData(Math.round((v.OX + s.x * K) * d), Math.round((v.OY + s.y * K) * d), Math.round(s.w * K * d), Math.round(s.h * K * d)).data).join(); };
     await new Promise((r) => setTimeout(r, 300));
-    const a = grab(); await new Promise((r) => setTimeout(r, 900)); const b = grab();
+    const a = grab(), t0 = v.tread.mino + v.tread.belt, p0 = v.phase;
+    await new Promise((r) => setTimeout(r, 900));
+    const b = grab(), t1 = v.tread.mino + v.tread.belt, p1 = v.phase;
     app.settings.motion = keep; app.applySettings();
     await new Promise((r) => setTimeout(r, 300));
     const seen = new Set([grab()]);
     for (let i = 0; i < 8; i++) { await new Promise((r) => setTimeout(r, 250)); seen.add(grab()); }
-    return { still: a === b, moving: seen.size > 1, mood: v.signMood };
+    return { still: a === b, treads: t0 === t1, phase: p0 === p1, moving: seen.size > 1, cls: M.el.classList.contains('fac-still') };
   });
-  check('reduced motion: the sign is a still frame; otherwise its dots move', still.still && still.moving, JSON.stringify(still));
+  check('reduced motion: the sign is a still frame and the treads stand; otherwise the chevrons move', still.still && still.treads && still.phase && still.moving, JSON.stringify(still));
 
-  // The layout at the four sizes, early and late, in both themes: nothing sideways, the plate in the column, targets of
-  // 44 px, the sign wordless; frames kept.
-  const layoutAt = async (p, w, hgt, tag) => {
+  // The layout at the four sizes, early and late, in both themes: the floor fills the tab (between the title bar and the
+  // tab bar on a phone) with no scrolling; every part's area inside it, none over another, 44 px by touch; each card fits.
+  const layoutAt = async (p, w, hgt, touch) => {
     const out = [];
     for (const theme of ['dark', 'light']) {
-      await p.evaluate((t) => { Lull.app.settings.theme = t; Lull.app.applySettings(); Lull.app.setTab('factory'); }, theme);
-      for (const stage of ['early', 'late']) {
+      await p.evaluate((t) => { while (Lull.UI.modalOpen()) Lull.UI.closeTopModal(); Lull.app.settings.theme = t; Lull.app.applySettings(); Lull.app.setTab('factory'); }, theme);
+      for (const stage of ['fresh', 'late']) {
         await facSet(FAC[stage], p);
-        await p.waitForTimeout(stage === 'late' ? 2600 : 1500);
-        const r = await p.evaluate(() => {
-          const vw = document.getElementById('view-factory'), vr = vw.getBoundingClientRect(), plate = document.getElementById('fac-plate').getBoundingClientRect();
-          const cb = document.querySelector('#fac-collect .btn').getBoundingClientRect(), cards = Array.from(document.querySelectorAll('.fac-up')).map((c) => c.getBoundingClientRect());
-          const clipped = Array.from(document.querySelectorAll('.fac-up .t, .fac-up .p')).filter((e) => e.scrollWidth > e.clientWidth + 1).map((e) => e.textContent);
-          const sign = document.querySelector('.fac-sign');
-          return { sideways: document.documentElement.scrollWidth > innerWidth || vw.scrollWidth > vw.clientWidth, plateIn: plate.left >= vr.left - 0.5 && plate.right <= vr.right + 0.5, plateH: Math.round(plate.height),
-            collectH: Math.round(cb.height), cardMin: cards.length ? Math.round(Math.min(...cards.map((c) => c.height))) : 44, clipped, signText: sign.textContent };
-        });
-        const bad = r.sideways || !r.plateIn || r.collectH < 44 || r.cardMin < 44 || r.clipped.length || r.signText || r.plateH < 230;
+        await p.waitForTimeout(stage === 'late' ? 1500 : 800);
+        const r = await p.evaluate(async (touch) => {
+          const R = (e) => e.getBoundingClientRect(), vw = document.getElementById('view-factory'), vr = R(vw), plate = R(document.getElementById('fac-plate'));
+          const cv = R(document.getElementById('cv-floor')), title = R(document.getElementById('titlebar')), tabs = R(document.getElementById('tabs')), v = Lull.app.modes.factory.view;
+          const hots = Array.from(document.querySelectorAll('.fac-hot')).map((b) => ({ id: b.dataset.part, r: R(b) }));
+          const inPlate = (r) => r.left >= plate.left - 0.5 && r.right <= plate.right + 0.5 && r.top >= plate.top - 0.5 && r.bottom <= plate.bottom + 0.5;
+          const over = [];
+          for (let i = 0; i < hots.length; i++) for (let j = i + 1; j < hots.length; j++) { const a = hots[i].r, b = hots[j].r; if (a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5) over.push(hots[i].id + '/' + hots[j].id); }
+          const small = hots.filter((h) => touch && (h.r.width < 44 || h.r.height < 44)).map((h) => h.id + ' ' + Math.round(h.r.width) + 'x' + Math.round(h.r.height));
+          const cards = [];
+          for (const id of ['drop0', 'drop2', 'store', 'bay0', 'bay2', 'belt']) {
+            Lull.app.modes.factory.openCard(id);
+            await new Promise((res) => setTimeout(res, 20));
+            const c = R(document.querySelector('.fac-card'));
+            if (!inPlate(c)) cards.push(id);
+            Lull.app.modes.factory.closeCard(false);
+          }
+          const phone = tabs.top > title.bottom + 100;
+          return {
+            scroll: document.documentElement.scrollHeight > innerHeight + 0.5 || document.documentElement.scrollWidth > innerWidth + 0.5 || vw.scrollHeight > vw.clientHeight + 1,
+            fills: Math.abs(vr.top - title.bottom) <= 1 && (phone ? Math.abs(tabs.top - vr.bottom) <= 1 : Math.abs(innerHeight - vr.bottom) <= 12),
+            plate: Math.round(plate.height), plateIn: plate.left >= vr.left - 0.5 && plate.right <= vr.right + 0.5 && plate.top >= vr.top - 0.5 && plate.bottom <= vr.bottom + 0.5 && vr.bottom - plate.bottom <= 12,
+            canvas: Math.abs(cv.width - plate.width) <= 2 && Math.abs(cv.height - plate.height) <= 2,
+            floorIn: v.OX >= -0.5 && v.OY >= -0.5 && v.K * 360 <= v.w + 0.5, K: +v.K.toFixed(3),
+            hotsIn: hots.every((h) => inPlate(h.r)), over, small, cards,
+          };
+        }, touch);
+        const bad = r.scroll || !r.fills || !r.plateIn || !r.canvas || !r.floorIn || !r.hotsIn || r.over.length || r.small.length || r.cards.length;
         out.push((bad ? 'BAD ' : '') + theme + '/' + stage + ' ' + JSON.stringify(r));
         if (OUT) await p.screenshot({ path: path.join(OUT, '33-factory-' + w + 'x' + hgt + '-' + theme + '-' + stage + '.png') });
       }
@@ -2062,20 +2214,22 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   };
   for (const [w, hgt] of [[520, 760], [400, 700]]) {
     await page.setViewportSize({ width: w, height: hgt });
-    const rows = await layoutAt(page, w, hgt);
-    check('the factory at ' + w + '×' + hgt + ', both themes, early and late', rows.every((x) => !x.startsWith('BAD')), rows.join('\n         '));
+    const rows = await layoutAt(page, w, hgt, false);
+    check('the factory at ' + w + '×' + hgt + ', both themes, new and fully built: it fills the tab, nothing overlaps, every card fits', rows.every((x) => !x.startsWith('BAD')), rows.join('\n         '));
   }
   for (const [w, hgt] of [[390, 844], [320, 568]]) {
     const tctx2 = await browser.newContext({ viewport: { width: w, height: hgt }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
     const tp = await tctx2.newPage();
+    const errs = [];
+    tp.on('pageerror', (e) => errs.push(e.message));
     await tp.goto(PAGE); await tp.waitForTimeout(500); await tp.keyboard.press('Enter');
-    const rows = await layoutAt(tp, w, hgt);
-    check('the factory on a phone, ' + w + '×' + hgt + ', both themes, early and late', rows.every((x) => !x.startsWith('BAD')), rows.join('\n         '));
+    const rows = await layoutAt(tp, w, hgt, true);
+    check('the factory on a phone, ' + w + '×' + hgt + ', both themes, new and fully built: between the title bar and the tab bar, no scrolling, 44 px parts, every card fits', rows.every((x) => !x.startsWith('BAD')) && !errs.length, rows.join('\n         ') + errs.join('\n'));
     await tctx2.close();
   }
   await page.setViewportSize({ width: 520, height: 760 });
   await ev((t) => { Lull.app.settings.theme = t; Lull.app.applySettings(); }, 'dark');
-  await ev((keep) => { const k = JSON.parse(keep), f = Lull.app.store.state.factory; for (const x of Object.keys(f)) delete f[x]; Object.assign(f, k.f, { lastTick: Date.now() }); Lull.app.store.state.lines = k.lines; Lull.app.store.state.owned = k.owned; Lull.app.store.state.achievements = k.ach; Lull.app.refreshWallet(); Lull.app.modes.factory.build(); }, facKeep);
+  await ev((keep) => { const k = JSON.parse(keep), f = Lull.app.store.state.factory; for (const x of Object.keys(f)) delete f[x]; Object.assign(f, k.f, { lastTick: Date.now() }); Lull.app.store.state.lines = k.lines; Lull.app.store.state.owned = k.owned; Lull.app.store.state.achievements = k.ach; Lull.app.refreshWallet(); Lull.app.modes.factory.update(); }, facKeep);
   // ---- shop and settings ---------------------------------------------------------------------------------------------
   console.log('shop');
   // The Shop has no tab: the wallet opens it, and is lit (the current page) while it is open.
@@ -3662,7 +3816,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
       const app = Lull.app, st = app.store.state;
       st.lines = 4321; st.achievements.quad = Date.now(); st.achievements.pc = Date.now();
       st.settings.das = 199;
-      st.factory.storeLevel = 2; st.factory.stats.collects = 9; st.factory.stats.made = 5000;
+      st.factory.storeLevel = 2; st.factory.stats.sold = 9; st.factory.stats.made = 5000;
       app.setTab('play');
       const g = app.modes.play.game;
       for (let x = 1; x < 10; x++) g.board.set(x, 0, 8);
@@ -3680,13 +3834,13 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
       const stored = JSON.parse(localStorage.getItem('lull.save.v1'));
       return {
         lines: st.lines, ach: Object.keys(st.achievements).length, retired: B.retired.length, shelved: B.list.filter((b) => b.id !== B.cur).length,
-        cells: app.modes.play.game.board.count(), collects: f.stats.collects, storeLevel: f.storeLevel, made: f.stats.made,
+        cells: app.modes.play.game.board.count(), sold: f.stats.sold, storeLevel: f.storeLevel, made: f.stats.made,
         das: st.settings.das, storedLines: stored.lines, storedDas: stored.settings.das, storedAch: Object.keys(stored.achievements).length,
       };
     });
     check('the test had progress to lose', before.cells > 0, JSON.stringify(before));
     check('Reset: lines 0, no achievements, no boards kept, the play board empty, the factory new', fresh.lines === 0 && fresh.ach === 0 && fresh.retired === 0 && fresh.shelved === 0
-      && fresh.cells === 0 && fresh.collects === 0 && fresh.storeLevel === 0 && fresh.made < 100, JSON.stringify(fresh));
+      && fresh.cells === 0 && fresh.sold === 0 && fresh.storeLevel === 0 && fresh.made < 100, JSON.stringify(fresh));
     check('Reset keeps the settings, and the stored save is the fresh one', fresh.das === 199 && fresh.storedDas === 199 && fresh.storedLines === 0 && fresh.storedAch === 0, JSON.stringify(fresh));
     await ev(() => { Lull.app.store.state.lines = 50; Lull.app.saveNow(); });
     check('saving works again after the reset', await ev(() => JSON.parse(localStorage.getItem('lull.save.v1')).lines === 50));
