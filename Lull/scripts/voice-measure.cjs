@@ -8,8 +8,6 @@
 //                                  run close by within 12 dB of it, so a lone breath or a click at the end is left out)
 //   loudness(x, rate, from, to) -> dB: the speech's level, a gated RMS (frames within 20 dB of the loudest), roughly
 //                                  what a loudness meter reads for one short word
-//   bands(x, rate, from, to)    -> { sib, body, ratio }: power in 5–9 kHz and 1–4 kHz (dB), and sib − body (the
-//                                  harshness a de-esser should lower)
 //   peak(x)                     -> dBFS
 //   jump(x, rate, at, ms)       -> the largest sample-to-sample step within ms of a time (a click shows as a jump)
 'use strict';
@@ -59,36 +57,6 @@ const SRC = `(() => {
     const kept = d.filter((v) => v > top - 20);
     return db(kept.reduce((s, v) => s + Math.pow(10, v / 10), 0) / kept.length);
   }
-  function fft(re, im) {
-    const n = re.length;
-    for (let i = 1, j = 0; i < n; i++) { let bit = n >> 1; for (; j & bit; bit >>= 1) j ^= bit; j ^= bit; if (i < j) { [re[i], re[j]] = [re[j], re[i]]; [im[i], im[j]] = [im[j], im[i]]; } }
-    for (let len = 2; len <= n; len <<= 1) {
-      const ang = -2 * Math.PI / len, wr = Math.cos(ang), wi = Math.sin(ang);
-      for (let i = 0; i < n; i += len) {
-        let cr = 1, ci = 0;
-        for (let k = 0; k < len / 2; k++) {
-          const ur = re[i + k], ui = im[i + k], vr = re[i + k + len / 2] * cr - im[i + k + len / 2] * ci, vi = re[i + k + len / 2] * ci + im[i + k + len / 2] * cr;
-          re[i + k] = ur + vr; im[i + k] = ui + vi; re[i + k + len / 2] = ur - vr; im[i + k + len / 2] = ui - vi;
-          const t = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = t;
-        }
-      }
-    }
-  }
-  function bands(x, rate, from, to) {
-    const N = 2048, a = Math.max(0, Math.floor((from || 0) * rate)), b = Math.min(x.length, Math.ceil((to == null ? x.length / rate : to) * rate));
-    let sib = 0, body = 0;
-    for (let s = a; s + N <= b || s === a; s += N / 2) {
-      const re = new Float64Array(N), im = new Float64Array(N);
-      for (let i = 0; i < N && s + i < x.length; i++) re[i] = x[s + i] * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / N));
-      fft(re, im);
-      for (let k = 1; k < N / 2; k++) {
-        const hz = k * rate / N, p = re[k] * re[k] + im[k] * im[k];
-        if (hz >= 5000 && hz <= 9000) sib += p; else if (hz >= 1000 && hz <= 4000) body += p;
-      }
-      if (s + N >= b) break;
-    }
-    return { sib: db(sib), body: db(body), ratio: db(sib) - db(body) };
-  }
   function peak(x) { let m = 0; for (let i = 0; i < x.length; i++) m = Math.max(m, Math.abs(x[i])); return m > 0 ? 20 * Math.log10(m) : -200; }
   function jump(x, rate, at, ms) {
     const c = Math.round(at * rate), w = Math.round(rate * (ms || 3) / 1000);
@@ -96,7 +64,7 @@ const SRC = `(() => {
     for (let i = Math.max(1, c - w); i < Math.min(x.length, c + w); i++) m = Math.max(m, Math.abs(x[i] - x[i - 1]));
     return m;
   }
-  window.VoiceMeasure = { span, loudness, bands, peak, jump, frames };
+  window.VoiceMeasure = { span, loudness, peak, jump, frames };
 })();`;
 
 module.exports = { SRC };

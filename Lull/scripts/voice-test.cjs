@@ -1,7 +1,7 @@
 // Lull — the announcer in the browser (js/audio.js, Announcer; js/voice-data.js): her lines for each clear, every clip
 // decoding with where her speech is, each played from its trimmed start, and her mix measured through her real chain
-// with OfflineAudioContext (scripts/voice-measure.cjs): one level, a ceiling, no clicks, the de-esser, her place under
-// the sound effects and the music's duck. Prints a table of each clip, raw and mixed.
+// with OfflineAudioContext (scripts/voice-measure.cjs): one level, a ceiling, no clicks, her place under the sound
+// effects and over the music, and the music's duck. Prints a table of each clip, raw and mixed.
 // Run by browser-test.cjs: require('./voice-test.cjs')({ browser, check, PAGE }); or on its own:
 //   node Lull/scripts/voice-test.cjs
 'use strict';
@@ -22,7 +22,7 @@ async function voiceTests({ browser, check, PAGE }) {
   const clips = await ev(async () => { const out = {}; for (const k of Object.keys(Lull.VOICE_CLIPS)) { const b = await Lull.Announcer.decode(k); out[k] = b ? { file: +b.duration.toFixed(2), said: +Lull.Announcer.span(k, b).dur.toFixed(2) } : 0; } return out; });
   check('every announcer clip decodes, with where her speech is (the part played: 0.3–2 s)', Object.keys(clips).length === 11 && VOICE_KEYS.every((k) => clips[k] && clips[k].said > 0.3 && clips[k].said < 2 && clips[k].said <= clips[k].file), JSON.stringify(clips));
   // She speaks right on the event: each key is played from just before its speech (VOICE_META.start, less 20 ms of
-  // pre-roll), never from the top of the file (some clips have nearly two seconds of silence first).
+  // pre-roll), never from the top of the file (every clip opens with a fifth of a second or so of silence).
   const starts = await ev(async (keys) => {
     const A = Lull.Announcer, P = AudioBufferSourceNode.prototype, real = P.start, seen = [];
     P.start = function (when, offset, duration) { seen.push({ offset, duration, len: this.buffer && this.buffer.duration }); return real.call(this, when, offset, duration); };
@@ -43,10 +43,11 @@ async function voiceTests({ browser, check, PAGE }) {
   check('the announcer plays each clip from its trimmed start (20 ms before her speech) to just past its end', VOICE_KEYS.every((k) => {
     const s = starts[k];
     return s && Math.abs(s.offset - s.want) < 1e-6 && s.end > s.speechEnd && s.end < s.speechEnd + 0.15;
-  }) && starts.gameover.offset > 1.8 && starts.quad.offset > 0.5 && starts.twist_single.offset > 0.7, JSON.stringify(starts));
+  }) && VOICE_KEYS.every((k) => starts[k].offset > 0.1), JSON.stringify(starts));
   // Her mix, every call rendered through her real chain (OfflineAudioContext): one level (a gated RMS of the speech,
-  // about what a loudness meter reads) within ±1 dB; under −1 dBFS at full volume; no click where a clip is cut in or
-  // out; less of the 5–9 kHz hiss against the 1–4 kHz body than the raw clip; and clearly under the sound effects.
+  // about what a loudness meter reads) within ±1 dB; well under the limiter at the default volumes (it never acts) and
+  // under −1 dBFS at full volume; no click where a clip is cut in or out; a few dB under the sound effects; and over
+  // the music, ducked, at the default volumes.
   await page.evaluate(require('./voice-measure.cjs').SRC);
   const voice = await ev(async (keys) => {
     const S = Lull.Sound, A = Lull.Announcer, M = window.VoiceMeasure, keepA = A.volume, keepS = S.volume, out = {};
@@ -71,11 +72,11 @@ async function voiceTests({ browser, check, PAGE }) {
         // At full volume (Volume and Announcer volume both 100 %): the peak.
         A.setVolume(1); S.volume = 1; A.input = null;
         const full = await S.offline(sp.dur + 0.6, () => { A.clip(k, buf, at); });
-        const x = cooked.getChannelData(0), xr = raw.getChannelData(0), b0 = M.bands(xr, raw.sampleRate, at, end), b1 = M.bands(x, cooked.sampleRate, at, end);
+        const x = cooked.getChannelData(0), xr = raw.getChannelData(0);
         out[k] = {
           rawLoud: r1(M.loudness(xr, raw.sampleRate, at, end)), loud: r1(M.loudness(x, cooked.sampleRate, at, end)),
-          rawPeak: r1(M.peak(xr)), peak: r1(Math.max(M.peak(full.getChannelData(0)), M.peak(full.getChannelData(1)))),
-          rawHiss: r1(b0.ratio), hiss: r1(b1.ratio),
+          rawPeak: r1(M.peak(xr)), peakDefault: r1(Math.max(M.peak(x), M.peak(cooked.getChannelData(1)))),
+          peak: r1(Math.max(M.peak(full.getChannelData(0)), M.peak(full.getChannelData(1)))),
           jumpIn: +M.jump(x, cooked.sampleRate, at, 3).toFixed(4), jumpOut: +M.jump(x, cooked.sampleRate, end, 3).toFixed(4), mom: mom(cooked),
         };
       }
@@ -91,22 +92,33 @@ async function voiceTests({ browser, check, PAGE }) {
       const d = (await ctx.startRendering()).getChannelData(0), lv = (t) => 20 * Math.log10(d[Math.round(t * 44100)] / Mu.volume);
       duck = { depth: r1(-lv(0.7)), after20ms: r1(-lv(0.21)), back: r1(-lv(1.9)) };
     } finally { Mu.gain = keepG; Mu.volume = keepV; }
-    return { clips: out, sfx, duck };
+    // The music at its default volume (12 s from the top): its usual level (the median of 0.4 s windows), less the duck.
+    const keepMV = Mu.volume;
+    let music;
+    try {
+      Mu.setVolume(Lull.defaultState().settings.musicVolume);
+      const ws = [], r = await S.offline(13, (c) => { Mu.render(c, 13, 0); }), d = r.getChannelData(0), e = r.getChannelData(1), w = Math.floor(r.sampleRate * 0.4), h = Math.floor(r.sampleRate * 0.05);
+      for (let s = r.sampleRate; s + w <= d.length; s += h) { let a = 0; for (let i = s; i < s + w; i++) a += (d[i] * d[i] + e[i] * e[i]) / 2; ws.push(10 * Math.log10(a / w)); }
+      ws.sort((a, b) => a - b);
+      music = { median: r1(ws[ws.length >> 1]), ducked: r1(ws[ws.length >> 1] + 20 * Math.log10(Mu.DUCK)) };
+    } finally { Mu.setVolume(keepMV); }
+    return { clips: out, sfx, duck, music };
   }, VOICE_KEYS);
   {
     const C = voice.clips, louds = VOICE_KEYS.map((k) => C[k].loud), mean = louds.reduce((a, x) => a + x, 0) / louds.length;
     const fx = Object.values(voice.sfx), fxMean = fx.reduce((a, x) => a + x, 0) / fx.length, moms = VOICE_KEYS.map((k) => C[k].mom), momMean = moms.reduce((a, x) => a + x, 0) / moms.length;
-    console.log('       clip           loudness raw → mixed   peak raw → full vol   hiss (5–9k vs 1–4k) raw → mixed   jump in/out');
+    console.log('       clip           loudness raw → mixed   peak raw → mixed → full vol   jump in/out');
     for (const k of VOICE_KEYS) {
       const c = C[k];
-      console.log('       ' + k.padEnd(14) + (c.rawLoud + ' → ' + c.loud + ' dB').padStart(19) + (c.rawPeak + ' → ' + c.peak + ' dBFS').padStart(23) + (c.rawHiss + ' → ' + c.hiss + ' dB').padStart(25) + ('   ' + c.jumpIn + ' / ' + c.jumpOut));
+      console.log('       ' + k.padEnd(14) + (c.rawLoud + ' → ' + c.loud + ' dB').padStart(19) + (c.rawPeak + ' → ' + c.peakDefault + ' → ' + c.peak + ' dBFS').padStart(31) + ('   ' + c.jumpIn + ' / ' + c.jumpOut));
     }
-    console.log('       sound effects ' + JSON.stringify(voice.sfx) + '; the duck ' + JSON.stringify(voice.duck));
+    console.log('       her momentary level ' + momMean.toFixed(1) + ' dB; sound effects ' + JSON.stringify(voice.sfx) + '; the music ' + JSON.stringify(voice.music) + '; the duck ' + JSON.stringify(voice.duck));
     check('the announcer\'s calls are all one level (loudness within ±1 dB of their mean)', louds.every((l) => Math.abs(l - mean) <= 1), JSON.stringify(louds));
+    check('her limiter never acts at the default volumes (every peak 6 dB or more under its −3 dBFS ceiling)', VOICE_KEYS.every((k) => C[k].peakDefault < -9), JSON.stringify(VOICE_KEYS.map((k) => C[k].peakDefault)));
     check('her peak stays under −1 dBFS at full volume (the limiter)', VOICE_KEYS.every((k) => C[k].peak < -1), JSON.stringify(VOICE_KEYS.map((k) => C[k].peak)));
     check('no click where a clip is cut in or out (the 10 ms fade in, the 70 ms fade out)', VOICE_KEYS.every((k) => C[k].jumpIn < 0.01 && C[k].jumpOut < 0.01), JSON.stringify(VOICE_KEYS.map((k) => [C[k].jumpIn, C[k].jumpOut])));
-    check('the de-esser: less 5–9 kHz hiss against the 1–4 kHz body than the raw clip, on every call', VOICE_KEYS.every((k) => C[k].hiss < C[k].rawHiss - 0.5), JSON.stringify(VOICE_KEYS.map((k) => [C[k].rawHiss, C[k].hiss])));
-    check('she sits about 6–8 dB under the sound effects, and every call under them', fxMean - momMean >= 6 && fxMean - momMean <= 8.5 && Math.max(...moms) < fxMean - 4, JSON.stringify({ fxMean, momMean, moms }));
+    check('she sits about 3.5–6.5 dB under the sound effects, and every call under them', fxMean - momMean >= 3.5 && fxMean - momMean <= 6.5 && Math.max(...moms) < fxMean - 2, JSON.stringify({ fxMean, momMean, moms }));
+    check('she is clearly over the music at the default volumes (every call 1.5 dB or more over its usual level, ducked)', Math.min(...moms) >= voice.music.ducked + 1.5, JSON.stringify({ moms, music: voice.music }));
     check('the music ducks 3–5 dB while she speaks, smoothly (not all at once), and comes back', voice.duck.depth >= 3 && voice.duck.depth <= 5 && voice.duck.after20ms < voice.duck.depth - 0.5 && voice.duck.back < 0.5, JSON.stringify(voice.duck));
   }
   check('no page errors in the announcer\'s checks', errors.length === 0, errors.join(' | '));

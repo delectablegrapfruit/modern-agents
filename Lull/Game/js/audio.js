@@ -1009,7 +1009,7 @@
   /**
    * The announcer whispers the big moments: "single", "double", "triple", "quad" (four lines), "twist", "twist single",
    * "twist double", "streak", "spotless" (the board cleared), "level up" and "game over". Her clips were generated with
-   * ElevenLabs (text to speech, a whispered voice) for Lull and are embedded by scripts/voice-clips.cjs in
+   * ElevenLabs (text to speech, model eleven_v4, the whispering voice "Annie") for Lull and are embedded by scripts/voice-clips.cjs in
    * js/voice-data.js, with each one's speech start and end and a loudness trim (L.VOICE_META): every clip is played from
    * just before her first sound to just after her last, so she speaks right on the event, and every call sits at one
    * level.
@@ -1017,7 +1017,8 @@
   const Announcer = {
     enabled: true,
     volume: 0.35,
-    /** The bus's gain at full volume: her calls sit clearly under the sound effects (about 7 dB at the default). */
+    /** Her bus's gain at full Announcer volume: her calls sit a little under the sound effects (about 4.5 dB at the
+     * default volumes) and clearly over the music, ducked. */
     TRIM: 2.9,
     /** The cut around her speech (seconds): a little before the first sound, a fade in, held a touch past the last, a fade out. */
     PRE: 0.02, FADE_IN: 0.01, TAIL: 0.03, FADE_OUT: 0.07,
@@ -1039,59 +1040,40 @@
     },
 
     /**
-     * The voice's mixing desk, built once per context, for a soft whisper: a high-pass at 110 Hz takes away breath
-     * rumble; a small dip at 400 Hz keeps her from sounding boxy; a split-band de-esser (a Linkwitz-Riley crossover at
-     * 5 kHz, the top band through its own fast compressor, the two summed flat again) and a gentle static cut at 7 kHz
-     * ease the hiss and sibilance a whisper is made of; a gentle compressor (2.5:1, 10 ms in, 120 ms out) keeps her
-     * even and intelligible over the music without pumping; a soft lift of air at 11 kHz keeps her close; then her
-     * level (Volume) and a limiter, so she never clips. A short room of her own (0.6 s, built like the shared one) sits
-     * her in the same space as the music, mostly dry (about −20 dB wet).
+     * The voice's desk, kept light so the whisper stays as it was recorded: a gentle high-pass at 85 Hz (breath rumble
+     * and handling thumps only), her level, and a safety limiter. No EQ, no compressor, no de-esser, no room. Each
+     * clip's own trim (L.VOICE_META) has already brought every call to one level before it gets here.
+     * The limiter is set against what reaches the speakers: her level is applied together with the Volume before it
+     * (and the Volume taken back out after it, since the master applies it again), so its −3 dBFS ceiling is a real
+     * ceiling at any Volume, and at the default volumes her loudest peak stays well under it (it never acts).
      */
     bus() {
       const ctx = Sound.ctx;
-      if (this.input && this.input.context === ctx) return this.input;
-      const node = (type, f, q, g) => { const b = ctx.createBiquadFilter(); b.type = type; b.frequency.value = f; if (q != null) b.Q.value = q; if (g != null) b.gain.value = g; return b; };
-      // A compressor as a pair of nodes, its own make-up gain taken back out: Web Audio's DynamicsCompressor lifts its
-      // output by about 0.6 of the gain it takes off at full scale, which on a low threshold would brighten a band it is
-      // meant to tame. With it taken out, below the threshold a compressor here passes at unity.
-      const comp = (threshold, knee, ratio, attack, release) => {
-        const c = ctx.createDynamicsCompressor(), back = ctx.createGain();
-        c.threshold.value = threshold; c.knee.value = knee; c.ratio.value = ratio; c.attack.value = attack; c.release.value = release;
-        back.gain.value = Math.pow(10, 0.6 * threshold * (1 - 1 / ratio) / 20);
-        c.connect(back);
-        return { c, back, connect: (n) => back.connect(n) };
-      };
+      if (this.input && this.input.context === ctx) { this.sync(); return this.input; }
       this.input = ctx.createGain();
-      const hp = node('highpass', 110, 0.707), box = node('peaking', 400, 1.1, -2.5);
-      this.input.connect(hp).connect(box);
-      // De-esser: low band (two 12 dB/oct low-passes) plus high band (two high-passes, then compressed), summed.
-      const split = 5000, sum = ctx.createGain(), ds = comp(-46, 6, 5, 0.002, 0.06);
-      box.connect(node('lowpass', split, 0.707)).connect(node('lowpass', split, 0.707)).connect(sum);
-      box.connect(node('highpass', split, 0.707)).connect(node('highpass', split, 0.707)).connect(ds.c);
-      ds.connect(sum);
-      const ess = node('peaking', 7000, 0.8, -3);
-      const even = comp(-30, 8, 2.5, 0.01, 0.12);
-      const air = node('highshelf', 11000, null, 1.5);
-      const level = this.level = ctx.createGain(); level.gain.value = this.volume * this.TRIM;
-      const limiter = comp(-3, 0, 20, 0.001, 0.08);
-      sum.connect(ess).connect(even.c);
-      even.connect(air).connect(level).connect(limiter.c);
-      limiter.connect(Sound.master);
-      // Her room: 0.6 s of soft, dark noise shaped like the shared room's tail, a little of it.
-      const len = Math.floor(ctx.sampleRate * 0.6), ir = ctx.createBuffer(2, len, ctx.sampleRate);
-      for (let c = 0; c < 2; c++) {
-        const d = ir.getChannelData(c);
-        let lp = 0;
-        for (let i = 0; i < len; i++) { lp = lp * 0.6 + (Math.random() * 2 - 1) * 0.4; d[i] = lp * Math.pow(1 - i / len, 2.6); }
-      }
-      const room = ctx.createConvolver(), wet = ctx.createGain();
-      room.buffer = ir; wet.gain.value = this.WET;
-      limiter.back.connect(room).connect(wet).connect(Sound.master);
+      const hp = ctx.createBiquadFilter();
+      hp.type = 'highpass'; hp.frequency.value = this.HP; hp.Q.value = 0.707;
+      this.level = ctx.createGain();
+      // Web Audio's DynamicsCompressor as a limiter (20:1, hard knee, 1 ms in, 50 ms out), with the make-up gain it adds
+      // by itself (about 0.6 of the gain it would take off at full scale) taken back out: below its threshold it is unity.
+      const lim = ctx.createDynamicsCompressor(), back = ctx.createGain();
+      lim.threshold.value = this.CEILING; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.001; lim.release.value = 0.05;
+      back.gain.value = Math.pow(10, 0.6 * this.CEILING * (1 - 1 / 20) / 20);
+      this.unvol = ctx.createGain();
+      this.input.connect(hp).connect(this.level).connect(lim).connect(back).connect(this.unvol).connect(Sound.master);
+      this.sync();
       return this.input;
     },
-    /** The room's send: about −20 dB under her dry voice (the impulse itself is about 6 dB hotter than a dry path). */
-    WET: 0.05,
-    setVolume(v) { if (v === this.volume) return; this.volume = v; if (this.level) this.level.gain.value = v * this.TRIM; },
+    /** The high-pass (Hz) and the limiter's ceiling (dBFS, at the speakers). */
+    HP: 85, CEILING: -3,
+    /** Her level and the Volume into the limiter, the Volume back out after it (Volume 0 is silent at the master anyway). */
+    sync() {
+      if (!this.level) return;
+      const v = Math.max(1e-3, Sound.volume);
+      this.level.gain.value = this.volume * this.TRIM * v;
+      this.unvol.gain.value = 1 / v;
+    },
+    setVolume(v) { if (v === this.volume) return; this.volume = v; this.sync(); },
     decode(key) {
       const ctx = Sound.ensure();
       const b64 = (L.VOICE_CLIPS || {})[key];

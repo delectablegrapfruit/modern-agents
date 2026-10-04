@@ -5017,10 +5017,14 @@ console.log('own names, colours and voice');
       assert(bytes.length > 10000 && (bytes.slice(0, 3).toString() === 'ID3' || bytes[0] === 0xff), k + ' is an MP3');
       assert(m.start >= 0 && m.end > m.start + 0.25 && m.end - m.start < 2 && Math.abs(m.gain) < 12, k + ' ' + JSON.stringify(m));
     }
-    // The long silences before a few of her words are skipped (they start where she speaks).
-    assert(L.VOICE_META.gameover.start > 1.8 && L.VOICE_META.quad.start > 0.5 && L.VOICE_META.twist_single.start > 0.7);
+    // The silence before each word is skipped (it starts where she speaks).
+    assert(KEYS.every((k) => L.VOICE_META[k].start > 0.1), 'every clip starts where her speech does');
     const head = fsx.readFileSync(pathx.join(ROOT, 'Game', 'js', 'voice-data.js'), 'utf8').slice(0, 600), src = fsx.readFileSync(pathx.join(ROOT, 'Game', 'js', 'audio.js'), 'utf8');
     assert(/ElevenLabs/.test(head) && /ElevenLabs/.test(src.slice(src.indexOf('the announcer (Classic)'))), 'credited as generated with ElevenLabs');
+    assert(/eleven_v4/.test(head) && /Annie/.test(head) && !/Flick|eleven_v3/.test(head + src), 'credited to the voice and model that made them (Annie, eleven_v4), and no other');
+    // Her desk is light: a high-pass, her level and a limiter; no EQ, compressor, de-esser or room of her own.
+    const desk = src.slice(src.indexOf('    bus() {', src.indexOf('const Announcer')), src.indexOf('    sync() {', src.indexOf('const Announcer')));
+    assert(/'highpass'/.test(desk) && (desk.match(/createDynamicsCompressor/g) || []).length === 1 && !/peaking|highshelf|lowpass|createConvolver/.test(desk), 'her desk: a high-pass and a limiter only');
     assert(!fsx.existsSync(pathx.join(__dirname, 'splice-voice.py')), 'the old splicing script is gone');
     if (!L.Announcer) load(['audio.js']);
     const A = L.Announcer, said = new Set();

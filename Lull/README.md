@@ -205,14 +205,13 @@ clear that carries one on, "spotless" when the board is cleared, "level up" and 
 with ElevenLabs (see [Credits](#credits)) and are embedded by `scripts/voice-clips.cjs`, which records where her speech
 starts and ends in each one (measured by decoding it in Chromium) and a loudness trim, fitted through her real chain so
 every call comes out within a fraction of a dB of the others. Each is played from 20 ms before her first sound to just
-past her last (a 10 ms fade in, a 70 ms fade out, so no cut clicks), so she speaks right on the event, though some files
-open with nearly two seconds of silence. Her desk, built for a whisper: a high-pass at 110 Hz (breath rumble), a 2.5 dB
-dip at 400 Hz (boxiness), a split-band de-esser (a Linkwitz-Riley split at 5 kHz, the top band through its own fast
-compressor) and a 3 dB cut at 7 kHz for the hiss and sibilance, a gentle 2.5:1 compressor (10 ms in, 120 ms out), a
-1.5 dB lift of air at 11 kHz, her level, and a limiter so she never clips; a short room of her own (0.6 s, built like
-the shared one) about 20 dB under her. She sits about 7 dB under the sound effects, and the music dips about 4 dB
-under her (in over about 40 ms, back over a second). `scripts/voice-test.cjs` (run by the browser test) renders every
-call through that chain and holds it to all of this. Settings ▸ Sound ▸ Announcer volume sets her level. Settings ▸ Sound ▸ Announcer in Relaxed (off by default) lets her call Free Play clears too. Both toggle under the board or in Settings ▸ Sound. P pauses; another tab or another window pauses
+past her last (a 10 ms fade in, a 70 ms fade out, so no cut clicks), so she speaks right on the event, never after the
+silence a file opens with. Her desk is kept light, so the whisper sounds as it was recorded: a gentle high-pass at 85 Hz
+(breath rumble), her level, and a safety limiter with a −3 dBFS ceiling at the speakers (Volume is taken into account)
+that never acts at the default volumes, where her loudest peak is about 12 dB under it. No EQ, de-esser, compressor or
+room. She sits about 4.5 dB under the sound effects and a few dB over the music, which dips about 4 dB under her (in
+over about 40 ms, back over a second). `scripts/voice-test.cjs` (run by the browser test) renders every call through
+that chain and holds it to all of this. Settings ▸ Sound ▸ Announcer volume sets her level. Settings ▸ Sound ▸ Announcer in Relaxed (off by default) lets her call Free Play clears too. Both toggle under the board or in Settings ▸ Sound. P pauses; another tab or another window pauses
 too, and so does the pointer leaving the window (Settings ▸ Controls ▸ Pause when the pointer leaves); P or Resume
 carries on.
 
@@ -1435,6 +1434,6 @@ The address is shown on the `pages` job and under Settings ▸ Pages.
 
 ## Credits
 
-The announcer's voice clips were generated with ElevenLabs (text to speech; voice "Flick – Seductive ASMR", model
-eleven_v3, whispered). Use of ElevenLabs output is governed by the terms of the plan it was generated on (commercial use
+The announcer's voice clips were generated with ElevenLabs (text to speech; voice "Annie - Whispering British Girl",
+model eleven_v4, whispered). Use of ElevenLabs output is governed by the terms of the plan it was generated on (commercial use
 needs a paid plan). Classic's music, Hush, is Lull's own. The interface face is Inter by Rasmus Andersson (SIL Open Font License 1.1), embedded in `css/lull.css`.
