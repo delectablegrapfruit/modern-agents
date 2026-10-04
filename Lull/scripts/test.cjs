@@ -57,7 +57,7 @@ test('four turns come back to the start', () => {
     assert.strictEqual(cellKey(Pieces.rotateCW(t.rots[3], t.n)), cellKey(t.rots[0]), id);
   }
 });
-test('SRS: T turns from spawn to pointing right', () => {
+test('Lull kicks: T turns from spawn to pointing right', () => {
   assert.strictEqual(cellKey(Pieces.TYPES.T.rots[1]), cellKey([[1, 2], [1, 1], [2, 1], [1, 0]]));
 });
 test('mirror pairs', () => {
@@ -277,7 +277,7 @@ test('odd shapes on random stacks: a kick that fits is always taken first; a nud
   }
   assert(nudged > 30, String(nudged));
 });
-test('the seven keep plain SRS, and puzzles (a fixed queue) keep exactly the turns their generator searched', () => {
+test('the seven keep plain Lull kicks, and puzzles (a fixed queue) keep exactly the turns their generator searched', () => {
   const rng = new RNG(11);
   let turned = 0;
   for (let i = 0; i < 3000; i++) {
@@ -305,7 +305,7 @@ test('items on the board: laser, black hole, tornado, trapdoor, mirror world', (
   let g = mk(); const before = g.board.count();
   g.setSpecial('laser'); let r = g.drop();
   assert(r.laser.length === 2 && r.lines === 2 && r.plain === 2, 'the laser vaporises both rows it touches, as plain lines');
-  assert(!r.b2b && g.s.b2b === -1, 'a laser never feeds the back-to-back streak');
+  assert(!r.b2b && g.s.b2b === -1, 'a laser never feeds the streak');
   g = mk(); assert(g.setSpecial('blackhole')); g.piece.y = 6; r = g.drop();
   assert(r.swallowed.length > 5 && r.cells.length === 0, 'the black hole swallows its surroundings, and is gone');
   // Tornado: columns shuffled, holes and all; every row keeps its count, so nothing clears.
@@ -329,7 +329,7 @@ test('items on the board: laser, black hole, tornado, trapdoor, mirror world', (
   assert(g.undo(), 'rewind undoes a board item');
   assert.deepStrictEqual([...Array(10)].map((_, x) => g.board.get(x, 0)), row0.reverse());
 });
-test('T-spins: dropped from a turn is not one; one front corner is a Mini', () => {
+test('twists: dropped from a turn is not one; one front corner is a Mini', () => {
   const setup = () => {
     const g = new Game({ w: 10, h: 20, seed: 4 });
     const fill = (y, row) => { for (let x = 0; x < 10; x++) if (row[x] === 'X') g.board.set(x, y, 8); };
@@ -342,16 +342,16 @@ test('T-spins: dropped from a turn is not one; one front corner is a Mini', () =
   let g = setup();
   Object.assign(g.piece, { rot: 2, x: 2, y: 6, lastRot: true });
   let r = g.drop();
-  assert(!r.tspin && !r.mini, 'turned high up, then dropped: no spin');
+  assert(!r.twist && !r.mini, 'turned high up, then dropped: no spin');
   g = setup();
   g.board.set(2, 0, 0); g.board.set(4, 0, 0);
   g.board.set(4, 0, 8); g.board.set(2, 2, 8);
   // rot 2 points down: front corners (2,0) and (4,0); now only (4,0) is blocked, plus both back corners.
   Object.assign(g.piece, { rot: 2, x: 2, y: 0, lastRot: true, kick: 1 });
   r = g.lock();
-  assert(r.mini && !r.tspin, 'one front corner: T-spin Mini');
+  assert(r.mini && !r.twist, 'one front corner: mini twist');
 });
-test('T-spin double is recognised', () => {
+test('twist double is recognised', () => {
   const g = new Game({ w: 10, h: 20, seed: 4 });
   const fill = (y, row) => { for (let x = 0; x < 10; x++) if (row[x] === 'X') g.board.set(x, y, 8); };
   fill(0, 'XXX.XXXXXX');
@@ -360,7 +360,7 @@ test('T-spin double is recognised', () => {
   g.replacePiece({ id: 'T' });
   Object.assign(g.piece, { rot: 2, x: 2, y: 0, lastRot: true });
   const r = g.lock();
-  assert(r.tspin, 'three corners filled after a turn');
+  assert(r.twist, 'three corners filled after a turn');
   assert.strictEqual(r.lines, 2);
 });
 test('a saved game keeps the piece\'s own flags: a T turned into its slot still spins after a reload; an I from hold is still one', () => {
@@ -376,7 +376,7 @@ test('a saved game keeps the piece\'s own flags: a T turned into its slot still 
   assert.strictEqual(back.piece.kick, 4);
   assert.strictEqual(back.piece.fromHold, true);
   const r = back.lock();
-  assert(r.tspin && r.lines === 2 && r.fromHold, 'the T-spin double counts after the round trip');
+  assert(r.twist && r.lines === 2 && r.fromHold, 'the twist double counts after the round trip');
   const plain = new Game({ w: 10, h: 20, seed: 5 });
   const pj = plain.toJSON().piece;
   assert(!('lastRot' in pj) && !('kick' in pj) && !('fromHold' in pj), 'nothing extra saved for a plain piece');
@@ -461,7 +461,7 @@ test('choice: Pick of Three swaps with the queue; Best Fit finds the well; both 
   let holes = 0; for (let x = 0; x < 10; x++) { let roof = false; for (let y = 19; y >= 0; y--) { if (e.board.get(x, y)) roof = true; else if (roof) holes++; } }
   assert.strictEqual(holes, 0);
 });
-test('Safety Net keeps a back-to-back streak through one ordinary clear, once', () => {
+test('Safety Net keeps a streak streak through one ordinary clear, once', () => {
   const g = new Game({ w: 10, h: 20, seed: 3 });
   g.s.b2b = 4;
   const single = () => { g.board.cells.fill(0); for (let x = 1; x < 10; x++) g.board.set(x, 0, 8); g.replacePiece({ id: 'M1' }); g.piece.x = 0; return g.drop(); };
@@ -682,7 +682,7 @@ test('Classic: a piece that cannot appear right where it appears is the game ove
   assert(c.holdPiece() && c.over && c.piece.type.id === 'T', 'the held T blocks out');
 });
 
-test('Classic: a T turned flat against the ceiling is not a T-spin (above the well is open); real spins still count', () => {
+test('Classic: a T turned flat against the ceiling is not a twist (above the well is open); real spins still count', () => {
   // A stack one row below the top next to the spawn, the usual shape just before a top out: turn, move, turn.
   for (const [col, seq] of [[2, ['CW', 'L', 'CW']], [6, ['CCW', 'R', 'CCW']]]) {
     const g = classicGame();
@@ -692,7 +692,7 @@ test('Classic: a T turned flat against the ceiling is not a T-spin (above the we
     assert(g.piece.rot === 2 && g.cellsOf().some(([, y]) => y === 19) && !g.fitsAt(g.piece, 2, g.piece.x, g.piece.y - 1), 'the T points down, flat in the top row');
     let r; g.on('lock', (x) => { r = x; });
     g.lock();
-    assert(!r.mini && !r.tspin && r.score === 0, 'column ' + col + ', ' + seq.join(' ') + ': no spin, no score ' + JSON.stringify({ mini: r.mini, tspin: r.tspin, score: r.score }));
+    assert(!r.mini && !r.twist && r.score === 0, 'column ' + col + ', ' + seq.join(' ') + ': no spin, no score ' + JSON.stringify({ mini: r.mini, twist: r.twist, score: r.score }));
   }
   // Every spot in the top row a T can reach over any one column built to row 18, set right after a turn: never a spin.
   for (let col = 0; col < 10; col++) {
@@ -704,10 +704,10 @@ test('Classic: a T turned flat against the ceiling is not a T-spin (above the we
       const g = mk();
       Object.assign(g.piece, spot, { lastRot: true, kick: 0 });
       const r = g.lock();
-      assert(r && !r.mini && !r.tspin, 'column ' + col + ', ' + JSON.stringify(spot) + ': no spin at the ceiling');
+      assert(r && !r.mini && !r.twist, 'column ' + col + ', ' + JSON.stringify(spot) + ': no spin at the ceiling');
     }
   }
-  // Real blocks still count, in the top row too: a T turned under an overhang in row 19 is a T-spin double.
+  // Real blocks still count, in the top row too: a T turned under an overhang in row 19 is a twist double.
   let g = classicGame();
   g.replacePiece({ id: 'T' });
   for (let y = 0; y <= 18; y++) for (let x = y < 17 ? 1 : 0; x < 10; x++) g.board.set(x, y, 8);
@@ -715,8 +715,8 @@ test('Classic: a T turned flat against the ceiling is not a T-spin (above the we
   g.board.set(3, 19, 8); g.board.set(5, 19, 8);
   Object.assign(g.piece, { rot: 2, x: 3, y: 17, lastRot: true, kick: 0 });
   let r = g.lock();
-  assert(r.tspin && r.lines === 2 && r.score > 0, 'a T-spin double under an overhang in the top row');
-  // And at the bottom of a Classic well, the same T-spin double and Mini as in Relaxed.
+  assert(r.twist && r.lines === 2 && r.score > 0, 'a twist double under an overhang in the top row');
+  // And at the bottom of a Classic well, the same twist double and Mini as in Relaxed.
   const slot = () => {
     const c = classicGame(4);
     const fill = (y, row) => { for (let x = 0; x < 10; x++) if (row[x] === 'X') c.board.set(x, y, 8); };
@@ -729,12 +729,12 @@ test('Classic: a T turned flat against the ceiling is not a T-spin (above the we
   g = slot();
   Object.assign(g.piece, { rot: 2, x: 2, y: 0, lastRot: true });
   r = g.lock();
-  assert(r.tspin && r.lines === 2 && r.score > 0, 'a T-spin double under an overhang in Classic');
+  assert(r.twist && r.lines === 2 && r.score > 0, 'a twist double under an overhang in Classic');
   g = slot();
   g.board.set(2, 0, 0); g.board.set(2, 2, 8);
   Object.assign(g.piece, { rot: 2, x: 2, y: 0, lastRot: true, kick: 1 });
   r = g.lock();
-  assert(r.mini && !r.tspin && r.score > 0, 'a T-spin Mini under an overhang in Classic');
+  assert(r.mini && !r.twist && r.score > 0, 'a mini twist under an overhang in Classic');
 });
 
 console.log('puzzles');
@@ -755,7 +755,7 @@ function replay(p) {
       const ok = m === 'L' ? g.move(-1) : m === 'R' ? g.move(1) : m === 'D' ? g.lower() === 'moved' : m === 'CW' ? g.rotate(1) : m === 'CCW' ? g.rotate(-1) : m === '180' ? g.rotate(2) : (res = g.drop());
       assert(ok, 'move ' + m + ' in ' + p.seed);
       if (m === 'CW' || m === 'CCW' || m === '180') {
-        // No hidden SRS hops: every turn the solution needs is in place or a sideways nudge.
+        // No hidden kick hops: every turn the solution needs is in place or a sideways nudge.
         const pc = g.piece, from = (pc.rot - (m === 'CW' ? 1 : m === 'CCW' ? -1 : 2) + 4) % 4;
         const [kx, ky] = Pieces.kicksFor(pc.type, from, pc.rot)[pc.kick];
         assert(ky === 0 && Math.abs(kx) <= 2, 'intuitive turn in ' + p.seed);
@@ -1580,11 +1580,11 @@ test('achievements: earned once, by the right events, none of them a gimme', () 
   assert.deepStrictEqual(A.check(st, { mode: 'play', r: { lines: 4, combo: 0, hand: true }, g }), [], 'only once');
   g.s.b2b = 8; g.s.score = 300000;
   // The streaks and combos count only by hand: the board's own streak of 8 is not enough.
-  assert.deepStrictEqual(A.check(st, { mode: 'play', r: { lines: 2, tspin: true, combo: 10 }, g }).map((a) => a.id).sort(), ['score250k', 'score50k']);
+  assert.deepStrictEqual(A.check(st, { mode: 'play', r: { lines: 2, twist: true, combo: 10 }, g }).map((a) => a.id).sort(), ['score250k', 'score50k']);
   g.s.hb2b = 8; g.s.hcombo = 10;
-  const big = A.check(st, { mode: 'play', r: { lines: 2, tspin: true, combo: 10, hand: true }, g }).map((a) => a.id).sort();
+  const big = A.check(st, { mode: 'play', r: { lines: 2, twist: true, combo: 10, hand: true }, g }).map((a) => a.id).sort();
   assert.deepStrictEqual(big, ['b2b3', 'b2b8', 'combo10', 'combo5', 'tsd'].sort());
-  assert.deepStrictEqual(A.check(st, { mode: 'classic', score: 120000, level: 10, tetrises: 1 }).map((a) => a.id).sort(), ['cl_100k', 'cl_l10']);
+  assert.deepStrictEqual(A.check(st, { mode: 'classic', score: 120000, level: 10, quads: 1 }).map((a) => a.id).sort(), ['cl_100k', 'cl_l10']);
   st.factory.droppers = 3;
   assert.deepStrictEqual(A.check(st, { mode: 'factory' }).map((a) => a.id), ['fac_three']);
   assert.deepStrictEqual(A.check(st, { mode: 'puzzle', diff: 'H', firstTry: true, hinted: true, mods: [] }), [], 'a hinted solve is not a Hard Nut');
@@ -1749,11 +1749,11 @@ test('achievements pay a modest share: bands, the old order kept, a total well u
     quad: 15, tsd: 25, combo5: 40, b2b3: 50, lines150: 50, toolbox: 50, score50k: 60, tst: 80, pc: 120, mini2: 150,
     combo10: 200, golden_ts: 200, pace33: 250, quads4: 250, lines500: 250, b2b8: 300, tst_b2b: 300, old_growth: 300,
     pc_open: 300, it_showman: 300, pc3: 400, pc_b2b: 400, all_items: 400, it_sweep: 400, score250k: 500, sb_combos:
-    500, tspin100: 600, clean40: 700, chain20: 800, pace67: 1000, pc_tspin: 1000, quads10: 1200, pc10: 1500, tst10:
-    1500, b2b20: 1500, golden20: 1500, million: 2000, purist: 2500, lines5000: 3000, cl_tetris4: 40, cl_l10: 50,
-    cl_100k: 60, cl_l15: 150, cl_300k: 200, cl_t25: 1500, cl_l20: 1500, cl_1m: 3000, cl_games100: 120, cl_tetris10:
-    200, cl_nohold: 250, cl_pc: 300, cl_tst: 300, cl_sprint: 300, cl_tspin10: 350, cl_quads4: 300, cl_b2b8: 600,
-    cl_combo10: 400, cl_allquads: 700, cl_sprint60: 2000, cl_nohold20: 2000, cl_combo15: 1500, cl_l25: 2500,
+    500, twist100: 600, clean40: 700, chain20: 800, pace67: 1000, pc_twist: 1000, quads10: 1200, pc10: 1500, tst10:
+    1500, b2b20: 1500, golden20: 1500, million: 2000, purist: 2500, lines5000: 3000, cl_fourq: 40, cl_l10: 50,
+    cl_100k: 60, cl_l15: 150, cl_300k: 200, cl_t25: 1500, cl_l20: 1500, cl_1m: 3000, cl_games100: 120, cl_tenq:
+    200, cl_nohold: 250, cl_pc: 300, cl_tst: 300, cl_dash: 300, cl_twist10: 350, cl_quads4: 300, cl_b2b8: 600,
+    cl_combo10: 400, cl_allquads: 700, cl_dash50: 2000, cl_nohold20: 2000, cl_combo15: 1500, cl_l25: 2500,
     pz_hard: 40, pz_hold: 30, pz_daily: 60, pz_streak: 80, pz_wild: 100, pz_hard25: 150, pz_500: 1000, pz_d100:
     1500, pz_h50: 2000, pz_clean: 120, pz_daily3: 150, pz_spin: 250, pz_fast: 300, pz_wild3: 300, pz_first20: 400,
     pz_hfirst25: 500, pz_h100: 600, pz_wildH: 1500, pz_daily30: 2000, pz_first100: 3000, lu_triathlon: 150,
@@ -1785,7 +1785,7 @@ test('achievements: a fresh save and a short ordinary game earn nothing', () => 
   const normal = A.LIST.filter((a) => a.tier !== 'legend').map((a) => a.pay), legend = A.LIST.filter((a) => a.tier === 'legend').map((a) => a.pay);
   assert(Math.max(...normal) < Math.min(...legend), 'a legendary one pays more than any other');
   // Nothing on a fresh save, whatever the event.
-  for (const mode of ['tick', 'play', 'classic', 'puzzle']) assert.deepStrictEqual(A.check(st, { mode, r: { lines: 0, combo: 0 }, g: new Game({ w: 10, h: 20, seed: 2 }), score: 0, level: 1, lines: 0, tetrises: 0, ms: 0, diff: 'E', firstTry: false, mods: [] }), [], mode);
+  for (const mode of ['tick', 'play', 'classic', 'puzzle']) assert.deepStrictEqual(A.check(st, { mode, r: { lines: 0, combo: 0 }, g: new Game({ w: 10, h: 20, seed: 2 }), score: 0, level: 1, lines: 0, quads: 0, ms: 0, diff: 'E', firstTry: false, mods: [] }), [], mode);
   // An ordinary player: each piece goes where it leaves the flattest stack (tried out, then taken back).
   const bot = (g, n, onLock, before) => {
     const place = (rot, x) => { for (let k = 0; k < rot; k++) g.rotate(1); for (let k = 0; k < 10; k++) g.moveToward(x); return g.drop(); };
@@ -1833,7 +1833,7 @@ test('achievements: a fresh save and a short ordinary game earn nothing', () => 
   // The same player in Classic: a piece a second, levels every ten lines.
   const cg = new Game({ w: 10, h: 20, seed: 12, freeHold: false });
   let cl = 0, tet = 0, t = 0;
-  bot(cg, 150, (r) => { cl += r.lines; tet += r.lines >= 4 ? 1 : 0; t += 1000; earned.push(...A.check(st, { mode: 'classic', r, g: cg, score: cg.s.score, level: 1 + Math.floor(cl / 10), lines: cl, tetrises: tet, ms: t }).map((a) => a.id)); });
+  bot(cg, 150, (r) => { cl += r.lines; tet += r.lines >= 4 ? 1 : 0; t += 1000; earned.push(...A.check(st, { mode: 'classic', r, g: cg, score: cg.s.score, level: 1 + Math.floor(cl / 10), lines: cl, quads: tet, ms: t }).map((a) => a.id)); });
   assert(cl >= 40);
   assert.deepStrictEqual(earned, [], 'an ordinary Classic game earns nothing: ' + earned + ' ' + cl + ' lines, ' + JSON.stringify(cg.s.clears));
   // An Easy first-try solve.
@@ -1849,7 +1849,7 @@ test('achievements: every new one is earned by its own feat, once', () => {
   const asPlayed = (s, o) => Object.assign(s, o || {}, o && 'lines' in o && !('own' in o) ? { own: o.lines } : null, o && 'pieces' in o && !('cells' in o) ? { cells: o.pieces * 4 } : null);
   const board = (o) => { const g = new Game({ w: 10, h: 20, seed: 1 }); asPlayed(g.s, o); return g; };
   const play = (r, s) => ({ mode: 'play', r: Object.assign({ lines: 0, combo: 0 }, r), g: board(s) });
-  const classic = (o, s) => Object.assign({ mode: 'classic', r: { lines: 0, combo: 0 }, g: board(s), score: 0, level: 1, lines: 0, tetrises: 0, ms: 1e7 }, o);
+  const classic = (o, s) => Object.assign({ mode: 'classic', r: { lines: 0, combo: 0 }, g: board(s), score: 0, level: 1, lines: 0, quads: 0, ms: 1e7 }, o);
   const puzzle = (o) => Object.assign({ mode: 'puzzle', diff: 'H', firstTry: false, hinted: false, undos: 0, ms: 60000, mods: [] }, o);
   const today = L.dateKey();
   const cases = [
@@ -1857,21 +1857,21 @@ test('achievements: every new one is earned by its own feat, once', () => {
     ['toolbox', play({ lines: 1 }, { items: { reroll: 1, pick: 1, drill: 1, flip: 1, double: 1 } })],
     ['mini2', play({ lines: 2, mini: true }), null, true],
     ['mini2', play({ lines: 2, mini: true, hand: true })],
-    ['golden_ts', play({ lines: 2, tspin: true, golden: true, hand: true }), null, true],
-    ['golden_ts', play({ lines: 3, tspin: true, golden: true, hand: true })],
+    ['golden_ts', play({ lines: 2, twist: true, golden: true, hand: true }), null, true],
+    ['golden_ts', play({ lines: 3, twist: true, golden: true, hand: true })],
     ['quads4', play({ lines: 1 }, { quadRun: 4 }), null, true],
     ['quads4', play({ lines: 1 }, { hquads: 4 })],
     ['lines500', play({ lines: 1 }, { lines: 500 })],
-    ['tst_b2b', play({ lines: 3, tspin: true, b2b: true, hand: true }, { hb2b: 0 }), null, true],
-    ['tst_b2b', play({ lines: 3, tspin: true, b2b: true, hand: true }, { hb2b: 1 })],
+    ['tst_b2b', play({ lines: 3, twist: true, b2b: true, hand: true }, { hb2b: 0 }), null, true],
+    ['tst_b2b', play({ lines: 3, twist: true, b2b: true, hand: true }, { hb2b: 1 })],
     ['old_growth', play({ lines: 0 }, { pieces: 2000, startedAt: Date.now() - 31 * 86400e3 })],
     ['pc_b2b', play({ lines: 4, perfect: true, b2b: true }, { hb2b: 1 }), null, true],
     ['pc_b2b', play({ lines: 4, perfect: true, b2b: true, hand: true }, { hb2b: 1 })],
-    ['tspin100', play({ lines: 0 }, { tspins: 100 }), null, true],
-    ['tspin100', play({ lines: 0 }, { htspins: 100 })],
+    ['twist100', play({ lines: 0 }, { twists: 100 }), null, true],
+    ['twist100', play({ lines: 0 }, { htwists: 100 })],
     ['all_items', play({ lines: 0 }), (st) => { for (const id of L.ITEM_ORDER) st.stats.items.used[id] = 1; }],
     ['pc_open', play({ lines: 4, perfect: true }, { pieces: 10, lines: 4 })],
-    ['pc_tspin', play({ lines: 2, tspin: true, perfect: true, hand: true })],
+    ['pc_twist', play({ lines: 2, twist: true, perfect: true, hand: true })],
     ['quads10', play({ lines: 4 }, { hquads: 10 })],
     ['golden20', play({ lines: 1, golden: true, chain: 20 }), null, true],
     ['golden20', play({ lines: 1, golden: true, hand: true }, { goldRun: 5 })],
@@ -1902,15 +1902,15 @@ test('achievements: every new one is earned by its own feat, once', () => {
     ['cl_b2b8', classic({}, { b2b: 8 })],
     ['cl_combo15', classic({ r: { lines: 1, combo: 15 } })],
     ['cl_games100', classic({}), (st) => { st.stats.classic.games = 100; }],
-    ['cl_tetris10', classic({ tetrises: 10 })],
+    ['cl_tenq', classic({ quads: 10 })],
     ['cl_nohold', classic({ level: 10 })],
     ['cl_pc', classic({ r: { lines: 2, combo: 0, perfect: true } })],
-    ['cl_tst', classic({ r: { lines: 3, combo: 0, tspin: true } })],
-    ['cl_sprint', classic({ lines: 40, ms: 89000, tetrises: 1 })],
-    ['cl_tspin10', classic({}, { tspins: 10 })],
+    ['cl_tst', classic({ r: { lines: 3, combo: 0, twist: true } })],
+    ['cl_dash', classic({ lines: 40, ms: 89000, quads: 1 })],
+    ['cl_twist10', classic({}, { twists: 10 })],
     ['cl_combo10', classic({ r: { lines: 1, combo: 10 } })],
-    ['cl_allquads', classic({ lines: 40, tetrises: 10 })],
-    ['cl_sprint60', classic({ lines: 40, ms: 49000, tetrises: 1 })],
+    ['cl_allquads', classic({ lines: 40, quads: 10 })],
+    ['cl_dash50', classic({ lines: 40, ms: 49000, quads: 1 })],
     ['cl_nohold20', classic({ level: 20 })],
     ['cl_l25', classic({ level: 25 })],
     ['pz_clean', puzzle({ firstTry: true, hinted: true }), null, true],
@@ -1925,7 +1925,7 @@ test('achievements: every new one is earned by its own feat, once', () => {
     ['pz_wildH', puzzle({}), (st) => { for (const m of Object.keys(L.Puzzles.MODS)) st.stats.puzzle.mods[m] = { seen: 1, solved: 1, hard: 1 }; }],
     ['pz_daily30', puzzle({}), (st) => { st.stats.puzzle.bestDailyRun = 30; }],
     ['pz_first100', puzzle({}), (st) => { st.stats.puzzle.bestFirstRun = 100; }],
-    ['lu_triathlon', { mode: 'tick' }, (st) => { st.history[today] = { quad: 1, tetris: 1, hard: 1 }; }],
+    ['lu_triathlon', { mode: 'tick' }, (st) => { st.history[today] = { quad: 1, cquad: 1, hard: 1 }; }],
     ['lu_hours10', { mode: 'tick' }, (st) => { st.stats.timeMs.total = 10 * 3600e3; }],
     ['lu_days30', { mode: 'tick' }, (st) => { st.stats.days = 30; }],
     ['lu_100k', { mode: 'tick' }, (st) => { st.stats.lines.earned = 5e4 + 100; st.stats.lines.rewound = 200; }, true],
@@ -1998,8 +1998,8 @@ test('achievement stats: by hand — items break the hand streaks, an empty boar
   r = quad(null, true);
   assert(!r.hand && r.perfect && g.s.b2b === 2 && g.s.hb2b === -1 && g.s.hquads === 0 && g.s.hperfect === 2);
   assert(g.s.hand, 'the board it emptied is a fresh start');
-  assert(!A.check(L.defaultState(), { mode: 'play', r, g }).some((a) => a.id === 'pc' || a.id === 'quad'), 'neither a hand quad nor a hand perfect clear');
-  // Lasers clear plain lines: they feed neither back-to-back streak.
+  assert(!A.check(L.defaultState(), { mode: 'play', r, g }).some((a) => a.id === 'pc' || a.id === 'quad'), 'neither a hand quad nor a hand spotless clear');
+  // Lasers clear plain lines: they feed neither streak streak.
   for (let i = 0; i < 4; i++) { r = quad('laser'); assert(!r.hand && r.plain === 4); }
   assert(g.s.b2b === -1 && g.s.hb2b === -1 && g.s.hchain === 0);
   assert(!A.check(L.defaultState(), { mode: 'play', r, g }).some((a) => /^(b2b|chain|quads|combo)/.test(a.id)));
@@ -2010,7 +2010,7 @@ test('achievement stats: by hand — items break the hand streaks, an empty boar
   g.replacePiece({ id: 'I' }); g.rotate(1); while (g.move(-1)); g.drop();
   g.undo(); g.noteItem(true);
   assert(g.s.hb2b === -1 && !g.s.hand);
-  // A Settle's perfect clear is not by hand, but the empty board it leaves is a fresh start.
+  // A Settle's spotless clear is not by hand, but the empty board it leaves is a fresh start.
   g.board.cells.fill(0);
   for (let i = 0; i < 20; i++) g.board.set(i % 10, 2 + Math.floor(i / 10) * 3, 8);
   r = g.settle(); g.noteItem(true);
@@ -2132,8 +2132,8 @@ console.log('power-ups');
     r = k.lock();
     assert(r.covered && r.lines && Combos.detect(r, k).includes('keyhole'));
     const t = new Game({ w: 10, h: 20, seed: 1 });
-    assert(!Combos.detect({ lines: 2, tspin: true, b2b: false }, t).includes('twinspin'));
-    assert(Combos.detect({ lines: 2, tspin: true, b2b: true }, t).includes('twinspin'));
+    assert(!Combos.detect({ lines: 2, twist: true, b2b: false }, t).includes('twinspin'));
+    assert(Combos.detect({ lines: 2, twist: true, b2b: true }, t).includes('twinspin'));
     assert(!Combos.get('bare'), 'every combo says exactly what to do');
   });
 
@@ -2247,8 +2247,8 @@ console.log('power-ups');
     assert.strictEqual(Luck.DOUBLE_X, 2);
   });
 
-  test('Double or Nothing and the extra line: a quad set by hand, a T-spin or a mini; a shaped piece\'s quad is neither', () => {
-    assert(Luck.doubleWins({ lines: 4 }) && Luck.doubleWins({ lines: 2, tspin: true }) && Luck.doubleWins({ lines: 1, tspin: true }) && Luck.doubleWins({ lines: 2, mini: true }));
+  test('Double or Nothing and the extra line: a quad set by hand, a twist or a mini; a shaped piece\'s quad is neither', () => {
+    assert(Luck.doubleWins({ lines: 4 }) && Luck.doubleWins({ lines: 2, twist: true }) && Luck.doubleWins({ lines: 1, twist: true }) && Luck.doubleWins({ lines: 2, mini: true }));
     assert(!Luck.doubleWins({ lines: 3 }) && !Luck.doubleWins({ lines: 4, plain: 4 }));
     // The pieces a Noodle, a Giant and a Blueprint make (r.tag): real quads on the board, with no bonus.
     const noodle = (() => { const g = quadWell(); g.replacePiece({ id: Pieces.customType([[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [5, 0]]).id, tag: 'noodle' }); return standUp(g); })();
@@ -2256,7 +2256,7 @@ console.log('power-ups');
     const blue = (() => { const g = quadWell(); g.replacePiece({ id: Pieces.customType([[0, 0], [0, 1], [0, 2], [0, 3]]).id, tag: 'blueprint' }); while (g.move(1)); return g.drop(); })();
     const hand = standUp(quadWell());
     for (const [name, r, wins] of [['noodle', noodle, false], ['giant', giant, false], ['blueprint', blue, false], ['hand quad', hand, true],
-      ['T-spin', { lines: 1, tspin: true }, true], ['mini', { lines: 1, mini: true }, true]]) {
+      ['twist', { lines: 1, twist: true }, true], ['mini', { lines: 1, mini: true }, true]]) {
       if (r.type) assert(r.lines >= 4, name + ' clears four: ' + r.lines);
       assert.strictEqual(Luck.doubleWins(r), wins, name + ' and Double or Nothing');
       // Pay.clear agrees: the extra Standard line comes with exactly the clears that win.
@@ -2265,14 +2265,14 @@ console.log('power-ups');
       assert.strictEqual(won.double, wins ? 'won' : 'lost', name);
     }
     assert.strictEqual(noodle.tag, 'noodle');
-    // What the buyer reads says the same: a quad set by hand, never a shaped piece's, a T-spin or a mini.
+    // What the buyer reads says the same: a quad set by hand, never a shaped piece's, a twist or a mini.
     const desc = L.ITEMS.double.desc;
-    assert(/quad set by hand/.test(desc) && /T-spin/.test(desc) && /\bmini\b/.test(desc), desc);
+    assert(/quad set by hand/.test(desc) && /twist/.test(desc) && /\bmini\b/.test(desc), desc);
     for (const id of Luck.SHAPED) assert(desc.includes(L.ITEMS[id].name), 'the description names ' + L.ITEMS[id].name + ': ' + desc);
     // And so does the README's Luck row.
     const readme = require('fs').readFileSync(require('path').join(__dirname, '..', 'README.md'), 'utf8');
     const row = (readme.match(/Double or Nothing \(\d+,[^)]*\)/) || [''])[0];
-    assert(/quad set by hand/.test(row) && /T-spin or a mini/.test(row), 'README: ' + row);
+    assert(/quad set by hand/.test(row) && /twist or a mini/.test(row), 'README: ' + row);
     for (const id of Luck.SHAPED) assert(row.includes(L.ITEMS[id].name), 'README names ' + L.ITEMS[id].name + ': ' + row);
   });
 
@@ -3100,7 +3100,7 @@ console.log('board sizes');
   test('sizes: the same clear pays w/10 of Standard, at every width (and never faster per cell)', () => {
     // What PlayMode.onLock pays (js/items.js, Pay.clear): lines x scale, plus a bonus for a difficult clear (w/10 of a
     // Standard line up to 10 wide; wider, (10/w)² of one, as quads are easier there), x the multiplier, rounded down.
-    const pay = (lines, difficult, mult, w) => L.Pay.clear({ mult }, { lines, tspin: difficult && lines < 4 }, w).pay;
+    const pay = (lines, difficult, mult, w) => L.Pay.clear({ mult }, { lines, twist: difficult && lines < 4 }, w).pay;
     const cap = L.Chain.RELAXED.cap;
     for (let w = 4; w <= 20; w++) {
       for (const [lines, diff, mult] of [[1, false, 1], [2, false, 1], [4, true, 1], [4, true, 1.75], [2, true, cap], [4, true, cap * L.Luck.GOLD_X]]) {
@@ -3115,7 +3115,7 @@ console.log('board sizes');
     assert.strictEqual(pay(4, true, 1, 5), 2.5, 'a quad 5 wide');
     assert.strictEqual(pay(1, false, 1, 20), 2, 'a single 20 wide');
     assert.strictEqual(pay(4, true, 1, 20), 8.25, 'a quad 20 wide: its bonus is a quarter of a Standard line');
-    assert.strictEqual(pay(1, true, 1, 20), 2.25, 'a T-spin single 20 wide: two lines and a quarter');
+    assert.strictEqual(pay(1, true, 1, 20), 2.25, 'a twist single 20 wide: two lines and a quarter');
   });
   test('sizes: the most a clear can pay, at every width; Classic never pays more per line than Free Play', () => {
     const { Chain, Pay } = L, cap = Chain.RELAXED.cap;
@@ -3129,15 +3129,15 @@ console.log('board sizes');
       else assert(most < w, w + ' wide: a capped quad pays less than w (' + most + ')');
     }
     assert.deepStrictEqual([12, 20].map((w) => Pay.clear({ mult: capAt(w) }, { lines: 4 }, w).pay), [8.68, 9.32]);
-    // Classic: a capped tetris banks four lines at its rate and its cap.
+    // Classic: a capped quad banks four lines at its rate and its cap.
     const C = Chain.CLASSIC;
     assert.strictEqual(Library.bank(4 * C.rate * C.cap), 4.2);
     for (let n = 0; n < 100; n++) assert(C.rate * Chain.mult(n, 'classic') <= Chain.mult(n) + 1e-9, 'Classic pays no more a line at a streak of ' + n);
   });
   test('sizes: the difficult-clear bonus is at most one Standard line, so a T a bag never earns more on a wide board', () => {
-    // The best a bag can do: its one T clears a line with a T-spin, the other 28 - w cells go as quads; at the cap.
+    // The best a bag can do: its one T clears a line with a twist, the other 28 - w cells go as quads; at the cap.
     const bag = (w) => {
-      const cap = L.Chain.RELAXED.cap, tss = L.Pay.clear({ mult: cap }, { lines: 1, tspin: true }, w).pay, quad = L.Pay.clear({ mult: cap }, { lines: 4 }, w).pay;
+      const cap = L.Chain.RELAXED.cap, tss = L.Pay.clear({ mult: cap }, { lines: 1, twist: true }, w).pay, quad = L.Pay.clear({ mult: cap }, { lines: 4 }, w).pay;
       return tss + quad * (28 - w) / (4 * w);
     };
     const std = bag(10);
@@ -3234,7 +3234,7 @@ console.log('board sizes');
     assert.strictEqual(st.lines, l0 + 1);
     assert.strictEqual(L.fmtInt(st.lines), String(l0 + 1));
   });
-  test('sizes: at 4 x 8, 4 x 40, 20 x 8 and 20 x 40 every piece spawns inside (the I flat), lines clear, a perfect clear is seen, and undo takes it back', () => {
+  test('sizes: at 4 x 8, 4 x 40, 20 x 8 and 20 x 40 every piece spawns inside (the I flat), lines clear, a spotless clear is seen, and undo takes it back', () => {
     for (const [w, h] of EXTREMES) {
       const g = new Game({ w, h, seed: 3 });
       sane(g, w + 'x' + h + ' spawn');
@@ -3252,7 +3252,7 @@ console.log('board sizes');
       while (g.move(-1));
       const r = g.drop();
       assert.strictEqual(r.lines, 1, w + 'x' + h + ' one line');
-      assert(r.perfect, w + 'x' + h + ' perfect clear');
+      assert(r.perfect, w + 'x' + h + ' spotless clear');
       assert(g.board.isEmpty());
       sane(g, w + 'x' + h + ' after the clear');
       const res = g.undo();
@@ -3261,7 +3261,7 @@ console.log('board sizes');
       sane(g, w + 'x' + h + ' after undo');
     }
   });
-  test('sizes: a T-spin double against the wall and in the middle, at both widths', () => {
+  test('sizes: a twist double against the wall and in the middle, at both widths', () => {
     for (const w of [4, 20]) {
       for (const at of w === 4 ? [0] : [0, 8, 17]) {
         const g = new Game({ w, h: 8, seed: 4 });
@@ -3272,7 +3272,7 @@ console.log('board sizes');
         Object.assign(g.piece, { rot: 2, x: at, y: 0, lastRot: true });
         assert(g.fitsAt(g.piece, 2, at, 0), 'the T fits its slot');
         const r = g.lock();
-        assert(r.tspin && r.lines === 2, w + ' wide at ' + at + ': ' + JSON.stringify({ tspin: r.tspin, lines: r.lines }));
+        assert(r.twist && r.lines === 2, w + ' wide at ' + at + ': ' + JSON.stringify({ twist: r.twist, lines: r.lines }));
       }
     }
   });
@@ -3397,7 +3397,7 @@ console.log('board sizes');
     assert.deepStrictEqual(ids(st, on(5, 20, { lines: 300 })), ['lines150']);
     st = L.defaultState();
     assert.deepStrictEqual(ids(st, on(20, 20, { lines: 75 })), ['lines150'], '75 lines 20 wide are 150');
-    // A quad, a perfect clear and a combo on a narrow board: nothing. The same at Standard width and wider: earned.
+    // A quad, a spotless clear and a combo on a narrow board: nothing. The same at Standard width and wider: earned.
     st = L.defaultState();
     assert.deepStrictEqual(ids(st, on(4, 20, { hcombo: 10, hperfect: 10 }, { lines: 4, perfect: true, hand: true })), []);
     assert.deepStrictEqual(ids(st, on(9, 20, { score: 1e6 }, { lines: 4, hand: true })), [], '9 wide is still narrow');
@@ -3710,7 +3710,7 @@ console.log('board recipe');
       fill(g, ['XXXXXXXX..', 'XXXXXXXX..', 'AAAAAAAAAA']);
       const pc = dropAt(g, 'O', 8);
       assert.deepStrictEqual(pc.rows, [1, 2]);
-      assert(pc.perfect, 'a perfect clear with only the kept cells left (clean)');
+      assert(pc.perfect, 'a spotless clear with only the kept cells left (clean)');
       g.board.cells.fill(0);
       fill(g, ['A.........', '..........']);
       g.board.set(0, 3, 5); g.board.set(2, 2, 6);
@@ -3724,7 +3724,7 @@ console.log('board recipe');
     fill(g, ['XXXXXXXXX.', 'XXXXXXXXX.', 'XFXXXXXXX.', 'FXXXXXFXX.']);
     const r = dropAt(g, 'I', 7, 1);
     assert.deepStrictEqual([r.n, r.c, r.lines, r.plain, r.quad, r.ownCells, r.own], [2, 2, 4, 2, false, 37, 3.7]);
-    assert.strictEqual(g.s.b2b, -1, 'not a quad: no back-to-back');
+    assert.strictEqual(g.s.b2b, -1, 'not a quad: no streak');
     assert.strictEqual(g.s.own, 3.7);
     assert.strictEqual(g.s.lines, 4, 'lines stay rows cleared');
     assert.strictEqual(Pay.clear({ mult: 1 }, r, g.rules).pay, 3.7, 'pays its own cells: 37 of 40');
@@ -3742,7 +3742,7 @@ console.log('board recipe');
     });
   });
 
-  test('recipe: an unrated board has no difficult clears: four rows keep no streak, a T-spin is no link, pay is own × lk at ×1', () => {
+  test('recipe: an unrated board has no difficult clears: four rows keep no streak, a twist is no link, pay is own × lk at ×1', () => {
     withParts([{ key: 'tunr', order: 10, rules: (rc, R) => { R.rated = false; R.E = 5; } }], () => {
       const g = new Game({ w: 10, h: 20, seed: 2, recipe: {} });
       assert.deepStrictEqual([g.rules.rated, g.rules.quad, g.rules.lk], [false, 4, 0.8]);
@@ -3763,7 +3763,7 @@ console.log('board recipe');
       t.replacePiece({ id: 'T' });
       Object.assign(t.piece, { rot: 2, x: 2, y: 0, lastRot: true });
       const r = t.lock();
-      assert(r.tspin && r.lines === 2 && !r.b2b && t.s.b2b === -1, 'a T-spin scores its points and is no link');
+      assert(r.twist && r.lines === 2 && !r.b2b && t.s.b2b === -1, 'a twist scores its points and is no link');
       assert.strictEqual(r.score, 1200);
       assert.strictEqual(Pay.clear({ mult: 1 }, r, t.rules).pay, 1.6);
     });
@@ -4277,11 +4277,10 @@ console.log('sound and music');
   const A_MINOR = [9, 11, 0, 2, 4, 5, 7]; // A B C D E F G
   const midiOf = (f) => 69 + 12 * Math.log2(f / 440);
   const hzOf = (m) => 440 * Math.pow(2, (m - 69) / 12);
-  test('Classic plays Korobeiniki note for note, in its own key (A minor)', () => {
-    // The tune as it is usually written, the A part and the B part, in eighths.
-    const A = 'E5 2,B4 1,C5 1,D5 2,C5 1,B4 1,A4 2,A4 1,C5 1,E5 2,D5 1,C5 1,B4 3,C5 1,D5 2,E5 2,C5 2,A4 2,A4 4,' +
-      '- 1,D5 2,F5 1,A5 2,G5 1,F5 1,E5 3,C5 1,E5 2,D5 1,C5 1,B4 2,B4 1,C5 1,D5 2,E5 2,C5 2,A4 2,A4 2,- 2';
-    const B = 'E5 4,C5 4,D5 4,B4 4,C5 4,A4 4,G#4 4,B4 2,- 2,E5 4,C5 4,D5 4,B4 4,C5 2,E5 2,A5 4,G#5 8';
+  test('Classic plays Hush, Lull\'s own tune, note for note, in its own key (A minor)', () => {
+    // The tune as written in js/audio.js, the A part and the B part, in eighths.
+    const A = 'G4 3,B4 1,E5 4,G5 2,E5 2,C5 4,D5 3,B4 1,A4 2,G4 2,A4 6,- 2,A4 2,D5 2,F5 3,E5 1,E5 4,D5 2,B4 2,G4 2,B4 2,D5 2,E5 2,C5 3,B4 1,A4 4';
+    const B = 'A4 2,C5 2,E5 4,F#5 2,E5 2,D5 2,B4 2,C5 4,B4 2,A4 2,G#4 6,- 2,E5 2,A5 4,E5 2,F#5 3,E5 1,D5 2,B4 2,C5 2,E5 2,B4 2,A4 2,G#4 2,B4 2,E5 4';
     assert.strictEqual(flat(SONG.tunes.A), A);
     assert.strictEqual(flat(SONG.tunes.B), B);
     assert.strictEqual(flat(SONG.tunes.slowB), B.split(',').map((t) => t.split(' ')[0] + ' ' + t.split(' ')[1] * 2).join(','), 'the floating bridge is the same line at half time');
@@ -4290,6 +4289,24 @@ console.log('sound and music');
     const sections = [...new Set(SONG.bars.map((b) => b.section))];
     assert(sections.length >= 7 && SONG.bars.length >= 48 && SONG.loopFrom === 4, 'a long suite of sections, looping after the intro');
     assert(SONG.bars.filter((b) => b.lead && b.lead === SONG.tunes.A[0]).length >= 3, 'the theme comes round more than once');
+  });
+  // Lull's melodies are its own: no stretch of six intervals in a row (seven notes, in any key) of any line the music
+  // plays is found in the well-known folk tune Classic used to play (Korobeiniki, its A and B parts as usually written).
+  test('the music quotes no well-known melody: no six intervals in a row of Korobeiniki, in any key', () => {
+    const KNOWN = {
+      'Korobeiniki A': 'E5 B4 C5 D5 C5 B4 A4 A4 C5 E5 D5 C5 B4 C5 D5 E5 C5 A4 A4 D5 F5 A5 G5 F5 E5 C5 E5 D5 C5 B4 B4 C5 D5 E5 C5 A4 A4',
+      'Korobeiniki B': 'E5 C5 D5 B4 C5 A4 G#4 B4 E5 C5 D5 B4 C5 E5 A5 G#5',
+    };
+    const midi = (n) => { const m = /^([A-G])(#?)(\d)$/.exec(n); return { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[m[1]] + (m[2] ? 1 : 0) + (Number(m[3]) + 1) * 12; };
+    const steps = (ms) => ms.slice(1).map((m, i) => m - ms[i]);
+    const runs = (st, n) => new Set(st.map((_, i) => st.slice(i, i + n).join(',')).filter((r, i) => i + n <= st.length));
+    const known = new Set(Object.values(KNOWN).flatMap((t) => [...runs(steps(t.split(' ').map(midi)), 6)]));
+    const lines = Object.assign({}, SONG.tunes, { counter: SONG.bars.filter((b) => b.section === 'interlude').map((b) => b.lead), under: SONG.bars.filter((b) => b.under).map((b) => b.under) });
+    for (const [name, tune] of Object.entries(lines)) {
+      const ms = [].concat(...tune).map(([m]) => m).filter((m) => m != null);
+      const hit = [...runs(steps(ms), 6)].filter((r) => known.has(r));
+      assert.deepStrictEqual(hit, [], name + ' shares a run of six intervals with a known melody');
+    }
   });
   // Each section says what key it is in: A minor, but for the bridge (in time and floating), whose tune takes G# and whose
   // dominant takes F#, with no F anywhere: A melodic minor.
@@ -4367,7 +4384,7 @@ console.log('sound and music');
   });
   test('the default pack voices every sound the game plays, softly and in the music\'s key', () => {
     const fs = require('fs'), path = require('path'), dir = path.join(__dirname, '..', 'Game', 'js');
-    const played = new Set(['move', 'rotate', 'lower', 'lock', 'hold', 'clear', 'quad', 'tspin', 'perfect', 'combo', 'boom', 'drill']);
+    const played = new Set(['move', 'rotate', 'lower', 'lock', 'hold', 'clear', 'quad', 'twist', 'perfect', 'combo', 'boom', 'drill']);
     for (const f of fs.readdirSync(dir)) for (const m of fs.readFileSync(path.join(dir, f), 'utf8').matchAll(/\.play\('([a-z]+)'/g)) played.add(m[1]);
     // The factory plays its line's sounds through a table.
     const table = fs.readFileSync(path.join(dir, 'modes.js'), 'utf8').match(/LINE_SOUNDS = \{([^}]*)\}/);
@@ -4476,7 +4493,7 @@ console.log('sound and music');
       }
     } finally { Music.playBar = play; Music.echo = echo; Music.tempo = 1; Music.pos = null; }
   });
-  const EVENTS = [['move'], ['rotate'], ['lower'], ['lock'], ['hold'], ['blocked'], ['clear', 1], ['clear', 2], ['clear', 3], ['quad'], ['tspin'],
+  const EVENTS = [['move'], ['rotate'], ['lower'], ['lock'], ['hold'], ['blocked'], ['clear', 1], ['clear', 2], ['clear', 3], ['quad'], ['twist'],
     ['perfect'], ['combo', 3], ['combo', 9], ['boom'], ['drill'], ['buy'], ['error'], ['solve'], ['fail'], ['golden'], ['item'], ['stamp'],
     ['pack'], ['land'], ['bell'], ['sparkle-from-a-new-item']];
   test('every pitched voice of every pack lands in the key of each section, shape and register kept', () => {
@@ -4955,6 +4972,77 @@ require('./race-unit.cjs')({ L, test });
 // Battle, a board mode where cleared lines are thrown as pieces, and its AI (scripts/battle-unit.cjs).
 console.log('battle');
 require('./battle-unit.cjs')({ L, test });
+
+// Lull's own names, colours and voice: nothing of another game's brand in what ships or what documents it.
+console.log('own names, colours and voice');
+{
+  const fsx = require('fs'), pathx = require('path'), ROOT = pathx.join(__dirname, '..');
+  const BANNED = /tetris|t-spin|tspin|\bsrs\b|\bnes\b|nintendo|tetrimino/i;
+  test('no retired brand word (tetris, t-spin, tspin, srs, nes, nintendo, tetrimino) in Game/** or README.md', () => {
+    const files = [pathx.join(ROOT, 'README.md')];
+    const walk = (d) => { for (const e of fsx.readdirSync(d, { withFileTypes: true })) { const f = pathx.join(d, e.name); if (e.isDirectory()) walk(f); else files.push(f); } };
+    walk(pathx.join(ROOT, 'Game'));
+    const hits = [];
+    for (const f of files) {
+      if (/\.(png|jpe?g|gif|webp|ico|woff2?|otf|ttf|mp3|wav)$/i.test(f)) continue;
+      // Embedded audio and fonts are bytes, not words: their base64 is left out.
+      const text = fsx.readFileSync(f, 'utf8').replace(/(['"(,])[A-Za-z0-9+/=]{200,}/g, '$1');
+      text.split('\n').forEach((line, i) => { const m = BANNED.exec(line); if (m) hits.push(pathx.relative(ROOT, f) + ':' + (i + 1) + ' "' + m[0] + '"'); });
+    }
+    assert.deepStrictEqual(hits, []);
+  });
+  test('no piece wears the colour the familiar guideline gives it, in any palette of many hues', () => {
+    const GUIDE = { I: 185, O: 55, T: 285, S: 125, Z: 0, J: 220, L: 30 }, ids = Object.keys(GUIDE);
+    const hue = (h) => { const [r, g, b] = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255), mx = Math.max(r, g, b), d = mx - Math.min(r, g, b); return d ? 60 * (mx === r ? ((g - b) / d + 6) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4) : 0; };
+    const apart = (a, b) => Math.min(Math.abs(a - b), 360 - Math.abs(a - b));
+    let checked = 0;
+    for (const [id, p] of Object.entries(L.PALETTES)) {
+      if (!p.colors) continue;
+      const hs = ids.map((k) => hue(p.colors[L.Pieces.COLOR[k]]));
+      // One-hue palettes (Ink, Moss, Gold Leaf) tell the seven apart by value, not hue.
+      if (Math.max(...hs.map((h) => Math.max(...hs.map((x) => apart(h, x))))) < 60) continue;
+      checked++;
+      ids.forEach((k, i) => assert(apart(hs[i], GUIDE[k]) >= 30, id + ' ' + k + ': hue ' + Math.round(hs[i])));
+    }
+    assert(checked >= 5, 'the palettes of many hues: ' + checked);
+    assert.strictEqual(L.PALETTES.handheld.name, 'Moss');
+  });
+  test('the announcer: eleven whispered clips with where her speech is, credited to ElevenLabs; every line she is given has its clip', () => {
+    load(['voice-data.js']);
+    const KEYS = ['single', 'double', 'triple', 'quad', 'twist', 'twist_single', 'twist_double', 'streak', 'spotless', 'levelup', 'gameover'];
+    assert.deepStrictEqual(Object.keys(L.VOICE_CLIPS).sort(), KEYS.slice().sort());
+    assert.deepStrictEqual(Object.keys(L.VOICE_META).sort(), KEYS.slice().sort());
+    for (const k of KEYS) {
+      const m = L.VOICE_META[k], bytes = Buffer.from(L.VOICE_CLIPS[k], 'base64');
+      assert(bytes.length > 10000 && (bytes.slice(0, 3).toString() === 'ID3' || bytes[0] === 0xff), k + ' is an MP3');
+      assert(m.start >= 0 && m.end > m.start + 0.25 && m.end - m.start < 2 && Math.abs(m.gain) < 12, k + ' ' + JSON.stringify(m));
+    }
+    // The long silences before a few of her words are skipped (they start where she speaks).
+    assert(L.VOICE_META.gameover.start > 1.8 && L.VOICE_META.quad.start > 0.5 && L.VOICE_META.twist_single.start > 0.7);
+    const head = fsx.readFileSync(pathx.join(ROOT, 'Game', 'js', 'voice-data.js'), 'utf8').slice(0, 600), src = fsx.readFileSync(pathx.join(ROOT, 'Game', 'js', 'audio.js'), 'utf8');
+    assert(/ElevenLabs/.test(head) && /ElevenLabs/.test(src.slice(src.indexOf('the announcer (Classic)'))), 'credited as generated with ElevenLabs');
+    assert(!fsx.existsSync(pathx.join(__dirname, 'splice-voice.py')), 'the old splicing script is gone');
+    if (!L.Announcer) load(['audio.js']);
+    const A = L.Announcer, said = new Set();
+    for (const r of [{ lines: 1 }, { lines: 2 }, { lines: 3 }, { lines: 4 }, { lines: 4, b2b: true }, { twist: true, lines: 0 }, { twist: true, lines: 1 }, { twist: true, lines: 2 }, { twist: true, lines: 3 },
+      { mini: true, lines: 1 }, { lines: 2, perfect: true }]) for (const k of A.phrase(r, 3)) said.add(k);
+    said.add('gameover');
+    assert.deepStrictEqual([...said].sort(), KEYS.slice().sort(), 'every clip is used and no line lacks one');
+    assert.deepStrictEqual(A.phrase({ lines: 4, b2b: true, perfect: true }), ['streak', 'quad', 'spotless']);
+  });
+  test('saves from before the rename keep their twists, Classic quads, achievements and Classic settings', () => {
+    const o = (a, b) => a + b;
+    const before = JSON.stringify({ stats: { free: { [o('t', 'spins')]: 3, [o('t', 'spinLines')]: 4 } }, achievements: { [o('cl_tet', 'ris4')]: { at: 1 }, [o('pc_t', 'spin')]: { at: 2 }, cl_sprint60: { at: 3 } },
+      history: { d: { [o('tet', 'ris')]: 1, quad: 1 } }, free: { s: { [o('ht', 'spins')]: 2 }, classic: { [o('tet', 'rises')]: 5 }, recipe: { classic: { rand: o('n', 'es'), lock: o('n', 'es'), music: 'korobeiniki' } } } });
+    const st = L.loadState(JSON.parse(L.renameOld(before)));
+    assert.strictEqual(st.stats.free.twists, 3); assert.strictEqual(st.stats.free.twistLines, 4);
+    assert.deepStrictEqual(Object.keys(st.achievements).sort(), ['cl_dash50', 'cl_fourq', 'pc_twist']);
+    assert.deepStrictEqual(st.history.d, { cquad: 1, quad: 1 });
+    assert.strictEqual(st.free.s.htwists, 2); assert.strictEqual(st.free.classic.quads, 5);
+    assert.deepStrictEqual(st.free.recipe.classic, { rand: 'retro', lock: 'retro', music: 'hush' });
+    for (const id of ['cl_dash50', 'cl_fourq', 'pc_twist', 'twist100', 'cl_twist10', 'cl_tenq', 'cl_dash']) assert(L.Achievements.LIST.some((a) => a.id === id), id);
+  });
+}
 
 // The Home Screen web app: the offline copy, the manifest and icons, the deployed build (scripts/web-test.cjs).
 require('./web-test.cjs')(test).then(() => {

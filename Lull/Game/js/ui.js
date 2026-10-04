@@ -709,10 +709,10 @@
         (i, label) => look.colors[(Pieces.TYPES[label] && Pieces.TYPES[label].color) || 15]));
       statRows(app, 'free', 'pieces', els);
       els.push(h('h4', null, 'Technique'), table([
-        ['T-spins', fmtInt(F.tspins)], ['Lines from T-spins', fmtInt(F.tspinLines)], ['Perfect clears', fmtInt(F.perfect)],
-        ['Longest combo', fmtInt(F.maxCombo)], ['Longest back-to-back', fmtInt(Math.max(0, F.maxB2B))],
+        ['Twists', fmtInt(F.twists)], ['Lines from twists', fmtInt(F.twistLines)], ['Spotless boards', fmtInt(F.perfect)],
+        ['Longest combo', fmtInt(F.maxCombo)], ['Longest streak', fmtInt(Math.max(0, F.maxB2B))],
         ['Longest chain', fmtInt(F.bestChain || 0)], ['Best multiplier', L.Chain.fmt(F.bestMult || 1)],
-        ['Holds', fmtInt(F.holds)], ['Turns', fmtInt(F.rotations)], ['Moves', fmtInt(F.moves)], ['Lowers', fmtInt(F.lowers)], ['Hard drops', fmtInt(F.drops)],
+        ['Holds', fmtInt(F.holds)], ['Turns', fmtInt(F.rotations)], ['Moves', fmtInt(F.moves)], ['Lowers', fmtInt(F.lowers)], ['Drops', fmtInt(F.drops)],
         ['Boards started', fmtInt(F.boards)], ['Boards filled', fmtInt(F.topouts)],
         ['Inputs per piece', F.pieces ? ((F.moves + F.rotations + F.lowers + F.drops + F.holds) / F.pieces).toFixed(2) : '—'],
       ]));
@@ -878,7 +878,7 @@
           touchy ? card('Touch',
             row('Touch controls', null, toggle('touch')),
             row('Drag sensitivity', null, range('touchSens', 1, 10, 1, '')),
-            row('Hard drop swipe', null, seg('touchFlick', [[0, 'Light'], [1, 'Medium'], [2, 'Firm']])),
+            row('Drop swipe', null, seg('touchFlick', [[0, 'Light'], [1, 'Medium'], [2, 'Firm']])),
             row('Tap to turn', null, seg('tapTurn', [['sides', 'Sides'], ['cw', 'Clockwise']], () => { if (hint) hint.textContent = ccwHint(); })),
             keyless ? lower : null,
             root.navigator && 'vibrate' in root.navigator ? row('Haptics', null, toggle('haptics')) : null) : null,

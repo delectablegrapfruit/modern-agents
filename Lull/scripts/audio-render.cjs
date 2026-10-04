@@ -28,7 +28,7 @@ const MUSIC_SECONDS = Number(ARGS[2] || 60);
 const MUSIC_BAR = Number(ARGS[3] || 0);
 // Every event name the game plays, with the argument it usually carries.
 const EVENTS = [['move'], ['rotate'], ['lower'], ['lock'], ['hold'], ['blocked'], ['clear', 1], ['clear', 2], ['clear', 3], ['quad'],
-  ['tspin'], ['perfect'], ['combo', 3], ['combo', 9], ['boom'], ['drill'], ['buy'], ['error'], ['solve'], ['fail'], ['golden'], ['item'],
+  ['twist'], ['perfect'], ['combo', 3], ['combo', 9], ['boom'], ['drill'], ['buy'], ['error'], ['solve'], ['fail'], ['golden'], ['item'],
   ['stamp'], ['pack'], ['land'], ['bell']];
 
 // ---- measuring ------------------------------------------------------------------------------------------------------
@@ -99,7 +99,7 @@ async function render(page, kind, a, b, seconds) {
 
 // ---- harmony: the sound effects against the music's key -------------------------------------------------------------
 // Pitched sounds worth hearing in a key (the rest are noise, clicks and thuds, which are left alone).
-const TONAL = [['rotate'], ['hold'], ['lock'], ['clear', 2], ['clear', 3], ['quad'], ['tspin'], ['perfect'], ['combo', 3], ['solve'], ['golden'], ['buy'], ['item'], ['bell']];
+const TONAL = [['rotate'], ['hold'], ['lock'], ['clear', 2], ['clear', 3], ['quad'], ['twist'], ['perfect'], ['combo', 3], ['solve'], ['golden'], ['buy'], ['item'], ['bell']];
 
 async function harmonyReport(page) {
   const packs = PACK ? [PACK] : await page.evaluate(() => Object.keys(Lull.Sound.PACKS));
@@ -138,7 +138,7 @@ async function harmonyMixes(page, pack) {
       const S = Lull.Sound, K = Lull.Key, SONG = Lull.SONG;
       const buf = await S.offline(20, (ctx) => {
         Lull.Music.render(ctx, 20, SONG.bars.findIndex((b) => b.section === 'float') - 2);
-        const seq = [['clear', 2, 1.3], ['quad', null, 3.9], ['tspin', null, 6.7], ['clear', 3, 9.2], ['perfect', null, 11.6], ['quad', null, 14.4], ['solve', null, 16.9]];
+        const seq = [['clear', 2, 1.3], ['quad', null, 3.9], ['twist', null, 6.7], ['clear', 3, 9.2], ['perfect', null, 11.6], ['quad', null, 14.4], ['solve', null, 16.9]];
         for (const [n, arg, at] of seq) {
           const { pack: pk, list } = S.voices(n, arg, pack);
           for (const v of tuned ? K.tune(list, at) : list) S.voice(v, at, pk);

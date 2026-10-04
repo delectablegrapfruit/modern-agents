@@ -6,7 +6,7 @@
   const { Board, CELL, Pieces, RNG, Emitter, Recipe } = L;
 
   const CLEAR_SCORE = [0, 100, 300, 500, 800, 1200, 1600, 2000];
-  const TSPIN_SCORE = [400, 800, 1200, 1600];
+  const TWIST_SCORE = [400, 800, 1200, 1600];
   const MINI_SCORE = [100, 200, 400];
   // The two corners on the side the T points to, per rotation (box coordinates, y up).
   const T_FRONT = [[[0, 2], [2, 2]], [[2, 0], [2, 2]], [[0, 0], [2, 0]], [[0, 0], [0, 2]]];
@@ -32,13 +32,13 @@
    * what pays and counts toward records, equal to lines on a board of the default recipe); cells is cells placed.
    * The h- ones count only what was done by hand (for achievements): hand is whether the stack was
    * built without an item that touches the pieces or the board since it was last empty; hb2b, hcombo, hquads and
-   * hchain are the back-to-back streak, combo, quads in a row and chain, broken by any such item (Undo too) and
-   * never fed by an item's clear; htspins counts T-spins that clear lines, htst T-spin triples and hperfect perfect
+   * hchain are the streak, combo, quads in a row and chain, broken by any such item (Undo too) and
+   * never fed by an item's clear; htwists counts twists that clear lines, htst twist triples and hperfect perfect
    * clears, all by hand; pace keeps [time, lines] for the last 101 pieces set by hand in a row (Game.notePace).
    */
   function freshStats() {
-    return { pieces: 0, lines: 0, own: 0, cells: 0, score: 0, clears: [0, 0, 0, 0, 0, 0], tspins: 0, tspinLines: 0, perfect: 0, combo: -1, maxCombo: 0, b2b: -1, maxB2B: 0, holds: 0, rotations: 0, moves: 0, lowers: 0, drops: 0, byType: {}, startedAt: Date.now(), playMs: 0, items: {}, banked: 0, chain: 0, bestChain: 0, tst: 0, quadRun: 0,
-      hand: true, hb2b: -1, hcombo: -1, hquads: 0, hchain: 0, bestHChain: 0, htspins: 0, htst: 0, hperfect: 0, goldRun: 0, pace: [] };
+    return { pieces: 0, lines: 0, own: 0, cells: 0, score: 0, clears: [0, 0, 0, 0, 0, 0], twists: 0, twistLines: 0, perfect: 0, combo: -1, maxCombo: 0, b2b: -1, maxB2B: 0, holds: 0, rotations: 0, moves: 0, lowers: 0, drops: 0, byType: {}, startedAt: Date.now(), playMs: 0, items: {}, banked: 0, chain: 0, bestChain: 0, tst: 0, quadRun: 0,
+      hand: true, hb2b: -1, hcombo: -1, hquads: 0, hchain: 0, bestHChain: 0, htwists: 0, htst: 0, hperfect: 0, goldRun: 0, pace: [] };
   }
   const HAND_KEYS = ['hand', 'hb2b', 'hcombo', 'hquads', 'hchain', 'goldRun', 'pace'];
 
@@ -79,7 +79,7 @@
   //   roomAfter(g, b)                                    inside the "would the piece still fit" test of Settle and Trapdoor
   //   step(g, res)                                       after a piece lock (or a drill) is scored, before the next
   //                                                      piece; a part that ends the board here calls g.end(kind)
-  //   clean(g, b) -> bool                                is the board empty (a perfect clear; an item leaving it empty)
+  //   clean(g, b) -> bool                                is the board empty (a spotless clear; an item leaving it empty)
   //   afterChange(g, kind, what)                         after settle (what: its result), trapdoor ({ row }), tornado
   //                                                      ({ moves, order }), flip ({ moves }), bore (its result: the
   //                                                      drill's rows are cleared and scored as plain before it)
@@ -436,7 +436,7 @@
      * the way back in is clear; one that would dip into the stack is lifted onto it, or slid off a block beside it,
      * by the fewest rows or columns that fit, as long as it still covers a cell it covered before (so it stands up
      * where it was and never hops out of a well or through a wall of blocks). Returns [dx, dy] or null.
-     * Only for shapes beyond the seven (whose SRS kicks stay exactly SRS), and never in puzzles: a fixed queue keeps
+     * Only for shapes beyond the seven (whose Lull kicks stay exactly Lull kicks), and never in puzzles: a fixed queue keeps
      * exactly the turns its generator searched.
      */
     nudge(p, to) {
@@ -617,7 +617,7 @@
       const note = this.hooks.refuseLock ? this.ask('refuseLock', this.board, cells) : null;
       if (note) { this.emit('blocked', 'lock'); this.emit('refused', note); return false; }
       this.pushHistory();
-      const result = { type: p.type.id, color: p.type.color, special: p.special, tag: (p.entry && p.entry.tag) || null, cells, rows: [], removed: [], lines: 0, tspin: false, perfect: false, combo: 0, b2b: false, score: 0, blast: null, had: this.board.count() };
+      const result = { type: p.type.id, color: p.type.color, special: p.special, tag: (p.entry && p.entry.tag) || null, cells, rows: [], removed: [], lines: 0, twist: false, perfect: false, combo: 0, b2b: false, score: 0, blast: null, had: this.board.count() };
       if (fell) { result.dropDist = fell.dist; result.dropCells = fell.cells; }
       const v = p.type.color | (this.mods.vanish ? CELL.HIDDEN : 0);
 
@@ -652,18 +652,18 @@
         if (centers.length > 1) result.centers = centers;
         result.cells = [];
       } else {
-        // T-spin (guideline): the last move was a turn and three of the box's four corners are blocked. With both
-        // corners the T points at blocked it is a full T-spin; with only one it is a Mini, unless the turn needed
-        // the last, far kick (the T-spin triple shape), which counts as full. An item piece is never one.
+        // twist: the last move was a turn and three of the box's four corners are blocked. With both
+        // corners the T points at blocked it is a full twist; with only one it is a Mini, unless the turn needed
+        // the last, far kick (the twist triple shape), which counts as full. An item piece is never one.
         if (p.type.id === 'T' && p.lastRot && !p.special) {
-          // Classic: the space above the ceiling is open (as in the guideline games), so a T turned flat against
+          // Classic: the space above the ceiling is open (as in modern falling-block games), so a T turned flat against
           // the top row does not score a spin from box corners that lie above the well.
           const blocked = (dx, dy) => !(this.ceiling && p.y + dy >= this.h) && this.board.get(p.x + dx, p.y + dy) !== 0;
           let corners = 0;
           for (const [dx, dy] of [[0, 0], [2, 0], [0, 2], [2, 2]]) if (blocked(dx, dy)) corners++;
           if (corners >= 3) {
             const front = T_FRONT[p.rot].filter(([dx, dy]) => blocked(dx, dy)).length;
-            if (front === 2 || p.kick === 4) result.tspin = true;
+            if (front === 2 || p.kick === 4) result.twist = true;
             else result.mini = true;
           }
         }
@@ -795,12 +795,12 @@
     /**
      * Points and streaks for a lock. Lines cleared by an item (a board item, or a piece carrying one — Golden aside)
      * are plain lines (result.plain): they add a clear's points and keep the combo going, but are never a quad or a
-     * T-spin, so they never feed the back-to-back streak. Afterwards result.lines holds every line cleared.
-     * A Safety Net (s.net) keeps the back-to-back streak through one clear that would have ended it.
+     * twist, so they never feed the streak. Afterwards result.lines holds every line cleared.
+     * A Safety Net (s.net) keeps the streak through one clear that would have ended it.
      */
     score(result) {
       const s = this.s, R = this.rules;
-      if (result.special && result.lines) { result.plain = (result.plain || 0) + result.lines; result.lines = 0; result.tspin = false; result.mini = false; }
+      if (result.special && result.lines) { result.plain = (result.plain || 0) + result.lines; result.lines = 0; result.twist = false; result.mini = false; }
       // n: rows the piece's own lock cleared with no FOREIGN cell; c: plain rows (an item's, a FOREIGN cell's, a recipe's
       // cascades), all in this one result. ownCells: removed cells that were not FOREIGN (a laser's empty ones too:
       // the row goes); own = ownCells / w, Standard-comparable rows: what pays and counts toward records.
@@ -814,26 +814,26 @@
       result.n = n; result.c = c; result.ownCells = ownCells; result.own = ownCells / this.w;
       // Rows a recipe's cascade cleared and nothing else (a piece whose own lock cleared none):
       // they count and keep the combo, but leave every streak as it was, neither adding to it nor ending it, and a
-      // T-spin with no rows of its own is not made one by them. Never on a board without cascades.
+      // twist with no rows of its own is not made one by them. Never on a board without cascades.
       const still = !n && cascade > 0 && c === cascade && !result.special;
-      if (still) { result.tspin = false; result.mini = false; }
+      if (still) { result.twist = false; result.mini = false; }
       // An unrated board (shapes other than the seven: R.rated false) has no difficult clears: no quad, no streak, no
-      // bonus (its T-spins still score their points).
+      // bonus (its twists still score their points).
       const rated = R.rated !== false;
       result.quad = rated && n >= R.quad && !result.special;
       let pts = 0;
-      if (result.tspin) {
-        pts = TSPIN_SCORE[Math.min(n, 3)];
-        s.tspins++;
+      if (result.twist) {
+        pts = TWIST_SCORE[Math.min(n, 3)];
+        s.twists++;
         if (n >= 3) s.tst = (s.tst || 0) + 1;
-        s.tspinLines += n;
+        s.twistLines += n;
       } else if (result.mini) {
         pts = MINI_SCORE[Math.min(n, 2)];
       } else if (n) pts = CLEAR_SCORE[Math.min(n, CLEAR_SCORE.length - 1)];
       if (c) pts += CLEAR_SCORE[Math.min(c, CLEAR_SCORE.length - 1)];
       if (all) {
         s.combo++;
-        const difficult = rated && (result.quad || result.tspin || result.mini);
+        const difficult = rated && (result.quad || result.twist || result.mini);
         if (difficult) { s.b2b++; if (s.b2b > 0) { pts = Math.round(pts * 1.5); result.b2b = true; } }
         else if (still) { /* the streak is left as it was */ }
         else if (s.b2b >= 0 && s.net > 0) { s.net--; result.netSaved = s.b2b + 1; }
@@ -854,9 +854,9 @@
       if (!hand) { s.hb2b = -1; s.hcombo = -1; s.hquads = 0; }
       else if (all) {
         s.hcombo++;
-        if (rated && (result.quad || result.tspin || result.mini)) s.hb2b++; else if (!still) s.hb2b = -1;
+        if (rated && (result.quad || result.twist || result.mini)) s.hb2b++; else if (!still) s.hb2b = -1;
         s.hquads = result.quad ? (s.hquads || 0) + 1 : still ? s.hquads || 0 : 0;
-        if (result.tspin) { s.htspins = (s.htspins || 0) + 1; if (n >= 3) s.htst = (s.htst || 0) + 1; }
+        if (result.twist) { s.htwists = (s.htwists || 0) + 1; if (n >= 3) s.htst = (s.htst || 0) + 1; }
         if (result.perfect) s.hperfect = (s.hperfect || 0) + 1;
       } else s.hcombo = -1;
       // An empty board is a fresh start: whatever came before, the next stack is built from nothing.

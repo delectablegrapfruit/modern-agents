@@ -1,4 +1,4 @@
-// Lull — piece shapes: the seven SRS tetrominoes, pentominoes and friends, big (2×) pieces, custom shapes,
+// Lull — piece shapes: the seven tetrominoes (Lull kicks), pentominoes and friends, big (2×) pieces, custom shapes,
 // and polyomino tools that enumerate the shapes the factory presses.
 // Coordinates are y-up: row 0 is the floor.
 (function (root) {
@@ -22,7 +22,7 @@
     return { minX, minY, maxX, maxY, w: maxX - minX + 1, h: maxY - minY + 1 };
   }
 
-  // ---- SRS kick tables (y-up), keyed "from>to" ------------------------------------------------------------------------
+  // ---- Lull kick tables (y-up), keyed "from>to" ------------------------------------------------------------------------
 
   const KICKS_JLSTZ = {
     '0>1': [[0, 0], [-1, 0], [-1, 1], [0, -2], [-1, -2]],
@@ -63,7 +63,7 @@
 
   /**
    * Builds a piece type from cells placed in an n×n box. The four rotations turn about the box centre, which for the
-   * seven tetrominoes is exactly SRS.
+   * seven tetrominoes is exactly Lull kicks.
    */
   function defineType(id, cells, opts) {
     opts = opts || {};
@@ -105,7 +105,7 @@
   let tracking = false;
   function add(id, cells, opts) { TYPES[id] = defineType(id, cells, opts); if (tracking) made(id); return TYPES[id]; }
 
-  // The seven, in SRS spawn orientation.
+  // The seven, in Lull's spawn orientation.
   add('I', [[0, 2], [1, 2], [2, 2], [3, 2]], { n: 4, color: COLOR.I, kicks: 'i', family: 'tetromino' });
   add('O', [[0, 0], [1, 0], [0, 1], [1, 1]], { n: 2, color: COLOR.O, kicks: 'none', family: 'tetromino' });
   add('T', [[1, 2], [0, 1], [1, 1], [2, 1]], { n: 3, color: COLOR.T, kicks: 'jlstz', family: 'tetromino' });

@@ -1,5 +1,5 @@
 // Classic as a board mode in Node (js/classic.js): the recipe part and its settings, rules and conflicts, the engine
-// (ceiling spawn, hold, Next, B type's garbage and its end, the NES randomizer, the score and levels), save and
+// (ceiling spawn, hold, Next, B type's garbage and its end, the retro randomizer, the score and levels), save and
 // resume, what it banks against Standard, and editing a board's rules (Recipe.editPrice, Recipe.editConflicts,
 // Library.reshape, Library.rebuild). Run by test.cjs: require('./classic-unit.cjs')({ L, test }).
 'use strict';
@@ -31,20 +31,20 @@ module.exports = function classicUnit({ L, test }) {
     assert.strictEqual(Recipe.label({ mode: 'classic', mods: { mirror: true } }), 'Mirror · Classic A · Level 1');
   });
 
-  test('classic: rules: no power-ups (each says why), no Undo, no hints; rated as its shapes are; the NES roll needs Normal shapes', () => {
+  test('classic: rules: no power-ups (each says why), no Undo, no hints; rated as its shapes are; the retro roll needs Normal shapes', () => {
     const R = Recipe.rules(CL(), 10);
     for (const id of Object.keys(L.ITEMS)) assert.strictEqual(R.refuse[id], 'Not in Classic', id);
     assert(!R.undo && !R.hints && R.rated && R.feats && R.lk === 1);
     assert(!Recipe.rules(Object.assign(CL(), { shapes: { preset: 'frantic' } }), 10).rated, 'other shapes: unrated');
     assert.strictEqual(Recipe.rules(CL(), 8).feats, false, 'feats only 10 wide or more');
-    assert.deepStrictEqual(Recipe.conflicts(Object.assign(CL({ rand: 'nes' }), { shapes: { preset: 'tiny' } })), { 'classic.rand=nes': 'NES random needs Normal shapes' });
-    assert.deepStrictEqual(Recipe.conflicts(CL({ rand: 'nes' })), {});
+    assert.deepStrictEqual(Recipe.conflicts(Object.assign(CL({ rand: 'retro' }), { shapes: { preset: 'tiny' } })), { 'classic.rand=retro': 'Retro random needs Normal shapes' });
+    assert.deepStrictEqual(Recipe.conflicts(CL({ rand: 'retro' })), {});
     // The last choice wins: other shapes move the roll to the 7-bag, and Normal brings it back.
     const memo = {};
-    const a = Recipe.resolve(Object.assign(CL({ rand: 'nes' }), { shapes: { preset: 'frantic' } }), 'shapes.preset', memo);
+    const a = Recipe.resolve(Object.assign(CL({ rand: 'retro' }), { shapes: { preset: 'frantic' } }), 'shapes.preset', memo);
     assert.strictEqual(a.recipe.classic.rand, 'bag');
     const b = Recipe.resolve(Object.assign({}, a.recipe, { shapes: { preset: 'normal' } }), 'shapes.preset', a.memo);
-    assert.strictEqual(b.recipe.classic.rand, 'nes');
+    assert.strictEqual(b.recipe.classic.rand, 'retro');
   });
 
   test('classic: the engine: spawn flush with the ceiling, no nearby spot tried, hold once a piece or off, Next as set, no history', () => {
@@ -68,11 +68,11 @@ module.exports = function classicUnit({ L, test }) {
 
   test('classic: the score is the level times a clear\'s points (two a row of hard drop), levels every ten lines from the start level', () => {
     const g = mk({ level: 1 });
-    well(g, 4, 9); g.board.set(0, 4, 5); // not a perfect clear
+    well(g, 4, 9); g.board.set(0, 4, 5); // not a spotless clear
     const r = dropAt(g, 'I', 9 - 2, 1);
     assert.strictEqual(r.lines, 4);
     assert.strictEqual(g.s.score, 800 * 1 + r.dropDist * 2);
-    assert.strictEqual(Classic.of(g).tetrises, 1);
+    assert.strictEqual(Classic.of(g).quads, 1);
     const k = Recipe.normalize(CL({ level: 5 })).classic;
     assert.deepStrictEqual([0, 9, 10, 49, 50, 60].map((n) => Classic.levelOf(k, n)), [5, 5, 5, 5, 6, 7]);
     assert.deepStrictEqual([0, 10, 50, 60].map((n) => Classic.featLevel(k, n)), [1, 2, 6, 7], 'a high start level does not reach a level feat by itself');
@@ -82,9 +82,9 @@ module.exports = function classicUnit({ L, test }) {
     assert.strictEqual(g5.s.score, 800 * 5 + r5.dropDist * 2);
     const kb = Recipe.normalize(CL({ type: 'b', level: 3 })).classic;
     assert.strictEqual(Classic.levelOf(kb, 24), 3, 'B type keeps its level');
-    assert(Classic.gravity(1) > Classic.gravity(10) && Classic.gravity(20) === Classic.gravity(30), 'the guideline curve, level 20 at most');
-    // NES lock falls by the NES table (Lull's level 1 is the NES's level 0), NTSC frames.
-    assert.deepStrictEqual([1, 2, 9, 10, 11, 13, 14, 16, 17, 19, 20, 29, 30].map(Classic.nesFrames), [48, 43, 8, 6, 5, 5, 4, 4, 3, 3, 2, 2, 1]);
+    assert(Classic.gravity(1) > Classic.gravity(10) && Classic.gravity(20) === Classic.gravity(30), 'the modern curve, level 20 at most');
+    // Retro lock falls by the retro table (Lull's level 1 is its level 0), NTSC frames.
+    assert.deepStrictEqual([1, 2, 9, 10, 11, 13, 14, 16, 17, 19, 20, 29, 30].map(Classic.retroFrames), [48, 43, 8, 6, 5, 5, 4, 4, 3, 3, 2, 2, 1]);
     assert.strictEqual(Classic.gravity(1, true), 48 / 60.0988);
   });
 
@@ -132,8 +132,8 @@ module.exports = function classicUnit({ L, test }) {
     assert(back.over && back.endKind === 'cleared', 'and saved so');
   });
 
-  test('classic: the NES random: a repeat about one time in 28, every piece, the game\'s own stream, the same after a resume', () => {
-    const g = mk({ rand: 'nes' }, 10, 20, 7);
+  test('classic: the retro random: a repeat about one time in 28, every piece, the game\'s own stream, the same after a resume', () => {
+    const g = mk({ rand: 'retro' }, 10, 20, 7);
     const seq = [];
     for (let i = 0; i < 14000; i++) seq.push(g.dealer.next(g));
     let rep = 0;
@@ -141,7 +141,7 @@ module.exports = function classicUnit({ L, test }) {
     const f = rep / (seq.length - 1);
     assert(f > 0.025 && f < 0.047, 'repeats ' + f);
     assert.strictEqual(new Set(seq).size, 7);
-    const a = mk({ rand: 'nes' }, 10, 20, 11);
+    const a = mk({ rand: 'retro' }, 10, 20, 11);
     for (let i = 0; i < 5; i++) dropAt(a, 'O', (i * 2) % 8);
     const b = new Game({ saved: JSON.parse(JSON.stringify(a.toJSON())) });
     const next = (x) => { const out = []; for (let i = 0; i < 30; i++) out.push(x.dealer.next(x)); return out.join(''); };

@@ -1,4 +1,4 @@
-// Lull — Physics, a board modifier (js/recipe.js): Tetris with physics. The piece in play is the player's, rigid, until
+// Lull — Physics, a board modifier (js/recipe.js): falling blocks with physics. The piece in play is the player's, rigid, until
 // let go: it never falls by itself (on Physics + Plain; Classic's gravity moves it under Classic) and touching a body or
 // the floor never sets it. It moves column by column and turns, shoving the bodies in its way aside (refused when they
 // cannot go), and ↓ takes it down to rest on what is below. Let go (a hard drop throws it; ↓ again while it rests sets
@@ -1508,7 +1508,7 @@
     tornado: 'Not on a Physics board: it shuffles grid columns',
     settle: 'Not on a Physics board: bodies settle by themselves',
     golden: 'Physics pays a flat rate per block',
-    double: 'Physics has no quads or T-spins',
+    double: 'Physics has no quads or twists',
     net: 'Physics has no streak',
   };
 
@@ -1528,7 +1528,7 @@
       if (!on(r)) return;
       Object.assign(R.refuse, REFUSE);
       // No exact Undo (Rewind 5 s takes its place, js/physicsview.js), no control hints (they teach grid placing),
-      // no feats (quads, T-spins and streaks do not exist here).
+      // no feats (quads, twists and streaks do not exist here).
       R.undo = false;
       R.hints = false;
       R.noFeats = true;

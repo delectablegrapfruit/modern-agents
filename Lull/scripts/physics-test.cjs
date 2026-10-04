@@ -602,7 +602,7 @@ module.exports = function physicsTests(test, L) {
     return { pay, actions, pieces };
   }
 
-  test('physics: fairness: a bot never earns more per piece or per action than on a Standard board; no quads, T-spins or streak', () => {
+  test('physics: fairness: a bot never earns more per piece or per action than on a Standard board; no quads, twists or streak', () => {
     const T = process.env.PHYSICS_TABLE;
     // Standard, as well as a simple bot plays it: the better of a greedy one and one that spares keys, each metric.
     let stdPiece = 0, stdAction = 0;
@@ -629,7 +629,7 @@ module.exports = function physicsTests(test, L) {
     const g = phys({ seed: 3 });
     randomPlay(g, 30, 3, 1);
     assert.strictEqual(g.s.quadRun || 0, 0);
-    assert(g.s.b2b < 0 && g.s.tspins === 0);
+    assert(g.s.b2b < 0 && g.s.twists === 0);
   });
 
   test('physics: hard-drop spam (random columns and turns, a drop every quarter second) tops out about as soon as on Standard, with few lines', () => {

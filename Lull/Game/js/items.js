@@ -16,7 +16,7 @@
 
   // ---- the chain multiplier -----------------------------------------------------------------------------------------
   //
-  // The streak is the run of back-to-back quads and T-spins (this one included). It alone sets the multiplier: an extra
+  // The streak is the run of quads and twists with no lesser clear between (this one included). It alone sets the multiplier: an extra
   // ×0.05 for each link after the first, to the hundredth. In Free Play ×1.05 at two in a row, ×1.5 at eleven and ×2 at
   // most, reached at twenty-one; in Classic the same steps, ×1.5 at most (eleven), on the lines Classic banks (seven
   // tenths of a line a line, CLASSIC.rate; never its score). The chain — the number to be proud of — counts the streak
@@ -31,7 +31,7 @@
       const c = mode === 'classic' ? Chain.CLASSIC : Chain.RELAXED;
       return Math.min(c.cap, Math.round((1 + Math.max(0, (n || 0) - 1) * c.step) * 100) / 100);
     },
-    /** The streak after a lock (the engine's back-to-back count already includes it). */
+    /** The streak after a lock (the engine's streak count already includes it). */
     streak(g) { return g.s.b2b >= 0 ? g.s.b2b + 1 : 0; },
     /** The chain count: the streak plus the combo. */
     count(g) { return Chain.streak(g) + Math.max(0, g.s.combo); },
@@ -51,14 +51,14 @@
     { id: 'painted', kind: 'skill', name: 'Painted Row', how: 'Clear a row that is all one colour.', lines: 5, score: 1000 },
     { id: 'pocket', kind: 'skill', name: 'From the Pocket', how: 'Clear four lines with an I brought back out of hold.', lines: 2, score: 300 },
     { id: 'keyhole', kind: 'skill', name: 'Keyhole', how: 'Clear a line with a piece tucked in under an overhang.', lines: 2, score: 300 },
-    { id: 'twinspin', kind: 'skill', name: 'Twin Spin', how: 'Two T-spin doubles back to back.', lines: 4, boost: { x: 1.5, clears: 3 }, score: 800 },
+    { id: 'twinspin', kind: 'skill', name: 'Twin Spin', how: 'Two twist doubles in one streak.', lines: 4, boost: { x: 1.5, clears: 3 }, score: 800 },
     { id: 'patchjob', kind: 'item', name: 'Patch Job', how: 'Complete a row with a Patch dropped into a covered hole.', lines: 2, score: 300 },
     { id: 'ghostline', kind: 'item', name: 'Through the Wall', how: 'Clear a line with a Ghost piece set under an overhang.', lines: 3, score: 500 },
     { id: 'tower', kind: 'item', name: 'Tall Order', how: 'Clear four lines at once with a Noodle or a Giant.', lines: 3, score: 600 },
     { id: 'architect', kind: 'item', name: 'Architect', how: 'Clear three lines at once with a Blueprint piece.', lines: 4, score: 800 },
     { id: 'tailor', kind: 'item', name: 'Tailor-Made', how: 'Clear four lines with a Best Fit piece.', lines: 3, score: 600 },
     { id: 'allin', kind: 'item', name: 'All In', how: 'Win a Double or Nothing.', lines: 2, score: 500 },
-    { id: 'caught', kind: 'item', name: 'Caught', how: 'Let a Safety Net keep a back-to-back streak of five or more.', lines: 3, boost: { x: 1.25, clears: 3 }, score: 800 },
+    { id: 'caught', kind: 'item', name: 'Caught', how: 'Let a Safety Net keep a streak of five or more.', lines: 3, boost: { x: 1.25, clears: 3 }, score: 800 },
     { id: 'fullblast', kind: 'item', name: 'Full Blast', how: 'Take out ten blocks or more with one Bomb.', lines: 2, score: 400 },
     { id: 'horizon', kind: 'item', name: 'Event Horizon', how: 'Swallow twenty blocks or more with one Black Hole.', lines: 3, score: 600 },
   ];
@@ -102,7 +102,7 @@
     if (r.lines && (g.rules ? g.rules.wEff : g.w) >= (L.Library ? L.Library.STANDARD.w : 10) && (r.removed || []).some((row) => { const c = row[0] & CELL.COLOR; return c && c !== 8 && row.every((v) => (v & CELL.COLOR) === c); })) out.push('painted');
     if (quad && r.type === 'I' && r.fromHold && !r.special) out.push('pocket');
     if (own && r.covered && !r.special) out.push('keyhole');
-    const tsd = !!(r.tspin && own === 2);
+    const tsd = !!(r.twist && own === 2);
     if (tsd && r.b2b && s.lastTsd) out.push('twinspin');
     if (r.lines) s.lastTsd = tsd;
     if (r.special === 'patch' && r.lines) out.push('patchjob');
@@ -124,7 +124,7 @@
   // Golden Piece: gold for your next five clears, each paying ×2 (on top of the chain and any boost); unused gold waits
   // on the board, so it is never wasted on a piece that clears nothing. It adds five clears' pay once over: 50 for its
   // 50 on quads at a full streak, so at best it breaks even.
-  // Double or Nothing: the next clear pays double if it is a difficult clear (a quad set by hand, a T-spin or a mini),
+  // Double or Nothing: the next clear pays double if it is a difficult clear (a quad set by hand, a twist or a mini),
   // and nothing at all if it is anything less. A shaped piece's quad (a Noodle, a Giant, a Blueprint) is not difficult.
   // It waits for a clear, too.
   // Safety Net: see the chain above. None of the three touches the pieces or the board, so none puts power-ups on the
@@ -132,8 +132,8 @@
 
   // The pieces a power-up made (their item id, `tag`: js/modes.js, become): a quad with one is no feat.
   const SHAPED = new Set(['noodle', 'giant', 'blueprint']);
-  /** A difficult clear: a quad or better set by a hand-played piece (not a shaped one), a T-spin or a mini. */
-  const difficult = (r) => (quadOf(r) && !SHAPED.has(r.tag)) || !!r.tspin || !!r.mini;
+  /** A difficult clear: a quad or better set by a hand-played piece (not a shaped one), a twist or a mini. */
+  const difficult = (r) => (quadOf(r) && !SHAPED.has(r.tag)) || !!r.twist || !!r.mini;
 
   const Luck = {
     GOLD_CLEARS: 5, GOLD_X: 2, DOUBLE_X: 2, SHAPED,
@@ -162,7 +162,7 @@
   // Measured in Standard lines (Library.scale: a line w wide is w/10 of one), and so is everything that pays by the
   // clear: for the same play no size earns faster per piece than Standard. The streak's links count by width too (a
   // narrow board makes difficult clears more often, each clearing fewer cells), never more than one a clear; the
-  // difficult-clear bonus is at most one Standard line (a wide board's T-spin is still one T); gold and a boost last
+  // difficult-clear bonus is at most one Standard line (a wide board's twist is still one T); gold and a boost last
   // for Standard clears (a Golden Piece is five Standard-width clears: two and a half 20 wide, twelve and a half 4
   // wide), the last one paying its share; and a won Double or Nothing doubles at most one Standard clear's worth.
 
@@ -181,7 +181,7 @@
     /**
      * What clear `r` pays on board state `s` (its mult already set) on a board with rules R (or, a Normal board, its
      * width), in Standard lines, rounded down to the hundredth: r.own rows at R.lk each, and one Standard line at most
-     * for a quad or T-spin (none on an unrated board: R.rated false). Spends gold, a boost's clears and Double or
+     * for a quad or twist (none on an unrated board: R.rated false). Spends gold, a boost's clears and Double or
      * Nothing from `s`. Returns { pay, golden, goldX, boost, double }.
      */
     clear(s, r, R) {

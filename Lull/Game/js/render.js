@@ -75,7 +75,8 @@
   }
   function luminance(hex) { const [r, g, b] = rgb(hex); return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255; }
 
-  const PRISM_HUES = [0, 185, 50, 285, 125, 355, 220, 30, 0, 320, 95, 165, 255, 15, 200, 0];
+  // The seven start on Lull's own hues (I coral, O sky, T amber, S violet, Z teal, J lime, L orchid) and turn from there.
+  const PRISM_HUES = [0, 6, 207, 42, 255, 168, 90, 315, 0, 340, 120, 185, 230, 25, 285, 0];
   /**
    * The 16 colour slots of a palette at time t (only Prism changes with time). Prism turns every hue slowly round the
    * wheel (8° a second, a full turn in 45 s) in 2° steps: small enough to read as a glide, few enough (180 steps) that
@@ -1006,7 +1007,7 @@
       this.game = game;
       this.view = Object.assign({ rot: 0, fog: false, mono: false, blind: false, vanish: false, wrap: false }, view || {});
       // Classic's top out (ClassicMode.startPile): the pieces piled up at the spawn spot, over the stack, [{ cells,
-      // color, t }] in the order they came, shown at pileT (seconds); queueSkip of them came off the Next queue.
+      // color, t }] in the order they came, shown at pileT (seconds); queueSkip of them came off the Next pieces.
       this.pileup = null; this.pileT = 0; this.queueSkip = 0;
       this.fx.clear();
       this.lay = null;
@@ -1180,7 +1181,7 @@
       // A wide board's plate can be shorter than the Next tray it holds (a short board beside a column of trays).
       if (wide) plate.h = Math.max(plate.h, next.y + next.h + P - plate.y);
       this.lay = { s, ts, cols, rows, board: { x: bx, y: by, w: bw, h: bh }, hold, next, nextDir, wide, plate, lab, pad: P, box: box || null, gh };
-      // Words over the board (PERFECT CLEAR, a combo's name) are kept within the well (its walls included).
+      // Words over the board (SPOTLESS, a combo's name) are kept within the well (its walls included).
       this.fx.maxW = bw + WP * 2;
       this.lay.well = wellRect(this.lay.board, s);
       return this.lay;
@@ -1735,9 +1736,9 @@
         if (this.showBank) this.fx.text('+' + L.fmtLines(result.banked || 0) + ' ' + LINE + (result.mult > 1 ? '  ×' + Math.round(result.mult * 1000) / 1000 : ''), b.x + b.w / 2, b.y + b.h * 0.55, '#8fe3ff', Math.max(12, Math.min(18, s * 0.75)));
         const label = labelFor(result);
         if (label) this.fx.text(label, b.x + b.w / 2, b.y + b.h * 0.42, result.perfect ? '#ffe28a' : '#ffffff', Math.max(13, Math.min(22, s * 0.9)));
-      } else if (result.tspin || result.mini) {
+      } else if (result.twist || result.mini) {
         const b = this.lay.board;
-        this.fx.text(result.mini ? 'T-SPIN MINI' : 'T-SPIN', b.x + b.w / 2, b.y + b.h * 0.42, '#d6b4ff', Math.max(13, Math.min(20, s * 0.8)));
+        this.fx.text(result.mini ? 'MINI TWIST' : 'TWIST', b.x + b.w / 2, b.y + b.h * 0.42, '#d6b4ff', Math.max(13, Math.min(20, s * 0.8)));
       }
       if (result.special === 'settle' && result.before && !reduced && !done) {
         // Every column's blocks fall into place.
@@ -2202,9 +2203,9 @@
     const names = ['', 'SINGLE', 'DOUBLE', 'TRIPLE', 'QUAD', 'QUINT', 'SEXTUPLE', 'SEPTUPLE'];
     // Named for what the piece itself cleared; lines an item cleared are just lines.
     const n = r.lines - (r.plain || 0);
-    let s = r.tspin ? 'T-SPIN ' + (names[n] || n + ' LINES') : r.mini ? 'T-SPIN MINI' + (n ? ' ' + names[n] : '') : n >= 4 ? (names[n] || n + ' LINES') : '';
-    if (r.perfect) s = 'PERFECT CLEAR';
-    if (r.b2b && s) s = 'B2B ' + s;
+    let s = r.twist ? 'TWIST ' + (names[n] || n + ' LINES') : r.mini ? 'MINI TWIST' + (n ? ' ' + names[n] : '') : n >= 4 ? (names[n] || n + ' LINES') : '';
+    if (r.perfect) s = 'SPOTLESS';
+    if (r.b2b && s) s = 'STREAK ' + s;
     if (r.combo >= 2) s = (s ? s + ' · ' : '') + r.combo + ' COMBO';
     return s;
   }

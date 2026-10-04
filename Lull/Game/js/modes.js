@@ -54,7 +54,7 @@
     else if (r.special === 'settle' && lines) snd.play('quad');
     else if (lines && !own) snd.play('clear', lines);
     else if (r.perfect) snd.play('perfect');
-    else if (r.tspin) snd.play('tspin');
+    else if (r.twist) snd.play('twist');
     else if (own >= 4) snd.play('quad');
     else if (own) snd.play('clear', own);
     else snd.play('lock');
@@ -586,8 +586,8 @@
     onLock(r) { this.ctl.onLock(r); }
 
     /**
-     * What a lock's rows pay on a plain board (js/items.js, Pay): a quad or T-spin (or 5+ lines) is worth one extra;
-     * the multiplier — the back-to-back streak alone, an eighth a link, ×2.5 at most (twenty in a row) — multiplies
+     * What a lock's rows pay on a plain board (js/items.js, Pay): a quad or twist (or 5+ lines) is worth one extra;
+     * the multiplier — the streak alone, an eighth a link, ×2.5 at most (twenty in a row) — multiplies
      * it; gold triples that, and a combo's boost adds its share. All of it in Standard lines, by the board's worth.
      * Sets r.banked, r.mult (and r.golden, r.boost, r.double) and banks it on the board; returns what it paid.
      */
@@ -622,8 +622,8 @@
       const st = this.app.store, F = st.state.stats.free, g = this.game;
       this.syncCounters();
       if (this.armed) { this.armed = null; this.renderItems(); }
-      // What the lines pay (js/items.js, Pay): a quad set by hand or a T-spin is worth one extra; the multiplier — the
-      // back-to-back streak alone, ×0.05 a link after the first, ×2 at most (twenty-one in a row) — multiplies it; gold
+      // What the lines pay (js/items.js, Pay): a quad set by hand or a twist is worth one extra; the multiplier — the
+      // streak streak alone, ×0.05 a link after the first, ×2 at most (twenty-one in a row) — multiplies it; gold
       // doubles that, and a combo's boost adds its share. All of it in Standard lines, by the board's width. The chain
       // (streak plus combo) is counted beside it, for the record.
       const s = g.s;
@@ -654,7 +654,7 @@
         for (let k = 0; k < due; k++) this.earnItem();
       }
       const found = Combos.detect(r, g);
-      if (r.tspin) { F.tspins++; F.tspinLines += r.lines; }
+      if (r.twist) { F.twists++; F.twistLines += r.lines; }
       if (r.perfect) F.perfect++;
       // Set by a piece (an item's lines are plain: never a quad), on a board where the feats count (R.feats: a narrow
       // quad is a few pieces).
@@ -798,8 +798,8 @@
       return h('div', { class: 'board-sum' },
         tile(m.life ? fmtDuration(m.life) : '—', 'Lifetime'), tile(m.playMs ? fmtDuration(m.playMs) : '—', 'Played'), tile(fmtInt(m.pieces), 'Pieces'),
         tile(fmtInt(m.lines), 'Lines'), tile(fmtInt(m.score), 'Score'), tile(ppm, 'Pieces / min'),
-        skill ? [tile(fmtInt(m.quads), 'Quads'), tile(fmtInt(m.tspins), 'T-spins'), tile(fmtInt(m.perfect), 'Perfect clears'),
-          tile(fmtInt(m.maxCombo), 'Best combo'), tile(fmtInt(m.maxB2B), 'Best back-to-back'), tile(fmtInt(m.chain), 'Best chain'),
+        skill ? [tile(fmtInt(m.quads), 'Quads'), tile(fmtInt(m.twists), 'Twists'), tile(fmtInt(m.perfect), 'Spotless boards'),
+          tile(fmtInt(m.maxCombo), 'Best combo'), tile(fmtInt(m.maxB2B), 'Best streak'), tile(fmtInt(m.chain), 'Best chain'),
           tile(fmtInt(m.hchain), 'Best chain, no power-ups')] : null, tile(fmtLines(m.banked) + ' ' + LINE, 'Lines banked'), skill ? tile(fmtInt(m.combos), 'Combos') : null,
         tile(Library.sizeLabel(sz.w, sz.h), 'Size'),
         h('div', { class: 'bs span2' }, h('div', { class: 'v' }, nItems ? fmtInt(nItems) + ' used' : 'none'), h('div', { class: 'l' }, 'Power-ups' + (items.length ? ': ' + items.slice(0, 6).map(([id, n]) => ITEMS[id].name + (n > 1 ? ' ×' + n : '')).join(', ') : ''))),
@@ -841,7 +841,7 @@
       const F = this.app.store.state.stats.free, now = Date.now(), m = Library.summarize(s, now);
       F.boardLog = F.boardLog || [];
       size = size || this.game;
-      const entry = { at: now, reason: reason || 'manual', w: size.w, h: size.h, life: m.life, playMs: m.playMs, pieces: m.pieces, lines: m.lines, score: m.score, quads: m.quads, tspins: m.tspins, perfect: m.perfect, maxCombo: m.maxCombo, chain: m.chain, items: Object.values(m.items).reduce((a, b) => a + b, 0) };
+      const entry = { at: now, reason: reason || 'manual', w: size.w, h: size.h, life: m.life, playMs: m.playMs, pieces: m.pieces, lines: m.lines, score: m.score, quads: m.quads, twists: m.twists, perfect: m.perfect, maxCombo: m.maxCombo, chain: m.chain, items: Object.values(m.items).reduce((a, b) => a + b, 0) };
       // A board of another recipe than the default keeps it (thin: Recipe.thin), for its label in Past boards.
       if (L.Recipe && size.recipe && !L.Recipe.isDefault(size.recipe)) entry.recipe = L.Recipe.thin(size.recipe);
       F.boardLog.unshift(entry);
@@ -1599,7 +1599,7 @@
       const parts = {
         lines: stat('Lines', fmtInt(s.lines)),
         score: stat('Score', fmtInt(s.score)),
-        chain: h('span', { class: 'stat ' + (s.chain > 1 ? 'chain' : 'slot-off'), 'data-tip-title': 'Chain', 'data-tip': 'Back-to-back plus combo. ' + (s.hand === false ? 'Power-ups on the board.' : 'No power-ups on the board: ' + (s.hchain || 0) + '.') },
+        chain: h('span', { class: 'stat ' + (s.chain > 1 ? 'chain' : 'slot-off'), 'data-tip-title': 'Chain', 'data-tip': 'Streak plus combo. ' + (s.hand === false ? 'Power-ups on the board.' : 'No power-ups on the board: ' + (s.hchain || 0) + '.') },
           h('i', null, 'Chain '), h('b', null, String(s.chain || 0), h('span', { class: 'mult' }, ' · ' + Chain.fmt(s.mult || 1)))),
         side,
       };

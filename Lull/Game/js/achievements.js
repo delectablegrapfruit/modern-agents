@@ -31,77 +31,77 @@
     // board — Undo included — during the feat, or since the board was last empty; Luck items never count against
     // it: see freshStats in js/engine.js), the score ones only boards without a single item, and a few ask for pace.
     { id: 'quad', group: 'play', name: 'Four at Once', desc: 'Clear 4 lines with one piece. No power-ups on the board.', pay: 15, on: 'play', test: (s, e) => quadOf(e.r) && e.r.hand },
-    { id: 'tsd', group: 'play', name: 'Twist', desc: 'Clear 2 lines with a T-spin. No power-ups on the board.', pay: 20, on: 'play', test: (s, e) => e.r.tspin && e.r.lines === 2 && e.r.hand },
+    { id: 'tsd', group: 'play', name: 'Twist', desc: 'Clear 2 lines with a twist. No power-ups on the board.', pay: 20, on: 'play', test: (s, e) => e.r.twist && e.r.lines === 2 && e.r.hand },
     { id: 'combo5', group: 'play', name: 'In the Groove', desc: 'Reach a 5-combo. No power-ups on the board.', pay: 25, on: 'play', test: (s, e) => hs(e).hcombo >= 5 },
-    { id: 'b2b3', group: 'play', name: 'Back to Back to Back', desc: '3 quads or T-spins back to back. No power-ups on the board.', pay: 30, on: 'play', test: (s, e) => hs(e).hb2b >= 3 },
+    { id: 'b2b3', group: 'play', name: 'Three in a Streak', desc: 'A streak of 3 quads or twists. No power-ups on the board.', pay: 30, on: 'play', test: (s, e) => hs(e).hb2b >= 3 },
     { id: 'lines150', group: 'play', name: 'Long Haul', desc: 'Clear 150 lines on one board.', pay: 30, on: 'play', test: (s, e) => std(e.g) >= 150 },
     { id: 'toolbox', group: 'play', name: 'Toolbox', desc: 'Use one power-up of each type on one board.', pay: 30, on: 'play', test: (s, e) => L.ITEM_GROUPS.every((gr) => L.ITEM_ORDER.some((id) => L.ITEMS[id].group === gr.id && (e.g.s.items || {})[id] > 0)) },
     { id: 'score50k', group: 'play', name: 'Fifty Grand', desc: 'Score 50,000 on one board. No power-ups used.', pay: 30, on: 'play', test: (s, e) => e.g.s.score >= 50000 && !usedItems(e.g) },
-    { id: 'tst', group: 'play', name: 'Corkscrew', desc: 'Clear 3 lines with a T-spin. No power-ups on the board.', pay: 40, on: 'play', test: (s, e) => e.r.tspin && e.r.lines >= 3 && e.r.hand },
+    { id: 'tst', group: 'play', name: 'Corkscrew', desc: 'Clear 3 lines with a twist. No power-ups on the board.', pay: 40, on: 'play', test: (s, e) => e.r.twist && e.r.lines >= 3 && e.r.hand },
     { id: 'pc', group: 'play', name: 'Clean Slate', desc: 'Clear the whole board. No power-ups on the board.', pay: 55, on: 'play', test: (s, e) => e.r.perfect && e.r.hand },
-    { id: 'mini2', group: 'play', name: 'Small Wonder', desc: 'Clear 2 lines with a T-spin Mini. No power-ups on the board.', pay: 60, on: 'play', test: (s, e) => e.r.mini && e.r.lines >= 2 && e.r.hand },
+    { id: 'mini2', group: 'play', name: 'Small Wonder', desc: 'Clear 2 lines with a mini twist. No power-ups on the board.', pay: 60, on: 'play', test: (s, e) => e.r.mini && e.r.lines >= 2 && e.r.hand },
     { id: 'combo10', group: 'play', name: 'Unbroken', desc: 'Reach a 10-combo. No power-ups on the board.', pay: 75, on: 'play', test: (s, e) => hs(e).hcombo >= 10 },
-    { id: 'golden_ts', group: 'play', name: 'Gilded Twist', desc: 'T-spin triple while gold is out. No other power-ups on the board.', pay: 75, on: 'play', test: (s, e) => e.r.golden && e.r.tspin && e.r.lines >= 3 && e.r.hand },
+    { id: 'golden_ts', group: 'play', name: 'Gilded Twist', desc: 'Twist triple while gold is out. No other power-ups on the board.', pay: 75, on: 'play', test: (s, e) => e.r.golden && e.r.twist && e.r.lines >= 3 && e.r.hand },
     // Pace: the last hundred pieces set by hand, timed on the wall clock (nothing pauses it), clearing 36 lines —
     // a tidy stack at a steady clip.
     { id: 'pace33', group: 'play', name: 'Allegro', desc: '100 pieces in 3 minutes, clearing 36+ lines. No power-ups on the board.', pay: 90, on: 'play', counts: (r, g, R) => paceCounts(R), test: (s, e) => pace(e.g, 180e3) },
     { id: 'quads4', group: 'play', name: 'Quartet', desc: '4 quads in a row, no other clears between. No power-ups on the board.', pay: 90, on: 'play', test: (s, e) => hs(e).hquads >= 4 },
-    { id: 'lines500', group: 'play', name: 'Marathon', desc: 'Clear 500 lines on one board.', pay: 90, on: 'play', test: (s, e) => std(e.g) >= 500, progress: (s) => [s.stats.free.bestLines, 500] },
-    { id: 'b2b8', group: 'play', name: 'Relentless', desc: '8 quads or T-spins back to back. No power-ups on the board.', pay: 100, on: 'play', test: (s, e) => hs(e).hb2b >= 8 },
-    { id: 'tst_b2b', group: 'play', name: 'Spiral Staircase', desc: 'A back-to-back T-spin triple. No power-ups on the board.', pay: 100, on: 'play', test: (s, e) => e.r.tspin && e.r.lines >= 3 && e.r.hand && hs(e).hb2b >= 1 },
+    { id: 'lines500', group: 'play', name: 'The Long Road', desc: 'Clear 500 lines on one board.', pay: 90, on: 'play', test: (s, e) => std(e.g) >= 500, progress: (s) => [s.stats.free.bestLines, 500] },
+    { id: 'b2b8', group: 'play', name: 'Relentless', desc: 'A streak of 8 quads or twists. No power-ups on the board.', pay: 100, on: 'play', test: (s, e) => hs(e).hb2b >= 8 },
+    { id: 'tst_b2b', group: 'play', name: 'Spiral Staircase', desc: 'A twist triple on a streak. No power-ups on the board.', pay: 100, on: 'play', test: (s, e) => e.r.twist && e.r.lines >= 3 && e.r.hand && hs(e).hb2b >= 1 },
     { id: 'old_growth', group: 'play', name: 'Old Growth', desc: 'Keep one board for 30 days and 2,000 pieces.', pay: 100, on: 'play', test: (s, e) => e.g.s.pieces >= 2000 && Date.now() - (e.g.s.startedAt || Date.now()) >= 30 * 86400e3 },
     // The perfect-clear opener: ten pieces from an empty board, four lines, nothing left, no items.
     { id: 'pc_open', group: 'play', name: 'Opening Act', desc: 'Clear the whole board within the first 10 pieces. No power-ups used.', pay: 100, on: 'play', test: (s, e) => e.r.perfect && e.g.s.pieces <= 10 && cellsOf(e.g) === e.g.s.lines * e.g.w && !usedItems(e.g) },
     // Power-ups played well: three different power-up combos on one board.
     { id: 'it_showman', group: 'play', name: 'Showman', desc: 'Find 3 different power-up combos on one board.', pay: 100, on: 'play', test: (s, e) => itemCombos(e.g) >= 3 },
-    { id: 'pc3', group: 'play', name: 'Spotless', desc: 'Clear the whole board 3 times on one board. No power-ups on the board.', pay: 125, on: 'play', test: (s, e) => (e.g.s.hperfect || 0) >= 3 },
-    { id: 'pc_b2b', group: 'play', name: 'Grand Finale', desc: 'A back-to-back quad that clears the whole board. No power-ups on the board.', pay: 125, on: 'play', test: (s, e) => e.r.perfect && quadOf(e.r) && e.r.b2b && e.r.hand && hs(e).hb2b >= 1 },
+    { id: 'pc3', group: 'play', name: 'Squeaky Clean', desc: 'Clear the whole board 3 times on one board. No power-ups on the board.', pay: 125, on: 'play', test: (s, e) => (e.g.s.hperfect || 0) >= 3 },
+    { id: 'pc_b2b', group: 'play', name: 'Grand Finale', desc: 'A quad on a streak that clears the whole board. No power-ups on the board.', pay: 125, on: 'play', test: (s, e) => e.r.perfect && quadOf(e.r) && e.r.b2b && e.r.hand && hs(e).hb2b >= 1 },
     { id: 'all_items', group: 'play', name: 'Tried Everything', desc: 'Use every power-up once.', pay: 125, on: 'play', test: (s) => itemsTried(s) >= L.ITEM_ORDER.length, progress: (s) => [itemsTried(s), L.ITEM_ORDER.length] },
     { id: 'it_sweep', group: 'play', name: 'Clean Sweep', desc: 'Empty a board of 60+ blocks with one power-up.', pay: 125, on: 'play', test: (s, e) => swept(e) },
     { id: 'score250k', group: 'play', name: 'Quarter Million', desc: 'Score 250,000 on one board. No power-ups used.', pay: 150, on: 'play', test: (s, e) => e.g.s.score >= 250000 && !usedItems(e.g) },
     { id: 'sb_combos', group: 'play', name: 'Tinkerer', desc: 'Find every Free Play combo.', pay: 150, on: 'play', test: (s) => combosFound(s) >= combosAll(), progress: (s) => [combosFound(s), combosAll()] },
-    { id: 'tspin100', group: 'play', name: 'Spin Cycle', desc: '100 line-clearing T-spins on one board. No power-ups on the board.', pay: 175, on: 'play', test: (s, e) => (e.g.s.htspins || 0) >= 100 },
-    // Forty lines in a hundred pieces is every block cleared: a perfect clear on the hundredth piece.
+    { id: 'twist100', group: 'play', name: 'Spin Cycle', desc: '100 line-clearing twists on one board. No power-ups on the board.', pay: 175, on: 'play', test: (s, e) => (e.g.s.htwists || 0) >= 100 },
+    // Forty lines in a hundred pieces is every block cleared: a spotless board on the hundredth piece.
     { id: 'clean40', group: 'play', name: 'Nothing Left Over', desc: 'Clear 40 lines in the first 100 pieces, ending empty. No power-ups used.', pay: 200, on: 'play', test: (s, e) => e.r.perfect && std(e.g) >= 40 && e.g.s.pieces <= 100 && cellsOf(e.g) === e.g.s.lines * e.g.w && !usedItems(e.g) },
 
     { id: 'chain20', group: 'play', name: 'Maxed Out', desc: 'Reach a chain of 20. No power-ups on the board.', pay: 250, tier: 'legend', on: 'play', test: (s, e) => hs(e).hchain >= 20 },
     { id: 'pace67', group: 'play', name: 'Presto', desc: '100 pieces in 90 seconds, clearing 36+ lines. No power-ups on the board.', pay: 300, tier: 'legend', on: 'play', counts: (r, g, R) => paceCounts(R), test: (s, e) => pace(e.g, 90e3) },
-    { id: 'pc_tspin', group: 'play', name: 'Twist Ending', desc: 'Clear the whole board with a T-spin. No power-ups on the board.', pay: 300, tier: 'legend', on: 'play', test: (s, e) => e.r.perfect && e.r.tspin && e.r.hand },
+    { id: 'pc_twist', group: 'play', name: 'Twist Ending', desc: 'Clear the whole board with a twist. No power-ups on the board.', pay: 300, tier: 'legend', on: 'play', test: (s, e) => e.r.perfect && e.r.twist && e.r.hand },
     { id: 'quads10', group: 'play', name: 'Ten Tall', desc: '10 quads in a row, no other clears between. No power-ups on the board.', pay: 325, tier: 'legend', on: 'play', test: (s, e) => hs(e).hquads >= 10 },
     { id: 'pc10', group: 'play', name: 'Perfect Ten', desc: 'Clear the whole board 10 times on one board. No power-ups on the board.', pay: 350, tier: 'legend', on: 'play', test: (s, e) => (e.g.s.hperfect || 0) >= 10 },
-    { id: 'tst10', group: 'play', name: 'Corkscrew Virtuoso', desc: '10 T-spin triples on one board. No power-ups on the board.', pay: 350, tier: 'legend', on: 'play', test: (s, e) => (e.g.s.htst || 0) >= 10 },
-    { id: 'b2b20', group: 'play', name: 'Unbreakable', desc: '20 quads or T-spins back to back. No power-ups on the board.', pay: 350, tier: 'legend', on: 'play', test: (s, e) => hs(e).hb2b >= 20 },
+    { id: 'tst10', group: 'play', name: 'Corkscrew Virtuoso', desc: '10 twist triples on one board. No power-ups on the board.', pay: 350, tier: 'legend', on: 'play', test: (s, e) => (e.g.s.htst || 0) >= 10 },
+    { id: 'b2b20', group: 'play', name: 'Unbreakable', desc: 'A streak of 20 quads or twists. No power-ups on the board.', pay: 350, tier: 'legend', on: 'play', test: (s, e) => hs(e).hb2b >= 20 },
     { id: 'golden20', group: 'play', name: 'Midas', desc: '5 gold clears in a row on a chain of 20+. No other power-ups on the board.', pay: 350, tier: 'legend', on: 'play', test: (s, e) => (e.g.s.goldRun || 0) >= 5 },
     { id: 'million', group: 'play', name: 'Pure Million', desc: 'Score 1,000,000 on one board. No power-ups used.', pay: 400, tier: 'legend', on: 'play', test: (s, e) => e.g.s.score >= 1e6 && !usedItems(e.g) },
     { id: 'purist', group: 'play', name: 'Purist', desc: 'Clear 1,000 lines on one board. No power-ups used.', pay: 450, tier: 'legend', on: 'play', test: (s, e) => std(e.g) >= 1000 && !usedItems(e.g) },
     { id: 'lines5000', group: 'play', name: 'Evergreen', desc: 'Clear 5,000 lines on one board.', pay: 500, tier: 'legend', on: 'play', test: (s, e) => std(e.g) >= 5000, progress: (s) => [s.stats.free.bestLines, 5000] },
 
     // Classic — per game.
-    { id: 'cl_tetris4', group: 'classic', name: 'Four Tetrises', desc: '4 tetrises in one game.', pay: 25, on: 'classic', test: (s, e) => e.tetrises >= 4 },
+    { id: 'cl_fourq', group: 'classic', name: 'Four Quads', desc: '4 quads in one game.', pay: 25, on: 'classic', test: (s, e) => e.quads >= 4 },
     { id: 'cl_l10', group: 'classic', name: 'Double Digits', desc: 'Reach level 10.', pay: 30, on: 'classic', test: (s, e) => e.level >= 10 },
     { id: 'cl_100k', group: 'classic', name: 'Six Figures', desc: 'Score 100,000 in one game.', pay: 30, on: 'classic', test: (s, e) => e.score >= 100000 },
     { id: 'cl_l15', group: 'classic', name: 'Terminal Velocity', desc: 'Reach level 15.', pay: 60, on: 'classic', test: (s, e) => e.level >= 15 },
     { id: 'cl_300k', group: 'classic', name: 'High Roller', desc: 'Score 300,000 in one game.', pay: 75, on: 'classic', test: (s, e) => e.score >= 300000 },
 
-    { id: 'cl_t25', group: 'classic', name: 'Tetris Machine', desc: '25 tetrises in one game.', pay: 350, tier: 'legend', on: 'classic', test: (s, e) => e.tetrises >= 25 },
+    { id: 'cl_t25', group: 'classic', name: 'Quad Machine', desc: '25 quads in one game.', pay: 350, tier: 'legend', on: 'classic', test: (s, e) => e.quads >= 25 },
     { id: 'cl_l20', group: 'classic', name: 'Level Twenty', desc: 'Reach level 20.', pay: 350, tier: 'legend', on: 'classic', test: (s, e) => e.level >= 20 },
     { id: 'cl_1m', group: 'classic', name: 'Classic Million', desc: 'Score 1,000,000 in one game.', pay: 500, tier: 'legend', on: 'classic', test: (s, e) => e.score >= 1e6 },
 
     { id: 'cl_games100', group: 'classic', name: 'Regular', desc: 'Play 100 games (1 minute or 10 lines each).', pay: 55, on: 'classic', test: (s) => s.stats.classic.games >= 100, progress: (s) => [s.stats.classic.games, 100] },
-    { id: 'cl_tetris10', group: 'classic', name: 'Tetris Ten', desc: '10 tetrises in one game.', pay: 75, on: 'classic', test: (s, e) => e.tetrises >= 10 },
+    { id: 'cl_tenq', group: 'classic', name: 'Quad Ten', desc: '10 quads in one game.', pay: 75, on: 'classic', test: (s, e) => e.quads >= 10 },
     { id: 'cl_nohold', group: 'classic', name: 'Hands Free', desc: 'Reach level 10 without hold.', pay: 90, on: 'classic', test: (s, e) => e.level >= 10 && !e.g.s.holds },
     { id: 'cl_pc', group: 'classic', name: 'Clean Sweep', desc: 'Clear the whole board.', pay: 100, on: 'classic', test: (s, e) => e.r.perfect },
-    { id: 'cl_tst', group: 'classic', name: 'Falling Corkscrew', desc: 'Clear 3 lines with a T-spin.', pay: 100, on: 'classic', test: (s, e) => e.r.tspin && e.r.lines >= 3 },
-    { id: 'cl_sprint', group: 'classic', name: 'Sprint', desc: 'Clear 40 lines in 90 seconds.', pay: 100, on: 'classic', test: (s, e) => e.lines >= 40 && e.ms < 90000 },
-    { id: 'cl_tspin10', group: 'classic', name: 'Spinning Plates', desc: '10 T-spins in one game.', pay: 110, on: 'classic', test: (s, e) => e.g.s.tspins >= 10 },
+    { id: 'cl_tst', group: 'classic', name: 'Falling Corkscrew', desc: 'Clear 3 lines with a twist.', pay: 100, on: 'classic', test: (s, e) => e.r.twist && e.r.lines >= 3 },
+    { id: 'cl_dash', group: 'classic', name: 'Quick Forty', desc: 'Clear 40 lines in 90 seconds.', pay: 100, on: 'classic', test: (s, e) => e.lines >= 40 && e.ms < 90000 },
+    { id: 'cl_twist10', group: 'classic', name: 'Spinning Plates', desc: '10 twists in one game.', pay: 110, on: 'classic', test: (s, e) => e.g.s.twists >= 10 },
     // Streaks and combos are about keeping up: with no clock in Free Play they are a matter of patience there, so the
     // long ones live here, under gravity.
-    { id: 'cl_quads4', group: 'classic', name: 'Four on the Floor', desc: '4 tetrises in a row, no other clears between.', pay: 100, on: 'classic', test: (s, e) => (e.g.s.quadRun || 0) >= 4 },
-    { id: 'cl_b2b8', group: 'classic', name: 'Under Pressure', desc: '8 tetrises or T-spins back to back.', pay: 175, on: 'classic', test: (s, e) => e.g.s.b2b >= 8 },
+    { id: 'cl_quads4', group: 'classic', name: 'Four on the Floor', desc: '4 quads in a row, no other clears between.', pay: 100, on: 'classic', test: (s, e) => (e.g.s.quadRun || 0) >= 4 },
+    { id: 'cl_b2b8', group: 'classic', name: 'Under Pressure', desc: 'A streak of 8 quads or twists.', pay: 175, on: 'classic', test: (s, e) => e.g.s.b2b >= 8 },
     { id: 'cl_combo10', group: 'classic', name: 'Stay Lit', desc: 'Reach a 10-combo.', pay: 125, on: 'classic', test: (s, e) => e.r.combo >= 10 },
-    { id: 'cl_allquads', group: 'classic', name: 'Nothing but Tetrises', desc: 'Clear 40 lines in one game with tetrises only.', pay: 200, on: 'classic', test: (s, e) => e.lines >= 40 && e.lines === e.tetrises * 4 },
+    { id: 'cl_allquads', group: 'classic', name: 'Nothing but Quads', desc: 'Clear 40 lines in one game with quads only.', pay: 200, on: 'classic', test: (s, e) => e.lines >= 40 && e.lines === e.quads * 4 },
 
-    { id: 'cl_sprint60', group: 'classic', name: 'Photo Finish', desc: 'Clear 40 lines in 50 seconds.', pay: 400, tier: 'legend', on: 'classic', test: (s, e) => e.lines >= 40 && e.ms < 50000 },
+    { id: 'cl_dash50', group: 'classic', name: 'Photo Finish', desc: 'Clear 40 lines in 50 seconds.', pay: 400, tier: 'legend', on: 'classic', test: (s, e) => e.lines >= 40 && e.ms < 50000 },
     { id: 'cl_nohold20', group: 'classic', name: 'Unaided', desc: 'Reach level 20 without hold.', pay: 400, tier: 'legend', on: 'classic', test: (s, e) => e.level >= 20 && !e.g.s.holds },
     { id: 'cl_combo15', group: 'classic', name: 'Endless Chain', desc: 'Reach a 15-combo.', pay: 350, tier: 'legend', on: 'classic', test: (s, e) => e.r.combo >= 15 },
     { id: 'cl_l25', group: 'classic', name: 'Past the Curve', desc: 'Reach level 25.', pay: 450, tier: 'legend', on: 'classic', test: (s, e) => e.level >= 25, progress: (s) => [s.stats.classic.bestLevel, 25] },
@@ -132,7 +132,7 @@
     { id: 'pz_first100', group: 'puzzle', name: 'Clairvoyant', desc: '100 first-try solves in a row. No hints.', pay: 500, tier: 'legend', on: 'puzzle', test: (s) => s.stats.puzzle.bestFirstRun >= 100, progress: (s) => [s.stats.puzzle.bestFirstRun || 0, 100] },
 
     // Lifetime — across every mode; checked on any event and once a minute.
-    { id: 'lu_triathlon', group: 'lull', name: 'Triathlon', desc: 'In one day: a Free Play quad, a Classic tetris and a Hard puzzle.', pay: 60, on: 'any', test: (s) => triathlon(s) >= 3, progress: (s) => [triathlon(s), 3] },
+    { id: 'lu_triathlon', group: 'lull', name: 'Triathlon', desc: 'In one day: a Free Play quad, a Classic quad and a Hard puzzle.', pay: 60, on: 'any', test: (s) => triathlon(s) >= 3, progress: (s) => [triathlon(s), 3] },
     { id: 'lu_hours10', group: 'lull', name: 'Good Company', desc: 'Play for 10 hours.', pay: 60, on: 'any', test: (s) => s.stats.timeMs.total >= 10 * 3600e3, progress: (s) => [Math.floor(s.stats.timeMs.total / 3600e3), 10] },
     { id: 'lu_days30', group: 'lull', name: 'Familiar Face', desc: 'Play on 30 days.', pay: 100, on: 'any', test: (s) => s.stats.days >= 30, progress: (s) => [s.stats.days || 0, 30] },
     { id: 'lu_half', group: 'lull', name: 'Halfway There', desc: 'Earn half of the other achievements.', pay: 125, on: 'any', test: (s) => earnedOthers(s) >= Math.ceil(others().length / 2), progress: (s) => [earnedOthers(s), Math.ceil(others().length / 2)] },
@@ -176,7 +176,7 @@
   /** A quad set by a piece (the board's R.quad rows: 4 on Normal shapes); a result made by hand, 4 own lines. */
   const quadOf = (r) => (r.quad !== undefined ? !!r.quad : (r.lines || 0) - (r.plain || 0) >= 4);
   /**
-   * Where the Free Play feats do not count (!R.feats): a board narrower than Standard (quads, combos, perfect clears and
+   * Where the Free Play feats do not count (!R.feats): a board narrower than Standard (quads, combos, spotless boards and
    * points come in a few pieces there), shapes other than Normal, Physics.
    */
   const narrow = (g) => !!g && !rulesOf(g).feats;
@@ -206,10 +206,10 @@
   const usedItems = (g) => Object.values(g.s.items || {}).some((n) => n > 0);
   const itemsTried = (s) => L.ITEM_ORDER.filter((id) => (s.stats.items.used[id] || 0) > 0).length;
   const hardWilds = (s) => wildIds().filter((m) => ((s.stats.puzzle.mods[m] || {}).hard || 0) > 0).length;
-  // Today's line in the day log: which Dailies were solved on their day, and the day's quad / tetris / Hard puzzle.
+  // Today's line in the day log: which Dailies were solved on their day, and the day's quad / Classic quad / Hard puzzle.
   const today = (s) => (s.history || {})[L.dateKey()] || {};
   const dailiesToday = (s) => ['E', 'M', 'H'].filter((d) => (today(s).dailies || '').includes(d)).length;
-  const triathlon = (s) => ['quad', 'tetris', 'hard'].filter((k) => today(s)[k]).length;
+  const triathlon = (s) => ['quad', 'cquad', 'hard'].filter((k) => today(s)[k]).length;
   // Everything the shop sells for lines (factory rewards and the free starters aside).
   const forSale = () => Object.keys(L.COSMETICS || {}).flatMap((k) => Object.keys(L.COSMETICS[k]).filter((id) => L.COSMETICS[k][id].price > 0 && !L.COSMETICS[k][id].reward).map((id) => [k, id]));
   const cosmeticsOwned = (s) => forSale().filter(([k, id]) => (s.owned[k] || []).includes(id)).length;

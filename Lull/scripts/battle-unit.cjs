@@ -277,7 +277,7 @@ module.exports = function battleUnit({ L, test }) {
     assert.strictEqual(B.pay(S, 'swift', false), 4 * 0.85 * 0.5);
     Object.assign(S.S, { lines: 10, pieces: 4 });
     assert(Math.abs(B.pay(S, 'easy', true) - 4 * 0.4 * 0.4) < 1e-9, 'capped by pieces: backfires never pay more than pieces set');
-    // At most 0.34 a piece (Standard pays 0.37–0.39): a perfect clearer of every set, against Swift.
+    // At most 0.34 a piece (Standard pays 0.37–0.39): a spotless clearer of every set, against Swift.
     for (const preset of ['normal', 'tiny', 'frantic', 'pentominoes']) {
       const R = Recipe.rules(R0({ shapes: { preset } }), 10);
       assert((R.E / 10) * R.f * B.LEVELS.swift.D <= 0.34 + 1e-9, preset);

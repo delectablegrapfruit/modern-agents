@@ -20,10 +20,10 @@
 //                T spread   its lane and both beside it     S, Z push  its lane's stack back up a row
 //                L, J angle the lane its foot points to (L right, J left; at a wall its own)
 //                stone      nothing                         other shapes: by their shape (shotOf)
-//              Clears: one volley a row; a T-spin's volley breaks armour; back-to-back adds 1 to every hit; each clear
-//              of a combo holds every lane's next lowering back a second; a perfect clear breaks every lane's lowest
+//              Clears: one volley a row; a twist's volley breaks armour; a streak adds 1 to every hit; each clear
+//              of a combo holds every lane's next lowering back a second; a spotless clear breaks every lane's lowest
 //              block outright.
-//   Blocks     glass 1 hit; dense 2; armour only a T-spin volley (or a perfect clear) breaks it; prism, when broken,
+//   Blocks     glass 1 hit; dense 2; armour only a twist volley (or a spotless clear) breaks it; prism, when broken,
 //              hits both lanes beside it; drip, as the lowest, lets a single stone fall into its lane every 8 s (shown
 //              2 s before); weight lowers its lane two rows at a time; echo leaves two stones when it fuses; lock
 //              cannot be hit while the lane it points to hangs lower than it.
@@ -123,7 +123,7 @@
       kinds: { easy: [[G, 1], ['prism', 0.45]], medium: [[G, 1], ['dense', 0.3], ['prism', 0.45]], hard: [[G, 1], ['dense', 0.45], ['prism', 0.45]] } },
     { name: 'Weight', line: 'A weight lowers its lane two rows at a time.', depth: 7, pace: 1,
       kinds: { easy: [[G, 1], ['weight', 0.3]], medium: [[G, 1], ['dense', 0.3], ['weight', 0.3]], hard: [[G, 1], ['dense', 0.4], ['prism', 0.2], ['weight', 0.35]] } },
-    { name: 'Armour', line: 'Only a T-spin clear breaks armour.', depth: 6, pace: 1.1,
+    { name: 'Armour', line: 'Only a twist clear breaks armour.', depth: 6, pace: 1.1,
       kinds: { easy: [[G, 1], ['armour', 0.12]], medium: [[G, 1], ['dense', 0.3], ['armour', 0.15]], hard: [[G, 1], ['dense', 0.4], ['prism', 0.2], ['weight', 0.2], ['armour', 0.18]] } },
     { name: 'Combo', line: 'Clear with piece after piece: each clear holds every lane back a second.', depth: 7, pace: 0.8,
       kinds: { easy: [[G, 1], ['dense', 0.3]], medium: [[G, 1], ['dense', 0.4], ['prism', 0.2]], hard: [[G, 1], ['dense', 0.45], ['prism', 0.2], ['weight', 0.25], ['armour', 0.1]] } },
@@ -133,7 +133,7 @@
       kinds: { easy: [[G, 1], ['echo', 0.35]], medium: [[G, 1], ['dense', 0.3], ['echo', 0.4]], hard: [[G, 1], ['dense', 0.4], ['prism', 0.2], ['weight', 0.2], ['drip', 0.12], ['echo', 0.4]] } },
     { name: 'Lock', line: 'A lock cannot be hit while the lane it points to hangs lower.', depth: 7, pace: 1,
       kinds: { easy: [[G, 1], ['lock', 0.2]], medium: [[G, 1], ['dense', 0.3], ['lock', 0.25]], hard: [[G, 1], ['dense', 0.4], ['prism', 0.2], ['weight', 0.2], ['armour', 0.1], ['echo', 0.2], ['lock', 0.25]] } },
-    { name: 'Back to back', line: 'Tetrises and T-spins back to back hit one harder.', depth: 8, pace: 0.95,
+    { name: 'Streak', line: 'Quads and twists in a streak hit one harder.', depth: 8, pace: 0.95,
       kinds: { easy: [[G, 1], ['dense', 0.5]], medium: [[G, 1], ['dense', 0.5], ['prism', 0.2], ['armour', 0.12]], hard: [[G, 1], ['dense', 0.5], ['prism', 0.2], ['weight', 0.2], ['armour', 0.15], ['drip', 0.12], ['echo', 0.15], ['lock', 0.12]] } },
     { name: 'The deep', line: 'Every kind of block, and deeper.', depth: 9, pace: 0.9,
       kinds: { easy: [[G, 1], ['prism', 0.35]], medium: [[G, 1], ['dense', 0.45], ['prism', 0.2], ['weight', 0.2], ['drip', 0.12]], hard: [[G, 1], ['dense', 0.5], ['prism', 0.25], ['weight', 0.25], ['armour', 0.15], ['drip', 0.15], ['echo', 0.2], ['lock', 0.15]] } },
@@ -149,7 +149,7 @@
   const stageOk = (s) => s === 'endless' || (Number.isInteger(s) && s >= 1 && s <= STAGE_COUNT);
   /** A stage in words: "Stage 3", "Endless". */
   const stageName = (s) => (s === 'endless' ? 'Endless' : 'Stage ' + s);
-  /** Can the board's shapes make a T-spin (they deal the T)? Where not, armour is dense. */
+  /** Can the board's shapes make a twist (they deal the T)? Where not, armour is dense. */
   function hasT(r) {
     const sh = r && r.shapes;
     if (!sh || sh.preset === 'normal' || sh.preset === 'frantic') return true;
@@ -341,7 +341,7 @@
   }
 
   /**
-   * One hit at lane x's lowest block (dmg damage; o.spin: a T-spin's volley, which breaks armour). Recorded in ev.hits:
+   * One hit at lane x's lowest block (dmg damage; o.spin: a twist's volley, which breaks armour). Recorded in ev.hits:
    * { x, y (the block's row), r: 'break' | 'crack' | 'armour' | 'locked' | 'none', from }.
    */
   function hit(D, x, dmg, ev, o, from) {
@@ -518,7 +518,7 @@
         const p = this.pend;
         this.pend = null;
         if (!p) return;
-        res.descent = fire(this.D, p.rows, p.removed, { spin: !!(res.tspin || res.mini), b2b: !!res.b2b, combo: res.combo || 0, perfect: !!res.perfect });
+        res.descent = fire(this.D, p.rows, p.removed, { spin: !!(res.twist || res.mini), b2b: !!res.b2b, combo: res.combo || 0, perfect: !!res.perfect });
         sync(this.D, g.board);
         if (left(this.D) === 0) g.end('cleared');
       },
@@ -657,7 +657,7 @@
         }
         if (y == null) continue;
         out.push({ rot, x, y, abs: g.absCells(p, rot, x, y) });
-        // A T turned into its slot from there (the turn's kicks, as the engine takes them): a T-spin, where three of its box's corners are blocked.
+        // A T turned into its slot from there (the turn's kicks, as the engine takes them): a twist, where three of its box's corners are blocked.
         if (p.type.id === 'T' && !p.special && !(g.mods && g.mods.noRotate)) {
           for (const dir of [1, -1]) {
             const to = (rot + dir + 4) % 4, kicks = Pieces.kicksFor(p.type, rot, to);
@@ -678,7 +678,7 @@
   }
 
   /**
-   * A careful player's choice: each spot judged by the board it would leave (El-Tetris weights, with the rows it
+   * A careful player's choice: each spot judged by the board it would leave (Dellacherie-style weights, with the rows it
    * clears and the room left under the descent counted).
    */
   function judge(g, sp) {
@@ -696,7 +696,7 @@
       if (gap < 4) squeeze += (4 - gap) * (4 - gap);
       if (l.blocks[0].k === 'armour') armour++;
     });
-    // A T-spin that clears is worth a lot where armour hangs lowest.
+    // A twist that clears is worth a lot where armour hangs lowest.
     const spin = sp.spin && rows.length ? 4 + 6 * armour : 0;
     return -4.5 * land + 3.4 * rows.length + spin - 3.2 * s.rowT - 9.3 * s.colT - 7.9 * s.holes - 3.4 * s.wells - 6 * squeeze;
   }
@@ -794,8 +794,8 @@
       list: [
         { id: 'ds_first', name: 'Daylight', desc: 'Clear a Descent stage.', pay: 30, on: 'descent', test: (s, e) => e.kind === 'cleared' },
         { id: 'ds_lock', name: 'Unlocked', desc: 'Break a lock.', pay: 40, on: 'descent', test: (s, e) => !!e.ev && e.ev.broken.some((b) => b.k === 'lock') },
-        { id: 'ds_armour', name: 'Through the Armour', desc: 'Break an armoured block with a T-spin.', pay: 80, on: 'descent', test: (s, e) => !!e.ev && e.ev.broken.some((b) => b.k === 'armour') && !e.ev.perfect },
-        { id: 'ds_perfect', name: 'Clean Sky', desc: 'Make a perfect clear on a Descent board.', pay: 100, on: 'descent', test: (s, e) => !!e.ev && e.ev.perfect },
+        { id: 'ds_armour', name: 'Through the Armour', desc: 'Break an armoured block with a twist.', pay: 80, on: 'descent', test: (s, e) => !!e.ev && e.ev.broken.some((b) => b.k === 'armour') && !e.ev.perfect },
+        { id: 'ds_perfect', name: 'Clean Sky', desc: 'Clear a Descent board spotless.', pay: 100, on: 'descent', test: (s, e) => !!e.ev && e.ev.perfect },
         { id: 'ds_endless', name: 'Fifty Down', desc: 'Break 50 rows in one Endless board.', pay: 120, on: 'descent', test: (s, e) => !!e.D && e.D.stage === 'endless' && rowsBroken(e.D) >= 50 },
         { id: 'ds_twelve', name: 'All Twelve', desc: 'Clear all 12 stages on one level.', pay: 200, on: 'descent',
           test: (s) => IDS.some((id) => ((ds(s).stages || {})[id] || []).length >= STAGE_COUNT),

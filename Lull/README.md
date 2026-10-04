@@ -31,8 +31,8 @@ light and dark (`scripts/tabbar-test.cjs`).
 ## Play
 
 **Free Play** — endless, relaxed. Every cleared line is banked as ⦵ *lines*, the currency. A quad set by hand or a
-T-spin (or a mini) is worth one line more — a quad made by a Noodle, a Giant or a Blueprint is not — and the
-back-to-back streak multiplies it: an extra ×0.05 for each quad or T-spin after the first, up to ×2 (twenty-one in a
+twist (or a mini) is worth one line more — a quad made by a Noodle, a Giant or a Blueprint is not — and the
+streak streak multiplies it: an extra ×0.05 for each quad or twist after the first, up to ×2 (twenty-one in a
 row) — a quad on a full streak pays 10 (pay is kept to the hundredth, rounded down). The *chain* — the streak
 plus the combo, the number to be proud of — is counted apart and shown beside the multiplier (`Chain 16 · ×1.65`).
 A piece that has no room where it appears (a new one, one swapped in from hold, or one an item makes) is fitted into the nearest open spot above the stack it could get to — beside a tall column, stood on end, in another turn — never down inside the stack. Only when it fits nowhere is the board full; a hold swap or an item with no room is just refused (a short note says so, nothing is used up).
@@ -45,7 +45,7 @@ those lines (short, a note says Not enough lines and the Undo is kept: an Undo n
 below 0); and
 like a set piece, an Undo that closes a card starts the set grace, so a double click does not drop the piece it
 brought back. The ⦵ glyph is a cleared line running into a small black hole; in the wallet it is drawn large, a dark disc in a thin glowing ring. Everywhere else it is one character, `L.LINE` (U+29B5, never an emoji), drawn by a one-glyph font of the page's own (`scripts/line-glyph.py`) that is first in every font list and in the canvas fonts, so text, prices, toasts and the boards all show the same shape. Retiring a board (Boards ▸ Retire, or Retire when it fills up) shows its whole life: how long it
-lived and was played, pieces, lines, score, quads, T-spins, perfect clears, best combo and back-to-back, holds and
+lived and was played, pieces, lines, score, quads, twists, spotless clears, best combo and streak, holds and
 every power-up used on it; Stats ▸ Free Play keeps the last boards.
 
 *The menu* (`js/menu.js`) — opened only by hand: the Menu button in the Relaxed status bar (where Boards was), or Esc
@@ -107,7 +107,7 @@ screen a board is fitted and centred like any other, its cells never more than 1
 same space (a 4 × 8 board is a small board, not a few giant blocks), and Hold and Next keep a readable width however
 small the cells of a tall board get; the library's thumbnails fit any size into a Standard one's box. At any size,
 Trapdoor and Settle (like Tornado and Mirror World) are refused, "No room. Move the piece first", when a block would
-come down into the piece in play, and words over the board (PERFECT CLEAR, a combo's name) fit the well (two lines,
+come down into the piece in play, and words over the board (SPOTLESS, a combo's name) fit the well (two lines,
 then smaller). A board full with a piece wider than the board keeps it inside the walls (turned upright), and a control
 hint wider than the well goes under, over or beside the plate instead.
 
@@ -131,9 +131,9 @@ Gold on the status bar counts the clears left on this board); and a won Double o
 clear's worth. Pay is rounded down to the hundredth (`Library.bank`); the wallet and its totals keep hundredths (never drifting) and the
 wallet shows whole lines, while "+2.5" on the board, a combo's callout and Lines banked show the hundredths. What stays
 as cleared: the board's own Lines and every per-board figure (the status bar, the rows, the summary's Lines, Past
-boards), clears by size, T-spin lines and the score. On a board narrower than Standard a quad takes three pieces, a
-flat I on an empty board is a perfect clear and combos never end, so the Free Play feats (quads, streaks, combos,
-chains, T-spins, perfect clears, score, Showman) count only on boards 10 wide or more, as do Painted Row and the
+boards), clears by size, twist lines and the score. On a board narrower than Standard a quad takes three pieces, a
+flat I on an empty board is a spotless clear and combos never end, so the Free Play feats (quads, streaks, combos,
+chains, twists, spotless clears, score, Showman) count only on boards 10 wide or more, as do Painted Row and the
 Triathlon's quad; the line counts, pace, Clean Sweep (60 blocks, six rows' worth when wider), Toolbox, Tried
 Everything, Tinkerer and Old Growth count on any board. The Free Play group's note in Achievements says this. Retired keeps up to 50 read-only
 records, newest first — name, started and retired dates, the final stack, the pieces it ended with (the one in play, the
@@ -166,20 +166,20 @@ milestone twice). Lifetime totals count play once, whichever board it was on, an
 duplicate: a copy would be a way to replay a board's future. The daily gift, the factory and the control hints do not
 look at boards at all.
 
-**Classic** — a board mode ([Classic](#classic) under Board options: New board ▸ Mode ▸ Classic), played on the Play tab like any board; what follows is how it plays with its settings at their defaults. Plain Tetris: pieces fall, faster every ten
-lines (guideline speed curve), half-second lock delay, soft and hard drop, hold (once per piece), game over, best
+**Classic** — a board mode ([Classic](#classic) under Board options: New board ▸ Mode ▸ Classic), played on the Play tab like any board; what follows is how it plays with its settings at their defaults. Plain falling blocks: pieces fall, faster every ten
+lines (the modern speed curve), half-second lock delay, lowering and dropping, hold (once per piece), game over, best
 score. The well's top row is a row like any other: every piece appears with its top in it (the I too), a piece touching
 the ceiling still touches it after a turn (the space above the well counts as open, so a T turned flat against the
-ceiling is no T-spin), and the game ends only when a new piece cannot appear right where it
+ceiling is no twist), and the game ends only when a new piece cannot appear right where it
 appears (no nearby spot is tried). Then it tops out the classic way: that piece sets where it is, over the stack, and
 the next three from the queue appear one after another at the same spot (about 0.4 s apart, each with a soft set
 sound), each over the last, see-through where they overlap and traced round their outlines, each outline a step inside the
 one before so the layers show in any palette; then the game over sound,
 the announcer and the card, the pile still behind it. Nothing counts any more by then (score, lines, best and stats
 are final and saved at the top out); Space or a tap skips to the card, pausing or leaving ends it there, and under
-reduced motion the pile is all there at once. Lines you clear still bank as ⦵: each line banks 0.7 ⦵, multiplied by the back-to-back streak — ×0.05 a
-link after the first, up to ×1.5 at eleven (the status bar's *Bank*); the score is never multiplied. Music: Korobeiniki (the public-domain folk tune), note for note in its own
-key, A minor, slowed to 80 and dressed as calm ambient electronica with a little IDM in its detail — a soft, round
+reduced motion the pile is all there at once. Lines you clear still bank as ⦵: each line banks 0.7 ⦵, multiplied by the streak — ×0.05 a
+link after the first, up to ×1.5 at eleven (the status bar's *Bank*); the score is never multiplied. Music: Hush, Lull's own tune (`js/audio.js`; `scripts/test.cjs` keeps it apart from
+well-known melodies), in A minor at 80, dressed as calm ambient electronica with a little IDM in its detail — a soft, round
 lead (a sine with a breath of FM and a triangle under it, gliding between notes that touch, a late vibrato on long
 ones) over warm, detuned analog-style saw pads of min9, min11 and maj9 chords, breathing through a slightly resonant
 filter on two slow LFOs and dipping gently each time the kick lands (a sidechain-like pump), a warm sub, a soft digital
@@ -199,12 +199,20 @@ home key, when the music is not playing — so when the suite moves into the bri
 whole sound moves first — never more than a tritone, so it keeps its register — until its first note is in the
 scale, by whichever move disturbs the rest least; then each other note goes to the nearest note of the scale,
 keeping the sound's shape: a rising run still rises, a chord keeps its order, twins a few cents apart still beat, and
-slides, partials, FM and detune ride along. Noise, clicks and low thuds or sweeps are left alone. The Tetris Worlds announcer (her lines cut from the game's recording by `scripts/splice-voice.py`, embedded)
-calls singles, doubles, triples, tetrises, T-spin singles/doubles/triples, back-to-backs, "amazing" for a perfect
-clear, "rank up" for a new level and "top out" at the end. Every clip is levelled to the same loudness (BS.1770, leaning a little toward the loudest moment, then
-peak-limited), so no line is louder than another, and she sits well under the sound effects. Her takes are mixed in on the fly: thinned lows, eased
-low-mids and top, a gentle compressor, the same reverb as everything else and a soft stereo echo, with the music
-dipping under her; Settings ▸ Sound ▸ Announcer volume sets her level. Settings ▸ Sound ▸ Announcer in Relaxed (off by default) lets her call Free Play clears too. Both toggle under the board or in Settings ▸ Sound. P pauses; another tab or another window pauses
+slides, partials, FM and detune ride along. Noise, clicks and low thuds or sweeps are left alone. The announcer whispers the big moments: "single", "double",
+"triple", "quad", "twist", "twist single", "twist double" (a twist triple is "twist" and "triple"), "streak" before a
+clear that carries one on, "spotless" when the board is cleared, "level up" and "game over". Her clips were generated
+with ElevenLabs (see [Credits](#credits)) and are embedded by `scripts/voice-clips.cjs`, which records where her speech
+starts and ends in each one (measured by decoding it in Chromium) and a loudness trim, fitted through her real chain so
+every call comes out within a fraction of a dB of the others. Each is played from 20 ms before her first sound to just
+past her last (a 10 ms fade in, a 70 ms fade out, so no cut clicks), so she speaks right on the event, though some files
+open with nearly two seconds of silence. Her desk, built for a whisper: a high-pass at 110 Hz (breath rumble), a 2.5 dB
+dip at 400 Hz (boxiness), a split-band de-esser (a Linkwitz-Riley split at 5 kHz, the top band through its own fast
+compressor) and a 3 dB cut at 7 kHz for the hiss and sibilance, a gentle 2.5:1 compressor (10 ms in, 120 ms out), a
+1.5 dB lift of air at 11 kHz, her level, and a limiter so she never clips; a short room of her own (0.6 s, built like
+the shared one) about 20 dB under her. She sits about 7 dB under the sound effects, and the music dips about 4 dB
+under her (in over about 40 ms, back over a second). `scripts/voice-test.cjs` (run by the browser test) renders every
+call through that chain and holds it to all of this. Settings ▸ Sound ▸ Announcer volume sets her level. Settings ▸ Sound ▸ Announcer in Relaxed (off by default) lets her call Free Play clears too. Both toggle under the board or in Settings ▸ Sound. P pauses; another tab or another window pauses
 too, and so does the pointer leaving the window (Settings ▸ Controls ▸ Pause when the pointer leaves); P or Resume
 carries on.
 
@@ -237,7 +245,7 @@ numbers run through a fixed, keyed shuffle of all 2³² seeds per difficulty, so
 belongs to exactly one date (hover a seed, or press and hold it, to see which). That is 4,294,967,296 seeds per difficulty, 12,884,901,888 in all. History lists every puzzle you opened — solved or
 not, tries, time — with its seed and a play button; the star saves a seed (from a row, or the star on the puzzle's card
 for the puzzle in play; filled once saved), and History ▸ Saved keeps them. Solutions only ever need turns a person expects (in place, or
-nudged sideways off a wall), never SRS kicks that hop a piece through a gap — and only the one direction a single
+nudged sideways off a wall), never kicks that hop a piece through a gap — and only the one direction a single
 turn button gives, so that button (Up — on a turned board, the arrow pointing away from the floor — or a right-click)
 solves every puzzle: clockwise, or counter-clockwise under Inverted Controls, which turns both around (those puzzles
 are built, checked and hinted counter-clockwise). Upside Down and Sideways turn the picture, never mirror it, so a
@@ -251,7 +259,7 @@ that single button alone cannot solve it. Wildcards:
 | Odd Shapes | trominoes and all 18 pentominoes (the twelve and the mirror images of the six that have one) |
 | Wraparound | the side walls are portals (they glow, with ⇆) |
 | Rigid | no turning; each piece arrives already facing its way |
-| Heavy | no lowering, hard drops only |
+| Heavy | no lowering, drops only |
 | Inverted Controls | left is right and turns are reversed |
 | Upside Down / Sideways | the board turns 180° / 90°; the arrows follow the screen |
 | Fog | only blocks near your piece are visible |
@@ -364,13 +372,13 @@ clicking it asks once (its name and a Buy & use button with the price) — dimme
 | Choice | Pick of Three (20, common: play one of the next three now; this piece takes its place in line), Best Fit (45, uncommon: the piece becomes whichever of the seven fits the stack best, right over its spot), Order Slip (55, rare: choose the piece in play) |
 | Tools | Patch (20, common: one block that drops into the highest covered hole in its column), Ghost (50, uncommon: passes through blocks into the first gap below where it fits), Drill (40, uncommon: bores out its column), Bomb (45, uncommon: clears a 13-block diamond where it lands), Laser (65, rare: clears every row it touches, full or not), Black Hole (90, rare: swallows everything within three blocks) |
 | Board | Mirror World (20, common: flips the board left to right), Undo (5, common: takes back the last placement and its lines; one item with Puzzles' Undo, the count shared, and every free one comes as a pack of 5), Trapdoor (40, uncommon: the bottom row falls away, whatever it holds), Tornado (60, rare: shuffles the columns, holes and all), Settle (70, rare: every block falls straight down; full rows clear) |
-| Luck | Golden Piece (50, uncommon: the next five clears pay ×2), Double or Nothing (30, uncommon: the next clear pays double if it is a quad set by hand — not a Noodle's, a Giant's or a Blueprint's — a T-spin or a mini, nothing if it is less), Safety Net (60 on Standard, less on wider boards, rare: keeps the back-to-back streak through one ordinary clear) |
+| Luck | Golden Piece (50, uncommon: the next five clears pay ×2), Double or Nothing (30, uncommon: the next clear pays double if it is a quad set by hand — not a Noodle's, a Giant's or a Blueprint's — a twist or a mini, nothing if it is less), Safety Net (60 on Standard, less on wider boards, rare: keeps the streak through one ordinary clear) |
 
 Nothing here is about a clock — Free Play has none — so they are about choice and shape: which piece, what it
 becomes, what the stack looks like after, what the next clear is worth. Tools and Shapers change the piece in play
 (the ghost shows where a Patch, Ghost or Bomb will act); press the same one again before the piece is set and the old
 piece, the queue and the item come back. Board items act at once and can be undone (with an Undo). Lines a power-up clears are plain
-lines: they pay and keep the combo going, but are never a quad or a T-spin and never add a back-to-back link (a
+lines: they pay and keep the combo going, but are never a quad or a twist and never add a streak link (a
 Tornado only rearranges — every row keeps its count, so it never clears). Every one of them, Luck aside, puts
 power-ups on the board for the achievements.
 
@@ -392,12 +400,12 @@ the future, so the next one waits for it).
 
 *Combos* — things that pay a little extra: lines, a short boost (the next few clears pay ×1.25–×1.5) and points, each
 told once in a small callout on the board. Four are pure skill: a row all one colour (Painted Row), four lines with an I
-brought back out of hold (From the Pocket), a line cleared by a piece tucked in under an overhang (Keyhole), two T-spin
-doubles back to back (Twin Spin). The rest are a power-up used well, each saying exactly what to do: complete a row with
+brought back out of hold (From the Pocket), a line cleared by a piece tucked in under an overhang (Keyhole), two twist
+doubles in one streak (Twin Spin). The rest are a power-up used well, each saying exactly what to do: complete a row with
 a Patch dropped into a covered hole (Patch Job); clear a line with a Ghost piece set under an overhang (Through the
 Wall); clear four lines at once with a Noodle or a Giant (Tall Order); three at once with a Blueprint piece
 (Architect); four with a Best Fit piece (Tailor-Made); win a Double or Nothing (All In); let a Safety Net keep a
-back-to-back streak of five or more (Caught); take out ten blocks or more with one Bomb (Full Blast); swallow twenty
+streak streak of five or more (Caught); take out ten blocks or more with one Bomb (Full Blast); swallow twenty
 or more with one Black Hole (Event Horizon). With no clock in Free Play, none is for repeating: across the board library each pays
 in full, then half, then a quarter, then nothing; boosts come with the first two; and a power-up combo pays less than
 the power-up it takes. Stats ▸ Free Play lists them: found ones by name, the rest as a question mark.
@@ -406,8 +414,8 @@ the power-up it takes. Stats ▸ Free Play lists them: found ones by name, the r
 through pieces that clear nothing, so it is never wasted. It adds five clears' pay once over: 50 for its 50 on quads at
 a full streak, so at best it breaks even, and on ordinary clears about 10 — a luxury, never a profit (none of Luck
 can do better than break even). Double or Nothing waits for the next clear, too: a quad set by hand (not a Noodle, a
-Giant or a Blueprint), a T-spin or a mini pays double, anything less pays nothing (the lines still count on the
-board). Safety Net is a one-time pass for the back-to-back streak: the next clear that would end it does not, and the
+Giant or a Blueprint), a twist or a mini pays double, anything less pays nothing (the lines still count on the
+board). Safety Net is a one-time pass for the streak: the next clear that would end it does not, and the
 multiplier stays. What it keeps is worth most on a Standard board: the saved clear paid at the full streak (a triple:
 3 more) and the twenty quads it would take to climb back, 52.5 more, 55.5 in all (wider, the streak climbs slower to
 a lower cap, so it keeps less: about 32 at 12 wide, 10 at 20; narrower, a little under 55.5). Its price on a board is
@@ -425,7 +433,7 @@ one; a Tornado whirls while every column slides to its new place; Settle's block
 a row that cleared comes apart as it gets there, and setting the next piece mid-fall ends the fall). Gravity follows
 the board, so on Upside Down and Sideways boards things fall toward its floor; shake is small and moves only the board.
 It is all for show — the board is already final, so the next piece is never kept waiting — mostly over in about 0.7 s,
-with fixed pools of bodies and particles; Reduced motion turns it into plain fades. Shapes beyond the seven (a Noodle, a Giant, a Blueprint drawing, a mirrored odd shape) turn wherever there is room: when no kick fits, a turn that would poke past the ceiling, floor or a wall is nudged back in by exactly that much (if the way in is clear), and one that would dip into the stack is stood on it or slid off the block beside it, never out of a well or through blocks. The seven keep plain SRS, and puzzles keep exactly the turns they were built with.
+with fixed pools of bodies and particles; Reduced motion turns it into plain fades. Shapes beyond the seven (a Noodle, a Giant, a Blueprint drawing, a mirrored odd shape) turn wherever there is room: when no kick fits, a turn that would poke past the ceiling, floor or a wall is nudged back in by exactly that much (if the way in is clear), and one that would dip into the stack is stood on it or slid off the block beside it, never out of a well or through blocks. The seven keep plain Lull kicks, and puzzles keep exactly the turns they were built with.
 
 **Shop** — click the wallet (or ⌘6). Cosmetics only (power-ups are not sold), one kind at a time: a row of kinds (←/→ step
 while it has focus) picks which — when it does not fit, a chevron at each end pages it a visible width at a time,
@@ -436,12 +444,12 @@ The catalogue is short on purpose, every item distinct:
 
 | Kind | Items (price ⦵) |
 |---|---|
-| Palettes | Classic (free), Mist 400, Sunset 600, Aurora 850, Ink 1,100, Handheld 1,400, Gold Leaf 2,800, Prism 5,000 (its hues glide round the wheel, a turn in 45 s), Assembly Line (factory) |
+| Palettes | Classic (free), Mist 400, Sunset 600, Aurora 850, Ink 1,100, Moss 1,400, Gold Leaf 2,800, Prism 5,000 (its hues glide round the wheel, a turn in 45 s), Assembly Line (factory) |
 | Mino skins | Flat (free), Bevel 350, Pixel 550, Bubble 750, Glass 1,000, Gummy 1,250, Neon Tube 1,600, Gem 2,100, Lantern 2,800, Steel (factory) |
 | Frames | Hairline (free: the well's own rim), Inlay 300, Glow 650, Brass 1,200, Rainbow 2,500 (a slow ring of spectrum, a turn in 12 s), Hazard Tape (factory) |
 | Backdrops | Plain and Grid (free), Blueprint 350, Dusk 700, Aurora 1,200 (three veils of light drifting on long periods), Starfield 1,700 (the bright stars twinkle), Conveyor (factory; its treads slide) |
 | Line clears | Fade (free), Sparkle 450, Ripple 850, Bloom 1,300, Welding Sparks (factory) |
-| Ghosts | Outline (free), Soft 200, Dotted 300, Glow 450, Off |
+| Shadows | Outline (free), Soft 200, Dotted 300, Glow 450, Off |
 | Sounds | Drift (free), Chiptune 450, Marimba 650, Analog Synth 900, Glass 1,200, Wind Chimes 1,600 |
 
 Moving previews (Prism, Rainbow, the moving backdrops, every line clear on a loop) share one animation loop that
@@ -488,12 +496,12 @@ name, a plain description such as "Clear 4 lines with one piece. No power-ups on
 earned), easiest first, with a filter for all, to do or earned; the slow ones show their progress. Left of the filter,
 Recent: the latest earned (its icon and name; *Latest*, then the star alone, as the window narrows) goes to it, and its chevron lists the
 last six, newest first, with how long ago (`now`, `12 min`, `5 h`, `3 d`, then the date); it is not there until one is
-earned. The toast, Recent and its list all go through one function (`UI.showAchievement`). Each place has its own quiet colour and its tab's icon — Free Play sea-glass teal, Classic handheld olive, Puzzles orchid, Factory copper, Lifetime a neutral slate (`--area-*` in `lull.css`, deep inks in light, each at least 4.5:1 on its tint, apart from the accent and the gold for colour-blind eyes too) — on the group's header and bar, each row's badge, bar and pay, Recent and the toast; a legendary one stays gold (`--gold-ink` for its words), with a dot of its place's colour. None is a
+earned. The toast, Recent and its list all go through one function (`UI.showAchievement`). Each place has its own quiet colour and its tab's icon — Free Play sea-glass teal, Classic olive, Puzzles orchid, Factory copper, Lifetime a neutral slate (`--area-*` in `lull.css`, deep inks in light, each at least 4.5:1 on its tint, apart from the accent and the gold for colour-blind eyes too) — on the group's header and bar, each row's badge, bar and pay, Recent and the toast; a legendary one stays gold (`--gold-ink` for its words), with a dot of its place's colour. None is a
 gimme — the easiest is a quad with no power-ups on the board (15 ⦵) — and 150 pieces of ordinary play earn nothing new, nor do 150 with a
 few items used along the way (a test plays both, at a relaxed piece every three seconds).
 
 *Free Play has no clock and a bag of power-ups*, so nearly anything there could be bought or waited out (an Order
-Slip for every I, a laser for every row, a Settle for every perfect clear, an Undo for every slip). So its skill ones
+Slip for every I, a laser for every row, a Settle for every spotless clear, an Undo for every slip). So its skill ones
 say **no power-ups on the board**: no power-up that touches the pieces or the board — Undo included — during the
 feat, nor since the board was last empty (an empty board, however it got that way, is a fresh start; Luck never counts
 against it, and one taken back before its piece is set never happened). Each description says it in those words; the
@@ -501,36 +509,36 @@ exact rule is said once, in the (i) beside the Free Play header. (The code calls
 need a board that never used a power-up at all; two ask for pace — the last hundred pieces set with no power-ups on
 the board, on the wall clock, clearing 36 lines (Allegro,
 within three minutes; Presto, ninety seconds); and the streaks that are really about keeping up have Classic versions under
-gravity (eight back-to-back, four tetrises in a row, a 15-combo). Hover the Chain in the status bar to see whether
+gravity (eight streak, four quads in a row, a 15-combo). Hover the Chain in the status bar to see whether
 there are power-ups on the board (and the chain without them); a board's summary shows its best chain and its best
 with no power-ups on the board. Three are for playing with power-ups on purpose: three different power-up combos on
 one board (Showman), a board of 60 blocks or more emptied by one power-up (Clean Sweep), and every combo found
 (Tinkerer).
 
-Medium ones (50–100 ⦵): a perfect clear with no power-ups on the board, a T-spin Mini double, a 10-combo, a T-spin triple on gold, four quads in a row, Allegro,
+Medium ones (50–100 ⦵): a spotless clear with no power-ups on the board, a mini twist double, a 10-combo, a twist triple on gold, four quads in a row, Allegro,
 the perfect-clear opener (within a fresh board's first ten pieces, no items), Showman; a Hard puzzle first try
-without hints or undo, all three Dailies on their day, or a quad, a tetris and a Hard puzzle in one day; 1,000
-pieces delivered by the factory, or an hour of it running smoothly. Hard ones (100–200 ⦵): eight back-to-back, three perfect clears,
-100 line-clearing T-spins (all with no power-ups on the board), 250,000 points never using a power-up, Clean Sweep, Tinkerer, forty lines in a
-fresh board's first hundred pieces with nothing left over, every item used; in Classic a perfect clear, a T-spin
-triple, a 10-combo, eight back-to-back, level 10 without hold, 40 lines in 90 s or 40 lines of tetrises alone; a Hard
+without hints or undo, all three Dailies on their day, or a quad, a Classic quad and a Hard puzzle in one day; 1,000
+pieces delivered by the factory, or an hour of it running smoothly. Hard ones (100–200 ⦵): eight streak, three spotless clears,
+100 line-clearing twists (all with no power-ups on the board), 250,000 points never using a power-up, Clean Sweep, Tinkerer, forty lines in a
+fresh board's first hundred pieces with nothing left over, every item used; in Classic a spotless clear, a twist
+triple, a 10-combo, eight streak, level 10 without hold, 40 lines in 90 s or 40 lines of quads alone; a Hard
 puzzle first try in under 20 s, twenty first-try solves in a row, 100 Hard puzzles; 50,000 lines in all, 30 days
-played. Thirty-two are legendary (250–1,000 ⦵): a chain of 20 with no power-ups on the board, Presto, a perfect clear with a T-spin, ten
-quads in a row, five gold clears on a chain of 20, ten perfect clears or 5,000 lines on one board, a million
+played. Thirty-two are legendary (250–1,000 ⦵): a chain of 20 with no power-ups on the board, Presto, a spotless clear with a twist, ten
+quads in a row, five gold clears on a chain of 20, ten spotless clears or 5,000 lines on one board, a million
 without items; Classic level 25, a 15-combo, 40 lines in 50 s, level 20 without hold, a Classic million; every
 wildcard on Hard, a Daily thirty days in a row, a hundred first-try solves in a row; a hundred hours or a hundred days
 with Lull, everything the shop sells, half a million lines earned (undone lines aside, since an undone clear replayed would count
 twice); 10,000 factory pieces delivered or 50,000 minos
 dropped, a hundred days collecting — and *Lull*, every other one. They read the stats below plus a few kept for them: the
-board's hand counts (`freshStats` in `js/engine.js`: whether there are power-ups on the board, and the back-to-back,
-combo, quads in a row, chain, line-clearing T-spins, T-spin triples and perfect clears without them, gold clears on a
+board's hand counts (`freshStats` in `js/engine.js`: whether there are power-ups on the board, and the streak,
+combo, quads in a row, chain, line-clearing twists, twist triples and spotless clears without them, gold clears on a
 chain of 20, and the last 101 such pieces' times), Classic's own clock (running time only), undos per puzzle, runs of first-try solves (a retry, hint,
 fail, skipped or abandoned puzzle ends one) and of Dailies on consecutive dates (each solved on its day), Hard solves per wildcard, days played (a day counts once you
 play in front, not when the factory runs alone), Classic games (one counts once it has run a minute or cleared ten
 lines, so a quick restart is not a game), and the
-day log's quad (set by a piece: a laser or a Tornado is not one) / tetris / Hard puzzle / Dailies. Lifetime ones are also checked once a minute.
+day log's quad (set by a piece: a laser or a Tornado is not one) / Classic quad / Hard puzzle / Dailies. Lifetime ones are also checked once a minute.
 
-**Stats** — lines by source and day (play, combos, puzzles …), combos found, clears, T-spins, combos, pieces per minute, inputs per piece, puzzle solves
+**Stats** — lines by source and day (play, combos, puzzles …), combos found, clears, twists, combos, pieces per minute, inputs per piece, puzzle solves
 and first-try rates by difficulty and wildcard, factory output and shapes pressed, power-ups bought, given and used (and free hints given and used), time by mode.
 
 ## Board options
@@ -544,7 +552,7 @@ item acts and how Tornado shuffles, what clears, what an item may remove, what h
 board its own way: `game.end(kind)`, told after the lock and kept in the save until Undo; how Full Blast and Event
 Horizon count what an item took: `comboCount`, or by default one copy's share, `R.copies`, so a Mirror Bomb counts
 one half), its view and its window. An
-unrated board (shapes other than the seven) has no difficult clears: no quad, no back-to-back streak, no bonus, ×1. Parts always run in a fixed
+unrated board (shapes other than the seven) has no difficult clears: no quad, no streak streak, no bonus, ×1. Parts always run in a fixed
 order (shapes, mirror, physics, classic, descent, race, battle), whatever order they load in. What pays and counts is measured in own
 cells: a row holding a cell the player never placed is plain and pays only the player's cells, and no option pays more
 per piece or per action than a Standard board (`f = min(1, 4 / E)`, E the mean cells a piece). Outside the board,
@@ -629,7 +637,7 @@ doubles every piece.
 *Dealing.* A round is a shuffled list of tokens, each source's share of it, a list's shapes drawn without repeats from
 shuffled cycles; the rest of the round (and Frantic's bag) is `game.bag` (`'2.5'`, `'3'`, `'~11'`), so Undo, the save
 and a reload need nothing new, and every draw is on the game's own stream. Groups of 1 to 5 blocks deal the built-in
-pieces (the seven keep SRS and T-spins); 6 blocks deals its 60 in cycles; 7 to 12 are drawn uniformly through
+pieces (the seven keep Lull kicks and twists); 6 blocks deals its 60 in cycles; 7 to 12 are drawn uniformly through
 `js/polytable.js` (built by `scripts/polytable.cjs`: for each group, how many shapes lie under each node of its
 enumeration tree at depth 8 or 9; a draw walks to the node that holds shape k, skipping whole subtrees, then enumerates
 that node alone, with typed arrays: a 12-block draw well under a millisecond). A shape is named by its cells (`P:` a
@@ -638,7 +646,7 @@ the id alone, its colour one of slots 9–14 by its key; types made this way are
 from the set on its own random stream; Best Fit and Order Slip choose from the set's shapes when they are 29 or fewer
 (Normal, Tiny, Frantic, Pentominoes, groups of 1 to 5), else from 7 drawn. Every piece of a set other than Normal appears
 with its top in the top row, turned its flattest way that fits (ties: more blocks on its bottom row, then the lowest
-turn: the seven appear as SRS has them); the trays draw it that way, or in the turn whose blocks are more than a quarter
+turn: the seven appear in Lull's spawn orientation); the trays draw it that way, or in the turn whose blocks are more than a quarter
 larger in that slot; the first Next slot and the Hold box are half its length long; and when the piece after the first
 would be under 3 px a block (12 blocks on a phone), Next shows the first alone. The New board preview shows the set's
 first few pieces, faint, on its floor.
@@ -669,7 +677,7 @@ overlapping where they meet, and on an odd width the centre column is its own mi
 piece is sees the pair (the engine's `placed`): fitting, the ghost, setting, Best Fit, and the room a held or swapped
 piece is given, so either half stops the pair and it lands when either half rests, even on a board that is not
 symmetric. A piece appears centred in the left half (one wider than the half, centred on the board). A lock is one piece
-(its shape counted once) that placed the pair's cells; a T-spin reads the piece's own box. Items act at both spots
+(its shape counted once) that placed the pair's cells; a twist reads the piece's own box. Items act at both spots
 (`targets`): two drill bits, two bombs, two black holes, the pair's laser rows; a Patch goes into a covered hole only
 where its copy's hole is open in the same row, else lands like a block; a Ghost is a pair. Tornado shuffles the left
 half and gives the right half the reflection of that order (an odd width's centre column stays put); Settle and
@@ -679,7 +687,7 @@ Trapdoor are as ever; Mirror World is refused ("Not on a Mirror board"). Mirror 
 (8 on Normal shapes, f ½), so a row pays w/20 Standard lines (half a Standard single on a Mirror board 10 wide) and a
 quad is still four rows, paying half; the streak's links count by that worth, so quads come twice as often and each is
 half a link. `wEff` is w/2: the feats count on a Mirror board 20 wide; Full Blast and Event Horizon count one half
-(`comboCount`: the larger half, an odd width's centre column in each). Measured with a streak bot (quads, back to back,
+(`comboCount`: the larger half, an odd width's centre column in each). Measured with a streak bot (quads in a streak,
 hold, the real controls; `scripts/mirror-unit.cjs`), a Mirror board earns no more per action than Standard at 10, 11
 and 20 wide, and no more per piece than Standard at 10, 11 and 20; at 10 no more per piece than a plain board 10 wide.
 (At 20, where a row is a Standard line, it plays like Standard; a plain board 20 wide pays less, its easy streaks
@@ -694,7 +702,7 @@ so the copy follows the finger. Taps are unchanged.
 
 ### Physics
 A modifier (Modifiers ▸ Physics, with its *Material* under the switch; the rules in `js/physics.js`, the look and Free
-Play's controller in `js/physicsview.js`). Tetris with physics.
+Play's controller in `js/physicsview.js`). Falling blocks with physics.
 
 *The piece in play is yours until you let it go.* It is rigid and it never falls by itself (as everywhere in Relaxed
 play); touching a body or the floor never sets it. ← → move it a column, the turns turn it, hold holds it, and ↓ takes
@@ -761,7 +769,7 @@ at once, what is left of each body it crossed splits into its connected groups (
 in the frames after. What a clear removes pays at once.
 
 *Pay* is per mino removed, flat: `Physics.WORTH` (0.55) of a cell of a row, by the board's worth (`Library.worth`). No
-quads, T-spins, back-to-back, combos, perfect clears or streak multiplier; a band scores 100 × bands² + 10 a mino.
+quads, twists, streak, combos, spotless clears or streak multiplier; a band scores 100 × bands² + 10 a mino.
 Fairness (`scripts/physics-test.cjs`): a bot that picks the lowest landing from the bodies' picture and sets each piece
 down gently never earns more per piece or per action than a Standard board played by a greedy or key-sparing bot
 (measured: 0 to 0.014 a piece at widths 6, 10 and 16 against Standard's 0.38; 0 to 0.004 an action against 0.091).
@@ -777,7 +785,7 @@ There is no exact Undo history (`R.undo` false).
 
 *The board fills up* when a new piece cannot appear (a body where it would), or when settled bodies (asleep, or slower
 than 2 cells/s as a whole) stand above the top line for 1.5 s. Its card is Board full: the board's numbers (Blocks
-cleared; no quad, T-spin, combo or chain tiles), Rewind 5 s (while there is a moment to go back to), Boards and Retire.
+cleared; no quad, twist, combo or chain tiles), Rewind 5 s (while there is a moment to go back to), Boards and Retire.
 Away from the board (another window or app, the pointer gone with Pause when the pointer leaves) it waits at a Paused
 card (Space or Resume); a window over it only holds it.
 
@@ -794,8 +802,8 @@ level, B type's 25). Shapes, sizes 4 × 8 to 20 × 40 and Big play as they are.
 | Undo | Rewind 5 s: there are no placements to take back in a moving world, only moments |
 | Ghost | none: the landing spot depends on bodies still moving |
 | Control hints | off: they teach placing on the grid |
-| Feats, achievements by skill, combos | off (`R.noFeats`): no quads, T-spins or streaks exist |
-| Quads, T-spins, back-to-back, combo, perfect clear, multiplier | none: a clear is bands of minos, paid flat per mino |
+| Feats, achievements by skill, combos | off (`R.noFeats`): no quads, twists or streaks exist |
+| Quads, twists, streak, combo, spotless clear, multiplier | none: a clear is bands of minos, paid flat per mino |
 | Best Fit | refused: it weighs placements on a still grid |
 | Patch, Ghost, Drill, Bomb, Laser, Black Hole (Tools) | refused: they act on grid cells at the lock |
 | Mirror World, Trapdoor, Tornado, Settle | refused: they flip, drop, shuffle or compact a still grid (bodies settle by themselves) |
@@ -819,12 +827,12 @@ A mode (`js/classic.js`, its controller and settings `js/classicview.js`): the b
 library, resumed exactly, retired and deleted like any other; its row and record say `Classic A` (or B), with its
 level. It waits at a Start card (Space, a tap or Start; Edit rules from there too) and after a switch or a reload at a
 Paused card; away from the board (another tab, window or app, the pointer gone with Pause when the pointer leaves,
-rolled up) it pauses there; a window over it only holds it. Pieces fall by the level's gravity (the guideline curve,
+rolled up) it pauses there; a window over it only holds it. Pieces fall by the level's gravity (the modern curve,
 as before), spawn flush with the ceiling, and a piece that cannot appear where it appears is the classic top out,
 pile and all, then the Game over card (its score, level and lines; Boards, and Play again, which retires the board as
 Retire does and starts the next of the same rules at once; Space there too). The score is Classic's (a clear's points
 times its level, two a row of hard drop, one of soft drop); the board banks at Classic's rate (0.7 of a line a row,
-by the board's worth like every board, times the back-to-back streak to ×1.5; an unrated board has no streak), so it
+by the board's worth like every board, times the streak to ×1.5; an unrated board has no streak), so it
 never earns faster than Standard. No power-ups (each says Not in Classic; its bar under the board is Music and
 Pause), no Undo, no control hints. Its best score, stats (Stats ▸ Classic, and its time) and the Classic achievements
 count on a board where the feats count (Normal shapes, 10 wide or more); a level feat counts the levels reached by
@@ -832,24 +840,24 @@ lines, as from level 1, so a high start level is no shortcut. The Best shown (st
 size, `stats.classic.bests`), so a new board of the same rules shows it, and the board's own (carried on by Play
 again); Stats ▸ Classic keeps the best of all boards.
 
-*Its settings* — the Mode tab, under Plain, Classic, Descent, Race and Battle, once Classic is chosen, in the spirit of the NES and
-Game Boy Advance games:
+*Its settings* — the Mode tab, under Plain, Classic, Descent, Race and Battle, once Classic is chosen, in the spirit of the arcade and
+early home-console era:
 
 | Setting | Values | |
 |---|---|---|
 | Game type | A (endless), B (clear 25 lines) | B ends the board, Cleared (its tag and full view say so), level fixed |
 | Start level | 1–15 (default 1) | A type goes up every ten lines from there, never below it |
-| Garbage height (B) | 0–5 | the NES heights, 0, 3, 5, 8, 10 or 12 rows of 20, scaled to the board; each row about three in five full, never full, grey, never the player's (it pays nothing) |
+| Garbage height (B) | 0–5 | the old heights, 0, 3, 5, 8, 10 or 12 rows of 20, scaled to the board; each row about three in five full, never full, grey, never the player's (it pays nothing) |
 | Next | 0–5 (default 3) | whatever Settings ▸ Next says |
-| Randomizer | 7-bag, NES random | NES: a roll of eight, a repeat or the eighth rolled once more of seven (a repeat about one in 28); needs Normal shapes (other shapes bring their own dealer), so other shapes move it to the 7-bag and Normal brings it back |
-| Lock delay | Modern, NES | Modern: half a second, renewed by a move or a turn up to 15 times (a held ↓ never sets). NES: as the NES, no lock timer: pieces fall by the NES's frames a row (level 1 is its level 0: 48 frames, then 43, 38 … 2 at its level 19, 1 at 29), the gravity tick that cannot move the piece down sets it, moving or turning buys nothing, and ↓ held onto the stack sets it |
-| Music | Korobeiniki, Off | the one Classic track there is (the bar's Music button and Settings ▸ Sound ▸ Classic music still turn it off everywhere) |
-| Hard drop, Hold, Ghost | on or off | hard drop off: Space, a click and a flick down do nothing; hold off: no Hold; ghost off: none drawn |
+| Randomizer | 7-bag, Retro random | Retro: a roll of eight, a repeat or the eighth rolled once more of seven (a repeat about one in 28); needs Normal shapes (other shapes bring their own dealer), so other shapes move it to the 7-bag and Normal brings it back |
+| Lock timing | Modern, Retro | Modern: half a second, renewed by a move or a turn up to 15 times (a held ↓ never sets). Retro: as on 8-bit consoles, no lock timer: pieces fall by the old frames a row (NTSC; level 1 is its level 0: 48 frames, then 43, 38 … 2 at its level 19, 1 at 29), the gravity tick that cannot move the piece down sets it, moving or turning buys nothing, and ↓ held onto the stack sets it |
+| Music | Hush, Off | the one Classic track there is (the bar's Music button and Settings ▸ Sound ▸ Classic music still turn it off everywhere) |
+| Drop, Hold, Shadow | on or off | drop off: Space, a click and a flick down do nothing; hold off: no Hold; shadow off: no landing shadow drawn |
 | Level lock | on or off (default off) | on: the level stays at the start level all game, so gravity never speeds up; the score as ever; the status bar and the board's label say `Level 5 (locked)`; no level feat or level record (it reaches no level by lines) |
 
-Left out: the NES's own speed table and 0–19 levels (the levels stay the guideline curve Classic has always had, so
+Left out: the old consoles' own speed table and 0–19 levels (the levels stay the modern curve Classic has always had, so
 its records and achievements keep meaning what they did), DAS and ARE timing (movement is the keyboard's repeat and
-the touch gestures, as everywhere in Lull), and B type's NES "height" variants beyond the six. It composes with the
+the touch gestures, as everywhere in Lull), and B type's "height" variants beyond the six. It composes with the
 board size, the shape sets (unrated ones pay without a streak), Mirror and Physics; Descent is another mode.
 
 ### Descent
@@ -885,8 +893,8 @@ power-up removes one; Tornado, Trapdoor, Mirror World and Best Fit are refused (
 | stone | nothing |
 | other shapes | by their form, on their spawn turn: one line pierces (I5, I3, the domino, the mono); a 2 × 2 inside is heavy (P); a cell with three neighbours spreads (X, F, Y, T5); one bend angles toward its corner's side (L5, V); more bends push (N, W, Z5, U); a cluster fires a plain hit; Big pieces as their base |
 
-*Clears.* Double, Triple, Tetris: a volley a row. A T-spin's volley (Mini too) breaks armour. Back-to-back adds 1 to
-every hit. Each clear of a combo holds every lane's next lowering back a second. A perfect clear (hanging blocks do not
+*Clears.* Double, Triple, Quad: a volley a row. A twist's volley (a mini too) breaks armour. A streak adds 1 to
+every hit. Each clear of a combo holds every lane's next lowering back a second. A spotless clear (hanging blocks do not
 count against it) breaks every lane's lowest block outright, armour and locks too.
 
 *Blocks* (glass and stone, no creatures):
@@ -895,7 +903,7 @@ count against it) breaks every lane's lowest block outright, armour and locks to
 |---|---|---|
 | Glass | a clear pane, a slow shimmer | 1 hit |
 | Dense | smoky and thicker, cracked once hit | 2 hits |
-| Armoured | banded top and bottom | only a T-spin volley (or a perfect clear) breaks it; it shields its lane |
+| Armoured | banded top and bottom | only a twist volley (or a spotless clear) breaks it; it shields its lane |
 | Prism | faceted | when broken, also hits both lanes beside it |
 | Drip | a bead underneath | as the lowest block, lets a single stone fall into its lane every 8 s (the bead swells and the landing cell shows 2 s before; it waits for the piece in play) |
 | Weight | dark, two chevrons | as the lowest block, its lane lowers 2 rows at a time, half as often again |
@@ -903,7 +911,7 @@ count against it) breaks every lane's lowest block outright, armour and locks to
 | Lock | a keyhole, a notch toward a neighbour | cannot be hit while the lane it points to hangs lower (two locks never hold each other) |
 
 *Stages* — 12, laid out the same every time (their own stream: level, stage and width), each teaching one block or clear,
-then mixing: 1 Glass, 2 Dense, 3 Push, 4 Prism, 5 Weight, 6 Armour, 7 Combo, 8 Drip, 9 Echo, 10 Lock, 11 Back to back, 12
+then mixing: 1 Glass, 2 Dense, 3 Push, 4 Prism, 5 Weight, 6 Armour, 7 Combo, 8 Drip, 9 Echo, 10 Lock, 11 Streak, 12
 The deep; and Endless (on the board's own stream, kinds coming in as rows are broken, a hundredth faster a row to 0.55 of
 its pace; its score is rows broken). The Ready card says the stage's one line ("Dense blocks take two hits. An O hits for
 two."). On shapes with no T, armour is dense.
@@ -919,8 +927,8 @@ two."). On shapes with no T, armour is dense.
 Stages 3 and 7 run faster (0.85, 0.8), 6 slower (1.1). Narrower boards' lanes are no slower than by width (×w/10, 0.6–1.4),
 taller ones slower by height.
 
-*How hard* (`scripts/descent-unit.cjs`, 10 × 20, a piece every 2 s, 2 seeds a stage): a careful bot (El-Tetris weights
-with the room under the descent, T-spins where armour hangs lowest) clears Easy 23/24, Medium 22/24 and Hard 15/24 (Hard
+*How hard* (`scripts/descent-unit.cjs`, 10 × 20, a piece every 2 s, 2 seeds a stage): a careful bot (Dellacherie-style weights
+with the room under the descent, twists where armour hangs lowest) clears Easy 23/24, Medium 22/24 and Hard 15/24 (Hard
 11 and 12 mostly beat it); a careless one (any spot) clears none of Hard's 24, topping out within half a minute.
 
 *Pay* — lines as usual for clears, by the board's rules (rated as its shape set is); only own cells pay, and a row
@@ -948,7 +956,7 @@ fades out; with reduced motion nothing shimmers. No red rim. Tests: `scripts/des
 `scripts/descent-test.cjs` (the page, phones, both themes).
 
 *Achievements* (their own group): **Daylight** (30) clear a stage; **Unlocked** (40) break a lock; **Through the Armour**
-(80) break an armoured block with a T-spin; **Clean Sky** (100) a perfect clear on a Descent board; **Fifty Down** (120)
+(80) break an armoured block with a twist; **Clean Sky** (100) a spotless clear on a Descent board; **Fifty Down** (120)
 break 50 rows on one Endless board; **All Twelve** (200) clear all 12 stages on one level; **The Deep** (250, legend)
 clear stage 12 on Hard.
 
@@ -1256,7 +1264,7 @@ after a set holds back a swipe's drop too, a new piece mid-touch (Classic's grav
 lowering or hold from it, and one touch drops or holds once at most. Only the board's canvas starts a gesture: the
 bars, buttons, cards and toasts are taps of their own, and a touch on the board with a power-up tray open only closes
 the tray. A tap never reaches the board as a click (it would drop the piece). Settings ▸ Controls ▸ Touch: Touch
-controls, Drag sensitivity (1–10, the finger travel per cell), Hard drop swipe (Light, Medium, Firm) and Tap to turn;
+controls, Drag sensitivity (1–10, the finger travel per cell), Drop swipe (Light, Medium, Firm) and Tap to turn;
 Haptics where the device has them (not iPhone: Safari has no vibration). By touch alone, what a phone cannot use goes
 ([On phones](#iphone-and-ipad)). A long press shows a tooltip; the control hints name the gesture (`Swipe ↓ drops`, `Tap
 turns`). A phone held upright gets the whole screen, clear of the notch and home indicator: a title bar of one row
@@ -1270,9 +1278,9 @@ bounce or text selection; there is no window to roll up.
 **Collapse** — the chevron, ⌘J or a double-click on the empty bar (never by touch alone: there is no window to roll up,
 and a save rolled up on the Mac opens whole, still saying so for an Export back) rolls Lull up into its title bar, where a parade of
 pieces falls along it (`js/collapse.js`): the bar is a well on its side, four lanes deep, and pieces come in from the
-left and travel smoothly to the right, each in its own SRS orientation and at its own speed — a game gravity level on
+left and travel smoothly to the right, each in its own spawn orientation and at its own speed — a game gravity level on
 the Classic curve, mostly Level 1–2 drifters (about a cell a second), some Level 3–5 walkers and now and then a Level
-7–9 dart — and nobody ever slows down. Lanes and turns are the game's: a whole lane at a time, or a true SRS turn (the
+7–9 dart — and nobody ever slows down. Lanes and turns are the game's: a whole lane at a time, or a true Lull turn (the
 kicks that keep its column), and instant, as on the board. Since speeds are steady, every meeting is known ahead: two
 pieces side by side along the bar take opposite bands of two lanes, lying flat, and they agree which when the later one
 comes in, then both set off for them 2.2 s early (far ahead of a dart, close ahead of a drifter), a move every 0.14 s —
@@ -1421,13 +1429,12 @@ The address is shown on the `pages` job and under Settings ▸ Pages.
 
 | Path | |
 |---|---|
-| `Game/` | the game: `index.html`, `manifest.webmanifest`, `sw.js` (the offline copy), `icons/` (the Home Screen icons), `css/`, and `js/` — `webapp` (the Home Screen app: the worker, its updates, lasting storage), `icons` (the one SVG icon set), `pieces` (SRS tetrominoes, pentominoes, big and custom shapes, polyomino enumeration, ids that rebuild themselves), `board` (the grid and the one table of cell bits), `recipe` (the board recipe: its parts, rules and limits), `engine` (the floating-piece rules, every item and the recipe's hooks), `items` (the chain multiplier, combos, Luck, the daily gift, power-ups earned in play), `library` (the Relaxed board library: shelved and retired boards, names, caps), `puzzlegen` (seeds, wildcards, reverse construction, reachability search, forward verification), `factory` (the line: droppers, the conveyors and lifts, the store's sand pile, assemblers, the belt and the self-playing board and its placer, in ticks for play and time away alike; the floor's geometry; the sign's moods; `Factory.TUNE`; save repair), `store` (save, catalog, stats), `achievements`, `fxphysics` (the item effects' blocks, debris and dust: gravity, bounces, spirals, fixed pools), `render` (canvas: skins, frames, effects, item animations, rotated views), `factoryview` (the factory floor: its parts, movers and board, its price tags and its dot-matrix sign), `hints` (control hints: the struggle signals, their limits and retirement), `touch` (the touch gestures: a pure reader of fingers, and the page's touch helpers), `webapp` (the Home Screen web app: the offline copy's registration and updates), `collapse` (the window rolled up into its title bar, and the parade of pieces along it), `modes`, `retiredview` (a retired board in full view), `ui`, `app` |
+| `Game/` | the game: `index.html`, `manifest.webmanifest`, `sw.js` (the offline copy), `icons/` (the Home Screen icons), `css/`, and `js/` — `webapp` (the Home Screen app: the worker, its updates, lasting storage), `icons` (the one SVG icon set), `pieces` (the seven tetrominoes and Lull's kicks, pentominoes, big and custom shapes, polyomino enumeration, ids that rebuild themselves), `board` (the grid and the one table of cell bits), `recipe` (the board recipe: its parts, rules and limits), `engine` (the floating-piece rules, every item and the recipe's hooks), `items` (the chain multiplier, combos, Luck, the daily gift, power-ups earned in play), `library` (the Relaxed board library: shelved and retired boards, names, caps), `puzzlegen` (seeds, wildcards, reverse construction, reachability search, forward verification), `factory` (the line: droppers, the conveyors and lifts, the store's sand pile, assemblers, the belt and the self-playing board and its placer, in ticks for play and time away alike; the floor's geometry; the sign's moods; `Factory.TUNE`; save repair), `store` (save, catalog, stats), `achievements`, `fxphysics` (the item effects' blocks, debris and dust: gravity, bounces, spirals, fixed pools), `render` (canvas: skins, frames, effects, item animations, rotated views), `factoryview` (the factory floor: its parts, movers and board, its price tags and its dot-matrix sign), `hints` (control hints: the struggle signals, their limits and retirement), `touch` (the touch gestures: a pure reader of fingers, and the page's touch helpers), `webapp` (the Home Screen web app: the offline copy's registration and updates), `collapse` (the window rolled up into its title bar, and the parade of pieces along it), `modes`, `retiredview` (a retired board in full view), `ui`, `app` |
 | `Sources/Lull/` | the macOS shell: a borderless `NSPanel` (floating, all Spaces, edge-resizable, draggable by the page's title bar) around a transparent `WKWebView`, a blur for the Glass background, the save file, the ⌥⌘L hot key, and a self-test CI runs |
-| `scripts/` | `make-app.sh`, `icon.swift`, `line-glyph.py` (builds the line glyph's font into `lull.css`), `test.cjs`, `browser-test.cjs`, `audio-render.cjs` (renders and measures the synthesized audio offline), `pitch.cjs` (finds the notes in a render, to check sound effects are in the music's key), `splice-voice.py` (cuts the announcer's lines from a recording), `web-build.cjs` (the site as deployed), `web-icons.cjs` (the Home Screen icons), `web-test.cjs` and `web-browser-test.cjs` (the web app's tests, run by the two above), `touch-test.cjs` (an emulated phone played with gestures, run by browser-test), `device-test.cjs` (what each device is offered in Settings and the bar, and live changes; run by browser-test), `econ-test.cjs` (the economy against models of play: placement bots on the real engine, a puzzle model, the factory measured, a career that spends what it earns; every assumption about players in its one MODEL block; run by test.cjs), `golden.cjs` and `golden.json` (the golden identity run, and its record), `sizes-test.cjs` (board sizes: the New board window, every extreme size, pay by width, layout; run by browser-test), `undo-test.cjs` (every way of buying an Undo, and the cards that offer it at every size; run by browser-test), `retired-test.cjs` (a retired board in full view at every size, by keys and by touch; run by browser-test), `tabbar-test.cjs` (the tab bar at the bottom of a narrow window: every place fits above it, the menu and toasts, wider and rolled up; run by browser-test), `recipe-test.cjs` and `recipe-pixels.json` (the board recipe in the page: the New board window, labels, the controller, and the board drawn pixel for pixel as recorded; run by browser-test) |
+| `scripts/` | `make-app.sh`, `icon.swift`, `line-glyph.py` (builds the line glyph's font into `lull.css`), `test.cjs`, `browser-test.cjs`, `audio-render.cjs` (renders and measures the synthesized audio offline), `pitch.cjs` (finds the notes in a render, to check sound effects are in the music's key), `voice-clips.cjs` (embeds the announcer's clips with where her speech is and their loudness trims; `voice-measure.cjs` is its measuring tape, shared with `voice-test.cjs`, her checks, run by browser-test), `web-build.cjs` (the site as deployed), `web-icons.cjs` (the Home Screen icons), `web-test.cjs` and `web-browser-test.cjs` (the web app's tests, run by the two above), `touch-test.cjs` (an emulated phone played with gestures, run by browser-test), `device-test.cjs` (what each device is offered in Settings and the bar, and live changes; run by browser-test), `econ-test.cjs` (the economy against models of play: placement bots on the real engine, a puzzle model, the factory measured, a career that spends what it earns; every assumption about players in its one MODEL block; run by test.cjs), `golden.cjs` and `golden.json` (the golden identity run, and its record), `sizes-test.cjs` (board sizes: the New board window, every extreme size, pay by width, layout; run by browser-test), `undo-test.cjs` (every way of buying an Undo, and the cards that offer it at every size; run by browser-test), `retired-test.cjs` (a retired board in full view at every size, by keys and by touch; run by browser-test), `tabbar-test.cjs` (the tab bar at the bottom of a narrow window: every place fits above it, the menu and toasts, wider and rolled up; run by browser-test), `recipe-test.cjs` and `recipe-pixels.json` (the board recipe in the page: the New board window, labels, the controller, and the board drawn pixel for pixel as recorded; run by browser-test) |
 
 ## Credits
 
-The Classic announcer's lines are cut from the announcer of *Tetris Worlds* (2001); that recording belongs to its
-rights holders (The Tetris Company / THQ) and is not covered by this project's terms.
-Korobeiniki is a 19th-century folk song in the public
-domain. The interface face is Inter by Rasmus Andersson (SIL Open Font License 1.1), embedded in `css/lull.css`.
+The announcer's voice clips were generated with ElevenLabs (text to speech; voice "Flick – Seductive ASMR", model
+eleven_v3, whispered). Use of ElevenLabs output is governed by the terms of the plan it was generated on (commercial use
+needs a paid plan). Classic's music, Hush, is Lull's own. The interface face is Inter by Rasmus Andersson (SIL Open Font License 1.1), embedded in `css/lull.css`.

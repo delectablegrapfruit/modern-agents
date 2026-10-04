@@ -30,7 +30,7 @@
     odd:    { name: 'Odd Shapes', icon: '✲', desc: 'Trominoes and pentominoes in the queue.', w: { E: 0.6, M: 2, H: 2 }, x: ['big'] },
     wrap:   { name: 'Wraparound', icon: '⇆', desc: 'The side walls are portals.', w: { E: 0.6, M: 2, H: 2 } },
     rigid:  { name: 'Rigid', icon: '⊘', desc: 'Pieces cannot turn.', w: { E: 1, M: 1.5, H: 1.5 } },
-    heavy:  { name: 'Heavy', icon: '⤓', desc: 'Hard drops only.', w: { E: 1.5, M: 1, H: 0.6 } },
+    heavy:  { name: 'Heavy', icon: '⤓', desc: 'Drops only, no lowering.', w: { E: 1.5, M: 1, H: 0.6 } },
     invert: { name: 'Inverted Controls', icon: '⇄', desc: 'Left and right swap. Turns reverse.', w: { E: 0.7, M: 1.5, H: 1.5 } },
     flip:   { name: 'Upside Down', icon: '⇅', desc: 'The board is upside down. Pieces fall up.', w: { E: 1, M: 1.2, H: 1.2 }, x: ['side'] },
     side:   { name: 'Sideways', icon: '↰', desc: 'Gravity pulls to the left.', w: { E: 1, M: 1.2, H: 1.2 }, x: ['flip'] },
@@ -45,7 +45,7 @@
   };
 
   const GOALS = {
-    clear: { name: 'Clear the board', short: 'Perfect clear' },
+    clear: { name: 'Clear the board', short: 'Spotless' },
     lines: { name: 'Clear lines', short: 'Lines' },
     gems:  { name: 'Clear every gem', short: 'Gems' },
   };
@@ -159,7 +159,7 @@
           for (const [kx, ky] of kicks) {
             if (board.fits(type.rots[nr], x + kx, y + ky)) {
               // The engine takes the first kick that fits. Puzzles only count on turns a person would expect:
-              // in place, or nudged sideways off a wall — never the SRS kicks that hop a piece down or through
+              // in place, or nudged sideways off a wall — never the kicks that hop a piece down or through
               // a gap it visibly does not fit.
               if (ky !== 0 || Math.abs(kx) > maxKick) break;
               nx = x + kx; ny = y + ky; ok = true; break;
@@ -383,7 +383,7 @@
       const k = i + '|' + (held >= 0 ? queue[held].id + (queue[held].rot || 0) : '') + '|' + board.cells.join('');
       if (seen.has(k)) return false;
       seen.add(k);
-      // [piece to set, next queue index, piece held after]
+      // [piece to set, Next index, piece held after]
       const moves = [];
       if (i < n) moves.push([i, i + 1, held]);
       if (hold) {

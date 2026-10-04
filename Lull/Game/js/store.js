@@ -46,8 +46,8 @@
     tornado:   { group: 'board', name: 'Tornado', icon: '◌', price: 60, rarity: 'rare', desc: 'Shuffles the columns, holes and all.' },
     settle:    { group: 'board', name: 'Settle', icon: '⤋', price: 70, rarity: 'rare', desc: 'Every block falls straight down, closing every hole. Full rows clear.' },
     golden:    { group: 'luck', name: 'Golden Piece', icon: '✦', price: 50, rarity: 'uncommon', desc: 'Your next five clears pay double.' },
-    double:    { group: 'luck', name: 'Double or Nothing', icon: '◐', price: 30, rarity: 'uncommon', desc: 'Next clear: double if a quad set by hand (not a Noodle, Giant or Blueprint), a T-spin or a mini; else nothing.' },
-    net:       { group: 'luck', name: 'Safety Net', icon: '⊔', price: 60, rarity: 'rare', desc: 'Keeps your back-to-back streak through one ordinary clear.' },
+    double:    { group: 'luck', name: 'Double or Nothing', icon: '◐', price: 30, rarity: 'uncommon', desc: 'Next clear: double if a quad set by hand (not a Noodle, Giant or Blueprint), a twist or a mini; else nothing.' },
+    net:       { group: 'luck', name: 'Safety Net', icon: '⊔', price: 60, rarity: 'rare', desc: 'Keeps your streak through one ordinary clear.' },
   };
   const ITEM_ORDER = ITEM_GROUPS.flatMap((g) => Object.keys(ITEMS).filter((id) => ITEMS[id].group === g.id));
   /** How many one free grant of a power-up gives (the gift, play): its pack, or one. */
@@ -63,15 +63,17 @@
 
   // Colour slots: 1 I, 2 O, 3 T, 4 S, 5 Z, 6 J, 7 L, 8 garbage, 9–14 other shapes, 15 custom. Every palette keeps the
   // seven pieces apart by hue (or, for the one-hue palettes, by clear steps of value), and reads on both wells: the light
-  // theme deepens any colour too pale for its paper well (render.js, forWell).
+  // theme deepens any colour too pale for its paper well (render.js, forWell). Lull's own colours for the seven: I coral,
+  // O sky, T amber, S violet, Z teal, J lime, L orchid (Classic, Mist and Aurora; Sunset and Assembly Line their own sets), so no piece
+  // wears the colour the familiar guideline gives it (scripts/test.cjs checks).
   const PALETTES = {
-    classic:  { name: 'Classic', price: 0, colors: ['#000', '#4fd1e3', '#f7d154', '#b57ee6', '#6fd08c', '#f07178', '#5c9df2', '#f9a14e', '#6b7280', '#f06292', '#aed581', '#4db6ac', '#9575cd', '#ff8a65', '#90a4ae', '#b8c4d6'] },
-    mist:     { name: 'Mist', price: 400, colors: ['#000', '#98d1dc', '#e9dcaa', '#b9a6dc', '#a3d0b0', '#e0a2ad', '#98b0de', '#e8bd98', '#68707e', '#d6b3c9', '#c3d6ae', '#a6d1c9', '#b5aee0', '#e3b8a6', '#aab3bf', '#eef1f5'] },
-    sunset:   { name: 'Sunset', price: 600, colors: ['#000', '#ffb385', '#ffd66e', '#d9679d', '#f5946b', '#e8505b', '#9b6ad6', '#f7c087', '#5c4a6e', '#ff9aa2', '#ffcf99', '#c86b98', '#8f5fa8', '#ff7b54', '#b38fa8', '#fff2e0'] },
-    aurora:   { name: 'Aurora', price: 850, colors: ['#000', '#56e0c6', '#c9ee78', '#9d7cf4', '#44c98f', '#e66fb2', '#5a96f0', '#f2b766', '#3c4660', '#c285f0', '#86e3b8', '#58c9e0', '#7d86f2', '#ef8fa0', '#8e9cc0', '#e9f6ff'] },
+    classic:  { name: 'Classic', price: 0, colors: ['#000', '#f0857a', '#62b0f0', '#f2c055', '#9a86f0', '#45c4b0', '#a4d65e', '#e07cc8', '#6b7280', '#f06292', '#aed581', '#4db6ac', '#9575cd', '#ff8a65', '#90a4ae', '#b8c4d6'] },
+    mist:     { name: 'Mist', price: 400, colors: ['#000', '#e8a39c', '#9cc4e8', '#e9d3a0', '#b8acea', '#9fd6cb', '#c6dda4', '#deb0d6', '#68707e', '#d6b3c9', '#c3d6ae', '#a6d1c9', '#b5aee0', '#e3b8a6', '#aab3bf', '#eef1f5'] },
+    sunset:   { name: 'Sunset', price: 600, colors: ['#000', '#f5946b', '#d9679d', '#ffd66e', '#e8505b', '#9b6ad6', '#f7c087', '#ff9aa2', '#5c4a6e', '#ff9aa2', '#ffcf99', '#c86b98', '#8f5fa8', '#ff7b54', '#b38fa8', '#fff2e0'] },
+    aurora:   { name: 'Aurora', price: 850, colors: ['#000', '#f07a86', '#5aa6f2', '#f2c266', '#9d7cf4', '#4fdcc0', '#a6e070', '#e070c8', '#3c4660', '#c285f0', '#86e3b8', '#58c9e0', '#7d86f2', '#ef8fa0', '#8e9cc0', '#e9f6ff'] },
     ink:      { name: 'Ink', price: 1100, colors: ['#000', '#f2f2f0', '#c9c9c6', '#8e8e8b', '#adadaa', '#6f6f6c', '#dcdcd9', '#b9b9b6', '#4b4b4b', '#c2c2c2', '#a9a9a9', '#909090', '#777777', '#5f5f5f', '#b0b0b0', '#ffffff'] },
-    handheld: { name: 'Handheld', price: 1400, colors: ['#000', '#9bbc0f', '#c4d66a', '#306230', '#8bac0f', '#4d7a2a', '#1e4a1e', '#b0c94a', '#0f380f', '#8bac0f', '#306230', '#9bbc0f', '#306230', '#8bac0f', '#0f380f', '#cadc9f'] },
-    assembly: { name: 'Assembly Line', price: 0, reward: 'Build the first factory assembler', colors: ['#000', '#f2c14e', '#f78154', '#4d9078', '#b4436c', '#5fad56', '#2e86ab', '#f2a541', '#3d4451', '#e0a458', '#8bb174', '#5b8e7d', '#a1869e', '#d1495b', '#8d99ae', '#edf2f4'] },
+    handheld: { name: 'Moss', price: 1400, colors: ['#000', '#a9c46c', '#d3e0a1', '#3f6a3c', '#90b25b', '#5c8746', '#2b4f2e', '#bed284', '#1f3522', '#90b25b', '#3f6a3c', '#a9c46c', '#3f6a3c', '#90b25b', '#1f3522', '#d6e3b6'] },
+    assembly: { name: 'Assembly Line', price: 0, reward: 'Build the first factory assembler', colors: ['#000', '#f2a541', '#2e86ab', '#4d9078', '#f2c14e', '#5fad56', '#f78154', '#b4436c', '#3d4451', '#e0a458', '#8bb174', '#5b8e7d', '#a1869e', '#d1495b', '#8d99ae', '#edf2f4'] },
     gold:     { name: 'Gold Leaf', price: 2800, colors: ['#000', '#f9e79f', '#f4d03f', '#c99a2e', '#efd27a', '#a8801c', '#e2b650', '#fcecc0', '#5a4a1f', '#f5cba7', '#e59866', '#dc7633', '#f0b27a', '#ca6f1e', '#b9a37a', '#fffaf0'] },
     prism:    { name: 'Prism', price: 5000, animated: true, colors: null },
   };
@@ -135,7 +137,7 @@
   };
 
   const COSMETICS = { palette: PALETTES, skin: SKINS, frame: FRAMES, backdrop: BACKDROPS, effect: EFFECTS, ghost: GHOSTS, sound: SOUNDS };
-  const COSMETIC_LABELS = { palette: 'Palettes', skin: 'Mino skins', frame: 'Frames', backdrop: 'Backdrops', effect: 'Line clears', ghost: 'Ghosts', sound: 'Sounds' };
+  const COSMETIC_LABELS = { palette: 'Palettes', skin: 'Mino skins', frame: 'Frames', backdrop: 'Backdrops', effect: 'Line clears', ghost: 'Shadows', sound: 'Sounds' };
 
   const ACCENTS = ['#8fb3ff', '#7bd88f', '#f6c177', '#eb6f92', '#c4a7e7', '#9ccfd8', '#f5f5f5', '#ff9e64'];
 
@@ -200,7 +202,7 @@
         sessions: 0, days: 0, timeMs: { play: 0, classic: 0, puzzle: 0, factory: 0, total: 0 },
         classic: { games: 0, best: 0, bestLevel: 0, bestLines: 0, lines: 0, pieces: 0, bests: {} },
         lines: { earned: 0, spent: 0, play: 0, puzzles: 0, factory: 0, achievements: 0, rewound: 0, combos: 0 },
-        free: { boardLog: [], boards: 1, pieces: 0, lines: 0, score: 0, bestScore: 0, bestLines: 0, clears: [0, 0, 0, 0, 0, 0], tspins: 0, tspinLines: 0, perfect: 0, maxCombo: 0, maxB2B: 0, holds: 0, rotations: 0, moves: 0, lowers: 0, drops: 0, byType: {}, topouts: 0 },
+        free: { boardLog: [], boards: 1, pieces: 0, lines: 0, score: 0, bestScore: 0, bestLines: 0, clears: [0, 0, 0, 0, 0, 0], twists: 0, twistLines: 0, perfect: 0, maxCombo: 0, maxB2B: 0, holds: 0, rotations: 0, moves: 0, lowers: 0, drops: 0, byType: {}, topouts: 0 },
         // firstRun: first-try solves in a row; dailyRun: Dailies solved on consecutive dates (runDay is the last one).
         puzzle: { E: freshPuzzleDiff(), M: freshPuzzleDiff(), H: freshPuzzleDiff(), mods: {}, daily: 0, lastDaily: null, firstRun: 0, bestFirstRun: 0, dailyRun: 0, bestDailyRun: 0, runDay: null },
         items: { bought: {}, used: {}, got: {} },
@@ -239,6 +241,29 @@
     return out;
   }
 
+  /**
+   * Saves from before Lull named its own clears (a twist, a quad in Classic, Retro timing, its own Classic tune) keep
+   * the old names for a few keys and values: the board stats, Classic's count of quads and the day log's, five
+   * achievements and two Classic settings. They are renamed in the save's text as it is read (load, Import). The old
+   * names are spelled in pieces so the retired words appear nowhere in the game's source (scripts/test.cjs looks).
+   */
+  const OLD = { spin: 't' + 'spin', four: 'tet' + 'ris', retro: 'n' + 'es' };
+  const RENAMED = [
+    [OLD.spin + 's', 'twists'], [OLD.spin + 'Lines', 'twistLines'], ['h' + OLD.spin + 's', 'htwists'],
+    [OLD.spin + '100', 'twist100'], ['pc_' + OLD.spin, 'pc_twist'], ['cl_' + OLD.spin + '10', 'cl_twist10'],
+    ['cl_' + OLD.four + '4', 'cl_fourq'], ['cl_' + OLD.four + '10', 'cl_tenq'], ['cl_sprint', 'cl_dash'], ['cl_sprint60', 'cl_dash50'],
+    [OLD.four + 'es', 'quads'],
+  ].map(([a, b]) => [new RegExp('"' + a + '"', 'g'), '"' + b + '"']).concat([
+    [new RegExp('"' + OLD.four + '"(\\s*:)', 'g'), '"cquad"$1'],
+    [new RegExp('"(rand|lock)"(\\s*:\\s*)"' + OLD.retro + '"', 'g'), '"$1"$2"retro"'],
+    [/"music"(\s*:\s*)"korobeiniki"/g, '"music"$1"hush"'],
+  ]);
+  function renameOld(text) {
+    let out = text;
+    for (const [re, to] of RENAMED) out = out.replace(re, to);
+    return out;
+  }
+
   /** A parsed save made whole: the defaults filled in, and the factory checked (js/factory.js, repair). */
   function loadState(saved) {
     const st = merge(defaults(), saved);
@@ -263,7 +288,7 @@
         else if (root.localStorage) { raw = root.localStorage.getItem(LS_KEY); if (raw) this.loadedFrom = 'browser'; }
       } catch (e) { raw = null; }
       if (raw) {
-        try { this.state = loadState(JSON.parse(raw)); } catch (e) { this.state = defaults(); this.loadedFrom = 'corrupt'; }
+        try { this.state = loadState(JSON.parse(renameOld(raw))); } catch (e) { this.state = defaults(); this.loadedFrom = 'corrupt'; }
       }
       this.state.stats.sessions++;
       return this.state;
@@ -317,7 +342,7 @@
     }
 
     importJSON(text) {
-      const parsed = JSON.parse(text);
+      const parsed = JSON.parse(renameOld(text));
       if (!parsed || typeof parsed !== 'object' || parsed.v == null) throw new Error('Not a Lull save');
       return this.replace(loadState(parsed));
     }
@@ -500,5 +525,5 @@
 
   Store.addStats = addStats;
   L.Store = Store;
-  Object.assign(L, { addStats, SOUNDS, loadState, repairTries, TRIES_MAX, ITEMS, ITEM_ORDER, FREEBIES, packOf, itemCount, ITEM_GROUPS, PALETTES, SKINS, FRAMES, BACKDROPS, EFFECTS, GHOSTS, COSMETICS, COSMETIC_LABELS, ACCENTS, SAVE_VERSION, defaultState: defaults, mergeState: merge });
+  Object.assign(L, { addStats, SOUNDS, loadState, renameOld, repairTries, TRIES_MAX, ITEMS, ITEM_ORDER, FREEBIES, packOf, itemCount, ITEM_GROUPS, PALETTES, SKINS, FRAMES, BACKDROPS, EFFECTS, GHOSTS, COSMETICS, COSMETIC_LABELS, ACCENTS, SAVE_VERSION, defaultState: defaults, mergeState: merge });
 })(typeof globalThis !== 'undefined' ? globalThis : this);

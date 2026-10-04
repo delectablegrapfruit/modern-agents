@@ -30,7 +30,7 @@
   const PRESETS = ['normal', 'tiny', 'frantic', 'pentominoes', 'big', 'custom'];
   const NAMES = { normal: 'Normal', tiny: 'Tiny', frantic: 'Frantic', pentominoes: 'Pentominoes', big: 'Big', custom: 'Custom', mixed: 'Mixed' };
   const SEVEN = Pieces.TETROMINOES;
-  /** The built-in ids of each group of 1 to 5 blocks (the seven keep SRS and T-spins). */
+  /** The built-in ids of each group of 1 to 5 blocks (the seven keep Lull kicks and twists). */
   const SMALL = { 1: ['M1'], 2: ['D2'], 3: ['I3', 'V3'], 4: SEVEN, 5: Pieces.PENTO18 };
   /** Custom when first chosen: the seven and the pentominoes. */
   const CUSTOM_DEFAULT = Object.freeze({ groups: [{ n: 4, weight: 'even' }, { n: 5, weight: 'even' }], big: 'off' });

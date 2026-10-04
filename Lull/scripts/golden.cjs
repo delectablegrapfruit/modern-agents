@@ -48,7 +48,7 @@ const recipe = () => (L.Recipe ? { recipe: L.Recipe.DEFAULT } : {});
 
 const hash = (cells) => { let h = 0x811c9dc5; for (let i = 0; i < cells.length; i++) { h ^= cells[i] & 0xffff; h = Math.imul(h, 16777619) >>> 0; } return h.toString(36); };
 /** The lock result's own numbers, as they were before the recipe (new fields are left out). */
-const R_KEYS = ['type', 'special', 'tag', 'lines', 'plain', 'tspin', 'mini', 'b2b', 'perfect', 'combo', 'score', 'hand', 'covered', 'netSaved', 'banked', 'mult', 'golden', 'double', 'boost', 'chain'];
+const R_KEYS = ['type', 'special', 'tag', 'lines', 'plain', 'twist', 'mini', 'b2b', 'perfect', 'combo', 'score', 'hand', 'covered', 'netSaved', 'banked', 'mult', 'golden', 'double', 'boost', 'chain'];
 const rOf = (r) => R_KEYS.filter((k) => r[k] !== undefined && r[k] !== null && r[k] !== false && r[k] !== 0).map((k) => k + '=' + (typeof r[k] === 'object' ? JSON.stringify(r[k]) : r[k])).join(' ');
 /** A board's stats as they were before the recipe: own is read either way, cells (new) left out. */
 const sOf = (g) => { const s = JSON.parse(JSON.stringify(g.s)); delete s.own; delete s.cells; s.own = ownOf(g.s); return s; };
@@ -158,7 +158,7 @@ function freePlay(seed, w, h, total) {
       for (let k = 0; k < due; k++) { earnItem(); out.events.push(placed + ':earn'); }
     }
     const found = Combos.detect(r, g);
-    if (r.tspin) { F.tspins++; F.tspinLines += r.lines; }
+    if (r.twist) { F.twists++; F.twistLines += r.lines; }
     if (r.perfect) F.perfect++;
     if (quadOf(r) && feats(g)) store.day().quad = 1;
     F.maxCombo = Math.max(F.maxCombo, g.s.maxCombo);

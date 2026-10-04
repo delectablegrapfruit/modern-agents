@@ -1,9 +1,9 @@
 // Lull — Classic, a board mode (js/recipe.js): pieces fall on their own, faster as the levels go by, with a lock
 // delay, the classic spawn flush with the ceiling and the classic top out; the score and the line bank at Classic's
-// rates. Its settings are the recipe's `classic` key, in the spirit of the NES and Game Boy Advance games:
+// rates. Its settings are the recipe's `classic` key, in the spirit of the arcade and early home-console era:
 //
-//   classic = { type: 'a' | 'b', level: 1–15 (start), height: 0–5 (B's starting garbage), music: 'korobeiniki' | 'off',
-//               drop: hard drop, hold, ghost (booleans), next: 0–5 (Next previews), rand: 'bag' | 'nes', lock: 'modern' | 'nes',
+//   classic = { type: 'a' | 'b', level: 1–15 (start), height: 0–5 (B's starting garbage), music: 'hush' | 'off',
+//               drop: hard drop, hold, ghost (booleans), next: 0–5 (Next previews), rand: 'bag' | 'retro', lock: 'modern' | 'retro',
 //               levelLock: the level stays at the start level (boolean, default off) }
 //
 // Pure rules and the engine's extension (no DOM); the controller, the New board window's panel and the library's tags
@@ -17,32 +17,32 @@
   const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
   const clone = (v) => JSON.parse(JSON.stringify(v));
 
-  const DEFAULTS = Object.freeze({ type: 'a', level: 1, height: 0, music: 'korobeiniki', drop: true, hold: true, ghost: true, next: 3, rand: 'bag', lock: 'modern', levelLock: false });
+  const DEFAULTS = Object.freeze({ type: 'a', level: 1, height: 0, music: 'hush', drop: true, hold: true, ghost: true, next: 3, rand: 'bag', lock: 'modern', levelLock: false });
   const LEVELS = [1, 15];
   const HEIGHTS = 5;
   const NEXT = 5;
   /** B type: the lines to clear. */
   const B_LINES = 25;
-  /** B type's starting garbage, in rows of a 20-row well, by height (the NES heights); scaled to the board's height. */
+  /** B type's starting garbage, in rows of a 20-row well, by height (the old heights); scaled to the board's height. */
   const B_ROWS = [0, 3, 5, 8, 10, 12];
-  /** The music there is: one Classic track (Korobeiniki), or none. */
-  const MUSIC = ['korobeiniki', 'off'];
-  const MUSIC_NAMES = { korobeiniki: 'Korobeiniki', off: 'Off' };
+  /** The music there is: one Classic track (Hush, Lull's own), or none. */
+  const MUSIC = ['hush', 'off'];
+  const MUSIC_NAMES = { hush: 'Hush', off: 'Off' };
   /** The modern lock delay: half a second, renewed by a move or a turn up to 15 times. */
   const LOCK = { delay: 0.5, resets: 15 };
 
   const on = (r) => !!r && r.mode === 'classic';
 
   /**
-   * The NES's frames a row (NTSC, 60.0988 frames a second) by its level 0, 1, 2, ...: Lull's level 1 is the NES's 0.
-   * NES lock falls by this table, as the NES did: its lock is the gravity tick, so the two belong together.
+   * Retro timing: frames a row (NTSC, 60.0988 frames a second) by level 0, 1, 2, ... of the 8-bit era's speed table:
+   * Lull's level 1 is its 0. Retro lock falls by this table: its lock is the gravity tick, so the two belong together.
    */
-  const NES_FPS = 60.0988;
-  const NES_FRAMES = [48, 43, 38, 33, 28, 23, 18, 13, 8, 6, 5, 5, 5, 4, 4, 4, 3, 3, 3];
-  function nesFrames(level) { const n = Math.max(0, level - 1); return n < NES_FRAMES.length ? NES_FRAMES[n] : n < 29 ? 2 : 1; }
-  /** Seconds a row at a level: the guideline curve (as Classic has always fallen), or with NES lock the NES table. */
-  function gravity(level, nes) {
-    if (nes) return nesFrames(level) / NES_FPS;
+  const RETRO_FPS = 60.0988;
+  const RETRO_FRAMES = [48, 43, 38, 33, 28, 23, 18, 13, 8, 6, 5, 5, 5, 4, 4, 4, 3, 3, 3];
+  function retroFrames(level) { const n = Math.max(0, level - 1); return n < RETRO_FRAMES.length ? RETRO_FRAMES[n] : n < 29 ? 2 : 1; }
+  /** Seconds a row at a level: the modern curve (as Classic has always fallen), or with Retro lock the retro table. */
+  function gravity(level, retro) {
+    if (retro) return retroFrames(level) / RETRO_FPS;
     const l = Math.max(1, Math.min(level, 20));
     return Math.max(0.012, Math.pow(0.8 - (l - 1) * 0.007, l - 1));
   }
@@ -72,20 +72,20 @@
       hold: o.hold !== false,
       ghost: o.ghost !== false,
       next: int(o.next, 0, NEXT, d.next),
-      rand: o.rand === 'nes' ? 'nes' : 'bag',
-      lock: o.lock === 'nes' ? 'nes' : 'modern',
+      rand: o.rand === 'retro' ? 'retro' : 'bag',
+      lock: o.lock === 'retro' ? 'retro' : 'modern',
       levelLock: o.levelLock === true,
     };
   }
 
-  // ---- where the pieces come from: the NES-style random --------------------------------------------------------------
+  // ---- where the pieces come from: the retro random -----------------------------------------------------------------
 
   /**
-   * The NES randomizer: a roll of eight (the seventh piece and one more), and a repeat of the last piece or the eighth
+   * The retro randomizer: a roll of eight (the seventh piece and one more), and a repeat of the last piece or the eighth
    * face rolls once more, of seven; so a repeat comes about one time in 28 (a 7-bag never repeats more than twice).
    * Drawn on the game's own stream; the last piece is kept with the board (x.classic.last).
    */
-  function nesDealer(C) {
+  function retroDealer(C) {
     const T = Pieces.TETROMINOES;
     return {
       next(game) {
@@ -114,9 +114,9 @@
     }
   }
 
-  const fresh = () => ({ v: 1, from: null, lines: 0, ms: 0, tetrises: 0, counted: false, started: false, last: null, bestLevel: 0, best: 0 });
+  const fresh = () => ({ v: 1, from: null, lines: 0, ms: 0, quads: 0, counted: false, started: false, last: null, bestLevel: 0, best: 0 });
   function validState(x) {
-    return isObj(x) && x.v === 1 && Number.isFinite(x.lines) && x.lines >= 0 && Number.isFinite(x.ms) && x.ms >= 0 && Number.isFinite(x.tetrises);
+    return isObj(x) && x.v === 1 && Number.isFinite(x.lines) && x.lines >= 0 && Number.isFinite(x.ms) && x.ms >= 0 && Number.isFinite(x.quads);
   }
 
   /** A Classic board's hooks (see Game hooks in js/engine.js); its state is this.C (Classic.of(game)). */
@@ -143,15 +143,15 @@
         // one a row is added as it happens).
         const add = (res.score || 0) * (before - 1) + (res.dropDist ? res.dropDist * 2 : 0);
         g.s.score += add;
-        if ((res.lines || 0) >= 4) C.tetrises++;
+        if ((res.lines || 0) >= 4) C.quads++;
         C.bestLevel = Math.max(C.bestLevel || 0, featLevel(k, C.lines));
         res.classic = { before, level, score: g.s.score, lines: C.lines };
         if (k.type === 'b' && C.lines >= B_LINES) { res.classic.cleared = true; g.end('cleared'); }
       },
       save() { return clone(C); },
-      summary() { return { level: levelOf(k, C.lines), lines: C.lines, tetrises: C.tetrises, ms: C.ms, type: k.type }; },
+      summary() { return { level: levelOf(k, C.lines), lines: C.lines, quads: C.quads, ms: C.ms, type: k.type }; },
     };
-    if (k.rand === 'nes') ext.dealer = nesDealer(C);
+    if (k.rand === 'retro') ext.dealer = retroDealer(C);
     return ext;
   }
 
@@ -178,7 +178,7 @@
 
   const PART = {
     key: 'classic', order: 45, mode: 'classic', owns: ['classic'],
-    options: { 'classic.rand': ['bag', 'nes'] },
+    options: { 'classic.rand': ['bag', 'retro'] },
     // Edits that change only these cost nothing (Recipe.editPrice): the music is not a rule.
     freeEdit: ['classic.music'],
     normalize(raw, out) {
@@ -200,9 +200,9 @@
     },
     conflicts(r, out) {
       if (!on(r)) return;
-      // The NES roll draws the seven; other shapes come from their own dealer.
+      // The retro roll draws the seven; other shapes come from their own dealer.
       const preset = isObj(r.shapes) ? r.shapes.preset : 'normal';
-      if (preset !== 'normal') out['classic.rand=nes'] = 'NES random needs Normal shapes';
+      if (preset !== 'normal') out['classic.rand=retro'] = 'Retro random needs Normal shapes';
     },
     valid(g, r) {
       if (!on(r)) return true;
@@ -211,9 +211,9 @@
     },
     engine(game, saved, o) { return on(game.recipe) ? extension(game, saved, o) : null; },
     controller(play, game) { return game && on(game.recipe) && L.ClassicView ? L.ClassicView.controller(play, game) : null; },
-    summary(x, g) { return validState(x) && g && isObj(g.recipe) && on(Recipe.normalize(g.recipe)) ? { level: levelOf(Recipe.normalize(g.recipe).classic, x.lines), lines: x.lines, tetrises: x.tetrises, ms: x.ms } : null; },
+    summary(x, g) { return validState(x) && g && isObj(g.recipe) && on(Recipe.normalize(g.recipe)) ? { level: levelOf(Recipe.normalize(g.recipe).classic, x.lines), lines: x.lines, quads: x.quads, ms: x.ms } : null; },
   };
   Recipe.part(PART);
 
-  L.Classic = { DEFAULTS, LEVELS, HEIGHTS, NEXT, B_LINES, B_ROWS, MUSIC, MUSIC_NAMES, LOCK, on, gravity, nesFrames, NES_FPS, garbageRows, levelOf, featLevel, normalize: normalizeK, nesDealer, of, addLines, PART };
+  L.Classic = { DEFAULTS, LEVELS, HEIGHTS, NEXT, B_LINES, B_ROWS, MUSIC, MUSIC_NAMES, LOCK, on, gravity, retroFrames, RETRO_FPS, garbageRows, levelOf, featLevel, normalize: normalizeK, retroDealer, of, addLines, PART };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

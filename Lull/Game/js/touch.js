@@ -401,7 +401,7 @@
   const TOUCH_HELP = [
     ['Drag ← →', 'Move'],
     ['Drag ↓', 'Lower'],
-    ['Swipe ↓', 'Hard drop'],
+    ['Swipe ↓', 'Drop'],
     ['Swipe ↑', 'Hold'],
     ['Tap right', 'Turn clockwise'],
     ['Tap left', 'Turn counter-clockwise'],

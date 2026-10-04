@@ -211,7 +211,7 @@ module.exports = async function physicsTests({ browser, check, PAGE, OUT }) {
     await shot('physics-full-' + theme);
     if (theme === 'light') {
       check('a board that cannot take its next piece is full: the Physics card has Rewind 5 s, Boards and Retire', card.state.over && card.h === 'Board full' && card.btns.join('|') === 'Rewind 5 s|Boards|Retire', JSON.stringify(card));
-      check('its summary leaves out quads, T-spins, combos and chains, and counts the blocks cleared', !card.tiles.includes('Quads') && !card.tiles.includes('Best chain') && card.tiles.includes('Blocks cleared'), JSON.stringify(card.tiles));
+      check('its summary leaves out quads, twists, combos and chains, and counts the blocks cleared', !card.tiles.includes('Quads') && !card.tiles.includes('Best chain') && card.tiles.includes('Blocks cleared'), JSON.stringify(card.tiles));
     }
     await ctx.close();
   }

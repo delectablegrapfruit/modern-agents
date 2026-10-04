@@ -14,7 +14,7 @@
   const KEY_HELP = [
     ['← →', 'Move'],
     ['↓', 'Lower one row · on the stack: set'],
-    ['Space', 'Hard drop'],
+    ['Space', 'Drop'],
     ['↑ / X', 'Turn clockwise'],
     ['Z', 'Turn counter-clockwise'],
     ['A', 'Turn 180°'],

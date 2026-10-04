@@ -57,9 +57,9 @@
         const pad = [57, 64, 67, 72].map((m) => this.pad(m, 0, 0.05, 2.4, { a: 0.4 }));
         return pad.concat([64, 69, 72, 76, 79, 81, 84, 88].map((m, i) => this.ring(m, i * 0.07, 0.052, 1.8, { pan: i % 2 ? 0.4 : -0.4 })));
       },
-      // A T-spin: a slower, wavering shimmer up an A minor chord.
-      tspin() { return [this.pad(64, 0, 0.045, 1.4)].concat([69, 76, 81, 83].map((m, i) => this.ring(m, i * 0.08, 0.06, 1.4, { vib: 8, pan: i % 2 ? 0.3 : -0.3 }))); },
-      // A perfect clear: C major 9, the relative major, opening under a long bloom.
+      // A twist: a slower, wavering shimmer up an A minor chord.
+      twist() { return [this.pad(64, 0, 0.045, 1.4)].concat([69, 76, 81, 83].map((m, i) => this.ring(m, i * 0.08, 0.06, 1.4, { vib: 8, pan: i % 2 ? 0.3 : -0.3 }))); },
+      // A spotless clear: C major 9, the relative major, opening under a long bloom.
       perfect() {
         const pad = [60, 64, 67, 71, 74].map((m) => this.pad(m, 0, 0.03, 3, { a: 0.5 }));
         return pad.concat([64, 67, 69, 72, 76, 79, 83].map((m, i) => this.tone(m, i * 0.09, 0.04, 1.8, { pan: i % 2 ? 0.35 : -0.35 })));
@@ -98,7 +98,7 @@
         return out;
       },
       quad: () => [659, 784, 1319, 1047, 1175, 1568].map((f, i) => ({ f, d: 0.09, w: 'square', g: 0.05, at: i * 0.07 })),
-      tspin: () => [{ f: 1568, to: 392, d: 0.18, w: 'square', g: 0.05 }, { f: 392, to: 1568, d: 0.18, w: 'square', g: 0.05, at: 0.18 }],
+      twist: () => [{ f: 1568, to: 392, d: 0.18, w: 'square', g: 0.05 }, { f: 392, to: 1568, d: 0.18, w: 'square', g: 0.05, at: 0.18 }],
       combo: (s, n) => [{ f: note(880, Math.min(10, n || 1)), d: 0.06, w: 'square', g: 0.05 }, { f: note(880, Math.min(12, (n || 1) + 2)), d: 0.08, w: 'square', g: 0.05, at: 0.06 }],
       perfect: () => [523, 659, 784, 1047, 784, 1047, 1319, 1568].map((f, i) => ({ f, d: 0.12, w: 'square', g: 0.05, at: i * 0.09 })),
     },
@@ -114,7 +114,7 @@
       hold() { return [this.mallet(523, 0, 0.1, 0.25), this.mallet(784, 0.07, 0.08, 0.25)]; },
       clear(s, n) { const out = []; const ch = [523, 659, 784, 1047]; for (let r = 0; r < 2 + Math.min(n || 1, 4) * 2; r++) out.push(this.mallet(ch[r % ch.length] * (r >= 4 ? 2 : 1), r * 0.06, 0.07, 0.5)); return out; },
       quad() { const out = []; for (let r = 0; r < 16; r++) out.push(this.mallet([523, 659, 784, 988][r % 4] * (1 + Math.floor(r / 8)), r * 0.045, 0.06, 0.6)); return out; },
-      tspin() { return [this.mallet(784, 0, 0.08), this.mallet(622, 0.08, 0.08), this.mallet(1047, 0.16, 0.08, 0.6)]; },
+      twist() { return [this.mallet(784, 0, 0.08), this.mallet(622, 0.08, 0.08), this.mallet(1047, 0.16, 0.08, 0.6)]; },
       combo(s, n) { return [this.mallet(note(523, Math.min(10, n || 1)), 0, 0.08, 0.35)]; },
     },
 
@@ -128,7 +128,7 @@
       hold: () => [{ f: 392, d: 0.18, w: 'sawtooth', g: 0.07, to: 587, fe: [600, 3500], dt: 12 }],
       clear: (s, n) => { const ch = [262, 330, 392, 494].slice(0, 2 + Math.min(n || 1, 2)); return ch.map((f) => ({ f, d: 0.55, w: 'sawtooth', g: 0.05, fe: [5000, 500], dt: 14 })); },
       quad: () => [131, 262, 330, 392, 494].map((f) => ({ f, d: 1.4, w: 'sawtooth', g: 0.045, a: 0.05, fe: [300, 6000], dt: 16 })),
-      tspin: () => [{ f: 523, to: 784, d: 0.35, w: 'sawtooth', g: 0.06, fe: [1200, 4000], vib: 30 }],
+      twist: () => [{ f: 523, to: 784, d: 0.35, w: 'sawtooth', g: 0.06, fe: [1200, 4000], vib: 30 }],
       combo: (s, n) => [{ f: note(523, Math.min(10, n || 1)), d: 0.12, w: 'sawtooth', g: 0.05, fe: [5000, 600] }],
     },
 
@@ -143,7 +143,7 @@
       hold() { return [this.tap(1568, 0, 0.06, 0.8)]; },
       clear(s, n) { return [0, 2, 4, 7, 9, 12, 14].slice(0, 3 + Math.min(n || 1, 4)).map((st, i) => this.tap(note(1047, st), i * 0.04, 0.045, 1.4)); },
       quad() { return [0, 2, 4, 7, 9, 12, 14, 16, 19, 21].map((st, i) => this.tap(note(1047, st), i * 0.035, 0.04, 1.8)); },
-      tspin() { return [this.tap(2349, 0, 0.05), this.tap(1760, 0.1, 0.05), this.tap(3136, 0.2, 0.05, 1.4)]; },
+      twist() { return [this.tap(2349, 0, 0.05), this.tap(1760, 0.1, 0.05), this.tap(3136, 0.2, 0.05, 1.4)]; },
       combo(s, n) { return [this.tap(note(1568, Math.min(10, n || 1)), 0, 0.045, 0.9)]; },
     },
 
@@ -157,7 +157,7 @@
       hold: () => [{ f: note(784, rand(4, 9)), d: 0.9, g: 0.06, rv: 0.8 }],
       clear: (s, n) => Array.from({ length: 3 * Math.min(n || 1, 4) }, (_, i) => ({ f: note(1047, rand(0, 10)), d: 1.6, g: 0.04, at: i * 0.07 + Math.random() * 0.05, rv: 0.85 })),
       quad: () => Array.from({ length: 16 }, (_, i) => ({ f: note(784, rand(0, 13)), d: 2, g: 0.035, at: i * 0.06 + Math.random() * 0.04, rv: 0.9 })),
-      tspin: () => [{ f: note(1047, 9), d: 1.4, g: 0.05, rv: 0.8 }, { f: note(1047, 4), d: 1.4, g: 0.05, at: 0.15, rv: 0.8 }, { f: note(1047, 12), d: 1.6, g: 0.05, at: 0.3, rv: 0.8 }],
+      twist: () => [{ f: note(1047, 9), d: 1.4, g: 0.05, rv: 0.8 }, { f: note(1047, 4), d: 1.4, g: 0.05, at: 0.15, rv: 0.8 }, { f: note(1047, 12), d: 1.6, g: 0.05, at: 0.3, rv: 0.8 }],
     },
   };
 
@@ -300,7 +300,7 @@
         case 'clear': { const n = Math.min(arg || 1, 4); return arp([0, 2, 4, 5, 7].slice(0, n + 1), 0.05, 0.12); }
         case 'quad': return arp([0, 2, 4, 5, 7, 10], 0.05, 0.13);
         case 'perfect': return arp([0, 2, 4, 5, 7, 9, 10], 0.06, 0.14, dec * 1.6);
-        case 'tspin': return arp([4, 2, 5], 0.06, 0.12);
+        case 'twist': return arp([4, 2, 5], 0.06, 0.12);
         case 'combo': return [{ f: note(base * 2, Math.min(10, arg || 1)), d: 0.1, w, g: 0.08, q }];
         case 'blocked': return [{ f: 140, d: 0.05, w: 'triangle', g: 0.04, q: 700 }];
         case 'buy': return arp([4, 7], 0.06, 0.1);
@@ -365,10 +365,9 @@
     },
   };
 
-  // ---- Classic's music: Korobeiniki (a 19th-century Russian folk song, public domain), slowed and dreamed -----------
+  // ---- Classic's music: Hush, Lull's own tune ------------------------------------------------------------------------
   //
-  // The tune as written, in its own key (A minor), taken down to 80 and dressed as calm ambient electronica with a
-  // little IDM in its detail: a soft, round lead (a sine with a breath of FM, gliding between notes, its vibrato
+  // An original melody in A minor, at 80, dressed as calm ambient electronica with a little IDM in its detail: a soft, round lead (a sine with a breath of FM, gliding between notes, its vibrato
   // arriving late) over warm, detuned analog-style pads of extended chords (min9, min11, maj9 on the relative major)
   // that breathe through a slowly swaying filter and dip gently each time the kick lands, a warm sub, a soft digital
   // arpeggio in places, and small glitches kept low: a note now and then stuttered into quick repeats, soft clicks,
@@ -378,10 +377,14 @@
   // half time; an interlude with its counter-melody on glass; the theme over a low counter-line; the bridge in time;
   // and a short coda that breathes before it goes round again (from the theme).
   //
-  // Korobeiniki's A part in A minor, in eighths, as everyone knows it (scripts/test.cjs checks TUNE_A against this):
-  //   E5 2  B4 1  C5 1  D5 2  C5 1  B4 1 | A4 2  A4 1  C5 1  E5 2  D5 1  C5 1 | B4 3  C5 1  D5 2  E5 2 | C5 2  A4 2  A4 4
-  //   rest 1  D5 2  F5 1  A5 2  G5 1  F5 1 | E5 3  C5 1  E5 2  D5 1  C5 1 | B4 2  B4 1  C5 1  D5 2  E5 2 | C5 2  A4 2  A4 2  rest 2
-  // and its B part: E5 4 C5 4 | D5 4 B4 4 | C5 4 A4 4 | G#4 4 B4 2 rest 2 | E5 4 C5 4 | D5 4 B4 4 | C5 2 E5 2 A5 4 | G#5 8
+  // Hush, the theme (A part, A minor, over PROG_A), in eighths: it climbs the E minor chord, settles, lifts to F over D
+  // minor and comes home to A:
+  //   G4 3  B4 1  E5 4 | G5 2  E5 2  C5 4 | D5 3  B4 1  A4 2  G4 2 | A4 6  rest 2
+  //   A4 2  D5 2  F5 3  E5 1 | E5 4  D5 2  B4 2 | G4 2  B4 2  D5 2  E5 2 | C5 3  B4 1  A4 4
+  // and its bridge (B part, A melodic minor, over Am9 and E9), leaning on F# and G# and never on F:
+  //   A4 2  C5 2  E5 4 | F#5 2  E5 2  D5 2  B4 2 | C5 4  B4 2  A4 2 | G#4 6  rest 2
+  //   E5 2  A5 4  E5 2 | F#5 3  E5 1  D5 2  B4 2 | C5 2  E5 2  B4 2  A4 2 | G#4 2  B4 2  E5 4
+  // Written for Lull (scripts/test.cjs keeps it apart from well-known game and folk melodies).
 
   const MIDI = (n) => { // 'E5', 'C#4', '-' (rest)
     if (n === '-') return null;
@@ -403,8 +406,8 @@
   };
   // Every note twice as long: a line at half time, over twice the bars.
   const slow = (str) => str.split(',').map((t) => { const [n, l] = t.trim().split(' '); return n + ' ' + l * 2; }).join(',');
-  const A_PART = 'E5 2,B4 1,C5 1,D5 2,C5 1,B4 1,A4 2,A4 1,C5 1,E5 2,D5 1,C5 1,B4 3,C5 1,D5 2,E5 2,C5 2,A4 2,A4 4,- 1,D5 2,F5 1,A5 2,G5 1,F5 1,E5 3,C5 1,E5 2,D5 1,C5 1,B4 2,B4 1,C5 1,D5 2,E5 2,C5 2,A4 2,A4 2,- 2';
-  const B_PART = 'E5 4,C5 4,D5 4,B4 4,C5 4,A4 4,G#4 4,B4 2,- 2,E5 4,C5 4,D5 4,B4 4,C5 2,E5 2,A5 4,G#5 8';
+  const A_PART = 'G4 3,B4 1,E5 4,G5 2,E5 2,C5 4,D5 3,B4 1,A4 2,G4 2,A4 6,- 2,A4 2,D5 2,F5 3,E5 1,E5 4,D5 2,B4 2,G4 2,B4 2,D5 2,E5 2,C5 3,B4 1,A4 4';
+  const B_PART = 'A4 2,C5 2,E5 4,F#5 2,E5 2,D5 2,B4 2,C5 4,B4 2,A4 2,G#4 6,- 2,E5 2,A5 4,E5 2,F#5 3,E5 1,D5 2,B4 2,C5 2,E5 2,B4 2,A4 2,G#4 2,B4 2,E5 4';
   const TUNE_A = bars(A_PART);
   const TUNE_B = bars(B_PART);
   const TUNE_B_SLOW = bars(slow(B_PART));
@@ -638,13 +641,15 @@
 
     setVolume(v) { if (v === this.volume) return; this.volume = v; if (this.gain) this.gain.gain.value = v; },
 
-    /** Dips the music a little while the announcer speaks, so the two do not fight. */
+    /** How far the music dips while the announcer speaks: about 4 dB. */
+    DUCK: 0.63,
+    /** Dips the music a little while the announcer speaks, so the two do not fight (in over about 40 ms, back over a second). */
     duck(from, to) {
       const g = this.gain;
       if (!g) return;
       const p = g.gain, v = this.volume;
       p.cancelScheduledValues(from - 0.01);
-      p.setTargetAtTime(v * 0.55, from - 0.01, 0.04);
+      p.setTargetAtTime(v * this.DUCK, from - 0.01, 0.04);
       p.setTargetAtTime(v, to, 0.25);
     },
 
@@ -1002,45 +1007,90 @@
   // ---- the announcer (Classic) ------------------------------------------------------------------------------------
 
   /**
-   * The announcer calls out the big moments — "single", "double", "triple", "tetris", "T-spin single/double",
-   * "back to back", and "amazing" for a perfect clear, "rank up" for a new level, "top out" at the end. The clips are
-   * cut from the Tetris Worlds announcer (scripts/splice-voice.py) and embedded, so it sounds the same everywhere.
+   * The announcer whispers the big moments: "single", "double", "triple", "quad" (four lines), "twist", "twist single",
+   * "twist double", "streak", "spotless" (the board cleared), "level up" and "game over". Her clips were generated with
+   * ElevenLabs (text to speech, a whispered voice) for Lull and are embedded by scripts/voice-clips.cjs in
+   * js/voice-data.js, with each one's speech start and end and a loudness trim (L.VOICE_META): every clip is played from
+   * just before her first sound to just after her last, so she speaks right on the event, and every call sits at one
+   * level.
    */
   const Announcer = {
     enabled: true,
     volume: 0.35,
-    /** The bus's gain at full volume: her calls sit clearly under the sound effects (about 8 dB at the default). */
-    TRIM: 0.4,
+    /** The bus's gain at full volume: her calls sit clearly under the sound effects (about 7 dB at the default). */
+    TRIM: 2.9,
+    /** The cut around her speech (seconds): a little before the first sound, a fade in, held a touch past the last, a fade out. */
+    PRE: 0.02, FADE_IN: 0.01, TAIL: 0.03, FADE_OUT: 0.07,
+    /** A breath between two clips said together. */
+    GAP: 0.06,
     buffers: {},
+
+    /** Where a clip's speech is and its trim (dB), from js/voice-data.js; a clip without them plays whole, as it is. */
+    meta(key) {
+      const m = (L.VOICE_META || {})[key];
+      return m && Number.isFinite(m.start) && Number.isFinite(m.end) ? m : null;
+    },
+    /** The stretch of a decoded clip that is played: { from, dur } (seconds into the clip), and its gain. */
+    span(key, buf) {
+      const m = this.meta(key);
+      if (!m) return { from: 0, dur: buf.duration, gain: 1 };
+      const from = Math.max(0, m.start - this.PRE), to = Math.min(buf.duration, m.end + this.TAIL + this.FADE_OUT);
+      return { from, dur: Math.max(0.05, to - from), gain: Math.pow(10, (m.gain || 0) / 20) };
+    },
+
     /**
-     * The voice's mixing desk, built once: the raw clips are thinned below 170 Hz, the boxy low-mids and the bright,
-     * close-mic top are eased off, a gentle compressor evens the words, and it sits back in the mix at a modest level
-     * with sends to the room everything else plays in (the shared reverb) and a soft, filtered stereo echo.
+     * The voice's mixing desk, built once per context, for a soft whisper: a high-pass at 110 Hz takes away breath
+     * rumble; a small dip at 400 Hz keeps her from sounding boxy; a split-band de-esser (a Linkwitz-Riley crossover at
+     * 5 kHz, the top band through its own fast compressor, the two summed flat again) and a gentle static cut at 7 kHz
+     * ease the hiss and sibilance a whisper is made of; a gentle compressor (2.5:1, 10 ms in, 120 ms out) keeps her
+     * even and intelligible over the music without pumping; a soft lift of air at 11 kHz keeps her close; then her
+     * level (Volume) and a limiter, so she never clips. A short room of her own (0.6 s, built like the shared one) sits
+     * her in the same space as the music, mostly dry (about −20 dB wet).
      */
     bus() {
       const ctx = Sound.ctx;
       if (this.input && this.input.context === ctx) return this.input;
       const node = (type, f, q, g) => { const b = ctx.createBiquadFilter(); b.type = type; b.frequency.value = f; if (q != null) b.Q.value = q; if (g != null) b.gain.value = g; return b; };
-      const hp = node('highpass', 170, 0.7), mud = node('peaking', 380, 1, -3.5), air = node('highshelf', 5200, null, -6), lp = node('lowpass', 8500, 0.5);
-      const comp = ctx.createDynamicsCompressor();
-      comp.threshold.value = -26; comp.knee.value = 12; comp.ratio.value = 3; comp.attack.value = 0.006; comp.release.value = 0.18;
-      const level = this.level = ctx.createGain(); level.gain.value = this.volume * this.TRIM;
+      // A compressor as a pair of nodes, its own make-up gain taken back out: Web Audio's DynamicsCompressor lifts its
+      // output by about 0.6 of the gain it takes off at full scale, which on a low threshold would brighten a band it is
+      // meant to tame. With it taken out, below the threshold a compressor here passes at unity.
+      const comp = (threshold, knee, ratio, attack, release) => {
+        const c = ctx.createDynamicsCompressor(), back = ctx.createGain();
+        c.threshold.value = threshold; c.knee.value = knee; c.ratio.value = ratio; c.attack.value = attack; c.release.value = release;
+        back.gain.value = Math.pow(10, 0.6 * threshold * (1 - 1 / ratio) / 20);
+        c.connect(back);
+        return { c, back, connect: (n) => back.connect(n) };
+      };
       this.input = ctx.createGain();
-      this.input.connect(hp).connect(mud).connect(air).connect(lp).connect(comp).connect(level);
-      level.connect(Sound.master);
-      // Room: the same reverb as the sound effects and music, a touch more of it than they use.
-      if (Sound.reverb) { const rs = ctx.createGain(); rs.gain.value = 0.32; level.connect(rs).connect(Sound.reverb); }
-      // A soft echo either side (not in time with anything), darker on each repeat.
-      const echoIn = ctx.createGain(); echoIn.gain.value = 0.16; level.connect(echoIn);
-      const merger = ctx.createChannelMerger(2);
-      [[0.19, 0], [0.27, 1]].forEach(([t, ch]) => {
-        const d = ctx.createDelay(1), fb = ctx.createGain(), f = node('lowpass', 2600, 0.4);
-        d.delayTime.value = t; fb.gain.value = 0.24;
-        echoIn.connect(d); d.connect(f); f.connect(fb); fb.connect(d); f.connect(merger, 0, ch);
-      });
-      merger.connect(Sound.master);
+      const hp = node('highpass', 110, 0.707), box = node('peaking', 400, 1.1, -2.5);
+      this.input.connect(hp).connect(box);
+      // De-esser: low band (two 12 dB/oct low-passes) plus high band (two high-passes, then compressed), summed.
+      const split = 5000, sum = ctx.createGain(), ds = comp(-46, 6, 5, 0.002, 0.06);
+      box.connect(node('lowpass', split, 0.707)).connect(node('lowpass', split, 0.707)).connect(sum);
+      box.connect(node('highpass', split, 0.707)).connect(node('highpass', split, 0.707)).connect(ds.c);
+      ds.connect(sum);
+      const ess = node('peaking', 7000, 0.8, -3);
+      const even = comp(-30, 8, 2.5, 0.01, 0.12);
+      const air = node('highshelf', 11000, null, 1.5);
+      const level = this.level = ctx.createGain(); level.gain.value = this.volume * this.TRIM;
+      const limiter = comp(-3, 0, 20, 0.001, 0.08);
+      sum.connect(ess).connect(even.c);
+      even.connect(air).connect(level).connect(limiter.c);
+      limiter.connect(Sound.master);
+      // Her room: 0.6 s of soft, dark noise shaped like the shared room's tail, a little of it.
+      const len = Math.floor(ctx.sampleRate * 0.6), ir = ctx.createBuffer(2, len, ctx.sampleRate);
+      for (let c = 0; c < 2; c++) {
+        const d = ir.getChannelData(c);
+        let lp = 0;
+        for (let i = 0; i < len; i++) { lp = lp * 0.6 + (Math.random() * 2 - 1) * 0.4; d[i] = lp * Math.pow(1 - i / len, 2.6); }
+      }
+      const room = ctx.createConvolver(), wet = ctx.createGain();
+      room.buffer = ir; wet.gain.value = this.WET;
+      limiter.back.connect(room).connect(wet).connect(Sound.master);
       return this.input;
     },
+    /** The room's send: about −20 dB under her dry voice (the impulse itself is about 6 dB hotter than a dry path). */
+    WET: 0.05,
     setVolume(v) { if (v === this.volume) return; this.volume = v; if (this.level) this.level.gain.value = v * this.TRIM; },
     decode(key) {
       const ctx = Sound.ensure();
@@ -1054,6 +1104,23 @@
         });
       }
       return this.buffers[key];
+    },
+    /**
+     * Plays one decoded clip at context time `at` into dest (her bus unless given): only its speech, faded in over
+     * 10 ms and out over 70 ms so the cut never clicks, at its loudness trim. Returns when it ends.
+     */
+    clip(key, buf, at, dest) {
+      const ctx = Sound.ctx, sp = this.span(key, buf);
+      const src = ctx.createBufferSource(), env = ctx.createGain(), g = env.gain;
+      const fadeIn = Math.min(this.FADE_IN, sp.dur / 4), fadeOut = Math.min(this.FADE_OUT, sp.dur / 2);
+      g.setValueAtTime(0, at);
+      g.linearRampToValueAtTime(sp.gain, at + fadeIn);
+      g.setValueAtTime(sp.gain, at + sp.dur - fadeOut);
+      g.linearRampToValueAtTime(0, at + sp.dur);
+      src.buffer = buf;
+      src.connect(env).connect(dest || this.bus());
+      src.start(at, sp.from, sp.dur);
+      return at + sp.dur;
     },
     /** Says a list of clip keys in order, with a breath between them. Cuts off anything still being said. */
     say(keys) {
@@ -1069,28 +1136,23 @@
         if (token !== this.token) return;
         const start = ctx.currentTime + 0.02;
         let at = start;
-        for (const buf of bufs) {
-          if (!buf) continue;
-          const src = ctx.createBufferSource();
-          src.buffer = buf; src.connect(out); src.start(at);
-          at += buf.duration + 0.06;
-        }
+        bufs.forEach((buf, i) => { if (buf) at = this.clip(keys[i], buf, at, out) + this.GAP; });
         Music.duck(start, at);
       });
       this.last = keys.join(' ');
       return true;
     },
-    /** The clips for a lock result (and a level-up), or null. A T-spin single or double is one clip; a triple (and
-     * a Mini, which has no clip of its own) is "T-spin" and the line count. */
+    /** The clips for a lock result (and a level-up), or null. A twist single or double is one clip; a triple (and a
+     * mini, which has no clip of its own) is "twist" and the line count. */
     phrase(r, levelUp) {
-      const names = ['', 'single', 'double', 'triple', 'tetris'];
+      const names = ['', 'single', 'double', 'triple', 'quad'];
       let k = [];
-      if (r.tspin || r.mini) {
+      if (r.twist || r.mini) {
         const n = Math.min(r.lines, r.mini ? 2 : 3);
-        k = n === 1 || n === 2 ? ['tspin_' + names[n]] : n ? ['tspin', names[n]] : ['tspin'];
+        k = n === 1 || n === 2 ? ['twist_' + names[n]] : n ? ['twist', names[n]] : ['twist'];
       } else if (r.lines) k = [names[Math.min(r.lines, 4)]];
-      if (k.length && r.b2b) k.unshift('b2b');
-      if (r.perfect) k.push('perfect');
+      if (k.length && r.b2b) k.unshift('streak');
+      if (r.perfect) k.push('spotless');
       if (levelUp) k.push('levelup');
       return k.length ? k : null;
     },

@@ -115,8 +115,8 @@ module.exports = function mirrorUnit({ L, test }) {
     assert(t.piece.y === std(10, 20, 3).piece.y, 'at the same height as on a plain board');
   });
 
-  test('mirror: T-spins read the piece’s own box; the copy is placed by the piece, never scored as one', () => {
-    // A T-spin double slot on the left (and its mirror on the right): the T turned into it last spins (three corners
+  test('mirror: twists read the piece’s own box; the copy is placed by the piece, never scored as one', () => {
+    // A twist double slot on the left (and its mirror on the right): the T turned into it last spins (three corners
     // of its own box blocked, the copy not yet on the board), and its copy fills the mirrored slot: two rows clear.
     const g = mk(10);
     // Rows 0 and 1 full but for the slots: row 0 misses x 2 (and 7), row 1 misses 1..3 (and 6..8); overhangs at
@@ -126,7 +126,7 @@ module.exports = function mirrorUnit({ L, test }) {
     for (const x of [1, 3, 6, 8]) g.board.set(x, 2, 5);
     g.piece = { type: Pieces.TYPES.T, rot: 2, x: 1, y: 0, special: null, entry: { id: 'T', rot: 0 }, lastRot: true, kick: 0 };
     const r = g.lock();
-    assert(r && r.tspin && r.n === 2 && r.lines === 2 && r.placed === 8, JSON.stringify(r && { tspin: r.tspin, mini: r.mini, n: r.n, placed: r.placed }));
+    assert(r && r.twist && r.n === 2 && r.lines === 2 && r.placed === 8, JSON.stringify(r && { twist: r.twist, mini: r.mini, n: r.n, placed: r.placed }));
     assert.strictEqual(g.s.pieces, 1);
   });
 
@@ -330,8 +330,8 @@ module.exports = function mirrorUnit({ L, test }) {
     }
   });
 
-  test('mirror: a streak bot (quads, back-to-back, hold; the real controls) earns no more per piece or per action than on Standard', () => {
-    // A tidy player (El-Tetris weights) that keeps the edge column open for an upright I (on Mirror both edges: the
+  test('mirror: a streak bot (quads, streak, hold; the real controls) earns no more per piece or per action than on Standard', () => {
+    // A tidy player (Dellacherie-style weights) that keeps the edge column open for an upright I (on Mirror both edges: the
     // copy fills the other), takes quads, holds a piece for later, and avoids small clears while the stack is low.
     const play = (g, n) => {
       let paid = 0;
@@ -395,7 +395,7 @@ module.exports = function mirrorUnit({ L, test }) {
     }
   });
 
-  test('mirror: Butterfly (a perfect clear by hand on a Mirror board 20 wide) and the feats there', () => {
+  test('mirror: Butterfly (a spotless clear by hand on a Mirror board 20 wide) and the feats there', () => {
     const A = L.Achievements;
     const a = A.LIST.find((x) => x.id === 'butterfly');
     assert(a && a.name === 'Butterfly' && a.pay === 45 && a.group === 'play' && !/[\u{1F300}-\u{1FAFF}]/u.test(a.desc));

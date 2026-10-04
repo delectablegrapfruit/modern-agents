@@ -73,15 +73,15 @@ module.exports = async function sizesTests({ browser, check, PAGE, OUT }) {
       done({ shown: true, ok: (inWell || clear) && inCanvas, inWell, clear, inCanvas, pill: [x0, y0, x1, y1].map(Math.round), well: [wl.x, wl.y, wl.x + wl.w, wl.y + wl.h], text: el.textContent });
     }, 450);
   }), input);
-  /** PERFECT CLEAR drawn over the board in play: every line of it within the well (walls included). */
+  /** SPOTLESS drawn over the board in play: every line of it within the well (walls included). */
   const wordsOf = (ev) => ev(() => {
     const m = Lull.app.modes.play, v = m.view, L = v.lay, ctx = v.ctx, seen = [];
     v.fx.texts = [];
-    v.fx.text('PERFECT CLEAR', L.board.x + L.board.w / 2, L.board.y + L.board.h * 0.42, '#ffe28a', 22);
+    v.fx.text('SPOTLESS', L.board.x + L.board.w / 2, L.board.y + L.board.h * 0.42, '#ffe28a', 22);
     const orig = ctx.fillText;
     ctx.fillText = function (str, x) { seen.push({ str, x, w: ctx.measureText(str).width, font: ctx.font }); return orig.apply(this, arguments); };
     try { v.dirty = true; v.render(performance.now()); } finally { delete ctx.fillText; if (ctx.fillText !== orig) ctx.fillText = orig; }
-    const wl = L.well, t = seen.filter((o) => /PERFECT|CLEAR/.test(o.str));
+    const wl = L.well, t = seen.filter((o) => /SPOTLESS/.test(o.str));
     return { ok: t.length > 0 && t.every((o) => o.x - o.w / 2 >= wl.x - 1 && o.x + o.w / 2 <= wl.x + wl.w + 1), lines: t.map((o) => o.str + ' ' + Math.round(o.w) + ' (' + o.font.split(' ')[1] + ')'), well: wl.w };
   });
   /** In the library window, each row's size and numbers are shown in full (Lines and Score large as they get). */
@@ -314,7 +314,7 @@ module.exports = async function sizesTests({ browser, check, PAGE, OUT }) {
       check(W + '×' + H + ' ' + size.join(' × ') + ': the board fits, centred, trays beside it', ok, JSON.stringify(f));
       await shot('dims-10-' + W + 'x' + H + '-' + size.join('x') + '-light');
       const pl = await pillOf(ev), wd = await wordsOf(ev);
-      check(W + '×' + H + ' ' + size.join(' × ') + ': a control hint is in the well or clear of its walls; PERFECT CLEAR fits the well', pl.shown && pl.ok && wd.ok, JSON.stringify({ pl, wd }));
+      check(W + '×' + H + ' ' + size.join(' × ') + ': a control hint is in the well or clear of its walls; SPOTLESS fits the well', pl.shown && pl.ok && wd.ok, JSON.stringify({ pl, wd }));
       if (size[0] === 4) await shot('dims-13-' + W + 'x' + H + '-' + size.join('x') + '-hint-words');
       await ev(() => { Lull.app.hints.hide(); Lull.app.modes.play.view.fx.texts = []; });
     }
@@ -379,7 +379,7 @@ module.exports = async function sizesTests({ browser, check, PAGE, OUT }) {
       check(W + '×' + H + ' touch ' + size.join(' × ') + ': the board fits, centred', f.inside && f.centred && f.trays && f.wellIn && f.noOverlap && f.page, JSON.stringify(f));
       if (W === 390) await shot('dims-12-390x844-' + size.join('x') + '-touch-dark');
       const pl = await pillOf(ev, 'touch'), wd = await wordsOf(ev);
-      check(W + '×' + H + ' touch ' + size.join(' × ') + ': a control hint is in the well or clear of its walls; PERFECT CLEAR fits the well', pl.shown && pl.ok && wd.ok, JSON.stringify({ pl, wd }));
+      check(W + '×' + H + ' touch ' + size.join(' × ') + ': a control hint is in the well or clear of its walls; SPOTLESS fits the well', pl.shown && pl.ok && wd.ok, JSON.stringify({ pl, wd }));
       if (size[0] === 4) await shot('dims-13-' + W + 'x' + H + '-' + size.join('x') + '-hint-words');
       await ev(() => { Lull.app.hints.hide(); Lull.app.modes.play.view.fx.texts = []; });
     }

@@ -241,7 +241,7 @@
     return Object.assign(size ? { w: size.w, h: size.h } : {}, Object.keys(ext).length ? { ext } : {}, {
       startedAt: s.startedAt || 0, life: s.startedAt ? Math.max(0, now - s.startedAt) : 0, playMs: s.playMs || 0,
       pieces: s.pieces || 0, lines: s.lines || 0, score: s.score || 0,
-      quads: (s.clears && s.clears[4]) || 0, tspins: s.tspins || 0, perfect: s.perfect || 0,
+      quads: (s.clears && s.clears[4]) || 0, twists: s.twists || 0, perfect: s.perfect || 0,
       maxCombo: Math.max(0, s.maxCombo || 0), maxB2B: Math.max(0, s.maxB2B || 0), chain: s.bestChain || 0, hchain: s.bestHChain || 0,
       banked: s.banked || 0, combos: Object.values(s.combos || {}).reduce((a, b) => a + b, 0),
       items: Object.assign({}, s.items || {}),

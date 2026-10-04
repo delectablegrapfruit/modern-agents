@@ -101,7 +101,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     return c.height === c2.height && c.width === c2.width;
   });
   check('a combo (or a long score) never resizes the board', steady);
-  // The chain: back-to-back quads (streak) plus the combo; only the streak multiplies, ×0.05 a link after the first,
+  // The chain: streak quads (streak) plus the combo; only the streak multiplies, ×0.05 a link after the first,
   // ×2 at most (Chain.mult: the expected values are the game's own).
   const chain = await ev(() => {
     const m = Lull.app.modes.play, g = m.game, out = [];
@@ -114,7 +114,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     };
     out.push(quad(), quad());
     const status2 = document.getElementById('play-status').textContent;
-    // Fourteen quads back to back: ×1.75 (streak 14), and the chain counts the combo too.
+    // Fourteen quads in a streak: ×1.75 (streak 14), and the chain counts the combo too.
     g.s.b2b = 12; out.push(quad());
     const status14 = document.getElementById('play-status').textContent;
     g.s.b2b = 30; out.push(quad());
@@ -679,19 +679,19 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await page.click('.nb-tab[data-tab="mode"]');
   await page.click('.nb-mode[data-value="classic"]');
   const clPanel = await ev(() => ({ set: !!document.querySelector('.modal .cl-set'), rows: [...document.querySelectorAll('.modal .cl-row .cl-nm')].map((x) => x.textContent).join(), sws: [...document.querySelectorAll('.modal .cl-sws .nm')].map((x) => x.textContent).join(), tab: document.querySelector('.nb-tab[data-tab="mode"] .vl').textContent }));
-  check('New board ▸ Mode ▸ Classic shows its settings: type, start level, next, randomizer, lock delay, music; hard drop, hold, ghost, level lock', clPanel.set && clPanel.rows === 'Start level,Next,Randomizer,Lock delay,Music' && clPanel.sws === 'Hard drop,Hold,Ghost,Level lock' && clPanel.tab === 'Classic', JSON.stringify(clPanel));
+  check('New board ▸ Mode ▸ Classic shows its settings: type, start level, next, randomizer, lock timing, music; drop, hold, shadow, level lock', clPanel.set && clPanel.rows === 'Start level,Next,Randomizer,Lock timing,Music' && clPanel.sws === 'Drop,Hold,Shadow,Level lock' && clPanel.tab === 'Classic', JSON.stringify(clPanel));
   await page.click('.nb-level[data-path="classic.type"][data-value="b"]');
   await page.click('[data-path="classic.height"][data-value="2"]');
   await page.click('[data-focus="classic.level+"]');
   await page.click('[data-focus="classic.level+"]');
   await page.click('[data-path="classic.next"][data-value="1"]');
   await page.click('[data-path="classic.hold"]');
-  await page.click('[data-path="classic.lock"][data-value="nes"]');
+  await page.click('[data-path="classic.lock"][data-value="retro"]');
   await page.click('[data-path="classic.levelLock"]');
   await page.waitForTimeout(100);
   await shot('13a-newboard-classic');
   const nbRecipe = await ev(() => Lull.app.modes.play.lastNB.nb.recipe.classic);
-  check('its settings are the recipe: B type, height 2, start level 3, Next 1, hold off, NES lock, level lock on', nbRecipe.type === 'b' && nbRecipe.height === 2 && nbRecipe.level === 3 && nbRecipe.next === 1 && nbRecipe.hold === false && nbRecipe.lock === 'nes' && nbRecipe.levelLock === true && nbRecipe.drop && nbRecipe.ghost && nbRecipe.rand === 'bag', JSON.stringify(nbRecipe));
+  check('its settings are the recipe: B type, height 2, start level 3, Next 1, hold off, Retro lock, level lock on', nbRecipe.type === 'b' && nbRecipe.height === 2 && nbRecipe.level === 3 && nbRecipe.next === 1 && nbRecipe.hold === false && nbRecipe.lock === 'retro' && nbRecipe.levelLock === true && nbRecipe.drop && nbRecipe.ghost && nbRecipe.rand === 'bag', JSON.stringify(nbRecipe));
   await page.setViewportSize({ width: 320, height: 568 });
   await page.waitForTimeout(200);
   const clNarrow = await ev(() => { const m = document.querySelector('.modal'), p = document.querySelector('.nb-panel'); return { fits: m.scrollWidth <= m.clientWidth + 1 && p.scrollWidth <= p.clientWidth + 1 && document.documentElement.scrollWidth <= window.innerWidth + 1, scrolls: p.scrollHeight > p.clientHeight }; });
@@ -730,7 +730,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     const S = Lull.Sound, K = Lull.Key, M = Lull.Music, keep = S.voice, got = [], out = [];
     S.voice = function (v, when, pack) { got.push({ v, when }); return keep.call(this, v, when, pack); };
     try {
-      for (const [n, a] of [['quad'], ['clear', 2], ['tspin'], ['perfect'], ['combo', 4], ['hold'], ['solve'], ['golden']]) {
+      for (const [n, a] of [['quad'], ['clear', 2], ['twist'], ['perfect'], ['combo', 4], ['hold'], ['solve'], ['golden']]) {
         S.lastAt[n] = 0; got.length = 0;
         const now = S.ctx.currentTime, b = M.barAt(now);
         S.play(n, a, 'soft');
@@ -767,7 +767,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await ev(() => { CM.setGrace = 0; });
   check('hard drop scores', await ev(() => CM.score > 0));
   const clock = await ev(() => CM.ms);
-  check('Classic keeps its own clock (for the sprints)', clock > 1500 && clock < 6000, String(clock));
+  check('Classic keeps its own clock (for the timed achievements)', clock > 1500 && clock < 6000, String(clock));
   // Restarting while the music plays starts the suite again from the top (it used to go silent, throwing every tick).
   const games0 = await ev(() => Lull.app.store.state.stats.classic.games);
   for (let i = 0; i < 5; i++) await ev(() => CM.restart());
@@ -788,7 +788,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await ev(() => { const m = CM; m.lines = 9; const g = m.game; for (let x = 1; x < 10; x++) g.board.set(x, 0, 8); g.replacePiece({ id: 'I' }); g.rotate(1); while (g.move(-1)); });
   await page.keyboard.press('Space');
   check('ten lines: level 2', await ev(() => CM.level === 2));
-  // Back-to-back tetrises multiply the lines Classic banks (0.7 a line, ×0.05 a link, ×1.5 at most), never its score.
+  // Quads on a streak multiply the lines Classic banks (0.7 a line, ×0.05 a link, ×1.5 at most), never its score.
   const bank = await ev(() => {
     const m = CM, g = m.game;
     g.s.b2b = 5; // six before: this makes seven, ×1.3
@@ -804,10 +804,10 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     out.line = Lull.LINE; out.tip1 = [...document.querySelectorAll('#play-status .stat')].map((x) => x.dataset.tip).find(Boolean);
     return out;
   });
-  check('Classic: seven tetrises in a row bank ×1.3 (3.64 lines: 4 × 0.7 × 1.3), the score untouched', bank.banked === bank.wantBank && bank.banked === 3.64 && bank.mult === bank.wantMult && bank.mult === 1.3 && bank.points === bank.want && /Bank ×1\.3/.test(bank.status), JSON.stringify(bank));
+  check('Classic: seven quads in a row bank ×1.3 (3.64 lines: 4 × 0.7 × 1.3), the score untouched', bank.banked === bank.wantBank && bank.banked === 3.64 && bank.mult === bank.wantMult && bank.mult === 1.3 && bank.points === bank.want && /Bank ×1\.3/.test(bank.status), JSON.stringify(bank));
   // The Bank tile shows the multiplier; its tooltip says what a line banks, in lines, and at ×1.3 what that makes.
   check('  the Bank tooltip gives a line\'s 0.7 with its unit, and at ×1.3 the 0.91 a line banks now', !!bank.tip && bank.tip.tip.includes('banks 0.7 ' + bank.line + ';') && bank.tip.tip.includes('×1.3: 0.91 ' + bank.line + ' a line') &&
-    bank.tip1 === 'Each line banks 0.7 ' + bank.line + '; back-to-back multiplies it, up to ×1.5', JSON.stringify([bank.tip, bank.tip1]));
+    bank.tip1 === 'Each line banks 0.7 ' + bank.line + '; a streak multiplies it, up to ×1.5', JSON.stringify([bank.tip, bank.tip1]));
   check('and ten lines make it a game played', await ev((g0) => Lull.app.store.state.stats.classic.games === g0 + 1, games0));
   // Pausing mid-bar comes back to that bar, not the one after it.
   await page.waitForTimeout(700);
@@ -847,37 +847,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   }
   await page.keyboard.press('KeyP');
   await page.waitForTimeout(100);
-  const ann = await ev(() => { const A = Lull.Announcer; return [A.phrase({ lines: 1 }), A.phrase({ lines: 4, b2b: true }), A.phrase({ tspin: true, lines: 2 }), A.phrase({ tspin: true, lines: 3 }), A.phrase({ mini: true, lines: 0 }), A.phrase({ lines: 0 }), A.phrase({ lines: 2, perfect: true }, 3)]; });
-  check('the announcer knows its lines', JSON.stringify(ann) === JSON.stringify([['single'], ['b2b', 'tetris'], ['tspin_double'], ['tspin', 'triple'], ['tspin'], null, ['double', 'perfect', 'levelup']]), JSON.stringify(ann));
-  const clips = await ev(async () => { const out = {}; for (const k of Object.keys(Lull.VOICE_CLIPS)) { const b = await Lull.Announcer.decode(k); out[k] = b ? +b.duration.toFixed(2) : 0; } return out; });
-  check('every announcer clip decodes (0.3–2 s)', Object.values(clips).length === 11 && ['single', 'double', 'triple', 'tetris', 'tspin', 'tspin_single', 'tspin_double', 'b2b', 'perfect', 'levelup', 'gameover'].every((k) => clips[k] > 0) && Object.values(clips).every((d) => d > 0.3 && d < 2), JSON.stringify(clips));
-  // Her level, rendered through her bus beside the sound effects: every clip about as loud as the next, and clearly under
-  // the effects (loudest 400 ms, both channels).
-  const voiceLevels = await ev(async () => {
-    const S = Lull.Sound, A = Lull.Announcer, keep = A.volume;
-    const mom = (buf) => {
-      const d = buf.getChannelData(0), e = buf.getChannelData(1), w = Math.floor(buf.sampleRate * 0.4), h = Math.floor(buf.sampleRate * 0.05);
-      let m = 0;
-      for (let s = 0; s + w <= d.length; s += h) { let a = 0; for (let i = s; i < s + w; i++) a += (d[i] * d[i] + e[i] * e[i]) / 2; m = Math.max(m, a / w); }
-      return +(10 * Math.log10(m)).toFixed(1);
-    };
-    const sfx = {}, voice = {};
-    for (const n of ['clear', 'quad', 'tspin', 'perfect']) sfx[n] = mom(await S.offline(2.5, () => { const { pack, list } = S.voices(n, 2, 'soft'); for (const v of list) S.voice(v, 0.02, pack); }));
-    A.setVolume(Lull.app.store.state.settings.announcerVolume);
-    try {
-      for (const k of Object.keys(Lull.VOICE_CLIPS)) {
-        const buf = await A.decode(k);
-        A.input = null;
-        voice[k] = mom(await S.offline(2.5, () => { const src = S.ctx.createBufferSource(); src.buffer = buf; src.connect(A.bus()); src.start(0.02); }));
-      }
-    } finally { A.input = null; A.setVolume(keep); }
-    return { sfx, voice };
-  });
-  {
-    const v = Object.values(voiceLevels.voice), fx = Object.values(voiceLevels.sfx), mean = fx.reduce((a, x) => a + x, 0) / fx.length;
-    check('the announcer\'s clips are all about as loud (within 2.5 dB)', v.length === 11 && Math.max(...v) - Math.min(...v) <= 2.5, JSON.stringify(voiceLevels.voice));
-    check('the announcer sits clearly under the sound effects', Math.max(...v) < mean - 5 && Math.max(...v) < Math.min(...fx) - 3, JSON.stringify(voiceLevels));
-  }
+  // The announcer (her lines, her trimmed clips, her mix): scripts/voice-test.cjs, run below.
   check('the remix is a long suite', await ev(() => Lull.SONG.bars.length >= 48 && Lull.SONG.loopFrom === 4));
     check('P pauses (and the music stops)', await ev(() => CM.paused && !Lull.Music.playing));
   await shot('14-classic-paused');
@@ -910,7 +880,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   const bestIs = (t, n) => new RegExp('Best\\s*' + n.toLocaleString('en-US') + '$').test(t || '');
   check('Classic\'s best: a new board of the same rules shows the best on them; other rules (start level, width) show 0; Play again carries the board\'s own on', perBoard.mine === perBoard.score && perBoard.mine > 0 && perBoard.same.own === 0 && bestIs(perBoard.same.shown, perBoard.mine) && bestIs(perBoard.other.shown, 0) && bestIs(perBoard.wider.shown, 0) && perBoard.carried === perBoard.mine, JSON.stringify(perBoard));
 
-  // Lock delay. NES: the NES's own frames a row, and no lock timer: the gravity tick that cannot move the piece down
+  // Lock timing. Retro: the 8-bit era's frames a row, and no lock timer: the gravity tick that cannot move the piece down
   // sets it; moving or turning buys nothing; a held soft drop sets it. Modern: half a second of rest, renewed by a move.
   const lockT = await ev(() => {
     const pm = Lull.app.modes.play, keep = pm.game, out = {};
@@ -923,14 +893,14 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
       return { g, p, n: g.s.pieces };
     };
     const run = (secs) => { for (let t = 0; t < secs - 1e-9; t += 0.004) ctl.frame(performance.now(), Math.min(0.004, secs - t)); };
-    // NES, level 1: 48 frames a row (0.799 s).
-    let r = rest({ lock: 'nes' });
+    // Retro, level 1: 48 frames a row (0.799 s).
+    let r = rest({ lock: 'retro' });
     out.iv = Lull.Classic.gravity(1, true);
     run(out.iv * 0.9); out.nesBefore = r.g.s.pieces === r.n;
     pm.action('moveL'); pm.action('moveR'); pm.action('cw');
     run(out.iv * 0.15); out.nesAt = r.g.s.pieces === r.n + 1;
-    // A held soft drop on the stack sets it at once (NES); never on modern.
-    r = rest({ lock: 'nes' }); out.nesHeld = ctl.softDrop(true) && r.g.s.pieces === r.n + 1;
+    // A held soft drop on the stack sets it at once (Retro); never on modern.
+    r = rest({ lock: 'retro' }); out.retroHeld = ctl.softDrop(true) && r.g.s.pieces === r.n + 1;
     r = rest({ lock: 'modern' }); out.modHeld = !ctl.softDrop(true) && r.g.s.pieces === r.n;
     // Modern: 0.4 s, a move renews, 0.4 s more, still there; 0.15 s more, set.
     r = rest({ lock: 'modern' });
@@ -940,7 +910,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     pm.setGame(keep);
     return out;
   });
-  check('NES lock: the NES frames a row (level 1: 48), no lock timer: the next gravity tick sets a resting piece, moves and turns buy nothing, a held soft drop sets it', Math.abs(lockT.iv - 48 / 60.0988) < 1e-9 && lockT.nesBefore && lockT.nesAt && lockT.nesHeld && Math.abs(lockT.l15 - 4 / 60.0988) < 1e-9 && Math.abs(lockT.l20 - 2 / 60.0988) < 1e-9, JSON.stringify(lockT));
+  check('Retro lock: the retro frames a row (level 1: 48), no lock timer: the next gravity tick sets a resting piece, moves and turns buy nothing, a held soft drop sets it', Math.abs(lockT.iv - 48 / 60.0988) < 1e-9 && lockT.nesBefore && lockT.nesAt && lockT.retroHeld && Math.abs(lockT.l15 - 4 / 60.0988) < 1e-9 && Math.abs(lockT.l20 - 2 / 60.0988) < 1e-9, JSON.stringify(lockT));
   check('Modern lock: half a second of rest, renewed by a move; a held soft drop never sets', lockT.modRenewed && lockT.modSet && lockT.modHeld, JSON.stringify(lockT));
 
   // The classic top out: the piece that cannot appear sets over the stack, and three more from the queue pile up on it
@@ -1164,7 +1134,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
       return { peak: +(20 * Math.log10(peak)).toFixed(1), quiet: +(20 * Math.log10(quiet)).toFixed(1), bad };
     };
     const out = {};
-    for (const n of ['move', 'rotate', 'lower', 'lock', 'clear', 'quad', 'tspin', 'perfect', 'boom', 'solve']) {
+    for (const n of ['move', 'rotate', 'lower', 'lock', 'clear', 'quad', 'twist', 'perfect', 'boom', 'solve']) {
       out[n] = stat(await S.offline(2, () => { const { pack, list } = S.voices(n, 2, 'soft'); for (const v of list) S.voice(v, 0.02, pack); }));
     }
     out.music = stat(await S.offline(8, (ctx) => Lull.Music.render(ctx, 8, 4)), 1.5);
@@ -1202,7 +1172,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   // (scripts/audio-render.cjs --harmony does every pack and sound at length).
   {
     const bars = await sectionBars(page), rows = [];
-    for (const [pack, sections, events] of [['soft', Object.keys(bars), [['clear', 2], ['quad'], ['tspin'], ['perfect'], ['solve']]], ['chip', ['bridge', 'theme'], [['quad'], ['perfect']]], ['marimba', ['float', 'interlude'], [['clear', 2], ['tspin']]]]) {
+    for (const [pack, sections, events] of [['soft', Object.keys(bars), [['clear', 2], ['quad'], ['twist'], ['perfect'], ['solve']]], ['chip', ['bridge', 'theme'], [['quad'], ['perfect']]], ['marimba', ['float', 'interlude'], [['clear', 2], ['twist']]]]) {
       for (const section of sections) {
         const res = await overBar(page, pack, bars[section][0], events);
         for (let i = 0; i < res.length; i += 2) {
@@ -2684,9 +2654,9 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     m.game.drop();
     m.switchTo(id);
     const p = m.game.piece, r = m.game.lock();
-    return { lastRot: p.lastRot, tspin: r.tspin, lines: r.lines };
+    return { lastRot: p.lastRot, twist: r.twist, lines: r.lines };
   });
-  check('a T twisted into its slot, shelved and resumed, still spins', spin.lastRot && spin.tspin && spin.lines === 2, JSON.stringify(spin));
+  check('a T twisted into its slot, shelved and resumed, still spins', spin.lastRot && spin.twist && spin.lines === 2, JSON.stringify(spin));
   // Keyboard: Boards opened with Enter takes focus; once only; a Delete asked for by key takes focus into the question,
   // with the library under it out of reach.
   await page.focus('#play-status .menu-btn');
@@ -3152,14 +3122,14 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
               if (ay === by && Math.abs(ax - bx) < 1 + K.CLEAR - 1e-6) bad.push('closer than ' + K.CLEAR + ' ' + p.id + q.id);
             }
           }
-          // Moves: whole lanes, or the game's SRS turn with one of its kicks; nothing else jumps.
+          // Moves: whole lanes, or the game's Lull turn with one of its kicks; nothing else jumps.
           for (const m of log) {
             const dx = m.to.x - m.from.x, dy = m.to.y - m.from.y;
             if (m.kind === 'shift') { shifts++; if (Math.abs(dx) > 1e-9 || Math.abs(dy) !== 1 || m.to.rot !== m.from.rot) bad.push('shift not one lane'); }
             else {
               turns++;
               const d = (m.to.rot - m.from.rot + 4) % 4, ks = P.kicksFor(P.get(m.id), m.from.rot, m.to.rot);
-              if ((d !== 1 && d !== 3) || !ks.some(([kx, ky]) => Math.abs(kx - dx) < 1e-9 && ky === dy)) bad.push('turn not SRS ' + m.id + ' ' + m.from.rot + '>' + m.to.rot + ' ' + dx + ',' + dy);
+              if ((d !== 1 && d !== 3) || !ks.some(([kx, ky]) => Math.abs(kx - dx) < 1e-9 && ky === dy)) bad.push('turn not a Lull turn ' + m.id + ' ' + m.from.rot + '>' + m.to.rot + ' ' + dx + ',' + dy);
             }
           }
           for (const p of i.pieces) {
@@ -3213,7 +3183,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     const m = march.a;
     check('never an overlap, and pieces sharing a lane always a clear cell apart, over minutes of passing (uneven frames too)', m.nbad === 0 && march.c.bad.length === 0 && march.d.bad.length === 0, JSON.stringify([m.bad, march.c.bad, march.d.bad]));
     check('they fall along the bar smoothly, between whole cells, each at its own speed from a drift to a dart', m.subcell > 10000 && m.speeds >= 20 && m.vmin < 1.5 && m.vmax > 4, JSON.stringify({ subcell: m.subcell, speeds: m.speeds, vmin: m.vmin, vmax: m.vmax }));
-    check('lanes and turns are the game\'s: whole lanes, SRS turns with their kicks, now and then', m.turns >= 20 && m.shifts >= 20, JSON.stringify({ turns: m.turns, shifts: m.shifts }));
+    check('lanes and turns are the game\'s: whole lanes, Lull turns with their kicks, now and then', m.turns >= 20 && m.shifts >= 20, JSON.stringify({ turns: m.turns, shifts: m.shifts }));
     check('nobody ever slows down: every piece travels at its own speed all the way, darts included', m.braked === 0 && march.c.braked === 0 && march.d.braked === 0 && m.darts >= 3, JSON.stringify({ braked: [m.braked, march.c.braked, march.d.braked], darts: m.darts }));
     check('meetings are made together: the faster piece moves over early and the slower one steps aside for it too', m.yields >= 5 && m.dodges >= 5 && march.c.yields >= 5, JSON.stringify({ yields: m.yields, dodges: m.dodges, c: march.c.yields }));
     check('fast pieces pass slow ones, weaving round them', m.passes >= 5 && m.fastPasses === m.passes && m.overtakes === m.passes && march.c.passes >= 3 && march.d.passes >= 3, JSON.stringify({ passes: m.passes, fast: m.fastPasses, overtakes: m.overtakes, c: march.c.passes, d: march.d.passes }));
@@ -3891,6 +3861,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await require('./tabbar-test.cjs')({ browser, check, PAGE, OUT });
   // The Home Screen web app, served over http as it is deployed: offline, updates, full screen (web-browser-test.cjs).
   console.log('web app');
+  await require('./voice-test.cjs')({ browser, check, PAGE });
   await require('./web-browser-test.cjs')({ browser, check, OUT });
   await browser.close();
   console.log(failures ? failures + ' failed' : 'all passed');

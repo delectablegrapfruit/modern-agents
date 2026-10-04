@@ -135,7 +135,7 @@
   };
   Recipe.part(PART);
 
-  // Butterfly: a perfect clear by hand on a Mirror board 20 wide (it counts there whatever the feats say).
+  // Butterfly: a spotless clear by hand on a Mirror board 20 wide (it counts there whatever the feats say).
   if (L.Achievements) {
     L.Achievements.add({
       id: 'butterfly', group: 'play', name: 'Butterfly', desc: 'Clear the whole board on a Mirror board 20 wide. No power-ups on the board.', pay: 45, on: 'play',

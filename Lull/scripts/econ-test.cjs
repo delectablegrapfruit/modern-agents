@@ -11,7 +11,7 @@ const assert = require('assert');
 //
 // Pieces a minute: Relaxed has no clock, so a casual player places about one piece every three seconds; Classic is
 // faster, and its games have gaps (the uptime). A casual Classic game tops out around 100 lines, a skilled one around
-// 150, an expert's at 200 (all tetrises). Puzzles: per difficulty, the first attempt's time t1 and each later one's tr
+// 150, an expert's at 200 (all quads). Puzzles: per difficulty, the first attempt's time t1 and each later one's tr
 // (s), a failed attempt taking TF of it, the chance to solve on the first attempt p1 and on each later one pn, and u the
 // share of first-try solves that used an Undo or a hint (not clean); after GIVEUP attempts the player skips. The career:
 // hours a day, the share of play in each mode, what a day's power-ups cost, the Dailies solved.
@@ -44,16 +44,16 @@ const MODEL = {
     lines500: [2, 0.8, 10], b2b8: [null, 1, null], tst_b2b: [null, 8, null], old_growth: ['D30', 'D30', 'D30'],
     pc_open: [null, 40, null], it_showman: [25, 10, null], pc3: [null, 25, null], pc_b2b: [null, 50, null],
     all_items: [30, 15, 50], it_sweep: [null, 40, null], score250k: [60, 2, null], sb_combos: [null, 80, null],
-    tspin100: [null, 40, null], clean40: [null, null, null],
-    chain20: [null, 1, null], pace67: [null, null, null], pc_tspin: [null, null, null], quads10: [null, 1, null],
+    twist100: [null, 40, null], clean40: [null, null, null],
+    chain20: [null, 1, null], pace67: [null, null, null], pc_twist: [null, null, null], quads10: [null, 1, null],
     pc10: [null, null, null], tst10: [null, 60, null], b2b20: [null, 2, null], golden20: [null, 3, null],
     million: [null, 15, null], purist: [60, 5, null], lines5000: [15, 10, 70],
-    cl_tetris4: [5, 0.5, null], cl_l10: [3, 0.3, 30], cl_100k: [15, 0.5, null], cl_l15: [null, 1, null],
+    cl_fourq: [5, 0.5, null], cl_l10: [3, 0.3, 30], cl_100k: [15, 0.5, null], cl_l15: [null, 1, null],
     cl_300k: [null, 2, null], cl_t25: [null, 5, null], cl_l20: [null, null, null], cl_1m: [null, null, null],
-    cl_games100: [60, 15, null], cl_tetris10: [null, 1, null], cl_nohold: [null, 3, null], cl_pc: [null, 25, null],
-    cl_tst: [null, 10, null], cl_sprint: [null, 20, null], cl_tspin10: [null, 25, null], cl_quads4: [null, 1, null],
+    cl_games100: [60, 15, null], cl_tenq: [null, 1, null], cl_nohold: [null, 3, null], cl_pc: [null, 25, null],
+    cl_tst: [null, 10, null], cl_dash: [null, 20, null], cl_twist10: [null, 25, null], cl_quads4: [null, 1, null],
     cl_b2b8: [null, 1.5, null], cl_combo10: [null, 30, null], cl_allquads: [null, 5, null],
-    cl_sprint60: [null, null, null], cl_nohold20: [null, null, null], cl_combo15: [null, null, null], cl_l25: [null, null, null],
+    cl_dash50: [null, null, null], cl_nohold20: [null, null, null], cl_combo15: [null, null, null], cl_l25: [null, null, null],
     pz_hard: [15, 3, 0.5], pz_hold: [6, 5, 1], pz_daily: ['D14', 'D10', 'D7'], pz_streak: [8, 5, 1], pz_wild: [null, 40, 10],
     pz_hard25: [null, 30, 4], pz_500: [100, 150, 12], pz_d100: [null, 'D150', 'D100'], pz_h50: [null, null, 60],
     pz_clean: [null, 5, 2], pz_daily3: [null, 'D10', 'D1'], pz_spin: [null, null, 15], pz_fast: [null, 25, 10],
@@ -65,7 +65,7 @@ const MODEL = {
 
 // ---- placement bots on the real engine ----------------------------------------------------------------------------
 //
-// Hard drops from above (no tucks or spins). Casual: an El-Tetris-like stacker that clears whatever it can. Skilled:
+// Hard drops from above (no tucks or spins). Casual: a Dellacherie-style stacker that clears whatever it can. Skilled:
 // stacks with the right column open, keeps an I in hold, and clears only quads until the stack gets tall.
 
 function bots(L) {

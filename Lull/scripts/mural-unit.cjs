@@ -389,7 +389,7 @@ module.exports = function muralUnit({ L, test }) {
     assert.strictEqual(X(mk('coast', 1, 1)).turn(), 1);
   });
 
-  test('mural: Finished once the last piece is set (kept in the save; no piece after it); the Next queue is the mural\'s own, counting down', () => {
+  test('mural: Finished once the last piece is set (kept in the save; no piece after it); the Next pieces is the mural\'s own, counting down', () => {
     const g = mk('soft', 1, 4), x = X(g), n = x.plan().pieces.length;
     assert(g.fixed && g.queue.length === n - 1 && g.queue.every((e, i) => e.id === x.plan().pieces[i + 1].id));
     let ended = 0;

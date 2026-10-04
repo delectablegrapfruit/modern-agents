@@ -10,7 +10,7 @@
   //
   // A parade along the bar, like a game's menu backdrop: the bar is a well on its side, four lanes deep, and pieces
   // "fall" along it from left to right — each at its own steady speed (a game gravity level, from a Level 1 drift to a
-  // Level 9 dart) and in its own SRS orientation. Lane changes and turns are the game's own: whole lanes, a real SRS turn
+  // Level 9 dart) and in its own spawn orientation. Lane changes and turns are the game's own: whole lanes, a real Lull turn
   // (the kicks that keep it in its column), and instant, as the board makes them.
   //
   // Nobody ever slows down. Speeds are steady, so where every piece will be is known ahead of time, and so is every
@@ -272,7 +272,7 @@
       }
     }
 
-    /** The pose a turn lands in, as the game turns: the next SRS rotation and the first of its kicks that fits. */
+    /** The pose a turn lands in, as the game turns: the next Lull turn and the first of its kicks that fits. */
     turned(p, rot, x, y, dir) {
       const type = L.Pieces.get(p.id);
       if (type.kicks === 'none') return null;

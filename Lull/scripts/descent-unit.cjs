@@ -1,8 +1,8 @@
 // Descent's rules in Node (js/descent.js): the recipe (a mode between Classic and Race; its level and stage; 8 × 14 at
 // least; Physics and Mirror ruled out both ways; kept for the board's life), the stages laid out the same every time,
 // each shot (I pierce, O heavy, T spread, S and Z push, L and J angle, stone nothing; other shapes by their form), each
-// block (glass, dense, armour, prism, drip, weight, echo, lock), the clear effects (a volley a row, a T-spin through
-// armour, back-to-back, the combo's delay, a perfect clear), contact into stone, pieces appearing under the descent,
+// block (glass, dense, armour, prism, drip, weight, echo, lock), the clear effects (a volley a row, a twist through
+// armour, streak, the combo's delay, a spotless clear), contact into stone, pieces appearing under the descent,
 // the stage cleared and the top out, save and resume mid-stage, Rewind 5 s, pay (stone rows plain), the achievements,
 // a careful bot that beats most stages of each level and a careless one that loses on Hard, and bots that earn no
 // more per piece or per action than on Standard. Run by test.cjs: require('./descent-unit.cjs')({ L, test }).
@@ -146,7 +146,7 @@ module.exports = function descentUnit({ L, test }) {
     assert.deepStrictEqual([kinds(x, 0), ev.shots.length], ['g', 0], 'stone: a dead spot');
   });
 
-  test('descent: each block — glass breaks at a hit, dense at two (cracked after one), armour only to a T-spin volley, a prism hits both sides, a lock while its lane hangs lower', () => {
+  test('descent: each block — glass breaks at a hit, dense at two (cracked after one), armour only to a twist volley, a prism hits both sides, a lock while its lane hangs lower', () => {
     let x = bare([{ kinds: 'dg' }]);
     let ev = Ds.fire(x, [0], [[own('plain')]]);
     assert.deepStrictEqual([kinds(x, 0), ev.hits[0].r], ['d1g'.replace('1', ''), 'crack']);
@@ -155,7 +155,7 @@ module.exports = function descentUnit({ L, test }) {
     assert.strictEqual(kinds(x, 0), 'g');
     x = bare([{ kinds: 'ag' }]);
     ev = Ds.fire(x, [0], [[own('heavy')]]);
-    assert.deepStrictEqual([kinds(x, 0), ev.hits[0].r], ['ag', 'armour'], 'no T-spin: armour holds, and shields the lane');
+    assert.deepStrictEqual([kinds(x, 0), ev.hits[0].r], ['ag', 'armour'], 'no twist: armour holds, and shields the lane');
     ev = Ds.fire(x, [0], [[own('plain')]], { spin: true });
     assert.deepStrictEqual([kinds(x, 0), x.st.armour], ['g', 1]);
     x = bare([{ kinds: 'gg' }, { kinds: 'p' }, { kinds: 'gg' }]);
@@ -234,7 +234,7 @@ module.exports = function descentUnit({ L, test }) {
     assert.deepStrictEqual([g2.piece.y, y.lanes[4].bot], [0, 2], 'it waits over the piece');
   });
 
-  test('descent: the clear effects — a volley a row, a T-spin’s volley breaks armour, back-to-back adds a hit, a combo holds every lane back a second, a perfect clear breaks every lane’s lowest', () => {
+  test('descent: the clear effects — a volley a row, a twist’s volley breaks armour, streak adds a hit, a combo holds every lane back a second, a spotless clear breaks every lane’s lowest', () => {
     const W = 4;
     let x = bare([{ kinds: 'ggg' }, { kinds: 'ggg' }, { kinds: 'ggg' }, { kinds: 'ggg' }], W);
     const full = (k) => new Array(W).fill(own(k));
@@ -242,10 +242,10 @@ module.exports = function descentUnit({ L, test }) {
     assert(x.lanes.every((l) => !l.blocks.length), 'a triple: three volleys');
     x = bare([{ kinds: 'dd' }], 1);
     Ds.fire(x, [0], [[own('plain')]], { b2b: true });
-    assert.strictEqual(kinds(x, 0), 'd2', 'back-to-back: 2 damage from a plain shot');
+    assert.strictEqual(kinds(x, 0), 'd2', 'streak: 2 damage from a plain shot');
     x = bare([{ kinds: 'ag' }], 1);
     Ds.fire(x, [0], [[own('plain')]], { b2b: true });
-    assert.strictEqual(kinds(x, 0), 'ag', 'back-to-back alone does not break armour');
+    assert.strictEqual(kinds(x, 0), 'ag', 'streak alone does not break armour');
     x = bare([{ kinds: 'gg' }, { kinds: 'gg' }], 2);
     const next0 = x.lanes.map((l) => l.next);
     let ev = Ds.fire(x, [0], [[Ds.STONE_CELL, Ds.STONE_CELL]], { combo: 2 });
@@ -256,7 +256,7 @@ module.exports = function descentUnit({ L, test }) {
     ev = Ds.fire(x, [0], [[0, 0, 0, 0]], { perfect: true });
     assert.deepStrictEqual([0, 1, 2].map((i) => kinds(x, i)), ['g', 'g', 'g'], 'armour, dense and a lock all break');
     assert(ev.perfect && x.st.perfect === 1);
-    // On a real board: a T-spin double into armour.
+    // On a real board: a twist double into armour.
     const g = mk('easy', 1), d = lay(g, [null, { bot: 12, kinds: 'ag' }]);
     const rows = ['oo.ooooooo', 'o...oooooo', '.o........'];
     rows.forEach((r, y) => { for (let i = 0; i < 10; i++) if (r[i] === 'o') g.board.set(i, y, own('plain')); });
@@ -265,7 +265,7 @@ module.exports = function descentUnit({ L, test }) {
     put(g, 'T', 1, 0, 2);
     g.piece.lastRot = true;
     const res = g.lock();
-    assert(res.tspin && res.lines === 2, JSON.stringify({ tspin: res.tspin, mini: res.mini, lines: res.lines }));
+    assert(res.twist && res.lines === 2, JSON.stringify({ twist: res.twist, mini: res.mini, lines: res.lines }));
     assert(res.descent.broken.some((b) => b.k === 'armour'));
     assert.strictEqual(kinds(d, 1), '');
   });
@@ -294,7 +294,7 @@ module.exports = function descentUnit({ L, test }) {
     const g4 = mk('easy', 1);
     g4.board.cells.forEach((v, i) => { if (!(v & CELL.HANG)) g4.board.cells[i] = 0; });
     assert.strictEqual(g4.allow('settle'), 'Nothing to settle');
-    assert(g4.isClean(), 'the hanging blocks do not count against a perfect clear');
+    assert(g4.isClean(), 'the hanging blocks do not count against a spotless clear');
   });
 
   test('descent: the last block gone clears the stage (Cleared); a board with no room for the next piece tops out', () => {
@@ -391,8 +391,8 @@ module.exports = function descentUnit({ L, test }) {
     assert(A.check(st(), { mode: 'descent', ev: { broken: [], perfect: false }, D: D(e), g: e }).some((a) => a.id === 'ds_endless'));
   });
 
-  // The bots: a careful player (the best spot for each piece, by El-Tetris weights and the room under the descent, with
-  // T-spins where armour hangs lowest) and a careless one (any spot), a piece every 2 seconds of play, on each stage of
+  // The bots: a careful player (the best spot for each piece, by Dellacherie-style weights and the room under the descent, with
+  // twists where armour hangs lowest) and a careless one (any spot), a piece every 2 seconds of play, on each stage of
   // each level, 2 seeds a stage. The measured results are printed.
   const RESULTS = {};
   test('descent: a careful bot beats most stages on every level; a careless one loses on Hard', () => {

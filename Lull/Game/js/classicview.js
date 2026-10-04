@@ -139,18 +139,18 @@
           if (c.ms >= 60000) this.countGame();
           this.acc += dt;
           // (gravityFor: a test's own seconds a row.)
-          const iv = typeof this.gravityFor === 'function' ? this.gravityFor() : Classic.gravity(level(), K().lock === 'nes');
-          // NES: no lock timer at all. Each gravity tick tries to move the piece down a row; the tick that cannot sets it,
+          const iv = typeof this.gravityFor === 'function' ? this.gravityFor() : Classic.gravity(level(), K().lock === 'retro');
+          // Retro: no lock timer at all. Each gravity tick tries to move the piece down a row; the tick that cannot sets it,
           // there and then (so a piece that comes to rest sets one gravity interval later, a slide off a ledge just falls
           // on, and moving or turning buys nothing). Modern: half a second of rest, renewed by moving or turning.
-          const nes = K().lock === 'nes';
+          const retro = K().lock === 'retro';
           while (this.acc >= iv) {
             this.acc -= iv;
             if (G.fitsAt(p, p.rot, p.x, p.y - 1)) { p.y--; p.lastRot = false; this.lockT = 0; play.view.dirty = true; }
-            else if (nes) { this.acc = 0; G.lock(); break; }
+            else if (retro) { this.acc = 0; G.lock(); break; }
             else { this.acc = 0; break; }
           }
-          if (!nes && G.piece === p && !G.fitsAt(p, p.rot, p.x, p.y - 1)) {
+          if (!retro && G.piece === p && !G.fitsAt(p, p.rot, p.x, p.y - 1)) {
             this.lockT += dt;
             if (this.lockT >= Classic.LOCK.delay) { this.lockT = 0; G.lock(); }
           }
@@ -177,19 +177,19 @@
       /** Moving or turning a resting piece buys it more time (modern lock: up to 15 times). */
       afterAction(a) {
         const G = g(), p = G.piece;
-        if (!p || !MOVES.test(a) || K().lock === 'nes') return;
+        if (!p || !MOVES.test(a) || K().lock === 'retro') return;
         if (!G.fitsAt(p, p.rot, p.x, p.y - 1) && this.resets < Classic.LOCK.resets) { this.lockT = 0; this.resets++; }
       },
 
       /**
-       * Soft drop: a row a press (one point a row); ↓ on the stack sets the piece. A held ↓ sets it too on NES lock (as
-       * the NES does: the soft drop's next step down that cannot, sets), never on modern lock.
+       * Soft drop: a row a press (one point a row); ↓ on the stack sets the piece. A held ↓ sets it too on Retro lock (as
+       * the old consoles did: the soft drop's next step down that cannot, sets), never on modern lock.
        */
       softDrop(rep) {
         const G = g(), p = G.piece;
         if (!p) return false;
         if (G.fitsAt(p, p.rot, p.x, p.y - 1)) { p.y--; p.lastRot = false; G.s.score += 1; this.acc = 0; play.renderStatus(); return true; }
-        if (rep && K().lock !== 'nes') return false;
+        if (rep && K().lock !== 'retro') return false;
         G.lock();
         return true;
       },
@@ -208,7 +208,7 @@
         const info = r.classic || { before: level(), level: level() };
         this.resets = 0; this.lockT = 0; this.acc = 0;
         // What a lock banks (never its score): seven tenths of a Standard line a row (Chain.CLASSIC.rate), by the board's
-        // worth, times the back-to-back streak (×0.05 a link, ×1.5 at most); an unrated board has no streak.
+        // worth, times the streak (×0.05 a link, ×1.5 at most); an unrated board has no streak.
         const mult = G.rules.rated ? Chain.mult(Chain.streak(G), 'classic') : 1;
         G.s.mult = mult;
         if (r.lines) {
@@ -238,11 +238,11 @@
         if (feats) {
           S.bestLevel = Math.max(S.bestLevel, fl);
           S.bestLines = Math.max(S.bestLines, c.lines);
-          if (r.lines >= 4) st.day().tetris = 1;
+          if (r.lines >= 4) st.day().cquad = 1;
         }
         play.renderStatus();
         st.touch();
-        if (feats) app.achieve({ mode: 'classic', r, g: G, score: G.s.score, level: fl, lines: c.lines, tetrises: c.tetrises, ms: c.ms });
+        if (feats) app.achieve({ mode: 'classic', r, g: G, score: G.s.score, level: fl, lines: c.lines, quads: c.quads, ms: c.ms });
       },
 
       /** The end: topped out ('full': the classic pile first) or B type's lines cleared ('cleared'). */
@@ -347,7 +347,7 @@
       },
       bankTip(m) {
         const R = Chain.CLASSIC;
-        return 'Each line banks ' + fmtLines(R.rate) + ' ' + LINE + '; back-to-back multiplies it, up to ' + Chain.fmt(R.cap) +
+        return 'Each line banks ' + fmtLines(R.rate) + ' ' + LINE + '; a streak multiplies it, up to ' + Chain.fmt(R.cap) +
           (m > 1 ? '. Now ' + Chain.fmt(m) + ': ' + fmtLines(Library.bank(R.rate * m)) + ' ' + LINE + ' a line' : '');
       },
 
@@ -364,7 +364,7 @@
       },
       tiles(game) {
         const c = Classic.of(game);
-        return c ? [[String(Classic.levelOf(game.recipe.classic, c.lines)), 'Level'], [fmtInt(c.tetrises), 'Tetrises']] : [];
+        return c ? [[String(Classic.levelOf(game.recipe.classic, c.lines)), 'Level'], [fmtInt(c.quads), 'Quads']] : [];
       },
     };
   }
@@ -392,25 +392,25 @@
         step('classic.level', k.level, Classic.LEVELS[0], Classic.LEVELS[1], 'Start level'),
         k.type === 'b' ? seg('Garbage height', nums('classic.height', Classic.HEIGHTS)) : null,
         seg('Next', nums('classic.next', Classic.NEXT)),
-        seg('Randomizer', [opt('classic.rand', 'bag', 'nb-level', '7-bag'), opt('classic.rand', 'nes', 'nb-level', 'NES random')]),
-        seg('Lock delay', [opt('classic.lock', 'modern', 'nb-level', 'Modern'), opt('classic.lock', 'nes', 'nb-level', 'NES')]),
+        seg('Randomizer', [opt('classic.rand', 'bag', 'nb-level', '7-bag'), opt('classic.rand', 'retro', 'nb-level', 'Retro random')]),
+        seg('Lock timing', [opt('classic.lock', 'modern', 'nb-level', 'Modern'), opt('classic.lock', 'retro', 'nb-level', 'Retro')]),
         seg('Music', Classic.MUSIC.map((m) => opt('classic.music', m, 'nb-level', Classic.MUSIC_NAMES[m]))),
-        h('div', { class: 'cl-sws' }, sw('classic.drop', 'Hard drop'), sw('classic.hold', 'Hold'), sw('classic.ghost', 'Ghost'), sw('classic.levelLock', 'Level lock')));
+        h('div', { class: 'cl-sws' }, sw('classic.drop', 'Drop'), sw('classic.hold', 'Hold'), sw('classic.ghost', 'Shadow'), sw('classic.levelLock', 'Level lock')));
     },
     said(path, v) {
       const names = { 'classic.level': 'Start level ', 'classic.height': 'Garbage height ', 'classic.next': 'Next ' };
       if (names[path]) return names[path] + v;
-      if (path === 'classic.drop') return 'Hard drop ' + (v ? 'on' : 'off');
+      if (path === 'classic.drop') return 'Drop ' + (v ? 'on' : 'off');
       if (path === 'classic.hold') return 'Hold ' + (v ? 'on' : 'off');
-      if (path === 'classic.ghost') return 'Ghost ' + (v ? 'on' : 'off');
+      if (path === 'classic.ghost') return 'Shadow ' + (v ? 'on' : 'off');
       if (path === 'classic.levelLock') return 'Level lock ' + (v ? 'on' : 'off');
-      if (path === 'classic.rand') return v === 'nes' ? 'NES random' : '7-bag';
-      if (path === 'classic.lock') return v === 'nes' ? 'NES lock' : 'Modern lock';
+      if (path === 'classic.rand') return v === 'retro' ? 'Retro random' : '7-bag';
+      if (path === 'classic.lock') return v === 'retro' ? 'Retro lock' : 'Modern lock';
       if (path === 'classic.music') return 'Music ' + (Classic.MUSIC_NAMES[v] || v);
       return null;
     },
     tags: (r, x, info) => (Classic.on(r) && info && info.ended === 'cleared' ? [{ text: 'Cleared', cls: 'full cleared' }] : []),
-    tiles: (ext) => (ext && ext.level != null ? [[String(ext.level), 'Level'], [fmtInt(ext.tetrises), 'Tetrises']] : []),
+    tiles: (ext) => (ext && ext.level != null ? [[String(ext.level), 'Level'], [fmtInt(ext.quads), 'Quads']] : []),
     endName: (reason) => (reason === 'cleared' ? 'Cleared' : null),
   });
   const R0 = (r, path) => !!Recipe.getPath(r, path);
