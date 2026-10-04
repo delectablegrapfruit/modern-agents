@@ -901,6 +901,9 @@
           row('Classic music', null, toggle('music', () => app.modes.play && app.modes.play.renderItems())),
           row('Announcer', null, toggle('announcer')),
           row('Announcer in Relaxed', null, toggle('announcerRelaxed')),
+          // Her voice (L.VOICES), heard once as it is chosen.
+          row('Announcer voice', null, seg('announcerVoice', Object.keys(L.VOICES || {}).map((id) => [id, L.VOICES[id].name]),
+            () => { if (s.sound && !s.muted && L.Announcer) L.Announcer.say(['quad']); })),
           row('Music volume', null, range('musicVolume', 0, 60, 1, '%', 100)),
           row('Announcer volume', null, range('announcerVolume', 0, 100, 1, '%', 100)),
           row('Sound pack', (L.SOUNDS[app.state.equipped.sound] || L.SOUNDS.soft).name, h('button', { class: 'btn sm', onclick: () => listen(app, app.state.equipped.sound) }, icon('playIcon'), 'Listen')))],

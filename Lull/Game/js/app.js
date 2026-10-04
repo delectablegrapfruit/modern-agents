@@ -79,6 +79,7 @@
       this.sound.volume = s.volume;
       if (this.sound.master) this.sound.master.gain.value = s.volume;
       this.sound.pack = this.state.equipped.sound || 'soft';
+      if (L.Announcer) L.Announcer.setVoice(s.announcerVoice);
       this.applyMute();
       const css = getComputedStyle(rootEl);
       const v = (k) => css.getPropertyValue(k).trim();

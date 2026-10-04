@@ -1,5 +1,5 @@
 // Lull — the announcer's measuring tape, shared by scripts/voice-clips.cjs (which records each clip's speech start,
-// end and loudness trim into Game/js/voice-data.js) and scripts/browser-test.cjs (which holds the rendered calls to
+// end and loudness trim into Game/js/voice-<id>.js) and scripts/browser-test.cjs (which holds the rendered calls to
 // it). It runs in the page: page.evaluate(VoiceMeasure.SRC) defines window.VoiceMeasure, whose functions take a
 // channel (Float32Array) and its sample rate.
 //

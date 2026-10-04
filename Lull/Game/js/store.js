@@ -178,7 +178,7 @@
       settings: {
         bg: 'glass', tint: 0.78, accent: ACCENTS[0], theme: 'dark', onTop: true, fadeAway: true,
         sound: true, volume: 0.35, das: 230, arr: 55, lowerRepeat: 70, mouse: true, preview: 5,
-        motion: 'full', showKeys: true, music: true, musicVolume: 0.25, announcer: true, announcerRelaxed: false, announcerVolume: 0.35, ccwPuzzles: false, pauseAway: true,
+        motion: 'full', showKeys: true, music: true, musicVolume: 0.25, announcer: true, announcerRelaxed: false, announcerVolume: 0.35, announcerVoice: 'annie', ccwPuzzles: false, pauseAway: true,
         muted: false, // the top bar's mute (M): over everything, separate from the toggles and volumes above
         hints: true, // control hints (js/hints.js); they retire on their own either way
         // Touch (js/touch.js): gestures on, drag sensitivity 1–10, hard-drop swipe (0 Light, 1 Medium, 2 Firm), what a

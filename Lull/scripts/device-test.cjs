@@ -95,7 +95,7 @@ module.exports = async function deviceTests({ browser, check, PAGE, OUT }) {
     check(`phone (${where}): Look keeps Theme, Accent and Motion`, S.sections.Look.cards.join() === 'Theme,Accent,Motion', S.sections.Look.cards.join());
     check(`phone (${where}): Lower repeat (Classic's resting finger) sits in the Touch card`, (S.sections.Controls.rowsByCard.Touch || []).includes('Lower repeat'), JSON.stringify(S.sections.Controls.rowsByCard));
     check(`phone (${where}): Sound and Data are all there (Export and Import move a save between the tab and the Home Screen)`,
-      ['Mute', 'Classic music', 'Announcer', 'Announcer in Relaxed', 'Sound pack'].every((r) => S.sections.Sound.rows.includes(r)) && /Export/.test(S.sections.Data.text) && /Import/.test(S.sections.Data.text));
+      ['Mute', 'Classic music', 'Announcer', 'Announcer in Relaxed', 'Announcer voice', 'Sound pack'].every((r) => S.sections.Sound.rows.includes(r)) && /Export/.test(S.sections.Data.text) && /Import/.test(S.sections.Data.text));
     const G = S.sections.Gestures || { gest: [], kbd: [], cards: [], text: '' };
     check(`phone (${where}): Gestures lists only the gestures: no keys, no key caps, no card title`,
       G.gest.length === 8 && G.kbd.length === 0 && G.cards.join() === '' && !/⌘|Space|Shift|Backspace|click|Wheel/i.test(G.text), JSON.stringify(G));

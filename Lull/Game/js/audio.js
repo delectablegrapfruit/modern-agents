@@ -1,5 +1,5 @@
 // Lull — sound: synthesized effects in swappable packs (a Shop cosmetic) and Classic's music, all made on the fly with
-// Web Audio, plus Classic's announcer, whose recorded clips are embedded (voice-data.js): nothing to download.
+// Web Audio, plus Classic's announcer, whose recorded clips are embedded (voice-<id>.js): nothing to download.
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
@@ -1008,11 +1008,11 @@
 
   /**
    * The announcer whispers the big moments: "single", "double", "triple", "quad" (four lines), "twist", "twist single",
-   * "twist double", "streak", "spotless" (the board cleared), "level up" and "game over". Her clips were generated with
-   * ElevenLabs (text to speech, model eleven_v4, the whispering voice "Annie") for Lull and are embedded by scripts/voice-clips.cjs in
-   * js/voice-data.js, with each one's speech start and end and a loudness trim (L.VOICE_META): every clip is played from
-   * just before her first sound to just after her last, so she speaks right on the event, and every call sits at one
-   * level.
+   * "twist double", "streak", "spotless" (the board cleared), "level up" and "game over", in the voice chosen in Settings ▸
+   * Sound (L.VOICES: Annie, the default, or Velvet). Each voice's clips were generated with ElevenLabs (text to speech,
+   * model eleven_v4) for Lull and are embedded by scripts/voice-clips.cjs in js/voice-<id>.js, with each one's speech
+   * start and end and a loudness trim (meta): every clip is played from just before her first sound to just after her
+   * last, so she speaks right on the event, and every call, in either voice, sits at one level.
    */
   const Announcer = {
     enabled: true,
@@ -1025,10 +1025,17 @@
     /** A breath between two clips said together. */
     GAP: 0.06,
     buffers: {},
+    /** The voice she speaks in (an id in L.VOICES); one that is not there falls back to the first there is. */
+    voice: 'annie',
+    pack() {
+      const V = L.VOICES || {};
+      return V[this.voice] || V[Object.keys(V)[0]] || { meta: {}, clips: {} };
+    },
+    setVoice(id) { this.voice = id; },
 
-    /** Where a clip's speech is and its trim (dB), from js/voice-data.js; a clip without them plays whole, as it is. */
+    /** Where a clip's speech is and its trim (dB), from js/voice-<id>.js; a clip without them plays whole, as it is. */
     meta(key) {
-      const m = (L.VOICE_META || {})[key];
+      const m = this.pack().meta[key];
       return m && Number.isFinite(m.start) && Number.isFinite(m.end) ? m : null;
     },
     /** The stretch of a decoded clip that is played: { from, dur } (seconds into the clip), and its gain. */
@@ -1042,7 +1049,7 @@
     /**
      * The voice's desk, kept light so the whisper stays as it was recorded: a gentle high-pass at 85 Hz (breath rumble
      * and handling thumps only), her level, and a safety limiter. No EQ, no compressor, no de-esser, no room. Each
-     * clip's own trim (L.VOICE_META) has already brought every call to one level before it gets here.
+     * clip's own trim (its meta) has already brought every call to one level before it gets here.
      * The limiter is set against what reaches the speakers: her level is applied together with the Volume before it
      * (and the Volume taken back out after it, since the master applies it again), so its −3 dBFS ceiling is a real
      * ceiling at any Volume, and at the default volumes her loudest peak stays well under it (it never acts).
@@ -1076,16 +1083,17 @@
     setVolume(v) { if (v === this.volume) return; this.volume = v; this.sync(); },
     decode(key) {
       const ctx = Sound.ensure();
-      const b64 = (L.VOICE_CLIPS || {})[key];
+      const b64 = this.pack().clips[key], id = this.voice + ':' + key;
       if (!ctx || !b64) return Promise.resolve(null);
-      if (!this.buffers[key]) {
+      if (!this.buffers[id] || this.buffers[id].b64 !== b64) {
         const bin = root.atob(b64), bytes = new Uint8Array(bin.length);
         for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-        this.buffers[key] = new Promise((res) => {
+        this.buffers[id] = new Promise((res) => {
           try { const p = ctx.decodeAudioData(bytes.buffer, res, () => res(null)); if (p && p.catch) p.catch(() => res(null)); } catch (e) { res(null); }
         });
+        this.buffers[id].b64 = b64;
       }
-      return this.buffers[key];
+      return this.buffers[id];
     },
     /**
      * Plays one decoded clip at context time `at` into dest (her bus unless given): only its speech, faded in over

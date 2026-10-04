@@ -5007,21 +5007,28 @@ console.log('own names, colours and voice');
     assert(checked >= 5, 'the palettes of many hues: ' + checked);
     assert.strictEqual(L.PALETTES.handheld.name, 'Moss');
   });
-  test('the announcer: eleven whispered clips with where her speech is, credited to ElevenLabs; every line she is given has its clip', () => {
-    load(['voice-data.js']);
+  test('the announcer: two voices of eleven whispered clips with where her speech is, credited to ElevenLabs; every line she is given has its clip', () => {
+    load(['voice-annie.js', 'voice-velvet.js']);
     const KEYS = ['single', 'double', 'triple', 'quad', 'twist', 'twist_single', 'twist_double', 'streak', 'spotless', 'levelup', 'gameover'];
-    assert.deepStrictEqual(Object.keys(L.VOICE_CLIPS).sort(), KEYS.slice().sort());
-    assert.deepStrictEqual(Object.keys(L.VOICE_META).sort(), KEYS.slice().sort());
-    for (const k of KEYS) {
-      const m = L.VOICE_META[k], bytes = Buffer.from(L.VOICE_CLIPS[k], 'base64');
-      assert(bytes.length > 10000 && (bytes.slice(0, 3).toString() === 'ID3' || bytes[0] === 0xff), k + ' is an MP3');
-      assert(m.start >= 0 && m.end > m.start + 0.25 && m.end - m.start < 2 && Math.abs(m.gain) < 12, k + ' ' + JSON.stringify(m));
+    assert.deepStrictEqual(Object.keys(L.VOICES), ['annie', 'velvet']);
+    assert.deepStrictEqual(Object.values(L.VOICES).map((v) => v.name), ['Annie', 'Velvet']);
+    const src = fsx.readFileSync(pathx.join(ROOT, 'Game', 'js', 'audio.js'), 'utf8');
+    for (const id of Object.keys(L.VOICES)) {
+      const V = L.VOICES[id];
+      assert.deepStrictEqual(Object.keys(V.clips).sort(), KEYS.slice().sort(), id);
+      assert.deepStrictEqual(Object.keys(V.meta).sort(), KEYS.slice().sort(), id);
+      for (const k of KEYS) {
+        const m = V.meta[k], bytes = Buffer.from(V.clips[k], 'base64');
+        assert(bytes.length > 10000 && (bytes.slice(0, 3).toString() === 'ID3' || bytes[0] === 0xff), id + ' ' + k + ' is an MP3');
+        assert(m.start >= 0 && m.end > m.start + 0.25 && m.end - m.start < 2 && Math.abs(m.gain) < 12, id + ' ' + k + ' ' + JSON.stringify(m));
+      }
+      // The silence before each word is skipped (it starts where she speaks).
+      assert(KEYS.every((k) => V.meta[k].start > 0.1), id + ': every clip starts where her speech does');
+      const head = fsx.readFileSync(pathx.join(ROOT, 'Game', 'js', 'voice-' + id + '.js'), 'utf8').slice(0, 600);
+      assert(/ElevenLabs/.test(head) && /eleven_v4/.test(head) && head.includes(V.name) && !/Flick|eleven_v3/.test(head), id + ': credited to ElevenLabs, the voice and the model (eleven_v4)');
     }
-    // The silence before each word is skipped (it starts where she speaks).
-    assert(KEYS.every((k) => L.VOICE_META[k].start > 0.1), 'every clip starts where her speech does');
-    const head = fsx.readFileSync(pathx.join(ROOT, 'Game', 'js', 'voice-data.js'), 'utf8').slice(0, 600), src = fsx.readFileSync(pathx.join(ROOT, 'Game', 'js', 'audio.js'), 'utf8');
-    assert(/ElevenLabs/.test(head) && /ElevenLabs/.test(src.slice(src.indexOf('the announcer (Classic)'))), 'credited as generated with ElevenLabs');
-    assert(/eleven_v4/.test(head) && /Annie/.test(head) && !/Flick|eleven_v3/.test(head + src), 'credited to the voice and model that made them (Annie, eleven_v4), and no other');
+    assert(!fsx.existsSync(pathx.join(ROOT, 'Game', 'js', 'voice-data.js')), 'one file a voice');
+    assert(/ElevenLabs/.test(src.slice(src.indexOf('the announcer (Classic)'))) && !/Flick|eleven_v3/.test(src), 'credited as generated with ElevenLabs');
     // Her desk is light: a high-pass, her level and a limiter; no EQ, compressor, de-esser or room of her own.
     const desk = src.slice(src.indexOf('    bus() {', src.indexOf('const Announcer')), src.indexOf('    sync() {', src.indexOf('const Announcer')));
     assert(/'highpass'/.test(desk) && (desk.match(/createDynamicsCompressor/g) || []).length === 1 && !/peaking|highshelf|lowpass|createConvolver/.test(desk), 'her desk: a high-pass and a limiter only');
