@@ -2095,8 +2095,10 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     m.renderStatus();
     return { cur: Lull.app.store.state.boards.cur, json: JSON.stringify(g.toJSON()), pieces: g.s.pieces };
   });
-  // Descent from the menu: Start (none kept yet); Relaxed is kept as it stands.
+  // Descent from the menu: Start (none kept yet); Relaxed is kept as it stands once the menu is up (until then it
+  // plays on, and on a slow machine its piece can fall a row on the way).
   await viaMenu('descent');
+  libA.json = await ev(() => JSON.stringify(Lull.app.modes.play.game.toJSON()));
   const d0 = await ev(() => ({ start: document.querySelector('.modal-menu .mn-start').textContent, cont: !!document.querySelector('.modal-menu .mn-continue') }));
   check('a mode with no game kept: Start, no Continue', d0.start === 'Start' && !d0.cont, JSON.stringify(d0));
   await page.click('.modal-menu .mn-start');
