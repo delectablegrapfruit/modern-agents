@@ -3602,6 +3602,22 @@ console.log('play menu');
     Library.ensure(st, 1000);
     assert.deepStrictEqual(st.boards.menu, {});
   });
+  test('Race and Battle setups: an opponent and Standard or Frantic (Standard first, the last choice kept); never a set (each new game draws one); a kept game\'s set in words', () => {
+    const B = Library.blank();
+    for (const m of ['race', 'battle']) {
+      assert.deepStrictEqual(Menu.setupOf(B, m).recipe[m], { level: 'steady', tempo: 'standard' }, m + ': Standard first');
+      B.menu[m] = { recipe: R.normalize({ mode: m, [m]: { level: 'brisk', tempo: 'frantic', set: 'f1' }, shapes: { preset: 'frantic' } }), size: { w: 8, h: 8 } };
+      const su = Menu.setupOf(B, m);
+      assert.deepStrictEqual(su.recipe[m], { level: 'brisk', tempo: 'frantic' }, m + ': the last choice, and no set');
+      assert.strictEqual(su.recipe.shapes.preset, 'normal');
+      const d = R.deal(su.recipe, su.size, new L.RNG(4)), P = { race: L.Race, battle: L.Battle }[m];
+      assert(P.setIn(d.recipe) && P.setIn(d.recipe).tempo === 'frantic', m + ': a new game draws a Frantic set');
+      const g = new L.Game({ w: d.size.w, h: d.size.h, recipe: d.recipe, seed: 3 });
+      assert(/^Frantic \u00b7 \d+ \u00d7 \d+/.test(Menu.rulesOf(g.toJSON())), Menu.rulesOf(g.toJSON()));
+      assert.strictEqual(Menu.rulesOf(new L.Game({ w: 10, h: m === 'race' ? 10 : 14, recipe: R.normalize({ mode: m }), seed: 3 }).toJSON()), '', m + ': a game with no set says nothing');
+    }
+    assert.strictEqual(Menu.rulesOf(mk({}, 10, 20, 3).toJSON()), '');
+  });
   test('progress in a few words: lines (or pieces), a match\'s tally, a picture\'s pieces, Full, a mode\'s own end', () => {
     const g = mk({}, 10, 20, 30, 2);
     g.s.lines = 12;

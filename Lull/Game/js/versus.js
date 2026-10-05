@@ -1,6 +1,6 @@
 // Lull — what Race and Battle share (js/race.js, js/battle.js): the opponent's levels by name, boards as rows of bits,
-// the search an opponent plans its moves with (every spot a piece can get to, and the moves that get it there), and
-// running that thinking in short slices. Pure, no DOM.
+// the search an opponent plans its moves with (every spot a piece can get to, and the moves that get it there),
+// running that thinking in short slices, and Standard and Frantic (the rule sets a new game draws from). Pure, no DOM.
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
@@ -210,8 +210,61 @@
   /** The tally in words: "vs Steady 3–2". */
   function tallyText(M, level) { const lv = level || M.level, t = tallyOf(M, lv); return 'vs ' + NAMES[lv] + ' ' + t[0] + '–' + t[1]; }
 
+  // ---- Standard and Frantic: the rule sets a new game draws from ---------------------------------------------------------
+  //
+  // The menu offers each two-board mode a tempo, Standard or Frantic, and each tempo is a small pool of that mode's rule
+  // sets (a size, shapes, the mode's own pacing, and the opponent's pace). Every new game draws one of its tempo's sets
+  // (Recipe.deal, on the game's own seed); the set drawn is the game's (recipe.<mode>.set), so Continue resumes it. A
+  // game with no tempo (a Custom one, or one from before) plays the mode's usual rules.
+
+  const TEMPOS = ['standard', 'frantic'];
+  const TEMPO_NAMES = { standard: 'Standard', frantic: 'Frantic' };
+
+  /** A mode's sets of one tempo. */
+  const poolOf = (sets, tempo) => sets.filter((s) => s.tempo === tempo);
+  /** A mode's set by its id, or null. */
+  const setOf = (sets, id) => (typeof id === 'string' && sets.find((s) => s.id === id)) || null;
+  /** One set of a tempo, drawn with rng (null for a tempo with none). */
+  function drawSet(sets, tempo, rng) { const p = poolOf(sets, tempo); return p.length ? p[rng.int(p.length)] : null; }
+
+  /**
+   * A mode's own key of the recipe, made whole: { level, tempo?, set? }. A set it knows brings its tempo; an unknown set
+   * is dropped, and so is an unknown tempo.
+   */
+  function normalizeSide(raw, sets) {
+    const o = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const out = { level: IDS.includes(o.level) ? o.level : 'steady' };
+    const s = setOf(sets, o.set);
+    if (s) { out.tempo = s.tempo; out.set = s.id; } else if (TEMPOS.includes(o.tempo)) out.tempo = o.tempo;
+    return out;
+  }
+
+  /** A new game of a mode with a tempo: one of its sets drawn, its shapes and size: { recipe, size }, or null (no tempo). */
+  function dealSet(r, key, sets, rng) {
+    const own = r && r[key];
+    if (!own || !TEMPOS.includes(own.tempo)) return null;
+    const s = drawSet(sets, own.tempo, rng);
+    if (!s) return null;
+    const out = JSON.parse(JSON.stringify(r));
+    out[key] = { level: own.level, tempo: s.tempo, set: s.id };
+    out.shapes = { preset: s.shapes };
+    return { recipe: out, size: { w: s.w, h: s.h } };
+  }
+
+  /** A level with the opponent's pace changed by a set (f: a factor on its seconds a piece; 1 leaves the level as it is). */
+  function paced(lv, f) { return f && f !== 1 ? Object.freeze(Object.assign({}, lv, { pace: Math.round(lv.pace * f * 100) / 100 })) : lv; }
+
+  /** A set in words: "Frantic · 8 × 8 · Frantic shapes" (or "Pentominoes"), then what the mode adds ("Send every 4"). */
+  function setLine(s, extra) {
+    if (!s) return '';
+    const nm = s.shapes !== 'normal' && L.Shapes ? L.Shapes.NAMES[s.shapes] || '' : '';
+    const shapes = nm && !/s$/.test(nm) ? nm + ' shapes' : nm;
+    return [TEMPO_NAMES[s.tempo], s.w + ' × ' + s.h, shapes].concat(extra || []).filter(Boolean).join(' · ');
+  }
+
   L.Versus = {
     IDS, NAMES, now, popcount, rowsOf, shapeOf, fitMap, spread, reachMap, flood,
     search, searchG, pathTo, play, gauss, placed, fitAt, spawnOf, slice, runAll, tallyOf, tallyText,
+    TEMPOS, TEMPO_NAMES, poolOf, setOf, drawSet, normalizeSide, dealSet, paced, setLine,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

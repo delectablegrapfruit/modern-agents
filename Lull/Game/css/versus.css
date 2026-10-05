@@ -1,6 +1,8 @@
 /* Lull — the cards Race and Battle share (js/versusview.js): Ready, the countdown, Paused, and the End card with its
    opponent picker. */
 .card .vs-sub { color: var(--muted); }
+/* The game's rule set (Standard or Frantic), quieter under it. */
+.card .vs-rules { margin-top: -4px; color: var(--faint); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; text-wrap: balance; }
 .overlay .card.vs-counting { min-width: 120px; background: transparent; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
 .card .vs-count { margin: 0; font-size: 64px; line-height: 1; font-weight: 750; color: var(--fg); font-variant-numeric: tabular-nums; text-shadow: 0 2px 18px var(--bg); }
 .card .vs-opp { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 10px; margin-top: 10px; }

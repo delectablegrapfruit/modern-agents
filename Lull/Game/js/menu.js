@@ -7,8 +7,9 @@
 // Each mode keeps one game (js/library.js). A mode opens a short setup with only that mode's settings (the parts' own
 // controls, from Recipe.uiPart: a level row, a panel, presets, chips). With a game kept, Continue (the primary: Enter)
 // resumes it where it was left and New game replaces it with one of these settings (after asking, when it was played);
-// with none, Start. Classic has Watch beside it (the computer plays, js/watch.js). Each mode's last setup is kept
-// (state.boards.menu) and applies to its next new game.
+// with none, Start. Classic has Watch beside it (the computer plays, js/watch.js). Race and Battle offer an opponent and
+// Standard or Frantic, each a few rule sets one of which every new game draws (js/versus.js); the kept game's set is
+// named over the buttons. Each mode's last setup is kept (state.boards.menu) and applies to its next new game.
 // Custom is a page of its own: New custom game (the Custom window, js/modes.js openNewBoard) and the presets saved
 // from it, each with Start, Rename and Delete. A Custom game is never kept (PlayMode.startCustom).
 (function (root) {
@@ -60,6 +61,11 @@
     if (!kept && mode !== 'plain' && B && B.recipe && B.recipe.mode === mode && B.recipe[mode]) raw = { mode, [mode]: clone(B.recipe[mode]) };
     const keep = { v: 1, mode, [mode]: raw[mode] };
     if (mode === 'plain' && raw.shapes && raw.shapes.preset !== 'custom') keep.shapes = raw.shapes;
+    // Race and Battle: the opponent and a tempo (Standard first); the set is drawn when a game is made.
+    if (MULTI.some((x) => x.mode === mode)) {
+      const own = raw[mode] && typeof raw[mode] === 'object' ? raw[mode] : {};
+      keep[mode] = { level: own.level, tempo: L.Versus && L.Versus.TEMPOS.includes(own.tempo) ? own.tempo : 'standard' };
+    }
     const recipe = R.normalize(keep);
     return { mode, recipe, size: R.clampSize((kept && kept.size) || firstSize(mode), recipe) };
   }
@@ -79,6 +85,12 @@
     const s = json.s || {};
     if (!s.lines && s.pieces) return fmtInt(s.pieces) + (s.pieces === 1 ? ' piece' : ' pieces');
     return 'Lines ' + fmtInt(s.lines || 0);
+  }
+
+  /** A kept Race or Battle game's rule set in words ("Frantic · 8 × 8 · Send every 4"), or ''. */
+  function rulesOf(json) {
+    const P = json && json.recipe && { race: L.Race, battle: L.Battle }[json.recipe.mode];
+    return P && P.setText ? P.setText({ recipe: L.Recipe.normalize(json.recipe) }) : '';
   }
 
   /** Has anything been played on a kept game (a piece set, or it ended)? Only then is there a game to continue. */
@@ -159,11 +171,18 @@
       return field('Shapes', h('div', { class: 'nb-chips', role: 'group', 'aria-label': 'Shapes' }, chips.map((c) => option(c.path, c.value, 'nb-chip',
         [L.UI.canvasFor(28, 28, (ctx) => { if (c.sample) c.sample(ctx, 28, look); else if (c.piece) L.Render.drawPieceIn(ctx, { id: c.piece }, { x: 0, y: 0, w: 28, h: 28 }, 7, look); }), h('span', { class: 'nm' + (/\S{10,}/.test(c.name) ? ' long' : '') }, c.name)]))));
     };
+    /** Race's and Battle's tempo: Standard or Frantic, each a few rule sets (one is drawn for every new game). */
+    const TEMPO_LINES = { standard: 'Usual pace, roomy boards', frantic: 'Quicker, smaller, odd shapes' };
+    const tempoRow = () => {
+      const path = setup.mode + '.tempo';
+      return field('Rules', h('div', { class: 'nb-presets mn-tempo', role: 'group', 'aria-label': 'Rules' }, L.Versus.TEMPOS.map((t) =>
+        option(path, t, 'nb-preset', [h('b', null, L.Versus.TEMPO_NAMES[t]), h('span', null, TEMPO_LINES[t])]))));
+    };
     const STANDARD_PRESETS = () => [['Small', 6, 12], ['Standard', Library.STANDARD.w, Library.STANDARD.h], ['Tall', 8, 30], ['Wide', 16, 16]];
     const setupControls = () => {
       const m = setup.mode, u = uiOf(m);
       if (m === 'plain') return [presets(STANDARD_PRESETS()), shapeChips()];
-      if (m === 'race' || m === 'battle') return [levelRow('Opponent'), presets((u && u.presets && u.presets(setup.recipe)) || STANDARD_PRESETS())];
+      if (m === 'race' || m === 'battle') return [levelRow('Opponent'), L.Versus ? tempoRow() : presets((u && u.presets && u.presets(setup.recipe)) || STANDARD_PRESETS())];
       if (m === 'classic') return [levelRow('Type'), panel()];
       if (m === 'descent') return [levelRow('Level'), panel()];
       return [panel()];
@@ -266,12 +285,14 @@
         };
       },
       setup: () => {
-        const m = setup.mode, kept = keptNow(), name = (info(m) || { name: m }).name;
+        const m = setup.mode, kept = keptNow(), name = (info(m) || { name: m }).name, rules = kept ? rulesOf(kept) : '';
         return {
           title: name, back: Library.side(setup.recipe) === 'multi' ? 'multi' : 'solo',
           body: [h('div', { class: 'nb-body mn-setup', 'data-mode': m }, ...setupControls().filter(Boolean), why,
             kept ? h('p', { class: 'mn-note' }, 'These settings apply to a new game.') : null)],
           foot: [h('div', { class: 'mn-btns' },
+            // The kept game's rule set, over Continue.
+            rules ? h('p', { class: 'mn-kept' }, 'This game: ' + rules) : null,
             kept ? h('button', { type: 'button', class: 'btn primary mn-continue', onclick: resume },
               h('span', { class: 'lbl' }, 'Continue'), h('span', { class: 'mn-prog' }, progress(kept))) : null,
             h('div', { class: 'mn-pair' },
@@ -329,5 +350,5 @@
     return handle;
   }
 
-  L.Menu = { SOLO, MULTI, open, setupOf, progress, played, modeLabel, firstSize };
+  L.Menu = { SOLO, MULTI, open, setupOf, progress, rulesOf, played, modeLabel, firstSize };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -1,12 +1,13 @@
 // The Play menu (js/menu.js) and one game a mode (js/library.js): it never opens by itself (at start, after a reload,
 // on a tab switch); the Menu button and Esc open it, Esc and its X close it with the board exactly as it was; its home
 // (a page over the Play tab: Solo and Multiplayer as two big tiles side by side, nothing else); each mode's short setup
-// and Start; each mode keeping one game, resumed exactly by Continue (Enter), replaced by New game (after asking, with
+// and Start (Race and Battle: an opponent and Standard or Frantic, a rule set drawn for each new game on its seed, named
+// over Continue and on the Ready card, kept by Continue); each mode keeping one game, resumed exactly by Continue (Enter), replaced by New game (after asking, with
 // the setup's settings); Custom: New custom game (the Custom window), a Custom game never kept and gone once left, and
 // the presets (Save preset, Start, Rename, Delete, twelve at most, kept in the save); nothing left of the board library.
 // Then the phones by touch (44 px targets, nothing sideways, the home never scrolls, clear of the tab bar) and both
-// themes (dark with reduced motion), with frames of the home, Solo, Multiplayer, a setup with Continue and the Custom
-// page at four sizes.
+// themes (dark with reduced motion), with frames of the home, Solo, Multiplayer, a setup with Continue, the Race and
+// Battle setups, a Frantic round's Ready card and the Custom page at four sizes.
 // Run by browser-test.cjs: require('./menu-test.cjs')({ browser, check, PAGE, OUT }).
 'use strict';
 const path = require('path');
@@ -106,8 +107,9 @@ module.exports = async function menuTests({ browser, check, PAGE, OUT }) {
       classic: { sel: ['.nb-lvl .nb-level', '.cl-set'], counts: [2, 1], size: [10, 20] },
       descent: { sel: ['.nb-lvl .nb-level', '.ds-row'], counts: [3, 1], size: [10, 20] },
       mural: { sel: ['.mu-pics .nb-chip', '.mu-lv .nb-level'], counts: [4, 5], size: null },
-      race: { sel: ['.nb-lvl .nb-level', '.nb-presets .nb-preset'], counts: [4, 3], size: [10, 10] },
-      battle: { sel: ['.nb-lvl .nb-level', '.nb-presets .nb-preset'], counts: [4, 3], size: [10, 14] },
+      // (Race and Battle: an opponent, and Standard or Frantic; the size is the set the new game draws.)
+      race: { sel: ['.nb-lvl .nb-level', '.mn-tempo .nb-preset', '.nb-presets:not(.mn-tempo) .nb-preset'], counts: [4, 2, 0], size: null, sets: true },
+      battle: { sel: ['.nb-lvl .nb-level', '.mn-tempo .nb-preset', '.nb-presets:not(.mn-tempo) .nb-preset'], counts: [4, 2, 0], size: null, sets: true },
     };
     for (const [mode, w] of Object.entries(want)) {
       await page.click('#play-status .menu-btn');
@@ -125,6 +127,10 @@ module.exports = async function menuTests({ browser, check, PAGE, OUT }) {
       await page.waitForTimeout(80);
       const s = await state(ev);
       check(mode + ': Start makes its game and closes the menu', !s.page && s.mode === mode && s.cur === mode && (!w.size || (s.w === w.size[0] && s.h === w.size[1])), JSON.stringify({ mode: s.mode, cur: s.cur, w: s.w, h: s.h }));
+      if (w.sets) {
+        const d = await ev((m) => { const g = Lull.app.modes.play.game, P = { race: Lull.Race, battle: Lull.Battle }[m], set = P.setIn(g.recipe); return { own: g.recipe[m], set, shapes: g.recipe.shapes.preset, card: (document.querySelector('#play-overlay .vs-rules') || {}).textContent || '' }; }, mode);
+        check(mode + ': Start draws a Standard rule set: its size and shapes, named on the Ready card', d.set && d.own.tempo === 'standard' && d.set.tempo === 'standard' && s.w === d.set.w && s.h === d.set.h && d.shapes === d.set.shapes && /^Standard \u00b7 \d+ \u00d7 \d+/.test(d.card), JSON.stringify(d));
+      }
       // Something done on it, so it has a game to continue.
       // (A Mural declines a piece set out of its place: counted by hand there.)
       await ev(() => { const m = Lull.app.modes.play, g = m.game; m.hideCard(); if (g.piece) g.drop(); if (!g.s.pieces) g.s.pieces = 1; m.persist(); });
@@ -168,14 +174,29 @@ module.exports = async function menuTests({ browser, check, PAGE, OUT }) {
     const lv2 = await ev(() => Lull.app.modes.play.game.recipe.classic.level);
     check('New game replaces Classic\'s game with a new one at level 2; still one game a mode', !s2.page && s2.cur === 'classic' && lv2 === 2 && s2.games === 'battle,descent,mural,plain,race' && (await ev(() => Lull.app.modes.play.game.s.pieces)) === 0, JSON.stringify(s2.games));
     check('the setup is remembered for next time', await ev(() => Lull.app.store.state.boards.menu.classic.recipe.classic.level === 2));
-    // A Race of another size: New game there makes it that size.
+    // Race, Frantic: New game draws one of its sets (the seed pinned: the set it gives is the one Recipe.deal gives).
     await ev(() => Lull.app.modes.play.openMenu('race'));
-    await page.click('.modal-menu .nb-preset[data-w="8"]');
+    await page.click('.modal-menu .mn-tempo [data-value="frantic"]');
+    const fr = await ev(() => ({ on: document.querySelector('.modal-menu .mn-tempo [data-value="frantic"]').getAttribute('aria-pressed'), kept: Lull.app.store.state.boards.menu.race.recipe.race.tempo }));
+    check('Race: Frantic is chosen and remembered', fr.on === 'true' && fr.kept === 'frantic', JSON.stringify(fr));
+    const drawn = await ev(() => { const R = Lull.Recipe, d = R.deal(R.normalize({ mode: 'race', race: { level: 'steady', tempo: 'frantic' } }), null, new Lull.RNG((4242 ^ 0x5e75e7) >>> 0)); Lull.app.modes.play.nextSeed = 4242; return { set: d.recipe.race.set, w: d.size.w, h: d.size.h, shapes: d.recipe.shapes.preset }; });
     await page.click('.modal-menu .mn-start');
     await page.click('.modal:not(.modal-menu) footer .btn.primary');
     await page.waitForTimeout(80);
     const s3 = await state(ev);
-    check('Race: New game at 8 × 8 replaces its game; the rest kept', s3.cur === 'race' && s3.w === 8 && s3.h === 8 && s3.games === 'battle,classic,descent,mural,plain', JSON.stringify(s3));
+    const got = await ev(() => { const g = Lull.app.modes.play.game; return { set: g.recipe.race.set, tempo: g.recipe.race.tempo, shapes: g.recipe.shapes.preset, seed: g.seed, cd: Lull.Race.cooldownOf(g) }; });
+    check('Race: New game, Frantic: the drawn set (its size and shapes, from the game\'s seed) replaces its game; the rest kept', s3.cur === 'race' && got.tempo === 'frantic' && got.set === drawn.set && got.seed === 4242 && s3.w === drawn.w && s3.h === drawn.h && got.shapes === drawn.shapes && got.cd < 6 && s3.games === 'battle,classic,descent,mural,plain', JSON.stringify([drawn, got, s3.w, s3.h]));
+    // Continue keeps it; the setup names it over Continue.
+    await ev(() => { const m = Lull.app.modes.play; m.hideCard(); m.game.drop(); m.persist(); m.openMenu('race'); });
+    await page.waitForTimeout(60);
+    const kl = await ev(() => ({ kept: (document.querySelector('.modal-menu .mn-kept') || {}).textContent || '', on: document.querySelector('.modal-menu .mn-tempo [data-value="frantic"]').getAttribute('aria-pressed') }));
+    check('Race: the setup names the kept game\'s set over Continue; Frantic still chosen', /^This game: Frantic \u00b7 \d+ \u00d7 \d+/.test(kl.kept) && kl.on === 'true', JSON.stringify(kl));
+    const snap = () => ev(() => { const g = Lull.app.modes.play.game, j = g.toJSON(); delete j.s.playMs; return { set: g.recipe.race.set, json: JSON.stringify(j) }; });
+    const beforeC = await snap();
+    await page.click('.modal-menu .mn-continue');
+    await page.waitForTimeout(80);
+    const afterC = await snap();
+    check('Race: Continue resumes it exactly, its set and all', afterC.set === drawn.set && afterC.json === beforeC.json, JSON.stringify([afterC.set, drawn.set]));
 
     // ---- Custom: the page, a Custom game never kept, presets --------------------------------------------------------
     await ev(() => { const m = Lull.app.modes.play; m.hideCard(); m.game.drop(); m.persist(); });
@@ -221,8 +242,8 @@ module.exports = async function menuTests({ browser, check, PAGE, OUT }) {
     // A reload ends it for good: the Race game comes back, nothing of the Custom one.
     await page.reload();
     await page.waitForTimeout(700);
-    const rl = await state(ev);
-    check('after a reload the Custom game is gone for good: the Race game in play, as it was', !rl.custom && rl.cur === 'race' && rl.mode === 'race' && rl.w === 8 && !rl.page, JSON.stringify(rl));
+    const rl = await state(ev), rlSet = await ev(() => Lull.app.modes.play.game.recipe.race.set);
+    check('after a reload the Custom game is gone for good: the Race game in play, as it was (its Frantic set too)', !rl.custom && rl.cur === 'race' && rl.mode === 'race' && rl.w === s3.w && rlSet === drawn.set && !rl.page, JSON.stringify([rl, rlSet]));
     check('presets are kept across the reload', await ev(() => Lull.app.store.state.boards.presets.length === 1 && Lull.app.store.state.boards.presets[0].name === 'Little mirror'));
     // A preset's Start; then Continue in another mode leaves it for good (and nothing of it is resumable).
     await ev(() => { while (Lull.UI.modalOpen()) Lull.UI.closeTopModal(); Lull.app.modes.play.openMenu('custom'); });
@@ -393,9 +414,24 @@ module.exports = async function menuTests({ browser, check, PAGE, OUT }) {
     await press('.modal-menu .mn-multi');
     await fits('Multiplayer');
     await D.shot(name('multi'));
+    await press('.modal-menu [data-mode="race"]');
+    await fits('Race setup (with Continue)');
+    await D.shot(name('setup-race'));
+    await press('.modal-menu .mn-back');
     await press('.modal-menu [data-mode="battle"]');
     await fits('Battle setup');
     await D.shot(name('setup-battle'));
+    // A Frantic Battle: its Ready card names the set drawn, inside the window and clear of the tab bar.
+    await press('.modal-menu .mn-tempo [data-value="frantic"]');
+    await press('.modal-menu .mn-start');
+    await page.waitForTimeout(150);
+    const rd = await ev(() => {
+      const c = document.querySelector('#play-overlay .card'), r = c && c.getBoundingClientRect(), l = document.querySelector('#play-overlay .vs-rules');
+      const tabs = document.getElementById('tabs').getBoundingClientRect(), barAt = tabs.top > innerHeight / 2 ? tabs.top : innerHeight;
+      return { text: l ? l.textContent : '', inside: !!r && r.left >= 0 && r.right <= innerWidth + 0.5 && r.top >= 0 && r.bottom <= barAt + 0.5, page: document.documentElement.scrollWidth <= innerWidth, set: Lull.app.modes.play.game.recipe.battle.set };
+    });
+    check(tag + ': a Frantic Battle\'s Ready card names its set, inside the window, clear of the tab bar', /^Frantic \u00b7 \d+ \u00d7 \d+/.test(rd.text) && /^f\d$/.test(rd.set) && rd.inside && rd.page, JSON.stringify(rd));
+    await D.shot(name('frantic-ready'));
     await D.ctx.close();
   }
   check('no errors at any size', errors.length === 0, errors.slice(0, 3).join(' | '));

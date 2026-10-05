@@ -340,4 +340,86 @@ module.exports = function raceUnit({ L, test }) {
     assert(swift >= 18, String(swift));
     assert(human >= 14, String(human));
   });
+
+  test('race: Standard and Frantic: four rule sets each, every one a legal Race (its size, shapes, k), 64 cells or more; Frantic smaller and quicker', () => {
+    const V = L.Versus;
+    assert.deepStrictEqual(V.TEMPOS, ['standard', 'frantic']);
+    assert.strictEqual(new Set(B.SETS.map((s) => s.id)).size, B.SETS.length, 'ids are one a set');
+    for (const t of V.TEMPOS) assert.strictEqual(V.poolOf(B.SETS, t).length, 4, t);
+    const least = Math.min(...V.poolOf(B.SETS, 'standard').map((s) => s.w * s.h));
+    for (const s of B.SETS) {
+      const r = R0({ race: { level: 'steady', set: s.id }, shapes: { preset: s.shapes } });
+      assert.deepStrictEqual(r.race, { level: 'steady', tempo: s.tempo, set: s.id }, s.id + ': a set brings its tempo');
+      assert(Recipe.sizeOk(s.w, s.h, r), s.id + ' ' + s.w + 'x' + s.h);
+      assert.deepStrictEqual(Recipe.clampSize({ w: s.w, h: s.h }, r), { w: s.w, h: s.h }, s.id);
+      assert(!Recipe.conflicts(r)['shapes.preset=' + s.shapes], s.id + ': its shapes are allowed in Race');
+      assert(s.w * s.h >= 64, s.id + ': wins count there (64 cells or more)');
+      const R = Recipe.rules(r, s.w);
+      assert(R.raceCd === s.cd && R.raceFillers === s.fillers && R.aiPace === s.pace && R.k === L.Shapes.raceK({ preset: s.shapes }), s.id);
+      assert(Number.isInteger(s.cd) && s.cd >= 2 && s.fillers >= 1 && s.pace > 0.5 && s.pace <= 1, s.id);
+      if (s.tempo === 'standard') assert(s.shapes === 'normal' && s.cd === B.COOLDOWN && s.fillers === B.MAX_CHARGES && s.pace === 1 && s.w * s.h >= 90, s.id + ': the usual Race');
+      else assert(s.cd < B.COOLDOWN && s.fillers > B.MAX_CHARGES && s.pace < 1 && s.w * s.h < least, s.id + ': quicker, on fewer cells than any Standard set');
+    }
+    // A tempo or set that is not one is dropped; a game with neither plays the usual rules.
+    assert.deepStrictEqual(R0({ race: { tempo: 'x', set: 'zz' } }).race, { level: 'steady' });
+    assert.deepStrictEqual(R0({ race: { tempo: 'frantic' } }).race, { level: 'steady', tempo: 'frantic' });
+    const plainG = mk(10, 10, 1);
+    assert(B.cooldownOf(plainG) === B.COOLDOWN && B.fillersOf(plainG) === B.MAX_CHARGES && B.setText(plainG) === '' && B.levelOn(plainG, 'steady') === B.LEVELS.steady);
+  });
+
+  test('race: a new game draws its set from its tempo\'s pool with the game\'s seed: the same seed the same set, every set drawn; its rules in play, kept in the save', () => {
+    const deal = (tempo, seed) => Recipe.deal(R0({ race: { level: 'brisk', tempo } }), { w: 10, h: 10 }, new L.RNG(seed));
+    for (const tempo of L.Versus.TEMPOS) {
+      const seen = new Set();
+      for (let seed = 1; seed <= 60; seed++) {
+        const a = deal(tempo, seed), b = deal(tempo, seed), s = B.SETS.find((x) => x.id === a.recipe.race.set);
+        assert.deepStrictEqual(a, b, 'the same seed, the same set');
+        assert(s && s.tempo === tempo && a.recipe.race.level === 'brisk' && a.recipe.shapes.preset === s.shapes && a.size.w === s.w && a.size.h === s.h, JSON.stringify(a));
+        seen.add(s.id);
+      }
+      assert.strictEqual(seen.size, 4, tempo + ': every set of the pool comes up');
+    }
+    assert.deepStrictEqual(Recipe.deal(R0(), { w: 8, h: 8 }, new L.RNG(1)), { recipe: R0(), size: { w: 8, h: 8 } }, 'no tempo: nothing drawn');
+    assert.notStrictEqual(deal('frantic', 3).recipe.race.set, undefined);
+    // In play: the set's cooldown and fillers, the opponent's pace; all of it kept in the save.
+    const f = B.SETS.find((s) => s.id === 'f2');
+    const g = new Game({ w: f.w, h: f.h, seed: 5, recipe: R0({ race: { level: 'steady', set: 'f2' }, shapes: { preset: f.shapes } }), previewCount: 5 });
+    const M = B.matchOf(g), me = M.me, ai = M.ai;
+    assert(B.cooldownOf(g) === 3 && B.fillersOf(g) === 3 && ai.lvl.pace === Math.round(B.LEVELS.steady.pace * f.pace * 100) / 100, JSON.stringify(ai.lvl));
+    assert.strictEqual(B.setText(g), 'Frantic · 8 × 8 · Send every 3');
+    assert(B.send(me, ai, 'current') && me.S.cd === 3, 'Send waits three pieces');
+    // A third Gap filler is earned (the usual Race holds two): the opponent sets a piece you sent that seals a gap.
+    me.S.charges = 2;
+    paint(ai.game, ['#.######']);
+    ai.S.sealedN = 0;
+    O(ai.game, 0, { received: true, tag: 'received' });
+    const ev = B.afterLock(ai, me, ai.game.drop());
+    assert(ev.earned && me.S.charges === 3, JSON.stringify(ev));
+    const j = JSON.parse(JSON.stringify(g.toJSON())), g2 = new Game({ saved: j, previewCount: 5 });
+    assert(Library.playable(j) && Recipe.valid(j));
+    assert.deepStrictEqual(g2.recipe.race, { level: 'steady', tempo: 'frantic', set: 'f2' });
+    assert(B.cooldownOf(g2) === 3 && B.matchOf(g2).ai.lvl.pace === ai.lvl.pace && B.setText(g2) === B.setText(g));
+    B.matchOf(g2).round.phase = 'end';
+    B.newRound(B.matchOf(g2));
+    assert.strictEqual(B.matchOf(g2).ai.lvl.pace, ai.lvl.pace, 'a new round keeps the set\'s pace');
+  });
+
+  test('race: the AI on every rule set: a player at 3 s a piece (Steady\'s judgement) neither always wins nor always loses against Steady; Swift beats Easy', () => {
+    const out = [];
+    for (const s of B.SETS) {
+      let won = 0, swift = 0, t = 0;
+      const N = 10;
+      for (let i = 0; i < N; i++) {
+        const r = B.simulate({ levels: ['steady', 'steady'], seed: 500 + i, set: s.id, human: { pace: 3 } });
+        assert(r.winner === 0 || r.winner === 1, s.id + ': a round ends');
+        if (r.winner === 0) won++;
+        t += r.time;
+        if (B.simulate({ levels: ['swift', 'easy'], seed: 900 + i, set: s.id }).winner === 0) swift++;
+      }
+      out.push(s.id + ' ' + won + '/' + N + ' (' + Math.round(t / N) + ' s)');
+      assert(won >= 1 && won <= N - 1, s.id + ': the 3 s player won ' + won + ' of ' + N);
+      assert(swift >= N - 2, s.id + ': Swift beat Easy ' + swift + ' of ' + N);
+    }
+    console.log('       the 3 s player against Steady, by set: ' + out.join(', '));
+  });
 };

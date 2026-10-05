@@ -317,4 +317,77 @@ module.exports = function battleUnit({ L, test }) {
     assert(g2.board.isEmpty() && M2.ai.game.board.isEmpty() && M2.me.S.ceil === 0 && M2.me.S.charges === 0 && M2.round.n === 2 && g2.piece && M2.ai.game.piece);
     assert.deepStrictEqual(Recipe.summary(j).battle, { level: 'brisk', won: 3, lost: 2, wins: 0, losses: 0, rounds: 0 });
   });
+
+  test('battle: Standard and Frantic: four rule sets each, every one a legal Battle (its size, shapes), 96 cells or more; Frantic smaller, a charge in hand, earlier ceilings', () => {
+    const V = L.Versus;
+    assert.strictEqual(new Set(B.SETS.map((s) => s.id)).size, B.SETS.length, 'ids are one a set');
+    for (const t of V.TEMPOS) assert.strictEqual(V.poolOf(B.SETS, t).length, 4, t);
+    const least = Math.min(...V.poolOf(B.SETS, 'standard').map((s) => s.w * s.h));
+    for (const s of B.SETS) {
+      const r = R0({ battle: { level: 'steady', set: s.id }, shapes: { preset: s.shapes } });
+      assert.deepStrictEqual(r.battle, { level: 'steady', tempo: s.tempo, set: s.id }, s.id);
+      assert(Recipe.sizeOk(s.w, s.h, r), s.id + ' ' + s.w + 'x' + s.h);
+      assert.deepStrictEqual(Recipe.clampSize({ w: s.w, h: s.h }, r), { w: s.w, h: s.h }, s.id);
+      assert(!Recipe.conflicts(r)['shapes.preset=' + s.shapes], s.id + ': its shapes are allowed in Battle');
+      assert(s.w * s.h >= 96, s.id + ': wins count there (96 cells or more)');
+      const R = Recipe.rules(r, s.w);
+      assert(R.btSudden === s.sudden && R.btCeil === s.ceil && R.btStart === s.start && R.aiPace === s.pace, s.id);
+      assert(s.start >= 0 && s.start < B.MAX_CHARGES && s.ceil >= 5000 && s.sudden >= 30000 && s.pace > 0.5 && s.pace <= 1, s.id);
+      if (s.tempo === 'standard') assert(s.shapes === 'normal' && s.sudden === B.SUDDEN_MS && s.ceil === B.CEIL_MS && !s.start && s.pace === 1 && s.w * s.h >= 120, s.id + ': the usual Battle');
+      else assert(s.sudden < B.SUDDEN_MS && s.ceil < B.CEIL_MS && s.start >= 1 && s.pace < 1 && s.w * s.h < least, s.id + ': quicker, on fewer cells than any Standard set');
+    }
+    assert.deepStrictEqual(R0({ battle: { tempo: 'x', set: 'zz' } }).battle, { level: 'steady' });
+    const g = mk(10, 14, 1);
+    assert(B.suddenOf(g) === B.SUDDEN_MS && B.ceilOf(g) === B.CEIL_MS && B.startOf(g) === 0 && B.setText(g) === '' && B.side(g).S.charges === 0);
+  });
+
+  test('battle: a new game draws its set with the game\'s seed (the same seed the same set, every set drawn); its timing, charges and pace in play, kept in the save', () => {
+    const deal = (tempo, seed) => Recipe.deal(R0({ battle: { level: 'swift', tempo } }), { w: 10, h: 14 }, new RNG(seed));
+    for (const tempo of L.Versus.TEMPOS) {
+      const seen = new Set();
+      for (let seed = 1; seed <= 60; seed++) {
+        const a = deal(tempo, seed), s = B.SETS.find((x) => x.id === a.recipe.battle.set);
+        assert.deepStrictEqual(a, deal(tempo, seed));
+        assert(s && s.tempo === tempo && a.recipe.battle.level === 'swift' && a.recipe.shapes.preset === s.shapes && a.size.w === s.w && a.size.h === s.h, JSON.stringify(a));
+        seen.add(s.id);
+      }
+      assert.strictEqual(seen.size, 4, tempo);
+    }
+    const f = B.SETS.find((s) => s.id === 'f2');
+    const g = new Game({ w: f.w, h: f.h, seed: 5, recipe: R0({ battle: { level: 'steady', set: 'f2' }, shapes: { preset: f.shapes } }), previewCount: 5 });
+    const M = B.matchOf(g);
+    assert(M.me.S.charges === 2 && M.ai.S.charges === 2, 'both start with the set\'s charges');
+    assert.strictEqual(M.ai.lvl.pace, Math.round(B.LEVELS.steady.pace * f.pace * 100) / 100);
+    assert.deepStrictEqual([59999, 60000, 67999, 68000].map((ms) => B.ceilAt(ms, g)), [0, 1, 1, 2]);
+    assert.strictEqual(B.nextCeilIn(50000, g), 10000);
+    assert.strictEqual(B.setText(g), 'Frantic · 8 × 12 · Ceilings from 1:00');
+    M.round.phase = 'play'; M.round.ms = 61000;
+    B.ceilings(M);
+    assert.deepStrictEqual([M.me.S.ceil, M.ai.S.ceil], [1, 1], 'the ceilings come down at 1:00');
+    M.me.S.charges = 5;
+    const j = JSON.parse(JSON.stringify(g.toJSON())), g2 = new Game({ saved: j, previewCount: 5 }), M2 = B.matchOf(g2);
+    assert(Library.playable(j) && Recipe.valid(j));
+    assert(M2.me.S.charges === 5 && M2.me.S.ceil === 1 && B.suddenOf(g2) === 60000 && M2.ai.lvl.pace === M.ai.lvl.pace && B.setText(g2) === B.setText(g));
+    M2.round.phase = 'end';
+    B.newRound(M2);
+    assert(M2.me.S.charges === 2 && M2.ai.S.charges === 2 && M2.me.S.ceil === 0, 'a new round: the set\'s charges again');
+  });
+
+  test('battle: the AI on every rule set: a player at 3 s a piece (Steady\'s judgement) neither always wins nor always loses against Steady; Swift beats Easy', () => {
+    const out = [];
+    for (const s of B.SETS) {
+      let won = 0, swift = 0, t = 0;
+      const N = 10;
+      for (let i = 0; i < N; i++) {
+        const r = B.simulate({ levels: ['steady', 'steady'], seed: 500 + i, set: s.id, human: { pace: 3 } });
+        if (r.winner === 0) won++;
+        t += r.time;
+        if (B.simulate({ levels: ['swift', 'easy'], seed: 900 + i, set: s.id }).winner === 0) swift++;
+      }
+      out.push(s.id + ' ' + won + '/' + N + ' (' + Math.round(t / N) + ' s)');
+      assert(won >= 1 && won <= N - 1, s.id + ': the 3 s player won ' + won + ' of ' + N);
+      assert(swift >= N - 3, s.id + ': Swift beat Easy ' + swift + ' of ' + N);
+    }
+    console.log('       the 3 s player against Steady, by set: ' + out.join(', '));
+  });
 };

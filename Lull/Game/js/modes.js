@@ -850,14 +850,24 @@
 
     /**
      * A new, empty game for the board in play, at `size` and of `recipe` (the size clamped to what a board of it can be):
-     * by default the setup of the mode in play, as last chosen in the menu.
+     * by default the setup of the mode in play, as last chosen in the menu. A part may draw some of its rules first
+     * (Race's and Battle's Standard and Frantic: Recipe.deal), from the new game's own seed.
      */
     freshGame(size, recipe) {
       const su = recipe ? null : this.setupFor(this.app.store.state.boards.cur);
-      const r = recipe || su.recipe;
-      const z = Library.clampSize(size || (su ? su.size : null), r);
+      let r = recipe || su.recipe, z0 = size || (su ? su.size : null);
+      const seed = this.newSeed();
+      if (L.Recipe && r) { const d = L.Recipe.deal(r, z0, new L.RNG((seed ^ 0x5e75e7) >>> 0)); r = d.recipe; z0 = d.size; }
+      const z = Library.clampSize(z0, r);
       this.app.store.state.stats.free.boards++;
-      this.setGame(new Game({ w: z.w, h: z.h, recipe: r, previewCount: this.settings.preview }));
+      this.setGame(new Game({ w: z.w, h: z.h, recipe: r, seed, previewCount: this.settings.preview }));
+    }
+
+    /** A new game's seed: a fresh one, or the one a test set (nextSeed, used once). */
+    newSeed() {
+      const s = this.nextSeed;
+      this.nextSeed = null;
+      return s != null ? s >>> 0 : (Date.now() ^ (Math.random() * 4294967296)) >>> 0;
     }
 
     /** A mode's setup as the menu has it ({ recipe, size }: js/menu.js), or Relaxed's Standard board. */

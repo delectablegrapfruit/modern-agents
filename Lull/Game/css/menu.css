@@ -68,6 +68,12 @@
 .mn-continue .lbl { flex: none; }
 .mn-continue .mn-prog { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; opacity: 0.8; font-variant-numeric: tabular-nums; }
 .mn-note { margin: 0; color: var(--muted); font-size: var(--fs-sm); text-align: center; }
+/* Race and Battle: Standard or Frantic, two wide choices with a line each; the kept game's rule set over Continue. */
+.mn-setup .mn-tempo { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.mn-setup .mn-tempo .nb-preset { min-height: 52px; justify-content: center; padding: 8px 6px; gap: 3px; }
+.mn-setup .mn-tempo .nb-preset b { font-size: var(--fs-sm); }
+.mn-setup .mn-tempo .nb-preset span { white-space: normal; text-align: center; line-height: 1.25; }
+.mn-kept { margin: 0; color: var(--muted); font-size: var(--fs-xs); text-align: center; font-variant-numeric: tabular-nums; text-wrap: balance; }
 
 /* Custom: New custom game (the Custom window), then the presets, a row each: name and rules, Rename, Delete, Start. */
 .mn-custom-page { width: min(100%, 440px); margin: 0 auto; display: flex; flex-direction: column; gap: 12px; padding: 4px 0 12px; }

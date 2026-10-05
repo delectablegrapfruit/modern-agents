@@ -136,7 +136,8 @@
    * clock runs only while the round is on (not at a card, not counting down) and nothing holds it; away (another tab,
    * window or app, the page hidden, a window over it, rolled up, the window losing focus) it pauses at the Paused card,
    * and Resume counts down again. o: { title ('Race'), key (its recipe key), M() (the match: { level, round, me, ai }),
-   * LEVELS, onLevel?(id), rematch() (both boards anew), endBody() -> [elements] (the End card's lines) }.
+   * level(id) (the opponent's level on this game), rules() (the game's rule set in words, or ''), onLevel?(id),
+   * rematch() (both boards anew), endBody() -> [elements] (the End card's lines) }.
    */
   function rounds(play, o) {
     const app = play.app;
@@ -163,10 +164,13 @@
 
       // ---- cards ----
       sub() { return o.title + ' · ' + name(); },
+      /** The game's rule set (Standard or Frantic), a quiet line under the card's title; null when it has none. */
+      rulesLine() { const t = o.rules ? o.rules() : ''; return t ? h('p', { class: 'vs-rules' }, t) : null; },
       showReady() {
         play.showCard([
           h('h2', null, o.title),
           h('p', { class: 'vs-sub' }, 'vs ' + name()),
+          this.rulesLine(),
           h('div', { class: 'row' },
             play.menuButton(),
             h('button', { class: 'btn primary', id: 'vs-go', onclick: () => this.go() }, 'Start ', h('kbd', null, 'Space'))),
@@ -176,6 +180,7 @@
         play.showCard([
           h('h2', null, 'Paused'),
           h('p', { class: 'vs-sub' }, this.sub()),
+          this.rulesLine(),
           h('div', { class: 'row' },
             play.menuButton(),
             h('button', { class: 'btn primary', id: 'vs-go', onclick: () => this.go() }, 'Resume ', h('kbd', null, 'Space'))),
@@ -210,7 +215,7 @@
         if (!Versus.IDS.includes(id) || id === m.level) return;
         m.level = id;
         play.game.recipe[o.key].level = id;
-        m.ai.lvl = o.LEVELS[id];
+        m.ai.lvl = o.level(id);
         if (o.onLevel) o.onLevel(id);
         play.renderStatus();
         app.store.touch();

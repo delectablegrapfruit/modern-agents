@@ -318,7 +318,7 @@
         const m = M(), st = app.store, S = BS(), G = g(), won = winner === 'me';
         if (m.round.phase !== 'play') return;
         this.A = null; this.aim = null; this.incoming = null;
-        const sudden = m.round.ms >= Battle.SUDDEN_MS;
+        const sudden = m.round.ms >= Battle.suddenOf(G);
         const pay = Library.bank(Battle.endRound(m, winner));
         m.round.paid = pay;
         S.rounds++;
@@ -402,9 +402,9 @@
       // ---- the status bar, the bar, the summary ----
       status(parts, o) {
         const m = M(), stat = o.stat, tip = Battle.tallyText(m) + (m.streak > 1 ? ' · ' + m.streak + ' wins in a row' : '');
-        const sudden = m.round.ms >= Battle.SUDDEN_MS;
+        const G = g(), sudden = m.round.ms >= Battle.suddenOf(G);
         return [stat('You', fmtInt(me().S.lines), 'bt-you', 'Rows cleared · ' + tip), stat(name(), fmtInt(ai().S.lines), 'bt-them', 'Rows cleared · ' + tip),
-          stat('Time', clock(m.round.ms), 'bt-time' + (sudden ? ' sudden' : ''), sudden ? 'The ceilings come down a row every 20 s' : 'The ceilings come down from 3:00')];
+          stat('Time', clock(m.round.ms), 'bt-time' + (sudden ? ' sudden' : ''), sudden ? 'The ceilings come down a row every ' + Math.round(Battle.ceilOf(G) / 1000) + ' s' : 'The ceilings come down from ' + clock(Battle.suddenOf(G)))];
       },
       bar(el) {
         const m = M(), sd = me(), on = m.round.phase === 'play' && !this.paused && !this.count, n = sd.S.charges;
@@ -437,7 +437,7 @@
     };
     // The Ready card, 3-2-1, Paused, the End card and its picker, pausing when away: js/versusview.js.
     return Object.assign(VV.rounds(play, {
-      title: 'Battle', key: 'battle', M, LEVELS: Battle.LEVELS,
+      title: 'Battle', key: 'battle', M, level: (id) => Battle.levelOn(play.game, id), rules: () => Battle.setText(play.game),
       endBody() {
         const m = M(), paid = Library.bank(m.round.paid || 0);
         return [

@@ -4,10 +4,12 @@
 // buffer is trimmed away. Send gives the opponent the piece in play (or the first Next piece) on a cooldown of six
 // pieces set; a piece you sent that seals a gap on their board earns you a Gap filler (two at most), which fills your
 // own sealed gaps, lowest first. A board that cannot be finished (closed: no empty cell any piece can reach) starts
-// over. Pure rules, the AI and the match (no DOM); the controller, the view and the window are js/raceview.js.
+// over. The menu's Standard and Frantic each draw one of a few rule sets (SETS: a size, shapes, Send's cooldown, the
+// fillers held, the opponent's pace). Pure rules, the AI and the match (no DOM); the controller, the view and the window
+// are js/raceview.js.
 //
-//   recipe.race = { level: 'easy' | 'steady' | 'brisk' | 'swift' }   (the size's height is the board's rows; the Game is
-//                                                                        rows + k tall, the buffer on top)
+//   recipe.race = { level: 'easy' | 'steady' | 'brisk' | 'swift', tempo?: 'standard' | 'frantic', set?: SETS id }
+//                 (the size's height is the board's rows; the Game is rows + k tall, the buffer on top)
 //   save x.race = { v: 1, side: { charges, cd, … }, match?: { level, round, tally, streak, since, ai: Game JSON, … } }
 (function (root) {
   'use strict';
@@ -15,7 +17,7 @@
   const { Recipe, CELL, Pieces, RNG, Board, Versus: V } = L;
   if (!Recipe || !V) return;
   // (Shared with Battle: js/versus.js.)
-  const { now, IDS, NAMES, popcount, rowsOf, shapeOf, fitMap, reachMap, flood, search, searchG, pathTo, play, gauss, placed, fitAt, spawnOf, slice, runAll, tallyOf, tallyText } = V;
+  const { now, IDS, NAMES, TEMPOS, popcount, rowsOf, shapeOf, fitMap, reachMap, flood, search, searchG, pathTo, play, gauss, placed, fitAt, spawnOf, slice, runAll, tallyOf, tallyText } = V;
 
   const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
   const clone = (v) => JSON.parse(JSON.stringify(v));
@@ -39,12 +41,40 @@
   const PRESETS = Object.freeze([['Quick', 8, 8], ['Standard', 10, 10], ['Long', 10, 12]]);
   /** Pieces set between two sends; the most Gap fillers held; seconds a board takes to start over; a send's time (sim). */
   const COOLDOWN = 6, MAX_CHARGES = 2, RESET_FADE = 0.6, SEND_TIME = 0.4;
+  /**
+   * Standard and Frantic (js/versus.js): the rule sets a new Race draws from. w × h (rows), shapes, cd (pieces set between
+   * two sends), fillers (the most Gap fillers held), pace (a factor on the opponent's seconds a piece). Standard is the
+   * usual Race on boards of 90 to 120 cells; Frantic is smaller boards (64 cells or more, where wins count), quicker Send,
+   * a filler more, Frantic shapes in half of them, and an opponent that plays a little quicker at the same level.
+   */
+  const SETS = Object.freeze([
+    { id: 's1', tempo: 'standard', w: 10, h: 10, shapes: 'normal', cd: 6, fillers: 2, pace: 1 },
+    { id: 's2', tempo: 'standard', w: 9, h: 10, shapes: 'normal', cd: 6, fillers: 2, pace: 1 },
+    { id: 's3', tempo: 'standard', w: 10, h: 12, shapes: 'normal', cd: 6, fillers: 2, pace: 1 },
+    { id: 's4', tempo: 'standard', w: 12, h: 9, shapes: 'normal', cd: 6, fillers: 2, pace: 1 },
+    { id: 'f1', tempo: 'frantic', w: 8, h: 8, shapes: 'frantic', cd: 4, fillers: 3, pace: 0.95 },
+    { id: 'f2', tempo: 'frantic', w: 8, h: 8, shapes: 'normal', cd: 3, fillers: 3, pace: 0.9 },
+    { id: 'f3', tempo: 'frantic', w: 9, h: 8, shapes: 'normal', cd: 4, fillers: 3, pace: 0.9 },
+    { id: 'f4', tempo: 'frantic', w: 9, h: 8, shapes: 'frantic', cd: 4, fillers: 3, pace: 0.95 },
+  ].map(Object.freeze));
   /** A filler cell: never the player's (FOREIGN: it never pays), drawn as stone. */
   const FILL = CELL.FOREIGN | CELL.FILL | 8;
   /** AI cost weights. */
   const W_SEALED = 120, W_SEALED_HELD = 30, W_COVERED = 22, W_BUMP = 3, W_PIT = 10, W_OVER = 6, W_LOW = 0.4;
 
   const on = (r) => !!r && r.mode === 'race';
+  /** A recipe's rule set (Standard or Frantic), or null (a Custom Race, or one from before: the usual rules). */
+  const setIn = (r) => (on(r) && r.race ? V.setOf(SETS, r.race.set) : null);
+  /** A game's Send cooldown and the most Gap fillers it holds (its set's, else COOLDOWN and MAX_CHARGES). */
+  const cooldownOf = (game) => (game && game.rules && game.rules.raceCd) || COOLDOWN;
+  const fillersOf = (game) => (game && game.rules && game.rules.raceFillers) || MAX_CHARGES;
+  /** The opponent's level on a game: its pace quickened as the game's set says. */
+  const levelOn = (game, level) => V.paced(LEVELS[level] || LEVELS.steady, game && game.rules ? game.rules.aiPace : 1);
+  /** A game's set in words ("Frantic · 8 × 8 · Send every 4"), or ''. */
+  function setText(game) {
+    const s = game && setIn(game.recipe);
+    return s ? V.setLine(s, s.cd !== COOLDOWN ? 'Send every ' + s.cd : '') : '';
+  }
 
 
   /** Empty goal cells (rows below h) a single block could reach, and those it could not: { open, sealed, seen }. */
@@ -227,7 +257,7 @@
     me.ver++;
     const info = sealedOf(me.game);
     if (info.n > S.sealedN) S.sealedAny = true;
-    if (res && res.tag === 'received' && info.n > S.sealedN && foe && foe.S.charges < MAX_CHARGES) { foe.S.charges++; foe.S.earned++; ev.earned = true; }
+    if (res && res.tag === 'received' && info.n > S.sealedN && foe && foe.S.charges < fillersOf(foe.game)) { foe.S.charges++; foe.S.earned++; ev.earned = true; }
     S.sealedN = info.n;
     ev.filled = fire(me);
     if (ev.earned) { ev.foeFilled = fire(foe); if (full(foe.game)) ev.foeWon = true; }
@@ -263,7 +293,7 @@
 
   /**
    * Sends a piece to the other side: 'current' (the piece in play; the next one comes in) or 'next' (the first Next
-   * piece). Ready only every COOLDOWN pieces set, and never a piece that was itself sent. It goes to the front of the
+   * piece). Ready only every COOLDOWN pieces set (the game's set's own cd), and never a piece that was itself sent. It goes to the front of the
    * other side's queue, after any pieces sent before it. Returns the entry sent, or null.
    */
   function send(me, foe, which) {
@@ -273,7 +303,7 @@
     if (!e) return null;
     const entry = foe.game.inject(e.id, { received: true });
     entry.tag = 'received';
-    me.S.cd = COOLDOWN;
+    me.S.cd = cooldownOf(g);
     me.S.sends++;
     me.ver++; foe.ver++;
     return entry;
@@ -483,15 +513,18 @@
   /**
    * A round between two levels (o.levels: two of IDS; o.human: { pace, as } makes side 0 a stand-in player: `as` quality
    * (Steady by default), no extra blunders on pieces it was sent, its own pace in seconds a piece), on a board w × rows
-   * of o.shapes. Returns { winner: 0 | 1 | null, time, sides: [{ S, pieces, pay }] }.
+   * of o.shapes, or of the rule set o.set (its size, shapes and pacing; the opponents' pace quickened as it says).
+   * Returns { winner: 0 | 1 | null, time, sides: [{ S, pieces, pay }] }.
    */
   function simulate(o) {
-    const w = o.w || 10, rows = o.rows || 10, seed = o.seed || 1;
-    const recipe = Recipe.normalize({ mode: 'race', race: { level: 'steady' }, shapes: o.shapes || { preset: 'normal' } });
+    const set = V.setOf(SETS, o.set);
+    const w = o.w || (set ? set.w : 10), rows = o.rows || (set ? set.h : 10), seed = o.seed || 1;
+    const recipe = Recipe.normalize(set ? { mode: 'race', race: { level: 'steady', set: set.id }, shapes: { preset: set.shapes } }
+      : { mode: 'race', race: { level: 'steady' }, shapes: o.shapes || { preset: 'normal' } });
     const mk = (i, level) => {
       const game = new L.Game({ w, h: rows, recipe, seed: seed * 2 + i + 1, previewCount: 5, raceAI: true });
       const sd = side(game);
-      let lvl = LEVELS[level];
+      let lvl = levelOn(game, level);
       if (i === 0 && o.human) lvl = Object.assign({}, LEVELS[o.human.as || 'steady'], { pace: o.human.pace, recv: 0 });
       sd.lvl = lvl; sd.level = level; sd.rng = new RNG((seed * 7919 + i * 104729) >>> 0);
       sd.t = 0;
@@ -564,7 +597,7 @@
     if (isObj(sv.ai) && (!pl || pl(sv.ai))) { try { ai = new L.Game({ saved: sv.ai, previewCount: 5, raceAI: true }); } catch (e) { ai = null; } }
     if (!ai || ai.w !== game.w || ai.h !== game.h) ai = new L.Game({ w: game.w, h: game.h - ext.k, recipe: game.recipe, seed: ((game.seed || Date.now()) ^ 0x5eed1e) >>> 0, previewCount: 5, raceAI: true });
     M.ai = side(ai);
-    M.ai.lvl = LEVELS[level];
+    M.ai.lvl = levelOn(game, level);
     M.ai.rng = new RNG((M.since ^ (round.n * 2654435761)) >>> 0);
     return M;
   }
@@ -588,7 +621,7 @@
       sd.ver++;
     }
     M.round = { n: M.round.n + 1, ms: 0, phase: 'ready', winner: null, paid: 0, resets: 0 };
-    M.ai.lvl = LEVELS[M.level];
+    M.ai.lvl = levelOn(M.me.game, M.level);
     M.ai.rng = new RNG((M.since ^ (M.round.n * 2654435761)) >>> 0);
   }
   /** The round ends: the tally, the streak, and what it pays (pay: the caller banks it). */
@@ -607,8 +640,7 @@
     key: 'race', order: 50, mode: 'race', name: 'Race', owns: ['race'], options: { 'race.level': IDS.slice() },
     normalize(raw, out) {
       if (out.mode !== 'race') return;
-      const lv = isObj(raw.race) && raw.race.level;
-      out.race = { level: IDS.includes(lv) ? lv : 'steady' };
+      out.race = V.normalizeSide(raw.race, SETS);
     },
     label: (r, short) => (on(r) ? (short ? 'Race' : 'Race · ' + NAMES[r.race.level]) : ''),
     // Width 6–12 (and the set's own minimum), rows 6–12: the buffer holds the pieces as they come in.
@@ -632,7 +664,12 @@
       R.noFeats = true;
       R.race = true;
       if (!R.k) R.k = 4;
+      // Standard and Frantic: the set's Send cooldown, fillers and the opponent's pace.
+      const s = setIn(r);
+      if (s) { R.raceCd = s.cd; R.raceFillers = s.fillers; R.aiPace = s.pace; }
     },
+    // A new game with a tempo draws one of its sets.
+    deal(r, size, rng) { return on(r) ? V.dealSet(r, 'race', SETS, rng) : null; },
     conflicts(r, out) {
       if (!on(r)) return;
       // Physics bodies have no cells to seal or fill (Mirror says its own: js/mirror.js).
@@ -672,6 +709,7 @@
 
   L.Race = {
     IDS, NAMES, LEVELS, LIMITS, SIZE, PRESETS, COOLDOWN, MAX_CHARGES, RESET_FADE, SEND_TIME, FILL, on,
+    SETS, TEMPOS, setIn, cooldownOf, fillersOf, levelOn, setText,
     popcount, rowsOf, shapeOf, fitMap, reachMap, flood, analyse, cover, regionsOf,
     extOf, goal, typesOf, sealedOf, full, ownCells, fillOf, closed, fillOne, canSet,
     side, fire, afterLock, stuck, resetSide, send, pay,

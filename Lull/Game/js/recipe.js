@@ -11,7 +11,8 @@
 //     mode?: 'descent' (a mode it brings),
 //     options?: { path: [values] } (what the Custom window offers, for resolve),
 //     normalize(raw, out) (writes its own keys of the recipe from raw), label(r, short), thin(r), valid(g, r),
-//     rules(r, R, w), limits(r, lim), clampSize(size, r, lim, asked), conflicts(r, out),
+//     rules(r, R, w), limits(r, lim), clampSize(size, r, lim, asked), conflicts(r, out), deal(r, size, rng) -> { recipe, size }
+//     | null (a new game's own draw: Recipe.deal),
 //     engine(game, saved, o) -> ext | null (game.recipe, rules, rng and seed are set, o the Game's options; the hooks
 //     are listed in js/engine.js), controller(play, game) -> ctl | null (Free Play's; every part's is composed over
 //     the plain one: Recipe.compose), summary(saved, g), stats? (store.js merges it under state.stats) }
@@ -222,6 +223,19 @@
     return { recipe: cur, changes, memo };
   }
 
+  /**
+   * A new game's own draw: a part may choose some of a new game's rules afresh each time (Race's and Battle's Standard
+   * and Frantic each draw one of a few rule sets: js/versus.js), with rng. Returns { recipe, size }.
+   */
+  function deal(r, size, rng) {
+    let out = { recipe: normalize(r), size };
+    for (const p of PARTS) {
+      const d = p.deal && p.deal(out.recipe, out.size, rng);
+      if (d) out = { recipe: normalize(d.recipe), size: d.size || out.size };
+    }
+    return out;
+  }
+
   // ---- rules --------------------------------------------------------------------------------------------------------
 
   /**
@@ -359,7 +373,7 @@
   const Recipe = {
     DEFAULT: null, MODS, BASE,
     part, unpart, viewPart, uiPart, parts, get, views: () => VIEWS.slice(), uis: () => UIS.slice(),
-    normalize, equal, key, isDefault, label, thin, limits, clampSize, sizeOk, conflicts, options, resolve, rules, valid,
+    normalize, equal, key, isDefault, label, thin, limits, clampSize, sizeOk, conflicts, options, resolve, deal, rules, valid,
     engine, controller, controllers, compose, stats, summary, canon, getPath, setPath,
   };
   L.Recipe = Recipe;

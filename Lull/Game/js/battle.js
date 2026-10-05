@@ -3,9 +3,11 @@
 // onto the opponent's board instead of yours, where you aim it: it drops from their top and rests on their stack,
 // exactly where the shadow showed, and its cells are theirs from then on (a row it completes clears for them). A board
 // whose next piece cannot come in is out: the round is the other's. After three minutes both ceilings come down a row
-// every 20 s. Pure rules, the AI and the match (no DOM); the controller, the view and the window are js/battleview.js.
+// every 20 s. The menu's Standard and Frantic each draw one of a few rule sets (SETS: a size, shapes, when the ceilings
+// come down, charges to start a round with, the opponent's pace). Pure rules, the AI and the match (no DOM); the
+// controller, the view and the window are js/battleview.js.
 //
-//   recipe.battle = { level: 'easy' | 'steady' | 'brisk' | 'swift' }
+//   recipe.battle = { level: 'easy' | 'steady' | 'brisk' | 'swift', tempo?: 'standard' | 'frantic', set?: SETS id }
 //   save x.battle = { v: 1, side: { charges, ceil, … }, match?: { level, round, tally, streak, since, ai: Game JSON, … } }
 (function (root) {
   'use strict';
@@ -13,7 +15,7 @@
   const { Recipe, CELL, Pieces, RNG, Versus: V } = L;
   if (!Recipe || !V) return;
   // (Shared with Race: js/versus.js.)
-  const { IDS, NAMES, popcount, rowsOf, shapeOf, fitMap, searchG, pathTo, play, gauss, placed, fitAt, spawnOf, slice, runAll, tallyOf, tallyText } = V;
+  const { IDS, NAMES, TEMPOS, popcount, rowsOf, shapeOf, fitMap, searchG, pathTo, play, gauss, placed, fitAt, spawnOf, slice, runAll, tallyOf, tallyText } = V;
 
   const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
   const clone = (v) => JSON.parse(JSON.stringify(v));
@@ -39,12 +41,44 @@
   const MAX_CHARGES = 6, EASY_CHANCE = 0.3;
   /** Sudden death: from 3 minutes into a round, a ceiling row every 20 s. A throw's time (sim). */
   const SUDDEN_MS = 180000, CEIL_MS = 20000, THROW_TIME = 0.5;
+  /**
+   * Standard and Frantic (js/versus.js): the rule sets a new Battle draws from. w × h, shapes, sudden (ms into a round
+   * the ceilings start to come down), ceil (ms between rows), start (charges each side starts a round with), pace (a
+   * factor on the opponent's seconds a piece). Standard is the usual Battle on boards of 126 to 168 cells; Frantic is
+   * smaller boards (96 cells or more, where wins count), a charge or two in hand, earlier and quicker ceilings, odd
+   * shapes in most, and an opponent that plays a little quicker at the same level.
+   */
+  const SETS = Object.freeze([
+    { id: 's1', tempo: 'standard', w: 10, h: 14, shapes: 'normal', sudden: 180000, ceil: 20000, start: 0, pace: 1 },
+    { id: 's2', tempo: 'standard', w: 10, h: 16, shapes: 'normal', sudden: 180000, ceil: 20000, start: 0, pace: 1 },
+    { id: 's3', tempo: 'standard', w: 9, h: 14, shapes: 'normal', sudden: 180000, ceil: 20000, start: 0, pace: 1 },
+    { id: 's4', tempo: 'standard', w: 12, h: 14, shapes: 'normal', sudden: 180000, ceil: 20000, start: 0, pace: 1 },
+    { id: 'f1', tempo: 'frantic', w: 8, h: 12, shapes: 'frantic', sudden: 60000, ceil: 10000, start: 1, pace: 0.85 },
+    { id: 'f2', tempo: 'frantic', w: 8, h: 12, shapes: 'normal', sudden: 60000, ceil: 8000, start: 2, pace: 0.85 },
+    { id: 'f3', tempo: 'frantic', w: 9, h: 11, shapes: 'frantic', sudden: 75000, ceil: 10000, start: 1, pace: 0.9 },
+    { id: 'f4', tempo: 'frantic', w: 10, h: 12, shapes: 'pentominoes', sudden: 60000, ceil: 10000, start: 1, pace: 0.85 },
+  ].map(Object.freeze));
   /** A ceiling cell: stone (never yours, never cleared). */
   const STONE = CELL.FOREIGN | CELL.FILL | 8;
   /** The opponent's board cost weights: height, holes, the cells over them, bumps, rows cleared, the danger near the top. */
   const W_AGG = 5, W_HOLE = 30, W_OVER = 2, W_BUMP = 2.2, W_LINE = 8, W_DANGER = 40, W_WELL = 1.5;
 
   const on = (r) => !!r && r.mode === 'battle';
+  /** A recipe's rule set (Standard or Frantic), or null (a Custom Battle, or one from before: the usual rules). */
+  const setIn = (r) => (on(r) && r.battle ? V.setOf(SETS, r.battle.set) : null);
+  /** A game's sudden death (ms into a round, ms a row), the charges a round starts with: its set's, else the usual. */
+  const suddenOf = (game) => (game && game.rules && game.rules.btSudden) || SUDDEN_MS;
+  const ceilOf = (game) => (game && game.rules && game.rules.btCeil) || CEIL_MS;
+  const startOf = (game) => (game && game.rules && game.rules.btStart) || 0;
+  /** The opponent's level on a game: its pace quickened as the game's set says. */
+  const levelOn = (game, level) => V.paced(LEVELS[level] || LEVELS.steady, game && game.rules ? game.rules.aiPace : 1);
+  /** A time in m:ss. */
+  const mss = (ms) => { const t = Math.round(ms / 1000); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
+  /** A game's set in words ("Frantic · 8 × 12 · Ceilings from 1:30"), or ''. */
+  function setText(game) {
+    const s = game && setIn(game.recipe);
+    return s ? V.setLine(s, s.sudden !== SUDDEN_MS ? 'Ceilings from ' + mss(s.sudden) : '') : '';
+  }
 
   // ---- a board in Battle ----------------------------------------------------------------------------------------------
 
@@ -54,10 +88,10 @@
   function side(game) { const e = extOf(game); return e ? e.side : null; }
   /** The rows under the ceiling. */
   function top(game) { const sd = side(game); return game.h - (sd ? sd.S.ceil : 0); }
-  /** The rows sudden death has closed at ms into a round. */
-  function ceilAt(ms) { return ms < SUDDEN_MS ? 0 : 1 + Math.floor((ms - SUDDEN_MS) / CEIL_MS); }
-  /** ms until the next ceiling row comes down. */
-  function nextCeilIn(ms) { return ms < SUDDEN_MS ? SUDDEN_MS - ms : CEIL_MS - ((ms - SUDDEN_MS) % CEIL_MS); }
+  /** The rows sudden death has closed at ms into a round (on a game: its set's timing). */
+  function ceilAt(ms, game) { const a = suddenOf(game), d = ceilOf(game); return ms < a ? 0 : 1 + Math.floor((ms - a) / d); }
+  /** ms until the next ceiling row comes down (on a game: its set's timing). */
+  function nextCeilIn(ms, game) { const a = suddenOf(game), d = ceilOf(game); return ms < a ? a - ms : d - ((ms - a) % d); }
   /** The cells of a game's board (under its ceiling) that are filled. */
   function cellsIn(game) { const t = top(game), W = game.w, c = game.board.cells; let n = 0; for (let i = 0; i < W * t; i++) if (c[i]) n++; return n; }
   /** The height of the stack under the ceiling (rows to its highest cell). */
@@ -343,16 +377,19 @@
 
   /**
    * A round between two levels (o.levels: two of IDS; o.human: { pace, as } makes side 0 a stand-in player: `as`'s
-   * judgement and throwing (Steady by default) at its own pace in seconds a piece), on a board w × h of o.shapes.
+   * judgement and throwing (Steady by default) at its own pace in seconds a piece), on a board w × h of o.shapes, or of
+   * the rule set o.set (its size, shapes and timing; the opponents' pace quickened as it says).
    * Returns { winner: 0 | 1, time, sudden, sides: [{ S, pieces, pay }] }.
    */
   function simulate(o) {
-    const w = o.w || SIZE.w, hh = o.h || SIZE.h, seed = o.seed || 1;
-    const recipe = Recipe.normalize({ mode: 'battle', battle: { level: 'steady' }, shapes: o.shapes || { preset: 'normal' } });
+    const set = V.setOf(SETS, o.set);
+    const w = o.w || (set ? set.w : SIZE.w), hh = o.h || (set ? set.h : SIZE.h), seed = o.seed || 1;
+    const recipe = Recipe.normalize(set ? { mode: 'battle', battle: { level: 'steady', set: set.id }, shapes: { preset: set.shapes } }
+      : { mode: 'battle', battle: { level: 'steady' }, shapes: o.shapes || { preset: 'normal' } });
     const mk = (i, level) => {
       const game = new L.Game({ w, h: hh, recipe, seed: seed * 2 + i + 1, previewCount: 5, battleAI: true });
       const sd = side(game);
-      let lvl = LEVELS[level];
+      let lvl = levelOn(game, level);
       if (i === 0 && o.human) lvl = Object.assign({}, LEVELS[o.human.as || 'steady'], { pace: o.human.pace });
       sd.lvl = lvl; sd.rng = new RNG((seed * 7919 + i * 104729) >>> 0);
       return sd;
@@ -360,15 +397,16 @@
     const A = mk(0, o.levels[0]), B = mk(1, o.levels[1]);
     const jitter = (s) => s.lvl.pace * (0.7 + 0.6 * s.rng.next());
     A.t = jitter(A); B.t = jitter(B);
-    let ceilT = SUDDEN_MS / 1000, winner = null, time = 0;
+    const G0 = A.game, sudden0 = suddenOf(G0);
+    let ceilT = sudden0 / 1000, winner = null, time = 0;
     // Both out at once (a ceiling): the higher stack loses; level, the first side wins.
     const decide = (aOut, bOut) => (aOut && bOut ? (cellsIn(A.game) > cellsIn(B.game) ? 1 : 0) : aOut ? 1 : bOut ? 0 : null);
     for (let n = 0; n < (o.maxActs || 6000) && winner == null; n++) {
       const tNext = Math.min(A.t, B.t);
       if (ceilT <= tNext) {
-        const k = ceilAt(ceilT * 1000 + 1);
+        const k = ceilAt(ceilT * 1000 + 1, G0);
         winner = decide(lowerTo(A, k), lowerTo(B, k));
-        time = ceilT; ceilT += CEIL_MS / 1000;
+        time = ceilT; ceilT += ceilOf(G0) / 1000;
         continue;
       }
       const [me, foe] = A.t <= B.t ? [A, B] : [B, A];
@@ -386,7 +424,7 @@
     }
     if (winner == null) winner = decide(true, true);
     const out = (sd, i) => ({ S: Object.assign({}, sd.S), pieces: sd.S.pieces, pay: pay(sd, o.levels[1 - i] || 'steady', winner === i) });
-    return { winner, time, sudden: time * 1000 >= SUDDEN_MS, sides: [out(A, 0), out(B, 1)] };
+    return { winner, time, sudden: time * 1000 >= sudden0, sides: [out(A, 0), out(B, 1)] };
   }
 
   // ---- the engine's extension -------------------------------------------------------------------------------------------------
@@ -399,7 +437,8 @@
   function extension(game, saved, o) {
     game.findRoom = false;
     const sv = isObj(saved) ? saved : {};
-    const S = Object.assign(freshSide(), validSide(sv.side) ? clone(sv.side) : {});
+    // (A new board starts with its set's charges in hand.)
+    const S = Object.assign(freshSide(), validSide(sv.side) ? clone(sv.side) : { charges: startOf(game) });
     const ext = {
       side: { game, S, ver: 0 },
       M: null,
@@ -444,7 +483,7 @@
     if (isObj(sv.ai) && (!pl || pl(sv.ai))) { try { ai = new L.Game({ saved: sv.ai, previewCount: 5, battleAI: true }); } catch (e) { ai = null; } }
     if (!ai || ai.w !== game.w || ai.h !== game.h || !side(ai)) ai = new L.Game({ w: game.w, h: game.h, recipe: game.recipe, seed: ((game.seed || Date.now()) ^ 0x5eed1e) >>> 0, previewCount: 5, battleAI: true });
     M.ai = side(ai);
-    M.ai.lvl = LEVELS[level];
+    M.ai.lvl = levelOn(game, level);
     M.ai.rng = new RNG((M.since ^ (round.n * 2654435761)) >>> 0);
     return M;
   }
@@ -463,7 +502,7 @@
    * out at once: the higher stack is; level, the opponent).
    */
   function ceilings(M) {
-    const k = ceilAt(M.round.ms);
+    const k = ceilAt(M.round.ms, M.me.game);
     if (k <= M.me.S.ceil && k <= M.ai.S.ceil) return null;
     const a = M.me.S.ceil, b = M.ai.S.ceil;
     const meOut = lowerTo(M.me, k), aiOut = lowerTo(M.ai, k);
@@ -472,19 +511,19 @@
     return meOut ? 'me' : aiOut ? 'ai' : null;
   }
 
-  /** Both boards start a new round: emptied, charges and ceilings cleared; the queues carry on. */
+  /** Both boards start a new round: emptied, ceilings up, charges as a round starts; the queues carry on. */
   function newRound(M) {
     for (const sd of [M.me, M.ai]) {
       const g = sd.game, keep = g.s;
       sd.S.ceil = 0;
       g.resetBoard();
       g.s = keep;
-      Object.assign(sd.S, freshSide());
+      Object.assign(sd.S, freshSide(), { charges: startOf(g) });
       if (!g.piece) g.spawnNext();
       sd.ver++;
     }
     M.round = { n: M.round.n + 1, ms: 0, phase: 'ready', winner: null, paid: 0 };
-    M.ai.lvl = LEVELS[M.level];
+    M.ai.lvl = levelOn(M.me.game, M.level);
     M.ai.rng = new RNG((M.since ^ (M.round.n * 2654435761)) >>> 0);
   }
   /** The round ends: the tally, the streak, and what it pays (pay: the caller banks it). */
@@ -503,8 +542,7 @@
     key: 'battle', order: 55, mode: 'battle', name: 'Battle', owns: ['battle'], options: { 'battle.level': IDS.slice() },
     normalize(raw, out) {
       if (out.mode !== 'battle') return;
-      const lv = isObj(raw.battle) && raw.battle.level;
-      out.battle = { level: IDS.includes(lv) ? lv : 'steady' };
+      out.battle = V.normalizeSide(raw.battle, SETS);
     },
     label: (r, short) => (on(r) ? (short ? 'Battle' : 'Battle · ' + NAMES[r.battle.level]) : ''),
     // Width 6–12 (and the set's own minimum), height 10–16: two boards share the window.
@@ -527,7 +565,12 @@
       R.timed = true;
       R.noFeats = true;
       R.battle = true;
+      // Standard and Frantic: the set's sudden death, starting charges and the opponent's pace.
+      const s = setIn(r);
+      if (s) { R.btSudden = s.sudden; R.btCeil = s.ceil; R.btStart = s.start; R.aiPace = s.pace; }
     },
+    // A new game with a tempo draws one of its sets.
+    deal(r, size, rng) { return on(r) ? V.dealSet(r, 'battle', SETS, rng) : null; },
     conflicts(r, out) {
       if (!on(r)) return;
       // Physics bodies have no cells to throw onto (Mirror and the shapes say their own).
@@ -568,6 +611,7 @@
 
   L.Battle = {
     IDS, NAMES, LEVELS, LIMITS, SIZE, PRESETS, MAX_CHARGES, EASY_CHANCE, SUDDEN_MS, CEIL_MS, THROW_TIME, STONE, on,
+    SETS, TEMPOS, setIn, suddenOf, ceilOf, startOf, levelOn, setText,
     extOf, side, top, ceilAt, nextCeilIn, cellsIn, heightOf, afterLock, landing, xRange, aims, throwAt, lowerTo, pay,
     costOf, evaluate, aimFor, think, act, slice, runAll, pathTo, play, simulate,
     matchOf, ceilings, newRound, endRound, tallyOf, tallyText, summaryOf, PART,

@@ -59,7 +59,8 @@ was; so does Esc, from any page. Solo and Multiplayer are pages of big tiles too
 line; Custom a low dashed tile across the row), with Back beside the X. A mode opens a short setup with only its own
 settings, the Custom window's own controls: Relaxed its size presets and shapes (Custom shapes are in Custom), Classic
 its type and settings, Descent its level and stage, Mural its picture (Photo too) and level, Race and Battle the
-opponent and a size preset. Each mode's last setup is kept (`boards.menu` in the save); a mode's setup first takes that
+opponent and Standard or Frantic (each a few rule sets, one drawn for every new game: see Race and Battle; the kept
+game's set is named over Continue). Each mode's last setup is kept (`boards.menu` in the save); a mode's setup first takes that
 mode's settings last chosen in the Custom window, with Normal shapes and no modifier. Back steps back a page (focus on
 where it came from); Enter on a button presses it, elsewhere it is the page's main button. Every target is 44 px or
 more by touch, nothing scrolls sideways, the home never scrolls and its tiles stay side by side, at 520 × 760,
@@ -912,6 +913,17 @@ must touch the board to set ("Set it on your board"); what it leaves in the buff
 Custom with groups over 5 blocks or Clusters, Mirror and Physics are not in Race; Classic, Descent and Battle are other modes.
 A Race board keeps its rules; the opponent can be changed between rounds.
 
+*Standard and Frantic* — the menu's Race setup offers the opponent and Standard or Frantic (the size presets are the
+Custom window's). Each is a pool of four rule sets (`Race.SETS`), and every new game (Start, New game, the End card's
+New game) draws one from its seed (`Recipe.deal`, a part's `deal` hook; `js/versus.js` holds what Race and Battle share
+of it). The set is the game's (`recipe.race = { level, tempo, set }`), so Continue and a reload resume it; the Ready
+and Paused cards and the setup over Continue name it ("Frantic · 9 × 8 · Frantic shapes · Send every 4"). Standard is
+the usual Race: Normal shapes on 10 × 10, 9 × 10, 10 × 12 or 12 × 9, Send every 6, two fillers, the level's pace.
+Frantic is 8 × 8 or 9 × 8 (64 cells or more, so wins still count), Send every 3 or 4, three fillers, Normal or Frantic
+shapes, and the opponent a little quicker (its seconds a piece × 0.9 or 0.95). A Race with no set (a Custom one, or
+one from before) plays the usual rules. In simulated rounds a player at 3 s a piece with Steady's judgement beats
+Steady about four in five on Standard and about two in five on Frantic; rounds are about 90 s and 60 s.
+
 *Send* — S sends the piece in play to the opponent; Shift+S, or a tap or click on the first Next slot, sends the first
 Next piece. Send is ready once every six pieces you set (a ring of six on the Send button fills as they go), and a piece
 sent to you goes to the front of your queue, after any sent before it, ringed in Next and outlined in play; it can be
@@ -974,6 +986,13 @@ opponent's, both played as plain boards (rows clear, pieces float as everywhere 
 and 10–16 high (presets Quick 8 × 12, Standard 10 × 14, Long 10 × 16); Big, Custom with groups over 5 blocks or
 Clusters, Mirror and Physics are not in Battle. A Battle board keeps its rules; the opponent can be
 changed between rounds. No power-ups, Undo, Luck, control hints or red rim.
+
+*Standard and Frantic* — as Race's (`Battle.SETS`, one drawn for every new game, kept with it). Standard is the usual
+Battle: Normal shapes on 10 × 14, 10 × 16, 9 × 14 or 12 × 14, no charge in hand, ceilings from 3:00 a row every 20 s.
+Frantic is 8 × 12, 9 × 11 or 10 × 12 (96 cells or more, so wins still count), a charge or two in hand at each round's
+start, ceilings from 1:00 or 1:15 a row every 8 or 10 s, Frantic shapes, Pentominoes or Normal, and the opponent a
+little quicker (× 0.85 or 0.9). The status bar's Time tip says the set's own timing. In simulated rounds the 3 s
+player beats Steady about half the time on both; Frantic rounds are about 45 s against Standard's 85 s.
 
 *Charges and throws* — every row you clear is a charge, six at most (the dots on Throw: a quad is four). T (or Throw)
 aims the piece in play at the opponent's board: a shadow comes up there, across from your piece and turned as it looks

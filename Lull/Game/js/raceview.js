@@ -361,12 +361,12 @@
       },
       bar(el) {
         const m = M(), sd = me(), on = m.round.phase === 'play' && !this.paused && !this.count, ready = on && sd.S.cd === 0;
-        const segs = Race.COOLDOWN, lit = segs - Math.min(segs, sd.S.cd);
+        const segs = Race.cooldownOf(g()), lit = segs - Math.min(segs, sd.S.cd);
         // The ring: one segment for each piece of the cooldown, lit as they are set; whole when Send is ready.
         const R = 15, C = 2 * Math.PI * R, seg = C / segs, gap = 2.2;
         const ring = '<svg class="rc-ring" viewBox="0 0 36 36" aria-hidden="true">' + Array.from({ length: segs }, (_, i) =>
           '<circle cx="18" cy="18" r="' + R + '" fill="none" stroke-width="3" class="' + (i < lit ? 'on' : 'off') + '" stroke-dasharray="' + (seg - gap).toFixed(2) + ' ' + (C - seg + gap).toFixed(2) + '" stroke-dashoffset="' + (-(i * seg) + C / 4).toFixed(2) + '"/>').join('') + '</svg>';
-        const dots = h('span', { class: 'rc-dots', 'aria-hidden': 'true' }, Array.from({ length: Race.MAX_CHARGES }, (_, i) => h('i', { class: i < sd.S.charges ? 'on' : '' })));
+        const dots = h('span', { class: 'rc-dots', 'aria-hidden': 'true' }, Array.from({ length: Race.fillersOf(g()) }, (_, i) => h('i', { class: i < sd.S.charges ? 'on' : '' })));
         const armed = !!this.armedAt && performance.now() - this.armedAt <= ARM_MS;
         const fillWord = sd.S.charges ? ', ' + sd.S.charges + ' gap filler' + (sd.S.charges > 1 ? 's' : '') + ' held' : '';
         el.replaceChildren(
@@ -388,7 +388,7 @@
     };
     // The Ready card, 3-2-1, Paused, the End card and its picker, pausing when away: js/versusview.js.
     return Object.assign(VV.rounds(play, {
-      title: 'Race', key: 'race', M, LEVELS: Race.LEVELS,
+      title: 'Race', key: 'race', M, level: (id) => Race.levelOn(play.game, id), rules: () => Race.setText(play.game),
       endBody() {
         const m = M(), paid = Library.bank(m.round.paid || 0);
         return [
