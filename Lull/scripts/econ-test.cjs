@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Lull's economy against models of play: placement bots on the real engine (Free Play at several sizes, Classic, the
-// Golden Piece), a model of puzzle play, the daily gift at shop prices, the factory measured on its real line, and a
-// career that spends what it earns. Every price and pay is read from the game; the assumptions about players (how fast
+// Golden Piece), a model of puzzle play, the daily gift at shop prices, and a career that
+// spends what it earns. Every price and pay is read from the game; the assumptions about players (how fast
 // they place, how long they play, how often they collect) are in MODEL, and nowhere else.
 //   node Lull/scripts/econ-test.cjs     (test.cjs runs it too)
 'use strict';
@@ -36,7 +36,7 @@ const MODEL = {
   },
   // Hours of play (all modes, cumulative) at which each profile [casual, skilled, puzzle] earns each achievement; null
   // not within the career, 'Dn' on day n. Judgement, informed by the bots (quad and streak rates) and the mode mix.
-  // Factory and Lifetime ones are computed as the career goes.
+  // Lifetime ones are computed as the career goes.
   achievedAt: {
     quad: [2, 0.1, 3], tsd: [8, 0.5, 15], combo5: [20, 3, null], b2b3: [15, 0.2, 25], lines150: [0.5, 0.2, 3],
     toolbox: [6, 4, 15], score50k: [6, 0.4, 20], tst: [null, 3, null], pc: [40, 5, 60], mini2: [null, 20, null],
@@ -172,9 +172,8 @@ function bots(L) {
 }
 
 module.exports = function econTests(test, L) {
-  const { Chain, Luck, Pay, Library, Gifts, Puzzles, Factory, ITEMS, ITEM_ORDER } = L;
+  const { Chain, Luck, Pay, Library, Gifts, Puzzles, ITEMS, ITEM_ORDER } = L;
   const { play } = bots(L);
-  const T = Factory.TUNE;
   const round = (x, d) => Math.round(x * Math.pow(10, d)) / Math.pow(10, d);
   console.log('economy (models of play)');
 
@@ -330,62 +329,13 @@ module.exports = function econTests(test, L) {
     console.log('       a gift ' + gift.toFixed(1) + ', one free draw ' + draw.toFixed(2));
   });
 
-  // The factory: the real line, tended as a player would. A session open (a look every five minutes, selling the
-  // store's loose minos when it is full and the line waits), the rest of the day away (the line runs on for
-  // Factory.AWAY_H, its board paying as it clears, then rests); what it earned away is taken at the next look.
-  const MIN = 60e3, HOUR = 60 * MIN, DAY = 24 * HOUR;
-  function factorySession(f, minutes, day, every) {
-    let got = Factory.takeLines(f);
-    for (let m = 0; m < minutes; m += every) {
-      Factory.run(f, every * MIN, null, false);
-      got += Factory.takeLines(f);
-      if (Factory.mood(f).stuck) { Factory.sell(f); got += Factory.takeLines(f); }
-    }
-    return got;
-  }
-  // A factory's day on the real line, measured once for each build (the careers buy the same builds in the same order):
-  // a warm day, then three of `hours` open (a look every five minutes) and the rest away. Per day: the lines it earned,
-  // and the statistics its achievements count.
-  const dayCache = new Map();
-  function factoryDayOf(f, hours) {
-    const key = Factory.KINDS.map((k) => Factory.levelOf(f, k)).join('') + '@' + hours;
-    if (dayCache.has(key)) return dayCache.get(key);
-    const g = Factory.create();
-    g.seed = 777;
-    for (const k of Factory.KINDS) for (let i = 0; i < Factory.levelOf(f, k); i++) Factory.upgrade(g, k);
-    const day = () => { const got = factorySession(g, Math.round(hours * 60), 0, 5); Factory.run(g, DAY - hours * HOUR, null, true); return got; };
-    day();
-    const s0 = JSON.parse(JSON.stringify(g.stats));
-    let lines = 0;
-    for (let d = 0; d < 3; d++) lines += day();
-    const per = { earned: lines / 3, bySize: g.stats.bySize.map((n, i) => (n - s0.bySize[i]) / 3) };
-    for (const k of ['made', 'delivered', 'lines', 'smoothMs']) per[k] = (g.stats[k] - s0[k]) / 3;
-    dayCache.set(key, per);
-    return per;
-  }
-  const fullFactory = (seed) => { const f = Factory.create(); f.seed = seed; for (const k of Factory.KINDS) while (Factory.upgrade(f, k)); return f; };
-  test('the factory never pays faster than Standard: fully built and tended every minute, under half of casual Relaxed play', () => {
-    const r = rates(), f = fullFactory(777);
-    factorySession(f, 30, 0, 1);
-    const hour = factorySession(f, 120, 0, 1) / 2;
-    assert(hour < 0.5 * r.relaxed.casual, hour + ' an hour against ' + r.relaxed.casual.toFixed(0));
-    console.log('       a full factory tended every minute ' + hour.toFixed(0) + ' lines an hour (' + (hour / r.relaxed.casual).toFixed(2) + '× casual Standard)');
-  });
-  test('the factory is a supporting income: a casual day (half an hour open, the rest away, where it runs on for an hour) is a fifth to two thirds of casual daily play', () => {
-    const r = rates(), day = MODEL.career.casual.hoursPerDay * r.relaxed.casual;
-    const f = fullFactory(778);
-    let got = 0;
-    for (let d = 0; d < 4; d++) { const g = factorySession(f, 30, d, 5); Factory.run(f, DAY - 30 * MIN, null, true); if (d) got += g; }
-    const per = got / 3;
-    console.log('       a full factory on a casual day ' + per.toFixed(0) + ' lines (' + (per / day).toFixed(2) + '× casual play)');
-    assert(per >= 0.2 * day && per <= 0.67 * day, per + ' lines a day against ' + day.toFixed(1));
-  });
+  // The factory is shelved for now (Lull/Shelved/factory/): its line and its part in the career went with it.
 
   // ---- the career ---------------------------------------------------------------------------------------------------
   //
   // Hour by hour (a quarter at a time), a day's hours at once: play pays its hourly rate (less the power-ups it buys),
-  // the Dailies and the factory's day pay once a day, achievements pay when MODEL says they come (the factory's and
-  // Lifetime ones as they happen), and the wallet buys the cheapest thing it can, a cosmetic or a factory upgrade.
+  // the Dailies pay once a day, achievements pay when MODEL says they come (the Lifetime ones as they happen), and the
+  // wallet buys the cheapest cosmetic it can.
   function career(name, maxH) {
     const r = rates(), P = MODEL.career[name], idx = { casual: 0, skilled: 1, puzzle: 2 }[name];
     const A = L.Achievements.LIST, byId = Object.fromEntries(A.map((a) => [a.id, a]));
@@ -396,27 +346,14 @@ module.exports = function econTests(test, L) {
     const rate = { relaxed: r.relaxed[name === 'skilled' ? 'skilled' : 'casual'], classic: r.classic[name === 'skilled' ? 'skilled' : 'casual'], puzzle: (r.puzzle[P.puzzle].E + r.puzzle[P.puzzle].M + r.puzzle[P.puzzle].H) / 3 };
     const hourly = Object.entries(P.mix).reduce((a, [m, s]) => a + s * rate[m], 0);
     const dailies = P.dailies.reduce((a, d) => a + Puzzles.pay(d, { try: 1, daily: true }).pay, 0);
-    // The factory: the real line, open while the day's play lasts, away the rest of the day (each build's day measured
-    // on the line once, factoryDayOf); its statistics grow day by day for its achievements.
-    const f = Factory.create();
-    f.seed = 777;
-    let facDays = 0;
-    const factoryDay = () => {
-      const m = factoryDayOf(f, P.hoursPerDay), fs = f.stats;
-      for (const k of ['made', 'delivered', 'lines', 'smoothMs']) fs[k] += m[k];
-      m.bySize.forEach((n, i) => { fs.bySize[i] += n; });
-      fs.days++;
-      return m.earned;
-    };
-    const st = { wallet: 0, earned: { play: 0, factory: 0, achievements: 0, dailies: 0 }, got: {}, owned: new Set(), log: [] };
+    const st = { wallet: 0, earned: { play: 0, achievements: 0, dailies: 0 }, got: {}, owned: new Set(), log: [] };
     const earn = (a, h) => { if (!a || st.got[a.id]) return; st.got[a.id] = h; st.wallet += a.pay; st.earned.achievements += a.pay; };
     const total = () => Object.values(st.earned).reduce((a, b) => a + b, 0);
     const snaps = {};
     let hours = 0, day = 0;
     while (hours < maxH - 1e-9) {
       day++;
-      const got = factoryDay();
-      st.wallet += got + dailies; st.earned.factory += got; st.earned.dailies += dailies; facDays++;
+      st.wallet += dailies; st.earned.dailies += dailies;
       for (let t = 0; t < P.hoursPerDay - 1e-9 && hours < maxH - 1e-9; t += 0.25) {
         hours += 0.25;
         st.wallet += (hourly - P.powerUpsPerHour) * 0.25; st.earned.play += hourly * 0.25;
@@ -424,8 +361,7 @@ module.exports = function econTests(test, L) {
           const v = when[idx];
           if (v != null && !st.got[id] && (typeof v === 'string' ? day >= +v.slice(1) : hours >= v)) earn(byId[id], hours);
         }
-        const at = (id, ok) => ok && earn(byId[id], hours), fs = { factory: f };
-        for (const a of A) if (a.group === 'factory' && !st.got[a.id] && a.test(fs, {})) earn(a, hours);
+        const at = (id, ok) => ok && earn(byId[id], hours);
         at('lu_hours10', hours >= 10); at('lu_hours100', hours >= 100); at('lu_days30', day >= 30); at('lu_days100', day >= 100);
         at('lu_100k', total() >= need('lu_100k')); at('lu_1m', total() >= need('lu_1m'));
         at('lu_curator', forSale.every((c) => st.owned.has(c.key)));
@@ -433,15 +369,13 @@ module.exports = function econTests(test, L) {
         at('lu_all', others.every((a) => st.got[a.id]));
         for (;;) {
           const pool = [];
-          const up = (kind, cost) => cost != null && pool.push({ kind, cost });
-          for (const k of Factory.KINDS) { const u = Factory.nextUpgrade(f, k); if (u) up(k, u.cost); }
           for (const c of forSale) if (!st.owned.has(c.key)) pool.push({ c, cost: c.price });
           pool.sort((a, b) => a.cost - b.cost);
           if (!pool.length || st.wallet < pool[0].cost) break;
           const x = pool[0];
           st.wallet -= x.cost;
-          if (x.c) st.owned.add(x.c.key); else Factory.upgrade(f, x.kind);
-          st.log.push([hours, x.c ? 'cosmetic' : 'factory']);
+          st.owned.add(x.c.key);
+          st.log.push([hours, 'cosmetic']);
         }
       }
       for (const s of [5, 10, 50, 200]) if (!snaps[s] && hours >= s - 1e-9) snaps[s] = Object.assign({}, st.earned, { total: total() });
@@ -450,19 +384,19 @@ module.exports = function econTests(test, L) {
     const gap = (a, b) => { const n = st.log.filter((x) => x[0] > a && x[0] <= b).length; return n ? (b - a) / n * 60 : Infinity; };
     return { hourly, allCosmeticsAt: cos.length === forSale.length ? cos[cos.length - 1][0] : null, snaps, gap05: gap(0, 5) };
   }
-  test('career: every cosmetic owned in 50–80 h casually, 25–45 h skilled, 40–70 h puzzle-focused; purchases come often early; the factory a sixth to two fifths of casual income', () => {
+  test('career: every cosmetic owned in 50–90 h casually, 25–45 h skilled, 40–70 h puzzle-focused; purchases come often early', () => {
     const c = career('casual', 400), s = career('skilled', 400), p = career('puzzle', 400);
-    const share = (snap, k) => snap[k] / snap.total, fac = share(c.snaps[200], 'factory');
+    const share = (snap, k) => snap[k] / snap.total;
     console.log('       every cosmetic at ' + [c, s, p].map((x) => x.allCosmeticsAt + ' h').join(' / ') + ' (casual / skilled / puzzle); skilled achievements ' +
-      Math.round(100 * share(s.snaps[10], 'achievements')) + '% at 10 h, ' + Math.round(100 * share(s.snaps[50], 'achievements')) + '% at 50 h; casual factory ' + Math.round(100 * fac) + '% at 200 h; casual buys every ' + c.gap05.toFixed(0) + ' min (0–5 h)');
+      Math.round(100 * share(s.snaps[10], 'achievements')) + '% at 10 h, ' + Math.round(100 * share(s.snaps[50], 'achievements')) + '% at 50 h; casual buys every ' + c.gap05.toFixed(0) + ' min (0–5 h)');
     const within = (x, a, b, what) => assert(x != null && x >= a && x <= b, what + ': ' + x);
-    within(c.allCosmeticsAt, 50, 80, 'casual');
+    // 80 h at most while the Factory paid a casual player too (about a fifth of the income); without it, 90.
+    within(c.allCosmeticsAt, 50, 90, 'casual');
     within(s.allCosmeticsAt, 25, 45, 'skilled');
     within(p.allCosmeticsAt, 40, 70, 'puzzle-focused');
     assert(c.gap05 <= 60, 'casual: a purchase every ' + c.gap05.toFixed(0) + ' min in the first five hours');
     assert(share(s.snaps[10], 'achievements') <= 0.35, 'skilled achievements at 10 h: ' + share(s.snaps[10], 'achievements').toFixed(3));
     assert(share(s.snaps[50], 'achievements') <= 0.15, 'skilled achievements at 50 h: ' + share(s.snaps[50], 'achievements').toFixed(3));
-    assert(fac >= 0.15 && fac <= 0.4, 'casual factory share at 200 h: ' + fac.toFixed(3));
     void round;
   });
 };
@@ -471,7 +405,7 @@ module.exports.MODEL = MODEL;
 
 if (require.main === module) {
   const load = require('./load.cjs');
-  const L = load(['util.js', 'pieces.js', 'board.js', 'engine.js', 'items.js', 'library.js', 'puzzlegen.js', 'factory.js', 'store.js', 'achievements.js']);
+  const L = load(['util.js', 'pieces.js', 'board.js', 'engine.js', 'items.js', 'library.js', 'puzzlegen.js', 'store.js', 'achievements.js']);
   let passed = 0, failed = 0;
   const test = (name, fn) => {
     try { fn(); passed++; console.log('  ok   ' + name); } catch (e) { failed++; console.log('  FAIL ' + name + '\n       ' + (e && e.stack || e).toString().split('\n').slice(0, 4).join('\n       ')); }

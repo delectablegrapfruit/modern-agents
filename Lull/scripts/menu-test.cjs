@@ -45,7 +45,7 @@ module.exports = async function menuTests({ browser, check, PAGE, OUT }) {
     await page.waitForTimeout(900);
     const after = await state(ev);
     check('after a reload the last board is shown as it was, and no menu', !(await menuOpen(ev)) && !(await ev(() => Lull.UI.modalOpen())) && after.cur === before.cur && after.json === before.json, JSON.stringify([before.cur, after.cur]));
-    for (const t of ['puzzle', 'play', 'factory', 'stats', 'play']) await ev((id) => Lull.app.setTab(id), t);
+    for (const t of ['puzzle', 'play', 'achievements', 'stats', 'play']) await ev((id) => Lull.app.setTab(id), t);
     await page.waitForTimeout(1200);
     check('switching tabs and back to Play: no menu, the same board', !(await menuOpen(ev)) && (await state(ev)).cur === before.cur);
     // Esc on another tab does not open it.

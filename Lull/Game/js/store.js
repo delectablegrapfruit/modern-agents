@@ -1,9 +1,9 @@
-// Lull — the save: lines banked, items, cosmetics, settings, every statistic, the factory, and where each mode
-// was left. Saved to Application Support by the macOS app, to localStorage in a browser.
+// Lull — the save: lines banked, items, cosmetics, settings, every statistic, and where each mode was left. Saved
+// to Application Support by the macOS app, to localStorage in a browser.
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
-  const { native, dateKey, Emitter, Factory } = L;
+  const { native, dateKey, Emitter } = L;
 
   const SAVE_VERSION = 2;
   const LS_KEY = 'lull.save.v1';
@@ -137,6 +137,9 @@
   };
 
   const COSMETICS = { palette: PALETTES, skin: SKINS, frame: FRAMES, backdrop: BACKDROPS, effect: EFFECTS, ghost: GHOSTS, sound: SOUNDS };
+  // The looks the Factory gave (`reward`) are shelved with it (Lull/Shelved/factory/): the shop and its counts leave
+  // them out, unless a save already owns one.
+  const inShop = (kind, id, owned) => !COSMETICS[kind][id].reward || (owned || []).includes(id);
   const COSMETIC_LABELS = { palette: 'Palettes', skin: 'Mino skins', frame: 'Frames', backdrop: 'Backdrops', effect: 'Line clears', ghost: 'Shadows', sound: 'Sounds' };
 
   const ACCENTS = ['#8fb3ff', '#7bd88f', '#f6c177', '#eb6f92', '#c4a7e7', '#9ccfd8', '#f5f5f5', '#ff9e64'];
@@ -197,11 +200,11 @@
       earn: { board: null, paid: 0 }, // power-ups earned by lines on one board (js/items.js, Earn): which board, how many paid
       // tries: seeds started on and not yet solved → { n: tries that set a piece, hint, undos } (what solving pays).
       puzzle: { diff: 'E', next: { E: 1, M: 1, H: 1 }, current: null, solved: {}, tries: {}, history: [], saved: [] },
-      factory: Factory.create(),
+      // A save from before the Factory was shelved keeps its `factory`, untouched.
       stats: {
-        sessions: 0, days: 0, timeMs: { play: 0, classic: 0, puzzle: 0, factory: 0, total: 0 },
+        sessions: 0, days: 0, timeMs: { play: 0, classic: 0, puzzle: 0, total: 0 },
         classic: { games: 0, best: 0, bestLevel: 0, bestLines: 0, lines: 0, pieces: 0, bests: {} },
-        lines: { earned: 0, spent: 0, play: 0, puzzles: 0, factory: 0, achievements: 0, rewound: 0, combos: 0 },
+        lines: { earned: 0, spent: 0, play: 0, puzzles: 0, achievements: 0, rewound: 0, combos: 0 },
         free: { boardLog: [], boards: 1, pieces: 0, lines: 0, score: 0, bestScore: 0, bestLines: 0, clears: [0, 0, 0, 0, 0, 0], twists: 0, twistLines: 0, perfect: 0, maxCombo: 0, maxB2B: 0, holds: 0, rotations: 0, moves: 0, lowers: 0, drops: 0, byType: {}, topouts: 0 },
         // firstRun: first-try solves in a row; dailyRun: Dailies solved on consecutive dates (runDay is the last one).
         puzzle: { E: freshPuzzleDiff(), M: freshPuzzleDiff(), H: freshPuzzleDiff(), mods: {}, daily: 0, lastDaily: null, firstRun: 0, bestFirstRun: 0, dailyRun: 0, bestDailyRun: 0, runDay: null },
@@ -264,10 +267,9 @@
     return out;
   }
 
-  /** A parsed save made whole: the defaults filled in, and the factory checked (js/factory.js, repair). */
+  /** A parsed save made whole: the defaults filled in. */
   function loadState(saved) {
     const st = merge(defaults(), saved);
-    st.factory = Factory.repair(st.factory);
     if (st.puzzle && typeof st.puzzle === 'object') st.puzzle.tries = repairTries(st.puzzle.tries);
     st.v = SAVE_VERSION;
     return st;
@@ -313,7 +315,7 @@
     /**
      * Replaces the whole save and starts the page over from it (Reset, Import). The new save is written at once — to
      * localStorage, or in the app to the save file, where the panel also rebuilds the save it hands the page and
-     * reloads it — and from then on this page saves nothing: its boards, factory and timers still hold the old
+     * reloads it — and from then on this page saves nothing: its boards and timers still hold the old
      * progress, and its last saves on the way out (pagehide, a flush) would bring it back. In a browser the caller
      * reloads the page (`restart`).
      */
@@ -360,7 +362,7 @@
       return h[k];
     }
 
-    /** Today counts as a day played: called from real, in-front play (a factory running alone does not count). */
+    /** Today counts as a day played: called from real, in-front play. */
     played() {
       const d = this.day();
       if (d.played) return;
@@ -525,5 +527,5 @@
 
   Store.addStats = addStats;
   L.Store = Store;
-  Object.assign(L, { addStats, SOUNDS, loadState, renameOld, repairTries, TRIES_MAX, ITEMS, ITEM_ORDER, FREEBIES, packOf, itemCount, ITEM_GROUPS, PALETTES, SKINS, FRAMES, BACKDROPS, EFFECTS, GHOSTS, COSMETICS, COSMETIC_LABELS, ACCENTS, SAVE_VERSION, defaultState: defaults, mergeState: merge });
+  Object.assign(L, { addStats, SOUNDS, loadState, renameOld, repairTries, TRIES_MAX, ITEMS, ITEM_ORDER, FREEBIES, packOf, itemCount, ITEM_GROUPS, PALETTES, SKINS, FRAMES, BACKDROPS, EFFECTS, GHOSTS, COSMETICS, inShop, COSMETIC_LABELS, ACCENTS, SAVE_VERSION, defaultState: defaults, mergeState: merge });
 })(typeof globalThis !== 'undefined' ? globalThis : this);

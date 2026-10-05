@@ -9,13 +9,13 @@
   L.VERSION = '1.0';
 
   // The title bar's tabs, left to right: the places to play in one track, then the places to look by the wallet. The
-  // Shop has no tab of its own: it is the wallet. ⌘1–⌘7 run in that order (the wallet last). A tab's tooltip is its
+  // Shop has no tab of its own: it is the wallet. ⌘1–⌘5 run in that order (the wallet last). A tab's tooltip is its
   // name and key, nothing more: what each place is, you find by going there. Classic is a board mode now (the New board
-  // window's Mode tab: js/classic.js), played on the Play tab like any board.
+  // window's Mode tab: js/classic.js), played on the Play tab like any board. The Factory is shelved for now
+  // (Lull/Shelved/factory/): its tab went between Puzzles and Stats.
   const TABS = [
     { id: 'play', label: 'Play', icon: 'play', group: 'modes' },
     { id: 'puzzle', label: 'Puzzles', icon: 'puzzle', group: 'modes' },
-    { id: 'factory', label: 'Factory', icon: 'factory', group: 'modes' },
     { id: 'stats', label: 'Stats', icon: 'stats', group: 'meta' },
     { id: 'achievements', label: 'Achievements', icon: 'trophy', group: 'meta' },
   ];
@@ -44,8 +44,6 @@
       this.keys = new Keys(() => this.settings);
       this.modes.play = new Modes.PlayMode(this);
       this.modes.puzzle = new Modes.PuzzleMode(this);
-      this.modes.factory = new Modes.FactoryMode(this);
-      this.modes.factory.catchUp(true);
       this.setTab(this.state.tab || 'play');
       this.refreshWallet();
       this.bindGlobal();
@@ -166,7 +164,6 @@
       if (!VIEWS.includes(id)) id = 'play';
       if (L.Collapse.on) L.Collapse.set(false);
       const prev = this.tab;
-      if (prev === 'factory' && id !== 'factory') this.modes.factory.hide();
       if (prev === 'play' && id !== 'play') this.pausePlay('tab');
       if (prev === 'achievements' && id !== 'achievements') this.achMenu = false;
       this.tab = id;
@@ -179,7 +176,6 @@
       for (const v of document.querySelectorAll('.view')) v.classList.toggle('active', v.dataset.tab === id);
       this.keys && this.keys.setTarget(id === 'play' ? this.modes.play : id === 'puzzle' ? this.modes.puzzle : null);
       if (id === 'puzzle') this.modes.puzzle.show();
-      if (id === 'factory') { this.modes.factory.show(); }
       if (id === 'shop') UI.renderShop(this, this.shopSub);
       if (id === 'stats') UI.renderStats(this, this.statsSub);
       if (id === 'achievements') UI.renderAchievements(this);
@@ -225,8 +221,6 @@
         // ⌘Z undoes like ⌫: once per press (each undo costs an Undo, so a held key never repeats it).
         if ((e.metaKey || e.ctrlKey) && e.code === 'KeyZ' && this.tab === 'puzzle') { if (!e.repeat) this.modes.puzzle.undo(); e.preventDefault(); return; }
         if (e.key === 'Escape' && this.tab === 'play' && this.modes.play.closeTray()) { e.preventDefault(); return; }
-        // On the Factory tab Escape closes a part's card first.
-        if (this.tab === 'factory' && this.modes.factory.key(e)) { e.preventDefault(); return; }
         // A board's controller can take Escape first (Battle: it cancels an aim).
         if (e.key === 'Escape' && this.tab === 'play' && this.modes.play.ctl && typeof this.modes.play.ctl.escape === 'function' && this.modes.play.ctl.escape()) { e.preventDefault(); return; }
         // Nothing else took Escape: in a browser it opens the Play menu (js/menu.js; the native panel hides, as before).
@@ -246,13 +240,13 @@
         const b = e.target && e.target.closest && e.target.closest('button');
         if (b && !b.closest('.modal')) setTimeout(() => b.blur(), 0);
       });
-      document.addEventListener('visibilitychange', () => { if (document.hidden) { this.pausePlay('hidden'); this.saveNow(); L.Music.stop(); } else { this.modes.factory.catchUp(true); setTimeout(() => this.announceUnheard(), 400); } });
+      document.addEventListener('visibilitychange', () => { if (document.hidden) { this.pausePlay('hidden'); this.saveNow(); L.Music.stop(); } else { setTimeout(() => this.announceUnheard(), 400); } });
       root.addEventListener('pagehide', () => this.saveNow());
       root.addEventListener('beforeunload', () => this.saveNow());
       root.addEventListener('resize', () => { this.onResize(); });
       if (root.ResizeObserver) {
         const ro = new ResizeObserver(() => this.onResize());
-        for (const id of ['cv-play', 'cv-puzzle', 'cv-floor']) ro.observe(document.getElementById(id).parentElement);
+        for (const id of ['cv-play', 'cv-puzzle']) ro.observe(document.getElementById(id).parentElement);
       }
       // A trackpad or a keyboard attached or taken away: the background follows (Settings follows on its own).
       L.bus.on('input', () => this.applySettings());
@@ -272,7 +266,7 @@
       L.fromNative = (msg) => {
         if (!msg) return;
         if (msg.type === 'flush') { this.saveNow(); native.post('flushed'); }
-        else if (msg.type === 'shown') { this.focusedAt = performance.now(); this.modes.factory.catchUp(true); setTimeout(() => this.announceUnheard(), 400); }
+        else if (msg.type === 'shown') { this.focusedAt = performance.now(); setTimeout(() => this.announceUnheard(), 400); }
         else if (msg.type === 'toggleTop') { this.settings.onTop = !this.settings.onTop; this.applySettings(); }
         else if (msg.type === 'pointer') { document.body.classList.toggle('away', !msg.inside); if (!msg.inside) this.pointerLeft(); }
         else if (msg.type === 'settings') this.openSettings();
@@ -310,7 +304,7 @@
       const got = L.Achievements.check(this.state, event);
       if (!got.length) return;
       for (const a of got) this.store.addLines(a.pay, 'achievements');
-      // Earned in the background (the factory, the minute check) or rolled up (toasts have nowhere to show): no chime
+      // Earned in the background (the minute check) or rolled up (toasts have nowhere to show): no chime
       // from a hidden window; said on return.
       if (document.hidden || !document.hasFocus() || L.Collapse.on) this.unheard = (this.unheard || []).concat(got);
       else this.announce(got);
@@ -346,7 +340,6 @@
 
     onResize() {
       for (const k of ['play', 'puzzle']) { const v = this.modes[k] && this.modes[k].view; if (v) { v.resize(); v.dirty = true; } }
-      if (this.modes.factory) this.modes.factory.relayout();
       clearTimeout(this.dragTimer);
       this.dragTimer = setTimeout(() => this.postDragRegions(), 120);
     },
@@ -366,22 +359,15 @@
       const dt = this.frameStep || Math.min(0.1, Math.max(0, (t - this.lastTime) / 1000));
       this.lastTime = t;
       this.keys.update(t);
-      // Rolled up, the boards and the floor rest (the factory runs on in second()); a timed board pauses.
+      // Rolled up, the boards rest; a timed board pauses.
       if (L.Collapse.on !== !!this.rolled) { this.rolled = !!L.Collapse.on; if (this.rolled) this.pausePlay('collapse'); }
       if (L.Collapse.on) { /* resting */ }
       else if (this.tab === 'play') this.modes.play.frame(t, dt);
       else if (this.tab === 'puzzle') this.modes.puzzle.frame(t, dt);
-      else if (this.tab === 'factory') {
-        // Every frame in front (a smooth belt); 12 fps behind other windows.
-        this.beltAcc = (this.beltAcc || 0) + dt;
-        const gap = document.hasFocus() ? 0 : 1 / 12;
-        if (this.beltAcc >= gap) { this.modes.factory.frame(t, this.beltAcc); this.beltAcc = 0; }
-      }
       requestAnimationFrame((tt) => this.frame(tt));
     },
 
     second() {
-      this.modes.factory.tick();
       // Time with Lull: counted while the window is in front and was used in the last two minutes.
       const focused = !document.hidden && document.hasFocus();
       if (focused && !L.Collapse.on && performance.now() - (this.lastActivity || 0) < 120000) {
@@ -395,7 +381,6 @@
           if (!pm.ctl || pm.ctl.counts()) bs.playMs = (bs.playMs || 0) + 1000;
         }
         else if (this.tab === 'puzzle') S.puzzle += 1000;
-        else if (this.tab === 'factory') S.factory += 1000;
         this.store.day().ms += 1000;
         this.store.played();
         this.store.dirty = true;
@@ -440,7 +425,6 @@
       check('free play moves and drops', () => { const g = this.modes.play.game; const before = g.s.pieces; this.setTab('play'); this.modes.play.action('left'); this.modes.play.action('drop'); return g.s.pieces === before + 1 || g.over; });
       check('board canvas painted', () => { this.modes.play.view.render(performance.now()); const c = document.getElementById('cv-play'); return c.width > 0 && c.height > 0; });
       check('puzzle tab loads', () => { this.setTab('puzzle'); return !!this.modes.puzzle.puzzle; });
-      check('factory runs', () => { this.setTab('factory'); const f = L.Factory.create(); L.Factory.step(f, 60); return f.stats.made > L.Factory.START_STORE; });
       check('shop and stats render', () => { this.setTab('shop'); this.setTab('stats'); return document.getElementById('stats-body').children.length > 0; });
       check('save serialises', () => JSON.parse(this.store.serialize()).v === L.SAVE_VERSION);
       this.setTab('play');

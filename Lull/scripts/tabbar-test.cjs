@@ -1,6 +1,6 @@
-// The tab bar at the bottom (500 px wide and under; css/lull.css, the end): Play, Puzzles and Factory in a bar along the
-// bottom of the window, the views and the Play menu ending above it, toasts kept off it, rolled up with the rest; wider,
-// back in the title bar. Every place still fits with the bar there — a Relaxed board, Puzzles, the Factory, Mural and
+// The tab bar at the bottom (500 px wide and under; css/lull.css, the end): Play and Puzzles in a bar along the bottom
+// of the window, an even half each, the views and the Play menu ending above it, toasts kept off it, rolled up with the
+// rest; wider, back in the title bar. Every place still fits with the bar there — a Relaxed board, Puzzles, Mural and
 // Battle — at 400 × 700 (a window), 390 × 844 and 320 × 568 (phones), light and dark: nothing under the bar, nothing
 // sideways, the bar's buttons 44 px by touch. Run by browser-test.cjs.
 'use strict';
@@ -25,7 +25,7 @@ const MEASURE = () => {
   const R = (el) => el.getBoundingClientRect();
   const tabs = R(document.getElementById('tabs')), title = R(document.getElementById('titlebar')), view = document.querySelector('.view.active');
   const v = R(view), app = R(document.getElementById('app'));
-  // A view that scrolls (the Factory, where it does not fit) is checked by its own box: its content scrolls inside it.
+  // A view that scrolls is checked by its own box: its content scrolls inside it.
   const scrolls = /auto|scroll/.test(getComputedStyle(view).overflowY);
   const kids = scrolls ? [] : Array.from(view.querySelectorAll(':scope > *, .boardwrap canvas')).filter((e) => e.offsetParent && getComputedStyle(e).display !== 'none' && !e.classList.contains('overlay'));
   const under = kids.filter((e) => R(e).height > 0 && (R(e).bottom > tabs.top + 0.5 || R(e).right > innerWidth + 0.5 || R(e).left < -0.5)).map((e) => e.id || e.className);
@@ -35,6 +35,8 @@ const MEASURE = () => {
     viewEnd: Math.round(tabs.top - v.bottom), under, sideways: document.documentElement.scrollWidth > innerWidth || view.scrollWidth > view.clientWidth + 1,
     minH: Math.round(Math.min(...btns.map((b) => b.height))), minW: Math.round(Math.min(...btns.map((b) => b.width))),
     labels: Array.from(document.querySelectorAll('#tabs .lbl')).filter((l) => l.offsetParent).length,
+    // Balanced: the buttons as wide as each other, and as far in from either end of the bar.
+    even: btns.length > 0 && Math.max(...btns.map((b) => b.width)) - Math.min(...btns.map((b) => b.width)) <= 1 && Math.abs((btns[0].left - tabs.left) - (tabs.right - btns[btns.length - 1].right)) <= 1,
   };
 };
 
@@ -56,17 +58,17 @@ module.exports = async function run({ browser, check, PAGE, OUT }) {
     const rows = [];
     for (const theme of ['dark', 'light']) {
       await p.evaluate((t) => { Lull.app.settings.theme = t; Lull.app.applySettings(); }, theme);
-      for (const place of ['play', 'puzzle', 'factory', 'mural', 'battle']) {
-        if (place === 'puzzle' || place === 'factory') await p.evaluate((t) => { while (Lull.UI.modalOpen()) Lull.UI.closeTopModal(); Lull.app.setTab(t); }, place);
+      for (const place of ['play', 'puzzle', 'mural', 'battle']) {
+        if (place === 'puzzle') await p.evaluate((t) => { while (Lull.UI.modalOpen()) Lull.UI.closeTopModal(); Lull.app.setTab(t); }, place);
         else await p.evaluate(SCENE, place);
         await p.waitForTimeout(500);
         const r = await p.evaluate(MEASURE);
-        const bad = !r.bottom || r.viewEnd < 0 || r.under.length || r.sideways || r.labels !== 3 || (touch && (r.minH < 44 || r.minW < 44));
+        const bad = !r.bottom || r.viewEnd < 0 || r.under.length || r.sideways || r.labels !== 2 || !r.even || (touch && (r.minH < 44 || r.minW < 44));
         rows.push((bad ? 'BAD ' : '') + theme + '/' + place + ' ' + JSON.stringify(r));
         if (OUT) await p.screenshot({ path: path.join(OUT, '75-tabbar-' + w + 'x' + h + '-' + theme + '-' + place + '.png') });
       }
     }
-    check('the tab bar at the bottom, ' + w + '×' + h + (touch ? ' (a phone)' : '') + ': every place fits above it (Play, Puzzles, Factory, Mural, Battle), light and dark',
+    check('the tab bar at the bottom, ' + w + '×' + h + (touch ? ' (a phone)' : '') + ': every place fits above it (Play, Puzzles, Mural, Battle), the two tabs even, light and dark',
       rows.every((x) => !x.startsWith('BAD')), rows.join('\n         '));
 
     // The Play menu is a page between the title bar and the tab bar; a toast stays above the bar.
@@ -78,7 +80,7 @@ module.exports = async function run({ browser, check, PAGE, OUT }) {
       const s = document.querySelector('.scrim.mn-scrim').getBoundingClientRect(), t = document.getElementById('tabs').getBoundingClientRect();
       const out = { gap: Math.round(t.top - s.bottom), top: Math.round(s.top - document.getElementById('titlebar').getBoundingClientRect().bottom) };
       while (Lull.UI.modalOpen()) Lull.UI.closeTopModal();
-      Lull.app.setTab('factory');
+      Lull.app.setTab('puzzle');
       Lull.UI.toast('A note', 'good', 3000);
       await new Promise((r) => setTimeout(r, 50));
       const toast = document.querySelector('#toasts .toast:last-child').getBoundingClientRect();

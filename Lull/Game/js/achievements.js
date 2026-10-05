@@ -5,7 +5,7 @@
   'use strict';
   const L = (root.Lull = root.Lull || {});
 
-  // on: which event checks it ('play' lock, 'classic' lock or game over, 'puzzle' solve, 'factory', or 'any' — any
+  // on: which event checks it ('play' lock, 'classic' lock or game over, 'puzzle' solve, or 'any' — any
   // event, and the app's once-a-minute 'tick').
   // test(state, event) → earned? · progress(state) → [have, need] for the list (optional).
   // Each group is a place to play, coded by colour (css/lull.css: --area-<id>, set on anything with data-area) and by
@@ -18,7 +18,7 @@
     { id: 'classic', name: 'Classic', icon: 'classic' },
     { id: 'puzzle', name: 'Puzzles', icon: 'puzzle' },
     { id: 'lull', name: 'Lifetime', icon: 'lifetime' },
-    { id: 'factory', name: 'Factory', icon: 'factory' },
+    // The Factory's group is shelved with it (Lull/Shelved/factory/factorymode.js); it went here, last.
   ];
 
   // The two Lifetime line counts: the description, the test and the progress all read these.
@@ -143,23 +143,6 @@
     { id: 'lu_days100', group: 'lull', name: 'A Hundred Mornings', desc: 'Play on 100 days.', pay: 400, tier: 'legend', on: 'any', test: (s) => s.stats.days >= 100, progress: (s) => [s.stats.days || 0, 100] },
     { id: 'lu_1m', group: 'lull', name: 'Line Baron', desc: 'Earn ' + fmtN(LU_BARON) + ' lines.', pay: 750, tier: 'legend', on: 'any', test: (s) => earned(s) >= LU_BARON, progress: (s) => [earned(s), LU_BARON] },
     { id: 'lu_all', group: 'lull', name: 'Lull', desc: 'Earn every other achievement.', pay: 1000, tier: 'legend', on: 'any', test: (s) => earnedOthers(s) >= others().length, progress: (s) => [earnedOthers(s), others().length] },
-
-    // Factory — building it out takes a few hours of play; the counts take weeks.
-    { id: 'fac_first', group: 'factory', name: 'First Delivery', desc: 'Deliver a piece to the factory board.', pay: 15, on: 'factory', test: (s) => fst(s).delivered >= 1 },
-    { id: 'fac_hand', group: 'factory', name: 'Line by Line', desc: 'Clear 100 lines on the factory board.', pay: 20, on: 'factory', test: (s) => fst(s).lines >= 100, progress: (s) => [fst(s).lines, 100] },
-    { id: 'fac_store', group: 'factory', name: 'Deep Store', desc: 'Build the biggest store.', pay: 30, on: 'factory', test: (s) => s.factory.storeLevel >= ftop('store'), progress: (s) => [s.factory.storeLevel, ftop('store')] },
-    { id: 'fac_three', group: 'factory', name: 'Three Droppers', desc: 'Build all 3 droppers.', pay: 40, on: 'factory', test: (s) => s.factory.droppers >= 3, progress: (s) => [s.factory.droppers, 3] },
-    { id: 'fac_penta', group: 'factory', name: 'Five Up', desc: 'Deliver a pentomino.', pay: 40, on: 'factory', test: (s) => fst(s).bySize[3] >= 1 },
-    { id: 'fac_belt', group: 'factory', name: 'Express Belt', desc: 'Build the fastest belt.', pay: 40, on: 'factory', test: (s) => s.factory.beltSpeed >= ftop('beltSpeed'), progress: (s) => [s.factory.beltSpeed, ftop('beltSpeed')] },
-    { id: 'fac_crew', group: 'factory', name: 'Full Crew', desc: 'Build all 3 assemblers.', pay: 55, on: 'factory', test: (s) => s.factory.asm.length >= 3, progress: (s) => [s.factory.asm.length, 3] },
-    { id: 'fac_1k', group: 'factory', name: 'A Thousand Pieces', desc: 'Deliver 1,000 pieces.', pay: 60, on: 'factory', test: (s) => fst(s).delivered >= 1000, progress: (s) => [fst(s).delivered, 1000] },
-    { id: 'fac_days30', group: 'factory', name: 'Shift Worker', desc: 'Visit the factory on 30 days.', pay: 60, on: 'factory', test: (s) => fst(s).days >= 30, progress: (s) => [fst(s).days, 30] },
-    { id: 'fac_smooth', group: 'factory', name: 'Smooth Running', desc: 'Keep the factory running smoothly for an hour in all.', pay: 75, on: 'factory', test: (s) => fst(s).smoothMs >= 3600e3, progress: (s) => [Math.floor(fst(s).smoothMs / 60e3), 60] },
-    { id: 'fac_all', group: 'factory', name: 'Fully Built', desc: 'Build every factory upgrade.', pay: 175, on: 'factory', test: (s) => !!L.Factory && L.Factory.maxed(s.factory) },
-
-    { id: 'fac_days100', group: 'factory', name: 'Old Hand', desc: 'Visit the factory on 100 days.', pay: 325, tier: 'legend', on: 'factory', test: (s) => fst(s).days >= 100, progress: (s) => [fst(s).days, 100] },
-    { id: 'fac_10k', group: 'factory', name: 'Ten Thousand Pieces', desc: 'Deliver 10,000 pieces.', pay: 350, tier: 'legend', on: 'factory', test: (s) => fst(s).delivered >= 10000, progress: (s) => [fst(s).delivered, 10000] },
-    { id: 'fac_mountain', group: 'factory', name: 'Mino Mountain', desc: 'Drop 50,000 minos.', pay: 450, tier: 'legend', on: 'factory', test: (s) => fst(s).made >= 50000, progress: (s) => [fst(s).made, 50000] },
   ];
 
   /** The board's numbers after this lock (its hand counts: see freshStats in js/engine.js). */
@@ -200,8 +183,6 @@
   /** Lines earned for the Lifetime ones, less what an Undo took back (replaying a clear would count it twice). */
   const earned = (s) => Math.max(0, s.stats.lines.earned - s.stats.lines.rewound);
 
-  const fst = (s) => s.factory.stats;
-  const ftop = (kind) => (L.Factory ? L.Factory.topOf(kind) : 99);
   function wildIds() { return L.Puzzles ? Object.keys(L.Puzzles.MODS) : []; }
   const usedItems = (g) => Object.values(g.s.items || {}).some((n) => n > 0);
   const itemsTried = (s) => L.ITEM_ORDER.filter((id) => (s.stats.items.used[id] || 0) > 0).length;
@@ -210,7 +191,7 @@
   const today = (s) => (s.history || {})[L.dateKey()] || {};
   const dailiesToday = (s) => ['E', 'M', 'H'].filter((d) => (today(s).dailies || '').includes(d)).length;
   const triathlon = (s) => ['quad', 'cquad', 'hard'].filter((k) => today(s)[k]).length;
-  // Everything the shop sells for lines (factory rewards and the free starters aside).
+  // Everything the shop sells for lines (the Factory's rewards and the free starters aside).
   const forSale = () => Object.keys(L.COSMETICS || {}).flatMap((k) => Object.keys(L.COSMETICS[k]).filter((id) => L.COSMETICS[k][id].price > 0 && !L.COSMETICS[k][id].reward).map((id) => [k, id]));
   const cosmeticsOwned = (s) => forSale().filter(([k, id]) => (s.owned[k] || []).includes(id)).length;
   // The two that count the others leave each other out.
@@ -219,7 +200,7 @@
 
   /**
    * Checks the achievements an event could earn; books the new ones (with the time) and returns them.
-   * event: { mode: 'play' | 'classic' | 'puzzle' | 'factory', … }
+   * event: { mode: 'play' | 'classic' | 'puzzle', … }
    */
   function check(state, event) {
     const got = state.achievements || (state.achievements = {});
