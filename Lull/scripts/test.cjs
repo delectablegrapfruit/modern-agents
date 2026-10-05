@@ -15,6 +15,8 @@ const L = load([
   'classic.js',
   // The Watch bot (js/bot.js): its search, worth, choice, mistakes and hands, headless.
   'bot.js',
+  // Training: Classic with a coach that takes a poor set back (js/training.js), headless.
+  'training.js',
   'versus.js',
   'race.js',
   'battle.js',
@@ -3553,14 +3555,14 @@ console.log('play menu');
   const mk = (recipe, w, h, seed, n) => { const g = new Game({ w, h, recipe: R.normalize(recipe), seed }); for (let i = 0; i < (n || 0); i++) g.drop(); return g; };
   test('Solo and Multiplayer: Race and Battle boards are Multiplayer, every other board (and a broken recipe) Solo', () => {
     assert.deepStrictEqual(['race', 'battle'].map((m) => Library.side(R.normalize({ mode: m }))), ['multi', 'multi']);
-    assert.deepStrictEqual(['plain', 'classic', 'descent', 'mural'].map((m) => Library.side(R.normalize({ mode: m }))), ['solo', 'solo', 'solo', 'solo']);
+    assert.deepStrictEqual(['plain', 'classic', 'training', 'descent', 'mural'].map((m) => Library.side(R.normalize({ mode: m }))), ['solo', 'solo', 'solo', 'solo', 'solo']);
     assert.strictEqual(Library.side(R.normalize({ shapes: { preset: 'tiny' }, mods: { mirror: true } })), 'solo');
     assert.strictEqual(Library.side(null), 'solo');
     assert.strictEqual(Library.side('race'), 'solo');
     // A past board's thin recipe says the same.
     assert.strictEqual(Library.side(R.thin(R.normalize({ mode: 'battle' }))), 'multi');
     // The menu's two lists are the same split.
-    assert.deepStrictEqual(Menu.SOLO.map((x) => x.mode), ['plain', 'classic', 'descent', 'mural']);
+    assert.deepStrictEqual(Menu.SOLO.map((x) => x.mode), ['plain', 'classic', 'training', 'descent', 'mural']);
     assert.deepStrictEqual(Menu.MULTI.map((x) => x.mode), ['race', 'battle']);
     assert(Menu.SOLO.every((x) => Library.side(R.normalize({ mode: x.mode })) === 'solo') && Menu.MULTI.every((x) => Library.side(R.normalize({ mode: x.mode })) === 'multi'));
   });
@@ -4333,6 +4335,10 @@ require('./classic-unit.cjs')({ L, test });
 // Watch: the bot that plays Classic, headless (scripts/bot-unit.cjs; the long soak is scripts/bot-soak.cjs).
 console.log('watch bot');
 require('./bot-unit.cjs')({ L, test });
+
+// Training: the coach's judgement, the way back, Hint after, the explanation, nothing counted (scripts/training-unit.cjs).
+console.log('training');
+require('./training-unit.cjs')({ L, test });
 
 // Race, a board mode, and its AI (scripts/race-unit.cjs).
 console.log('race');

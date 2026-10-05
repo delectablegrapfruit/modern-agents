@@ -28,7 +28,8 @@ module.exports = async function menuTests({ browser, check, PAGE, OUT }) {
     const shot = async (name) => { if (OUT) await page.screenshot({ path: path.join(OUT, name + '.png') }); };
     const press = async (sel) => {
       if (!touch) { await page.click(sel); await page.waitForTimeout(60); return; }
-      const b = await page.$(sel); const r = await b.boundingBox();
+      // (A finger scrolls to what is below the fold first: Solo's tiles run past it on the smallest phone.)
+      const b = await page.$(sel); await b.scrollIntoViewIfNeeded(); const r = await b.boundingBox();
       await page.touchscreen.tap(r.x + r.width / 2, r.y + r.height / 2); await page.waitForTimeout(90);
     };
     return { ctx, page, ev, tag, shot, press };
@@ -205,7 +206,7 @@ module.exports = async function menuTests({ browser, check, PAGE, OUT }) {
     await page.click('.modal-menu .mn-solo');
     const solo = await ev(() => [...document.querySelectorAll('.modal-menu .mn-tiles .mn-tile')].map((b) => b.querySelector('b').textContent));
     const backX = await ev(() => { const hd = document.querySelector('.modal-menu header'), b = hd.querySelector('.mn-back'), x = hd.querySelector('.x'); return !b.hidden && b.getBoundingClientRect().right < x.getBoundingClientRect().left; });
-    check('Solo: a tile a mode, Relaxed, Classic, Descent, Mural, then Custom; Back and the X at the top', solo.join() === 'Relaxed,Classic,Descent,Mural,Custom' && backX, solo.join());
+    check('Solo: a tile a mode, Relaxed, Classic, Training, Descent, Mural, then Custom; Back and the X at the top', solo.join() === 'Relaxed,Classic,Training,Descent,Mural,Custom' && backX, solo.join());
     await page.click('.modal-menu [data-mode="custom"]');
     const cp = await ev(() => ({ page: document.querySelector('.modal-menu').dataset.page, title: document.querySelector('.modal-menu header .ttl').textContent, text: document.querySelector('.modal-menu .body').textContent, rows: document.querySelectorAll('.modal-menu .mn-preset').length, focus: document.activeElement && document.activeElement.className }));
     check('Custom is a page: New custom game (focused), Presets 0 of 12, a word on what a custom game is', cp.page === 'custom' && cp.title === 'Custom' && /New custom game/.test(cp.text) && /0 of 12/.test(cp.text) && /not saved\. It ends when you leave it/.test(cp.text) && cp.rows === 0 && /mn-newcustom/.test(cp.focus), JSON.stringify(cp));

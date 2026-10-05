@@ -53,12 +53,12 @@ or Esc on the Play tab in a browser when nothing else takes it (a tray, Battle's
 tucks the window away, and closes the menu when it is open). It never opens by itself: at start, after a reload and on
 a tab switch the game in play is shown exactly as it was. It is a page over the Play tab (below the title bar, above
 the tab bar on a phone; the board waits, as under any window), and its home holds only two big tiles side by side,
-**Solo** (Relaxed, Classic, Descent, Mural, then Custom) and **Multiplayer** (Race and Battle, against the computer),
+**Solo** (Relaxed, Classic, Training, Descent, Mural, then Custom) and **Multiplayer** (Race and Battle, against the computer),
 each a calm picture, its name and one short line. The X at the top right closes it, back to the game in play as it
 was; so does Esc, from any page. Solo and Multiplayer are pages of big tiles too, one a mode (its picture, name and a
 line; Custom a low dashed tile across the row), with Back beside the X. A mode opens a short setup with only its own
 settings, the Custom window's own controls: Relaxed its size presets and shapes (Custom shapes are in Custom), Classic
-its type and settings, Descent its level and stage, Mural its picture (Photo too) and level, Race and Battle the
+its type and settings, Training Classic's and the coach's (see Training), Descent its level and stage, Mural its picture (Photo too) and level, Race and Battle the
 opponent and Standard or Frantic (each a few rule sets, one drawn for every new game: see Race and Battle; the kept
 game's set is named over Continue). Each mode's last setup is kept (`boards.menu` in the save); a mode's setup first takes that
 mode's settings last chosen in the Custom window, with Normal shapes and no modifier. Back steps back a page (focus on
@@ -66,7 +66,7 @@ where it came from); Enter on a button presses it, elsewhere it is the page's ma
 more by touch, nothing scrolls sideways, the home never scrolls and its tiles stay side by side, at 520 × 760,
 900 × 700, 390 × 844 and 320 × 568, light and dark, and under reduced motion nothing moves (`scripts/menu-test.cjs`).
 
-*One game a mode* (`js/library.js`, the save's `boards`) — Relaxed, Classic, Descent, Mural, Race and Battle each keep
+*One game a mode* (`js/library.js`, the save's `boards`) — Relaxed, Classic, Training, Descent, Mural, Race and Battle each keep
 exactly one game. The one in play is the save's `free` (its mode is `boards.cur`); the others wait in `boards.games`,
 each exactly as it was left: cells, the piece in play and where it was (a T turned into its slot still spins, an I
 brought out of hold is still one), hold, the queue, the bag and the random stream (it goes on with the same pieces it
@@ -838,6 +838,51 @@ rests) it plays on at every speed; on Retro lock and the retro random it loses a
 frames a row, and from two frames a row (where a hand tapping 15 a second gets a piece only a few columns before it
 lands) it soon tops out, as people mostly do. A row a frame sets each piece faster than any hand moves it (the pieces a
 second there are the fall's, not its own). Unrestrained plays on to the kill screen.
+
+### Training
+A mode (`js/training.js`, its controller, setup and drawing `js/trainingview.js`): Classic with a coach. It plays by
+Classic's rules exactly (its setup is Classic's: type, start level, Next, randomizer, lock timing, music, drop, hold,
+shadow, level lock; pieces fall by the level's gravity), and after each piece you set it judges the placement with the
+Watch bot's eye (`Bot.rank` over the board, the piece, Hold and the Next pieces the setup shows, as they were when the
+piece appeared; a beam of ten, three deep, every spot a piece can rest on in reach), thought out a couple of
+milliseconds a frame while the piece falls, so it is ready when the piece is set. Where the board you left stands
+among the ranked ones gives its *loss*: how far its value falls short of the best's (the bot's units: a hole costs
+about six to nine). A placement that loses more than Strictness allows is taken back:
+
+| Strictness | Taken back from a loss of | What that catches (measured over 720 bot-played positions, every placement of each piece) |
+|---|---|---|
+| Gentle | 12 | clear blunders: nearly every new hole (5% of those lose under 14.5, the median 35) and the clearly needless height (a placement two rows or more higher than the best, no new hole: its median is 17) |
+| Standard (the default) | 7 | any new hole, most needless height, a rough top or a well filled early (half of the placements with neither a hole nor height lose 5.7 or more) |
+| Strict | 3 | anything notably below the best; a near equal stays (the best and the second best are a median 1.4 apart) |
+
+*Taken back* — the piece goes back up to where it appeared, drawn moving there for 300 ms (the keys, the mouse and touch
+wait meanwhile), and the game is exactly as it was when it appeared: the board, score, lines and level, Hold, Next, the
+bag and the random stream (so the same pieces come after), Classic's lock and gravity timers afresh; then you try the
+same piece again. With reduced motion it is back at once, under a brief soft flash. A placement kept plays on as in
+Classic (its sound, its clears, the level's callout). A placement that tops out is taken back too when it was a poor
+one; only a kept one ends the game.
+
+*Hint after* (1–5 tries, default 3) — once the same piece has been taken back that many times in a row, its best spot is
+outlined on the board (a calm outline in the accent with a faint fill, apart from the landing shadow; "Hold" over it
+when the best is the piece Hold brings in), until the piece is placed well. A good placement or a new piece clears the
+count.
+
+*Explanation* (off by default) — after a piece is taken back, the board shows why the best spot is better, in pictures
+and at most two words (`Bot.explain`'s features of both boards): where yours went (a faint dashed outline), the holes it
+covered (small rings), the rows the best one clears (a soft band), the well it keeps open (a soft column), how much higher
+yours stands (two short ticks at the side), and the words: "2 holes", "Clears 4", "Keep well", "+3 high" (or "Flatter"
+when it is only a bumpier top). They stay until the piece is placed.
+
+The coach's three settings are in the Training setup (Menu ▸ Solo ▸ Training, under the rules) and kept in Settings
+(`trainStrict`, `trainHint`, `trainExplain`), so they apply at once, to the game kept too ("The rules apply to a new game;
+the coach at once."). Under the board: a quiet *Training*, the counters (placed, first try once something is placed: the
+share placed well at the first try, rewinds) and Pause; the status bar shows Score, Level and Lines. The end card says
+not counted, with the counters, and Play again.
+
+A Training game is kept as Training's one game (Continue, New game; its turn, tries and counters with it: `x.training`
+in the save), and counts toward nothing: no Stats (time included), bests, past boards, achievements, the day's log or
+control hints, no lines banked, never Classic's game. It is made from the menu only, never in the Custom window. Tests:
+`scripts/training-unit.cjs` (run by test.cjs) and `scripts/training-test.cjs` (run by browser-test.cjs).
 
 ### Descent
 A mode (`js/descent.js`, its controller, look and window `js/descentview.js`): a second stack hangs upside down from

@@ -1,0 +1,18 @@
+/* Lull — Training (js/trainingview.js): its bar under the board (a quiet "Training", the counters, Pause), its cards,
+   and the coach's settings in the Training setup. */
+.itembar.tr-bar { flex-wrap: wrap; column-gap: 10px; row-gap: 4px; padding: 4px 6px; }
+.tr-label { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: center; column-gap: 10px; row-gap: 2px; min-height: 30px; padding: 0 4px; color: var(--muted); font-size: var(--fs-sm); font-weight: 600; }
+.tr-label > .ico { width: 15px; height: 15px; display: grid; }
+.tr-nm { white-space: nowrap; margin-left: -4px; }
+.tr-ns { display: inline-flex; flex-wrap: wrap; justify-content: center; column-gap: 10px; row-gap: 2px; font-weight: 500; }
+.tr-n { white-space: nowrap; color: var(--faint); }
+.tr-n b { color: var(--fg); font-weight: 640; font-variant-numeric: tabular-nums; }
+.itembar.tr-bar .btn[disabled] { opacity: 0.5; }
+@media (max-width: 400px) { .tr-nm { display: none; } .tr-label { column-gap: 8px; } .tr-ns { column-gap: 8px; } }
+@media (max-width: 340px) { .tr-label > .ico { display: none; } .tr-bar .btn .ico { display: none; } }
+
+.card .tr-sum, .card .tr-sub { color: var(--muted); font-size: var(--fs-sm); }
+
+.tr-setup { display: flex; flex-direction: column; gap: 12px; }
+.tr-coach { padding-top: 10px; border-top: 1px solid var(--line); }
+.tr-coach .tr-explain { width: 100%; }

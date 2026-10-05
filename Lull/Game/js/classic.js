@@ -30,7 +30,8 @@
   /** The modern lock delay: half a second, renewed by a move or a turn up to 15 times. */
   const LOCK = { delay: 0.5, resets: 15 };
 
-  const on = (r) => !!r && r.mode === 'classic';
+  /** Classic's rules are on: a Classic board, or Training (js/training.js: Classic with a coach). */
+  const on = (r) => !!r && (r.mode === 'classic' || r.mode === 'training');
 
   /**
    * Retro timing: frames a row (NTSC, 60.0988 frames a second) by level 0, 1, 2, ... of the 8-bit era's speed table:
@@ -225,13 +226,13 @@
     key: 'classic', order: 45, mode: 'classic', owns: ['classic'],
     options: { 'classic.rand': ['bag', 'retro'] },
     normalize(raw, out) {
-      if (out.mode !== 'classic') return;
+      if (!on(out)) return;
       out.classic = normalizeK(raw.classic);
     },
     label: (r, short) => {
       if (!on(r)) return '';
       const k = r.classic;
-      return 'Classic ' + TYPE_NAMES[k.type] + (short ? '' : ' · Level ' + k.level + (k.levelLock ? ' (locked)' : '') + (k.type === 'b' && k.height ? ' · Height ' + k.height : ''));
+      return (r.mode === 'training' ? 'Training ' : 'Classic ') + TYPE_NAMES[k.type] + (short ? '' : ' · Level ' + k.level + (k.levelLock ? ' (locked)' : '') + (k.type === 'b' && k.height ? ' · Height ' + k.height : ''));
     },
     rules(r, R) {
       if (!on(r)) return;

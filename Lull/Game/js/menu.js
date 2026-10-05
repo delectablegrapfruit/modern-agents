@@ -1,13 +1,14 @@
 // Lull — the Play menu (PlayMode.openMenu): a page over the Play tab, opened only by hand (the Menu button under the
 // board, or Esc in a browser) and never by itself. Its home is two big tiles side by side:
-//   Solo         Relaxed, Classic, Descent, Mural, then Custom
+//   Solo         Relaxed, Classic, Training, Descent, Mural, then Custom
 //   Multiplayer  Race and Battle, against the computer
 // The X at the top right (or Esc) closes it: back to the board in play, as it was. Solo and Multiplayer are pages of
 // big tiles too, one a mode, with Back beside the X.
 // Each mode keeps one game (js/library.js). A mode opens a short setup with only that mode's settings (the parts' own
 // controls, from Recipe.uiPart: a level row, a panel, presets, chips). With a game kept, Continue (the primary: Enter)
 // resumes it where it was left and New game replaces it with one of these settings (after asking, when it was played);
-// with none, Start. Classic has Watch beside it (the computer plays, js/watch.js). Race and Battle offer an opponent and
+// with none, Start. Training's setup is Classic's with the coach's settings under it (those are Settings: they apply at
+// once, to the game kept too). Classic has Watch beside it (the computer plays, js/watch.js). Race and Battle offer an opponent and
 // Standard or Frantic, each a few rule sets one of which every new game draws (js/versus.js); the kept game's set is
 // named over the buttons. Each mode's last setup is kept (state.boards.menu) and applies to its next new game.
 // Custom is a page of its own: New custom game (the Custom window, js/modes.js openNewBoard) and the presets saved
@@ -26,11 +27,12 @@
     solo: svg(blk(4, 1.5, 4) + blk(4, 6, 4) + blk(4, 10.5, 4) + blk(8.5, 10.5, 4)),
     multi: svg(blk(1.25, 3.5, 3) + blk(1.25, 6.75, 3) + blk(1.25, 10, 3) + blk(4.5, 10, 3) + blk(11.75, 3.5, 3) + blk(11.75, 6.75, 3) + blk(11.75, 10, 3) + blk(8.5, 10, 3)),
   };
-  const ICON_OF = { plain: 'play', classic: 'classic', descent: 'descent', mural: 'mural', race: 'race', battle: 'battle', custom: 'newBoard' };
+  const ICON_OF = { plain: 'play', classic: 'classic', training: 'training', descent: 'descent', mural: 'mural', race: 'race', battle: 'battle', custom: 'newBoard' };
 
   const SOLO = [
     { mode: 'plain', name: 'Relaxed', line: 'Endless, no clock' },
     { mode: 'classic', name: 'Classic', line: 'Pieces fall, levels rise' },
+    { mode: 'training', name: 'Training', line: 'Classic, with a coach' },
     { mode: 'descent', name: 'Descent', line: 'Break the stack that comes down' },
     { mode: 'mural', name: 'Mural', line: 'Build a picture, piece by piece' },
   ];
@@ -57,9 +59,11 @@
    */
   function setupOf(B, mode) {
     const R = L.Recipe, kept = B && B.menu && B.menu[mode];
+    // (The key a mode's settings are kept under: its own, or Classic's for Training.)
+    const own = mode === 'training' ? 'classic' : mode;
     let raw = kept && kept.recipe && typeof kept.recipe === 'object' ? clone(kept.recipe) : { mode };
-    if (!kept && mode !== 'plain' && B && B.recipe && B.recipe.mode === mode && B.recipe[mode]) raw = { mode, [mode]: clone(B.recipe[mode]) };
-    const keep = { v: 1, mode, [mode]: raw[mode] };
+    if (!kept && mode !== 'plain' && B && B.recipe && B.recipe.mode === mode && B.recipe[own]) raw = { mode, [own]: clone(B.recipe[own]) };
+    const keep = { v: 1, mode, [own]: raw[own] };
     if (mode === 'plain' && raw.shapes && raw.shapes.preset !== 'custom') keep.shapes = raw.shapes;
     // Race and Battle: the opponent and a tempo (Standard first); the set is drawn when a game is made.
     if (MULTI.some((x) => x.mode === mode)) {
@@ -93,8 +97,8 @@
     return P && P.setText ? P.setText({ recipe: L.Recipe.normalize(json.recipe) }) : '';
   }
 
-  /** Has anything been played on a kept game (a piece set, or it ended)? Only then is there a game to continue. */
-  const played = (json) => !!json && typeof json === 'object' && (!!(json.s && json.s.pieces) || !!json.over || !!json.ended);
+  /** Has anything been played on a kept game (a piece set, or taken back in Training, or it ended)? Only then is there a game to continue. */
+  const played = (json) => !!json && typeof json === 'object' && (!!(json.s && json.s.pieces) || !!json.over || !!json.ended || !!(json.x && json.x.training && json.x.training.rewinds));
 
   /** A board's mode in words, short: "Relaxed" (and its shapes or modifiers), else its recipe's label ("Classic A"). */
   function modeLabel(recipe) {
@@ -183,7 +187,7 @@
       const m = setup.mode, u = uiOf(m);
       if (m === 'plain') return [presets(STANDARD_PRESETS()), shapeChips()];
       if (m === 'race' || m === 'battle') return [levelRow('Opponent'), L.Versus ? tempoRow() : presets((u && u.presets && u.presets(setup.recipe)) || STANDARD_PRESETS())];
-      if (m === 'classic') return [levelRow('Type'), panel()];
+      if (m === 'classic' || m === 'training') return [levelRow('Type'), panel()];
       if (m === 'descent') return [levelRow('Level'), panel()];
       return [panel()];
     };
@@ -289,7 +293,7 @@
         return {
           title: name, back: Library.side(setup.recipe) === 'multi' ? 'multi' : 'solo',
           body: [h('div', { class: 'nb-body mn-setup', 'data-mode': m }, ...setupControls().filter(Boolean), why,
-            kept ? h('p', { class: 'mn-note' }, 'These settings apply to a new game.') : null)],
+            kept ? h('p', { class: 'mn-note' }, m === 'training' ? 'The rules apply to a new game; the coach at once.' : 'These settings apply to a new game.') : null)],
           foot: [h('div', { class: 'mn-btns' },
             // The kept game's rule set, over Continue.
             rules ? h('p', { class: 'mn-kept' }, 'This game: ' + rules) : null,

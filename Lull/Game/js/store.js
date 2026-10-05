@@ -190,6 +190,9 @@
         touch: true, touchSens: 5, touchFlick: 1, tapTurn: 'sides', haptics: true,
         watchMistakes: 'off', // Watch (Classic, js/watch.js): how often the bot errs: 'off', 'rare', 'some', 'often'
         watchStyle: 'human', // and how it plays: 'human' (a top player's pace and reach) or 'unrestrained' (no human limit)
+        // Training's coach (js/training.js): how poor a placement it takes back ('gentle', 'standard', 'strict'), the tries
+        // on one piece before its best spot is shown (1–5), and whether it draws why (Explanation).
+        trainStrict: 'standard', trainHint: 3, trainExplain: false,
       },
       tab: 'play',
       free: null, // the game in play (Game.toJSON), of the mode boards.cur

@@ -16,6 +16,8 @@
     play: svg(blk(1.5, 8.5) + blk(6, 8.5) + blk(10.5, 8.5) + blk(6, 4)),
     puzzle: svg(blk(2, 2, 5.5, 1.2) + blk(8.5, 2, 5.5, 1.2) + blk(2, 8.5, 5.5, 1.2) + '<rect x="9.25" y="9.25" width="4" height="4" rx="0.9" stroke-width="1.5" opacity="0.9"/>'),
     factory: svg('<path d="M1.75 14.25V7.4l3.9-2.35V7.4l3.9-2.35V7.4l2.2-1.3V1.75h2.5v12.5z" fill="currentColor" stroke="none"/>'),
+    // Training: Classic's, the other way: back up to where the piece appeared (dashed).
+    training: svg('<rect x="6" y="1.25" width="4" height="4" rx="0.9" stroke-width="1.1" stroke-dasharray="1.4 1.2"/>' + blk(1.5, 10.75, 4, 0.9) + blk(6, 10.75, 4, 0.9) + blk(10.5, 10.75, 4, 0.9) + '<path d="M8 9.1V6.6M6.75 7.85 8 6.6l1.25 1.25" stroke-width="1.3"/>'),
     classic: svg(blk(6, 1.25, 4, 0.9) + '<path d="M8 6.5v2.4M6.75 7.9 8 9.15l1.25-1.25" stroke-width="1.3"/>' + blk(1.5, 10.75, 4, 0.9) + blk(6, 10.75, 4, 0.9) + blk(10.5, 10.75, 4, 0.9)),
     stats: svg('<rect x="2.25" y="8.25" width="2.75" height="5.5" rx="1"/><rect x="6.625" y="2.25" width="2.75" height="11.5" rx="1"/><rect x="11" y="5.25" width="2.75" height="8.5" rx="1"/>'),
     // Lifetime (the achievements across every place): an hourglass.

@@ -373,8 +373,10 @@
     second() {
       // Time with Lull: counted while the window is in front and was used in the last two minutes.
       const focused = !document.hidden && document.hasFocus();
-      // (Watching the bot play is not time played: no day, no clock, js/watch.js.)
-      const watching = this.tab === 'play' && !!this.modes.play.watch;
+      // (Watching the bot play is not time played: no day, no clock, js/watch.js. Nor is Training, but for the board's own
+      // Played time, js/trainingview.js.)
+      const pm0 = this.modes.play, watching = this.tab === 'play' && !!pm0.uncounted;
+      if (focused && watching && !pm0.watch && !L.Collapse.on && pm0.ctl.counts() && performance.now() - (this.lastActivity || 0) < 120000) pm0.game.s.playMs = (pm0.game.s.playMs || 0) + 1000;
       if (focused && !watching && !L.Collapse.on && performance.now() - (this.lastActivity || 0) < 120000) {
         const S = this.state.stats.timeMs;
         S.total += 1000;

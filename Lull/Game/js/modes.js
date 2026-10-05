@@ -86,13 +86,15 @@
 
     get settings() { return this.app.store.state.settings; }
     get reduced() { return this.app.reducedMotion(); }
+    /** Play that is nobody's (a watched game): the control hints and the counters leave it alone. */
+    get uncounted() { return !!this.watch; }
 
     attachGame(game, view) {
       this.game = game;
       this.view.attach(game, view);
       this.view.setLook(this.app.look());
       this.view.resize();
-      game.on('lock', (r) => { if (r.special !== 'settle') { this.setAt = this.now(); if (this.app.hints && !this.watch) this.app.hints.lock(); } this.onLock(r); });
+      game.on('lock', (r) => { if (r.special !== 'settle') { this.setAt = this.now(); if (this.app.hints && !this.uncounted) this.app.hints.lock(); } this.onLock(r); });
       game.on('blocked', () => { if (this.quiet) return; this.app.sound.play('blocked'); this.view.bump(this.reduced); });
       game.on('spawn', () => {
         // A new piece meets the pointer where it is.
@@ -154,8 +156,8 @@
       this.view.dirty = true;
       // Keys are in charge until the mouse moves again (so arrows work with the pointer resting on the board).
       if (!this.mouseActing && !this.touchActing) { this.lastInput = 'key'; this.view.pointerCol = null; this.rawCol = null; }
-      // (A watched game's keys are the bot's: never the player's habits, js/watch.js.)
-      if (this.app.hints && prevPiece && !this.watch) this.app.hints.action(this, { act, a: asked, ok, rep: !!rep, mouse: !!this.mouseActing, touch: !!this.touchActing, piece: prevPiece, set: (a === 'drop' || a === 'lower') && g.piece !== prevPiece });
+      // (A watched game's keys are the bot's, a Training game's are practice: never the player's habits, js/watch.js.)
+      if (this.app.hints && prevPiece && !this.uncounted) this.app.hints.action(this, { act, a: asked, ok, rep: !!rep, mouse: !!this.mouseActing, touch: !!this.touchActing, piece: prevPiece, set: (a === 'drop' || a === 'lower') && g.piece !== prevPiece });
       if (this.afterAction) this.afterAction(a);
       return ok;
     }
@@ -508,11 +510,14 @@
       app.store.on('items', () => { this.renderItems(); if (this.cardOpen && this.game.over) this.onTopout(true); });
     }
 
+    /** Play that counts toward nothing: a watched game (js/watch.js), or a board whose controller says so (Training). */
+    get uncounted() { return !!this.watch || !!(this.ctl && this.ctl.uncounted); }
+
     snapshot() { this.lastS = { holds: this.game.s.holds, rotations: this.game.s.rotations, moves: this.game.s.moves, lowers: this.game.s.lowers, drops: this.game.s.drops }; }
 
     syncCounters() {
-      // A watched game's moves are nobody's (js/watch.js).
-      if (this.watch) { this.snapshot(); return; }
+      // A watched game's moves are nobody's (js/watch.js), and a Training game's are practice (js/trainingview.js).
+      if (this.uncounted) { this.snapshot(); return; }
       const F = this.app.store.state.stats.free;
       for (const k of Object.keys(this.lastS)) {
         const d = this.game.s[k] - this.lastS[k];
@@ -822,9 +827,11 @@
     /** Stats ▸ Free Play's log of past boards: every game that ended or was replaced, with something played on it. */
     logBoard(s, reason, size) {
       if (!s || !s.pieces) return;
+      size = size || this.game;
+      // (A board that counts toward nothing is no past board: Training, R.uncounted.)
+      if (L.Recipe && size.recipe && L.Recipe.rules(size.recipe, size.w).uncounted) return;
       const F = this.app.store.state.stats.free, now = Date.now(), m = Library.summarize(s, now);
       F.boardLog = F.boardLog || [];
-      size = size || this.game;
       const entry = { at: now, reason: reason || 'manual', w: size.w, h: size.h, life: m.life, playMs: m.playMs, pieces: m.pieces, lines: m.lines, score: m.score, quads: m.quads, twists: m.twists, perfect: m.perfect, maxCombo: m.maxCombo, chain: m.chain, items: Object.values(m.items).reduce((a, b) => a + b, 0) };
       // A board of another recipe than the default keeps it (thin: Recipe.thin), for its label in Past boards.
       if (L.Recipe && size.recipe && !L.Recipe.isDefault(size.recipe)) entry.recipe = L.Recipe.thin(size.recipe);
@@ -859,7 +866,7 @@
       const seed = this.newSeed();
       if (L.Recipe && r) { const d = L.Recipe.deal(r, z0, new L.RNG((seed ^ 0x5e75e7) >>> 0)); r = d.recipe; z0 = d.size; }
       const z = Library.clampSize(z0, r);
-      this.app.store.state.stats.free.boards++;
+      if (!(L.Recipe && r && L.Recipe.rules(r, z.w).uncounted)) this.app.store.state.stats.free.boards++;
       this.setGame(new Game({ w: z.w, h: z.h, recipe: r, seed, previewCount: this.settings.preview }));
     }
 
@@ -1048,7 +1055,8 @@
       };
       /** The modifiers a part brings (options mods.k), in the recipe's order. */
       const mods = () => R.MODS.filter((k) => R.options().some((o) => o.path === 'mods.' + k));
-      const modes = () => (R.options().find((o) => o.path === 'mode') || { values: ['plain'] }).values;
+      // (A mode made from the menu only, custom: false, is not one of them: Training.)
+      const modes = () => (R.options().find((o) => o.path === 'mode') || { values: ['plain'] }).values.filter((m) => !R.parts().some((p) => p.mode === m && p.custom === false));
       const tabValue = (k) => {
         if (k === 'shapes') {
           const u = uis().find((x) => x.value);

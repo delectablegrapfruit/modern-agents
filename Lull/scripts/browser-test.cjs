@@ -2132,13 +2132,17 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   const top = await ev(() => {
     const m = Lull.app.modes.play, g = m.game;
     g.board.cells.fill(0); g.replacePiece({ id: 'O' });
-    for (let y = 0; y < 18; y++) for (let x = 0; x < 9; x++) g.board.set(x, y, 8);
+    // (A stack with no column open to the top: with one open column, a Relaxed piece that has no room where it appears
+    // is fitted down into it, clears rows, and the board might never fill, whatever the queue dealt.)
+    for (let y = 0; y < 18; y++) for (let x = 0; x < 10; x++) if (x !== (y * 3) % 10) g.board.set(x, y, 8);
     let guard = 0;
     while (!g.over && guard++ < 50) g.drop();
-    const card = document.querySelector('#play-overlay .card');
-    return { over: g.over, text: card ? card.textContent : '', btns: card ? Array.from(card.querySelectorAll('button')).map((b) => b.textContent) : [] };
+    return { over: g.over, mode: g.recipe && g.recipe.mode, w: g.w, h: g.h, guard };
   });
-  check('a full board offers Menu and New game', top.over && /Board full/.test(top.text) && top.btns.includes('Menu') && top.btns.includes('New game'), JSON.stringify(top.btns));
+  // Its card, once it is up (read when it is, not on the same tick).
+  await page.waitForFunction(() => /Board full/.test((document.querySelector('#play-overlay .card') || {}).textContent || ''), null, { timeout: 3000 }).catch(() => {});
+  Object.assign(top, await ev(() => { const card = document.querySelector('#play-overlay .card'); return { text: card ? card.textContent.slice(0, 40) : '', btns: card ? Array.from(card.querySelectorAll('button')).map((b) => b.textContent) : [] }; }));
+  check('a full board offers Menu and New game', top.over && /Board full/.test(top.text) && top.btns.includes('Menu') && top.btns.includes('New game'), JSON.stringify(top));
   await shot('77-topout');
   // The Board full card's Undo follows the shared count (used or given in Puzzles or by a gift), shown as Puzzles shows
   // it: none held, its price (scripts/undo-test.cjs pays it every way there is).
@@ -3326,6 +3330,8 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await require('./menu-test.cjs')({ browser, check, PAGE, OUT });
   // ---- Watch: the bot plays Classic through the board's actions; your keys kept off it; Take over; nothing counted (watch-test.cjs)
   await require('./watch-test.cjs')({ browser, check, PAGE, OUT });
+  // ---- Training: Classic with a coach; a poor set taken back, Hint after, Explanation, nothing counted (training-test.cjs)
+  await require('./training-test.cjs')({ browser, check, PAGE, OUT });
   // ---- Shapes: the chips, Custom and its picker, a board of picks, the trays and the fit on a phone (shapes-browser-test.cjs)
   await require('./shapes-browser-test.cjs')({ browser, check, PAGE, OUT });
   // ---- Physics: the window, live bodies, knocks, a clear, Rewind 5 s, the full card, a phone (physics-browser-test.cjs)
