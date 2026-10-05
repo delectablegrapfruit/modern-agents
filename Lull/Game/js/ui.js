@@ -2,7 +2,7 @@
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
-  const { fmt, fmtInt, fmtDuration, pct, Render, Pieces, ITEMS, ITEM_ORDER, COSMETICS, COSMETIC_LABELS, ACCENTS, Puzzles, Factory } = L;
+  const { fmt, fmtInt, fmtDuration, pct, Render, Pieces, ITEMS, ITEM_ORDER, COSMETICS, COSMETIC_LABELS, ACCENTS, Puzzles } = L;
   const { LINE } = L;
 
   // ---- DOM helper ---------------------------------------------------------------------------------------------------
@@ -349,7 +349,7 @@
     const go = (k) => { if (COSMETICS[k] && k !== kind) { app.sound.play('move'); renderShop(app, k); } };
     const step = (d) => go(kinds[at + d]);
 
-    const cat = COSMETICS[kind], ids = Object.keys(cat);
+    const cat = COSMETICS[kind], ids = Object.keys(cat).filter((id) => L.inShop(kind, id, st.owned[kind]));
     const owned = ids.filter((id) => app.store.owns(kind, id)).length;
     const tiles = ids.map((id) => {
       const c = cat[id], own = app.store.owns(kind, id), on = st.equipped[kind] === id;
@@ -460,7 +460,6 @@
 
   // ---- statistics -----------------------------------------------------------------------------------------------------
 
-  function count(n) { return n < 1000 ? fmtInt(Math.floor(n)) : fmt(n); }
   function kpi(v, l) { return h('div', { class: 'kpi' }, h('div', { class: 'v' }, v), h('div', { class: 'l' }, l)); }
   function table(rows, cls) { return h('table', { class: 'st ' + (cls || '') }, rows.map((r) => h('tr', null, r.map((c) => h('td', null, c))))); }
   function hbars(items, colorFn) {
@@ -672,7 +671,7 @@
   function renderStats(app, sub) {
     const tabs = document.getElementById('stats-tabs');
     const body = document.getElementById('stats-body');
-    const subs = [['overview', 'Overview'], ['free', 'Free Play'], ['classic', 'Classic'], ['puzzle', 'Puzzles'], ['factory', 'Factory'], ['items', 'Shop']];
+    const subs = [['overview', 'Overview'], ['free', 'Free Play'], ['classic', 'Classic'], ['puzzle', 'Puzzles'], ['items', 'Shop']];
     tabs.replaceChildren(...subs.map(([k, label]) => h('button', { 'aria-selected': String(k === sub), onclick: () => { app.statsSub = k; renderStats(app, k); } }, label)));
     const st = app.store.state, S = st.stats;
     const look = lookWith(app);
@@ -685,14 +684,14 @@
         kpi(fmtInt(S.lines.earned), 'Lines earned'),
         kpi(fmtInt(S.free.lines), 'Lines cleared'),
         kpi(fmtInt(solvedAll), 'Puzzles solved'),
-        kpi(count(st.factory.stats.delivered), 'Pieces delivered'),
+        kpi(fmtInt(S.classic.games), 'Classic games'),
         kpi(fmtDuration(S.timeMs.total), 'Time played'),
         kpi(fmtInt(S.sessions), 'Sessions'),
         kpi(fmtInt(S.days || 0), 'Days played')));
       els.push(h('h4', null, 'Lines earned · 14 days'), historyChart(app, 'lines', 14));
-      els.push(h('h4', null, 'Lines by source'), hbars([['Free Play', S.lines.play], ['Combos', S.lines.combos || 0], ['Puzzles', S.lines.puzzles], ['Factory', S.lines.factory], ['Achievements', S.lines.achievements || 0]]));
+      els.push(h('h4', null, 'Lines by source'), hbars([['Free Play', S.lines.play], ['Combos', S.lines.combos || 0], ['Puzzles', S.lines.puzzles], ['Achievements', S.lines.achievements || 0]]));
       els.push(h('h4', null, 'Time by mode'), table([
-        ['Free Play', fmtDuration(S.timeMs.play)], ['Classic', fmtDuration(S.timeMs.classic || 0)], ['Puzzles', fmtDuration(S.timeMs.puzzle)], ['Factory', fmtDuration(S.timeMs.factory)],
+        ['Free Play', fmtDuration(S.timeMs.play)], ['Classic', fmtDuration(S.timeMs.classic || 0)], ['Puzzles', fmtDuration(S.timeMs.puzzle)],
       ]));
     } else if (sub === 'classic') {
       const C = S.classic;
@@ -749,17 +748,6 @@
       const modRows = Object.keys(Puzzles.MODS).map((m) => { const r = pz.mods[m] || { seen: 0, solved: 0 }; return [h('span', null, icon('mod-' + m), Puzzles.MODS[m].name), r.solved + ' / ' + r.seen]; });
       els.push(h('h4', null, 'Wildcards · solved / seen'), table(modRows));
       els.push(h('h4', null, 'Puzzles solved · 14 days'), historyChart(app, 'puzzles', 14));
-    } else if (sub === 'factory') {
-      const f = st.factory, fs = f.stats;
-      els.push(h('div', { class: 'kpis three' },
-        kpi(fmtInt(Factory.linesOf(fs.paid)), 'Lines earned'), kpi(fmtInt(fs.lines), 'Board lines cleared'), kpi(fmtInt(fs.delivered), 'Pieces delivered'),
-        kpi(fmtInt(fs.made), 'Minos dropped'), kpi(fmtInt(fs.sold), 'Minos sold'), kpi(fmtInt(fs.best), 'Most lines at once')));
-      els.push(h('h4', null, 'Pieces delivered by size'), hbars(Factory.SIZES.map((n, i) => [Factory.NAMES[n] + 's', fs.bySize[i] || 0])));
-      const rows = [
-        ['Days visited', fmtInt(fs.days)], ['Pieces built while away', fmtInt(fs.away)],
-        ['Time running smoothly', fmtDuration(fs.smoothMs)], ['Lines spent', fmtInt(fs.spent)], ['Time watched', fmtDuration(S.timeMs.factory)],
-      ];
-      els.push(h('h4', null, 'Totals'), table(rows));
     } else {
       const got = S.items.got, bought = S.items.bought, used = S.items.used;
       els.push(h('div', { class: 'kpis' }, kpi(fmtInt(S.lines.spent), 'Lines spent'), kpi(fmtInt(S.cosmetics.bought), 'Cosmetics'),
@@ -769,7 +757,7 @@
         ITEM_ORDER.map((id) => h('tr', null, h('td', null, icon('item-' + id), ITEMS[id].name), h('td', null, fmtInt(bought[id] || 0)), h('td', null, fmtInt(got[id] || 0)), h('td', null, fmtInt(used[id] || 0)), h('td', null, fmtInt(st.inventory[id] || 0)))),
         // Free hints from the daily gift: given and used, never bought.
         Object.keys(L.FREEBIES).map((id) => { const f = L.FREEBIES[id]; return h('tr', null, h('td', null, icon(f.icon), 'Free ' + f.name.toLowerCase()), h('td', null, '—'), h('td', null, fmtInt(got[id] || 0)), h('td', null, fmtInt(used[id] || 0)), h('td', null, fmtInt((st.freebies || {})[f.key] || 0))); })));
-      const ownedRows = Object.keys(COSMETICS).map((k) => [COSMETIC_LABELS[k], st.owned[k].length + ' / ' + Object.keys(COSMETICS[k]).length]);
+      const ownedRows = Object.keys(COSMETICS).map((k) => [COSMETIC_LABELS[k], st.owned[k].length + ' / ' + Object.keys(COSMETICS[k]).filter((id) => L.inShop(k, id, st.owned[k])).length]);
       els.push(h('h4', null, 'Collection'), table(ownedRows));
     }
     body.replaceChildren(...els);

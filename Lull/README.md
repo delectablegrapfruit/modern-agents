@@ -9,23 +9,23 @@ tinted or solid background inside a distinct border. ⌥⌘L shows and hides it 
 same game runs in any browser from `Game/index.html`, and on iPhone and iPad from the Home Screen, offline
 ([iPhone and iPad](#iphone-and-ipad)).
 
-**Title bar** — left to right: the places to play (Play, Puzzles, Factory) in one recessed track; empty bar to
+**Title bar** — left to right: the places to play (Play, Puzzles) in one recessed track; empty bar to
 drag the window by; the places to look (Stats, Achievements) as quiet icons; the wallet, which is also the Shop's
 button (it lights up while the Shop is open); the speaker and Settings; the collapse chevron; and in the app, float on
 top, hide and quit.
-⌘1–⌘6 run in that order, the wallet last. (Classic is no longer a tab: it is a board mode, [Classic](#classic).) The tab you are on is a raised pill with its icon in the accent colour. Labels
-give way as the window narrows — all three play tabs named, then only the one you are on, then icons alone (Stats and
+⌘1–⌘5 run in that order, the wallet last. (Classic is no longer a tab: it is a board mode, [Classic](#classic).) The tab you are on is a raised pill with its icon in the accent colour. Labels
+give way as the window narrows — both play tabs named, then only the one you are on, then icons alone (Stats and
 Achievements are named only in a wide window) — and every control's tooltip is its name and key, nothing more (what a place is, you find by going there;
 no button carries a line of explanation or a key cap), so nothing wraps or crowds, down to the app's 400 px minimum (and 300 px in a browser).
 
 **Tab bar** — at 500 px wide and under (where the title bar above already gives up naming the places to play, and
-every phone held upright is narrower), Play, Puzzles and Factory leave the title bar for a bar along the bottom of
-the window, in reach of a thumb: three equal buttons, each its icon over its name (44 px tall by touch), the one you
+every phone held upright is narrower), Play and Puzzles leave the title bar for a bar along the bottom of
+the window, in reach of a thumb: two equal buttons, half the bar each, each its icon over its name (44 px tall by touch), the one you
 are on raised. The views, the Play menu's page and toasts end above it; in a Safari tab it runs to the screen's edge
 with its buttons clear of the home indicator (`env(safe-area-inset-bottom)`), and from the Home Screen the whole
 window already sits above it. With the places to play gone from it, the title bar shows Lull's name again. Wider (a
 520 px window keeps its board's height) the places to play stay in the title bar as above; rolled up, the tab bar
-goes with everything but the title bar. Every place fits above it — a board, Puzzles, the Factory, Mural, Battle — at 400 × 700, 390 × 844 and 320 × 568,
+goes with everything but the title bar. Every place fits above it — a board, Puzzles, Mural, Battle — at 400 × 700, 390 × 844 and 320 × 568,
 light and dark (`scripts/tabbar-test.cjs`).
 
 ## Play
@@ -163,8 +163,8 @@ never starts over, whatever is retired or deleted. Everything else about a board
 achievements ("no power-ups on the board", "on one board", Old Growth's age) and its share of the power-ups paid every
 two hundred lines (the save's per-board Earn record is parked with the board, so leaving and coming back never pays a
 milestone twice). Lifetime totals count play once, whichever board it was on, and switching adds nothing. There is no
-duplicate: a copy would be a way to replay a board's future. The daily gift, the factory and the control hints do not
-look at boards at all.
+duplicate: a copy would be a way to replay a board's future. The daily gift and the control hints do not look at boards
+at all.
 
 **Classic** — a board mode ([Classic](#classic) under Board options: New board ▸ Mode ▸ Classic), played on the Play tab like any board; what follows is how it plays with its settings at their defaults. Plain falling blocks: pieces fall, faster every ten
 lines (the modern speed curve), half-second lock delay, lowering and dropping, hold (once per piece), game over, best
@@ -285,80 +285,9 @@ both ways, solved, which Daily) and refuses a bad one in place; History has coun
 play. History, and Stats ▸ Puzzles, end with one quiet line — "37 of 12,884,901,888 puzzles solved" (doubled with
 Counter-clockwise puzzles on); each difficulty button's tooltip gives its own share of 4,294,967,296.
 
-**Factory** — one fixed line, drawn whole from the first day and the same size ever after, filling the tab (between the
-title bar and the tab bar on a phone, with no scrolling): three dropper spots over two mino conveyors, three assembler
-spots under them, the store and its sign down the right, the belt winding down the screen, and the board at the bottom.
-A spot not bought yet is dashed, with + and its price. There is no list of upgrades: everything is bought on the parts
-themselves. Each part is a real button (Tab, Enter, Escape all work, 44 px or more by touch); tapping one opens a small
-card anchored to it with its upgrade (what changes, the price, Buy; quiet while the wallet is short). Every box's header
-row shows its progress on the left and its upgrade's price tag on the right (dimmed while you can't afford it); the
-belt's tag sits inside its first loop.
-
-- **Droppers** (one to three; an empty spot adds one, 8 then 45): each drops a single grey mino every 12 s onto the top
-  conveyor (10, 8 and 6.5 s as they are sped up, 30, 100, 200 — bought on any dropper).
-- **The top conveyor** carries minos right, at a steady 8 units a second and a gap apart, into the store at its own
-  height and up the upper half of the store's left column. At the top each mino crosses over the pile and drops like
-  sand into the lowest column (ties go to the column nearest the lift).
-- **The store** holds 21 minos (42, 70, 98 as it grows: 7 columns × 3, 6, 10, 14 rows, unlocked from the bottom; the rows
-  not bought yet are hatched; 10, 25, 40). When it is full the top conveyor backs up to its door, the droppers wait and
-  the sign turns amber. Its card also sells every mino in it at the loose rate (two points a mino, twenty to a line).
-- **The outlet**: a hopper at the bottom lets a mino out only while an assembler still needs one, so nothing rides past
-  them all. The bottom mino of the column nearest the lift that has any slides into the lower lift, and that column
-  settles down a cell; a mino falling into a column it passes under waits on it. The lower lift pushes it up and out
-  through the store's wall onto the lower conveyor, which runs left over the assemblers (the two lifts never cross: the
-  top conveyor comes in above where the lower one leaves).
-- **Assemblers** (one to three; 5, 25, 90 on an empty spot): an assembler takes the mino meant for it as it passes and
-  it hops down into it. It sets the minos it receives one at a time (8 s each, then 2 s to finish): grey when received,
-  the piece's colour once set, no outline of what is to come. Dominoes at first; trominoes, tetrominoes, pentominoes as
-  the pieces grow (10, 60, 160, bought on any assembler; a piece with no minos yet changes at once). The finished piece
-  drops down the chute onto the belt right below, once there is room there.
-- **The belt** is full length from the first day: under the assemblers running left, then four runs down the screen. The
-  whole ride takes about 90 s (60, 40 and 25 s as it is sped up: 30, 60, 100). Pieces keep a gap and queue at its end
-  while the board is busy.
-- **The board** (27 × 18) plays every piece itself, like a skilled player: the piece comes down the chute to the top,
-  turns a step at a time, slides a column at a time and drops, a faint outline showing where it will land. Its player
-  scores every place (Dellacherie's features: landing height, eroded cells, row and column transitions, holes, wells;
-  plus rows with a hole and how deep each hole is buried, and a steep guard near the top) and looks one piece ahead
-  (the next on the belt, or the one an assembler will finish first) over its eight best places. Pieces are grown a mino
-  at a time from the factory's seed, as the concept grew them; shapes, colours and ties are all deterministic. It never
-  tops out (`scripts/test.cjs` plays 20,000 pentominoes and 20,000 mixed pieces tick by tick: worst stack 10 of 18; a
-  full line ran 135,000 pentominoes without one); should it ever, the board quietly empties and plays on.
-- **Lines pay straight into the wallet** — no Collect. Each cell carries its piece's worth a mino (a domino 2.5 points, a
-  tromino 3, a tetromino 3.5, a pentomino 4; forty points to a line), and a full line flashes (not under reduced motion)
-  and pays its cells; two, three, four, five or more at once pay ×1.25, ×1.5, ×2, ×2.5.
-
-Prices (⦵, each kind in order): dropper 8, 45; dropper speed 30, 100, 200; store 10, 25, 40; assembler 5, 25, 90; piece
-size 10, 60, 160; belt speed 30, 60, 100 — 998 in all. Every number lives in one frozen block, `Factory.TUNE` in
-`js/factory.js`, beside the floor's one geometry (`Factory.GEO`, 360 × 622 units, which the view scales to fit and
-centres, giving any spare height to the chutes above and below the belt).
-
-**Nobody around**: while Lull is hidden, or left untouched for ten minutes, the line runs on — the board keeps playing
-and paying — for an hour (`TUNE.AWAY_H`), then rests until you are back. Time away is replayed on return with the very
-same ticks as on screen (quarter-second ticks on an integer clock; any slicing of the same time gives exactly the same
-line, and a month away replays in a fraction of a second, since the line rests after the hour). On the Factory tab the
-replay is simply there; elsewhere a toast says how many lines the factory cleared and what they paid.
-
-**Balance** (`scripts/test.cjs` and `scripts/econ-test.cjs` measure it on the real line): minos ride to the far
-assembler in about half a minute, so assemblers and piece size drive the income. A line left to itself makes about 8
-lines an open hour with one assembler and about 80 fully built (about 100 when the store is sold whenever it fills),
-under half of casual Standard play. A full factory on a casual day (half an hour open, the rest away) brings about 136
-lines, about 0.6 of that day's play; over a casual career it is about a third of all income and every cosmetic is owned
-at about 52 hours.
-
-**The sign**: beside the belt, a 16 × 7 dot matrix with no words: chevrons running right, faster the busier the line is
-(green), amber and still while it is stuck (a dropper waiting on a full store); a mood is held a moment so a passing
-wait never flickers. Tapping it shows the board's lifetime lines in dots for about four seconds (up to 9999 in full,
-then "12k"), then the chevrons come back; the count is kept in the save. Under reduced motion it is one still frame,
-the treads stand and movers step with the line instead of gliding. A screen reader hears its mood ("Factory running
-smoothly", "Factory working", "Factory held up: the store is full", "Factory idle") and "Show lifetime lines".
-
-Everything that happens is drawn as it happens: a mino dropping onto the conveyor, riding it, rising in a lift, crossing
-over the pile and falling into its column, sliding out of the outlet, hopping down into an assembler; a piece down a
-chute to the belt and along it, down into the board; the full line's flash and its pay rising softly over the board.
-Building the first assembler, the third dropper, the third assembler and the fastest belt, and delivering 500 pieces,
-unlock the factory's cosmetics. Stats ▸ Factory counts lines earned, board lines cleared, pieces delivered (by size),
-minos dropped and sold, the most lines at once, days visited, the pieces built while away and the time the line ran
-smoothly. The save's factory is version 9; any other version starts a new factory.
+**Factory** — shelved for now: no tab, nothing running, nothing earned. Its code waits in `Shelved/factory/` (the line,
+its floor, its mode, its achievements and its rules, with what to put back where); a save that has a factory keeps it
+untouched. Its five reward looks are left out of the Shop unless a save already owns one.
 
 **Power-ups** (items, in the code) — single-use, in five types on the bar under the Relaxed board. A type's button
 (with how many you hold) opens its tray; click one to use it (Esc closes the tray). There are no number keys for them.
@@ -434,7 +363,7 @@ the board, so on Upside Down and Sideways boards things fall toward its floor; s
 It is all for show — the board is already final, so the next piece is never kept waiting — mostly over in about 0.7 s,
 with fixed pools of bodies and particles; Reduced motion turns it into plain fades. Shapes beyond the seven (a Noodle, a Giant, a Blueprint drawing, a mirrored odd shape) turn wherever there is room: when no kick fits, a turn that would poke past the ceiling, floor or a wall is nudged back in by exactly that much (if the way in is clear), and one that would dip into the stack is stood on it or slid off the block beside it, never out of a well or through blocks. The seven keep plain Lull kicks, and puzzles keep exactly the turns they were built with.
 
-**Shop** — click the wallet (or ⌘6). Cosmetics only (power-ups are not sold), one kind at a time: a row of kinds (←/→ step
+**Shop** — click the wallet (or ⌘5). Cosmetics only (power-ups are not sold), one kind at a time: a row of kinds (←/→ step
 while it has focus) picks which — when it does not fit, a chevron at each end pages it a visible width at a time,
 snapped to whole kinds, dimmed at each end, never picking one — and only that
 kind's tiles are shown — the list scrolls within the kind, never on into the next; the Shop reopens on the kind you
@@ -443,11 +372,11 @@ The catalogue is short on purpose, every item distinct:
 
 | Kind | Items (price ⦵) |
 |---|---|
-| Palettes | Classic (free), Mist 400, Sunset 600, Aurora 850, Ink 1,100, Moss 1,400, Gold Leaf 2,800, Prism 5,000 (its hues glide round the wheel, a turn in 45 s), Assembly Line (factory) |
-| Mino skins | Flat (free), Bevel 350, Pixel 550, Bubble 750, Glass 1,000, Gummy 1,250, Neon Tube 1,600, Gem 2,100, Lantern 2,800, Steel (factory) |
-| Frames | Hairline (free: the well's own rim), Inlay 300, Glow 650, Brass 1,200, Rainbow 2,500 (a slow ring of spectrum, a turn in 12 s), Hazard Tape (factory) |
-| Backdrops | Plain and Grid (free), Blueprint 350, Dusk 700, Aurora 1,200 (three veils of light drifting on long periods), Starfield 1,700 (the bright stars twinkle), Conveyor (factory; its treads slide) |
-| Line clears | Fade (free), Sparkle 450, Ripple 850, Bloom 1,300, Welding Sparks (factory) |
+| Palettes | Classic (free), Mist 400, Sunset 600, Aurora 850, Ink 1,100, Moss 1,400, Gold Leaf 2,800, Prism 5,000 (its hues glide round the wheel, a turn in 45 s) |
+| Mino skins | Flat (free), Bevel 350, Pixel 550, Bubble 750, Glass 1,000, Gummy 1,250, Neon Tube 1,600, Gem 2,100, Lantern 2,800 |
+| Frames | Hairline (free: the well's own rim), Inlay 300, Glow 650, Brass 1,200, Rainbow 2,500 (a slow ring of spectrum, a turn in 12 s) |
+| Backdrops | Plain and Grid (free), Blueprint 350, Dusk 700, Aurora 1,200 (three veils of light drifting on long periods), Starfield 1,700 (the bright stars twinkle) |
+| Line clears | Fade (free), Sparkle 450, Ripple 850, Bloom 1,300 |
 | Shadows | Outline (free), Soft 200, Dotted 300, Glow 450, Off |
 | Sounds | Drift (free), Chiptune 450, Marimba 650, Analog Synth 900, Glass 1,200, Wind Chimes 1,600 |
 
@@ -459,8 +388,7 @@ chime stirring, soft sine plucks that darken as they ring, round bell tones, slo
 clears, a warm felt note and soft sub when a piece sets and a low thoom for booms; no clicks on the way in, never
 brighter than the music, all in its A minor (and anything played that has no sound of its own yet gets a quiet pluck)
 — Chiptune coins and power-ups, rolling Marimba, Analog Synth stabs, ringing Glass, Wind Chimes — all synthesized,
-each with its own clears; its preview is a Listen button); a few are factory rewards (the first assembler, the third
-dropper, the third assembler, the fastest belt, 500 pieces delivered), marked with a lock and what earns them on hover. A tile says In use, Use (click it, or the tile) or its price, dimmed when you cannot afford it. Buying
+each with its own clears; its preview is a Listen button). A tile says In use, Use (click it, or the tile) or its price, dimmed when you cannot afford it. Buying
 is two clicks on the same spot — the price turns into Confirm for three seconds — and a new cosmetic goes straight on.
 
 **Look** — one small design system (`css/lull.css`, its tokens at the top): a midnight-ink dark and a porcelain light
@@ -483,19 +411,19 @@ the item bar is one recessed track with a segment per power-up type. Text everyw
 and its number, no prose.
 
 **Achievements** — 107 quiet milestones that pay ⦵ lines, in their own tab: a small toast when one is earned, nothing
-more (one earned in the background, by the factory or the once-a-minute check, or while rolled up, is told when you
+more (one earned in the background, by the once-a-minute check, or while rolled up, is told when you
 come back, not chimed from a hidden window). The toast is a button: a click (or Enter once it has focus) opens the tab on
 that achievement — the filter set to show it, its group open, the row scrolled into the middle of the list and lit for
 a moment (held still under reduced motion); "N achievements while you were away" opens the tab at Recent. Pointed at, a
 toast waits (up to twice its time); focused, it waits. With mouse control on a live board a click is a drop, so there a
 toast takes the pointer only once it has rested on it a moment; with a dialog open it lets clicks through. Other toasts
 are only notes. The tab opens on three figures (Earned 12 / 105, Lines earned, Lines available) and folds them into Free Play,
-Classic, Puzzles, Lifetime and Factory (each header keeps its count, a bar and lines earned / available; each row its
+Classic, Puzzles and Lifetime (each header keeps its count, a bar and lines earned / available; each row its
 name, a plain description such as "Clear 4 lines with one piece. No power-ups on the board.", its pay and the date
 earned), easiest first, with a filter for all, to do or earned; the slow ones show their progress. Left of the filter,
 Recent: the latest earned (its icon and name; *Latest*, then the star alone, as the window narrows) goes to it, and its chevron lists the
 last six, newest first, with how long ago (`now`, `12 min`, `5 h`, `3 d`, then the date); it is not there until one is
-earned. The toast, Recent and its list all go through one function (`UI.showAchievement`). Each place has its own quiet colour and its tab's icon — Free Play sea-glass teal, Classic olive, Puzzles orchid, Factory copper, Lifetime a neutral slate (`--area-*` in `lull.css`, deep inks in light, each at least 4.5:1 on its tint, apart from the accent and the gold for colour-blind eyes too) — on the group's header and bar, each row's badge, bar and pay, Recent and the toast; a legendary one stays gold (`--gold-ink` for its words), with a dot of its place's colour. None is a
+earned. The toast, Recent and its list all go through one function (`UI.showAchievement`). Each place has its own quiet colour and its tab's icon — Free Play sea-glass teal, Classic olive, Puzzles orchid, Lifetime a neutral slate (`--area-*` in `lull.css`, deep inks in light, each at least 4.5:1 on its tint, apart from the accent and the gold for colour-blind eyes too) — on the group's header and bar, each row's badge, bar and pay, Recent and the toast; a legendary one stays gold (`--gold-ink` for its words), with a dot of its place's colour. None is a
 gimme — the easiest is a quad with no power-ups on the board (15 ⦵) — and 150 pieces of ordinary play earn nothing new, nor do 150 with a
 few items used along the way (a test plays both, at a relaxed piece every three seconds).
 
@@ -516,29 +444,27 @@ one board (Showman), a board of 60 blocks or more emptied by one power-up (Clean
 
 Medium ones (50–100 ⦵): a spotless clear with no power-ups on the board, a mini twist double, a 10-combo, a twist triple on gold, four quads in a row, Allegro,
 the perfect-clear opener (within a fresh board's first ten pieces, no items), Showman; a Hard puzzle first try
-without hints or undo, all three Dailies on their day, or a quad, a Classic quad and a Hard puzzle in one day; 1,000
-pieces delivered by the factory, or an hour of it running smoothly. Hard ones (100–200 ⦵): eight streak, three spotless clears,
+without hints or undo, all three Dailies on their day, or a quad, a Classic quad and a Hard puzzle in one day. Hard ones (100–200 ⦵): eight streak, three spotless clears,
 100 line-clearing twists (all with no power-ups on the board), 250,000 points never using a power-up, Clean Sweep, Tinkerer, forty lines in a
 fresh board's first hundred pieces with nothing left over, every item used; in Classic a spotless clear, a twist
 triple, a 10-combo, eight streak, level 10 without hold, 40 lines in 90 s or 40 lines of quads alone; a Hard
 puzzle first try in under 20 s, twenty first-try solves in a row, 100 Hard puzzles; 50,000 lines in all, 30 days
-played. Thirty-two are legendary (250–1,000 ⦵): a chain of 20 with no power-ups on the board, Presto, a spotless clear with a twist, ten
+played. Twenty-nine are legendary (250–1,000 ⦵): a chain of 20 with no power-ups on the board, Presto, a spotless clear with a twist, ten
 quads in a row, five gold clears on a chain of 20, ten spotless clears or 5,000 lines on one board, a million
 without items; Classic level 25, a 15-combo, 40 lines in 50 s, level 20 without hold, a Classic million; every
 wildcard on Hard, a Daily thirty days in a row, a hundred first-try solves in a row; a hundred hours or a hundred days
 with Lull, everything the shop sells, half a million lines earned (undone lines aside, since an undone clear replayed would count
-twice); 10,000 factory pieces delivered or 50,000 minos
-dropped, a hundred days collecting — and *Lull*, every other one. They read the stats below plus a few kept for them: the
+twice) — and *Lull*, every other one. They read the stats below plus a few kept for them: the
 board's hand counts (`freshStats` in `js/engine.js`: whether there are power-ups on the board, and the streak,
 combo, quads in a row, chain, line-clearing twists, twist triples and spotless clears without them, gold clears on a
 chain of 20, and the last 101 such pieces' times), Classic's own clock (running time only), undos per puzzle, runs of first-try solves (a retry, hint,
 fail, skipped or abandoned puzzle ends one) and of Dailies on consecutive dates (each solved on its day), Hard solves per wildcard, days played (a day counts once you
-play in front, not when the factory runs alone), Classic games (one counts once it has run a minute or cleared ten
+play in front), Classic games (one counts once it has run a minute or cleared ten
 lines, so a quick restart is not a game), and the
 day log's quad (set by a piece: a laser or a Tornado is not one) / Classic quad / Hard puzzle / Dailies. Lifetime ones are also checked once a minute.
 
 **Stats** — lines by source and day (play, combos, puzzles …), combos found, clears, twists, combos, pieces per minute, inputs per piece, puzzle solves
-and first-try rates by difficulty and wildcard, factory output and shapes pressed, power-ups bought, given and used (and free hints given and used), time by mode.
+and first-try rates by difficulty and wildcard, power-ups bought, given and used (and free hints given and used), time by mode.
 
 ## Board options
 
@@ -665,8 +591,8 @@ listed shapes' turns for their share of a round, 19 for the share drawn fresh, c
 turns is quicker to place (bars and squares alone drop where they appear, a press a piece), so Tiny pays about half,
 the I alone a tenth. With that, no set pays more a piece than Standard, nor more a press than Standard (than Normal on
 4 × 8, the fastest board of the seven, on a board under 10 × 20): `scripts/shapes-test.cjs` plays every preset, 12
-blocks, clusters, Big mixes and sets of bars and squares (with a few clusters too) with a bot and holds them to it. Board shapes never count
-toward the Factory; there are no new achievements.
+blocks, clusters, Big mixes and sets of bars and squares (with a few clusters too) with a bot and holds them to it. There are no new
+achievements.
 
 ### Mirror
 A line runs down the middle of the well, and the piece in play has a copy: its reflection across the line (x →
@@ -1262,9 +1188,9 @@ murals finished, pieces placed, by level, from photos.
 | ↓ | lower one row; on the stack, a fresh press sets the piece (holding never does) |
 | Space | hard drop (for 0.18 s after a piece is set, Space, a click and the ↓ that sets are ignored, so a double press never drops the next piece unseen; moving and turning still work, and Classic's gravity never waits) |
 | ↑ / X, Z, A | turn clockwise, counter-clockwise, 180° |
-| C / Shift | hold; again to swap back (Free Play and Puzzles: as often as you like). On the Factory tab, Escape closes a part's card |
+| C / Shift | hold; again to swap back (Free Play and Puzzles: as often as you like). |
 | ⌫ / U, R, N, H | undo, retry, next puzzle, hint |
-| ⌘1–⌘6, ⌘, | tabs (⌘6 the Shop), settings |
+| ⌘1–⌘5, ⌘, | tabs (⌘5 the Shop), settings |
 | ⌘J | collapse into the title bar, or expand (so does a double-click on the empty bar) |
 | P | pause a Classic, Race or Battle board (Space or P starts and resumes it) |
 | S, Shift+S | Race: send the piece in play, or the first Next piece (a Race board holds with Shift when it is let go alone) |
@@ -1281,7 +1207,7 @@ By touch alone Settings ▸ Keys is Settings ▸ Gestures, and lists the gesture
 
 ## Touch
 
-Tabs change only by a tap on them (or ⌘1–⌘6): a sideways swipe never changes tab.
+Tabs change only by a tap on them (or ⌘1–⌘5): a sideways swipe never changes tab.
 
 On a phone or a tablet the board is played with one finger, anywhere on it (`js/touch.js` reads the gestures;
 `BoardMode.bindTouch` in `js/modes.js` carries them out through the same `action()` as the keys):
@@ -1334,7 +1260,7 @@ pool of 512 glyphs, drawn from one small atlas per colour). Nothing is drawn und
 are your palette and skin, softened, each cell a device-resolution sprite at its exact sub-pixel place; each fades in
 at the left and fades out before the expand button. The logic runs on a fixed 60 Hz tick of bar time (the same at any
 frame rate); the drawing comes every display frame, paced to whole frames so the travel is even, stops while hidden,
-and holds one still frame with no rain under reduced motion. Classic pauses, the factory runs on. Collapsed, it
+and holds one still frame with no rain under reduced motion. Classic pauses. Collapsed, it
 resizes only sideways (dragging the edge, the pieces keep their places and travel on, and meetings a wider bar brings
 are agreed then), and it opens back to the height it had, across launches too. Both ways it starts from where the
 window is now: collapsing keeps its top and left edges wherever it has been moved, the bar can be dragged anywhere, and
@@ -1344,7 +1270,7 @@ beside it.
 
 **Mute** — the speaker in the title bar (between the wallet and Settings, on every tab), M, or Settings ▸ Sound ▸ Mute:
 one switch, kept in sync everywhere and saved. It ramps a gain that sits after everything else to zero in 50 ms, so
-effects, Classic music (notes already ringing too), the announcer, factory sounds and Listen previews all fall silent
+effects, Classic music (notes already ringing too), the announcer and Listen previews all fall silent
 at once without a click; the Sound effects, Classic music and Announcer toggles and every volume are left as they
 were, so unmuting brings back exactly what you had. Muted, the speaker shows a small cross in a soft amber wash. M works
 over open windows too (never while typing in a text field), and Listen says it is muted rather than playing nothing.
@@ -1384,8 +1310,8 @@ cd Lull && swift run          # the same, straight from the package
 
 open Lull/Game/index.html     # any browser, any OS (saves to localStorage)
 
-node Lull/scripts/test.cjs            # game logic: 750 puzzles replayed through the engine, turns, items, factory, board library, save, economy
-node Lull/scripts/econ-test.cjs       # the economy against models of play: bots on the engine, puzzles, the factory, a career (test.cjs runs it)
+node Lull/scripts/test.cjs            # game logic: 750 puzzles replayed through the engine, turns, items, board library, save, economy
+node Lull/scripts/econ-test.cjs       # the economy against models of play: bots on the engine, puzzles, a career (test.cjs runs it)
 node Lull/scripts/golden.cjs          # the golden identity run: a default board plays lock for lock as recorded (--write records it)
 node Lull/scripts/bot-soak.cjs 200 300   # Watch's bot: 200 seeded Classic games to 300 lines on four processes: lines, Quads, Twists, top outs
 node Lull/scripts/browser-test.cjs    # the page played in headless Chromium (needs Playwright), then touch-, device-, undo-, retired- and tabbar-test
@@ -1468,9 +1394,10 @@ The address is shown on the `pages` job and under Settings ▸ Pages.
 
 | Path | |
 |---|---|
-| `Game/` | the game: `index.html`, `manifest.webmanifest`, `sw.js` (the offline copy), `icons/` (the Home Screen icons), `css/`, and `js/` — `webapp` (the Home Screen app: the worker, its updates, lasting storage), `icons` (the one SVG icon set), `pieces` (the seven tetrominoes and Lull's kicks, pentominoes, big and custom shapes, polyomino enumeration, ids that rebuild themselves), `board` (the grid and the one table of cell bits), `recipe` (the board recipe: its parts, rules and limits), `engine` (the floating-piece rules, every item and the recipe's hooks), `items` (the chain multiplier, combos, Luck, the daily gift, power-ups earned in play), `library` (the Relaxed board library: shelved and retired boards, names, caps), `puzzlegen` (seeds, wildcards, reverse construction, reachability search, forward verification), `factory` (the line: droppers, the conveyors and lifts, the store's sand pile, assemblers, the belt and the self-playing board and its placer, in ticks for play and time away alike; the floor's geometry; the sign's moods; `Factory.TUNE`; save repair), `store` (save, catalog, stats), `achievements`, `fxphysics` (the item effects' blocks, debris and dust: gravity, bounces, spirals, fixed pools), `render` (canvas: skins, frames, effects, item animations, rotated views), `factoryview` (the factory floor: its parts, movers and board, its price tags and its dot-matrix sign), `hints` (control hints: the struggle signals, their limits and retirement), `touch` (the touch gestures: a pure reader of fingers, and the page's touch helpers), `webapp` (the Home Screen web app: the offline copy's registration and updates), `collapse` (the window rolled up into its title bar, and the parade of pieces along it), `modes`, `retiredview` (a retired board in full view), `ui`, `app` |
+| `Game/` | the game: `index.html`, `manifest.webmanifest`, `sw.js` (the offline copy), `icons/` (the Home Screen icons), `css/`, and `js/` — `webapp` (the Home Screen app: the worker, its updates, lasting storage), `icons` (the one SVG icon set), `pieces` (the seven tetrominoes and Lull's kicks, pentominoes, big and custom shapes, polyomino enumeration, ids that rebuild themselves), `board` (the grid and the one table of cell bits), `recipe` (the board recipe: its parts, rules and limits), `engine` (the floating-piece rules, every item and the recipe's hooks), `items` (the chain multiplier, combos, Luck, the daily gift, power-ups earned in play), `library` (the Relaxed board library: shelved and retired boards, names, caps), `puzzlegen` (seeds, wildcards, reverse construction, reachability search, forward verification), `store` (save, catalog, stats), `achievements`, `fxphysics` (the item effects' blocks, debris and dust: gravity, bounces, spirals, fixed pools), `render` (canvas: skins, frames, effects, item animations, rotated views), `hints` (control hints: the struggle signals, their limits and retirement), `touch` (the touch gestures: a pure reader of fingers, and the page's touch helpers), `webapp` (the Home Screen web app: the offline copy's registration and updates), `collapse` (the window rolled up into its title bar, and the parade of pieces along it), `modes`, `retiredview` (a retired board in full view), `ui`, `app` |
 | `Sources/Lull/` | the macOS shell: a borderless `NSPanel` (floating, all Spaces, edge-resizable, draggable by the page's title bar) around a transparent `WKWebView`, a blur for the Glass background, the save file, the ⌥⌘L hot key, and a self-test CI runs |
-| `scripts/` | `make-app.sh`, `icon.swift`, `line-glyph.py` (builds the line glyph's font into `lull.css`), `test.cjs`, `browser-test.cjs`, `audio-render.cjs` (renders and measures the synthesized audio offline), `pitch.cjs` (finds the notes in a render, to check sound effects are in the music's key), `voice-clips.cjs` (embeds the announcer's clips with where her speech is and their loudness trims; `voice-measure.cjs` is its measuring tape, shared with `voice-test.cjs`, her checks, run by browser-test), `web-build.cjs` (the site as deployed), `web-icons.cjs` (the Home Screen icons), `web-test.cjs` and `web-browser-test.cjs` (the web app's tests, run by the two above), `touch-test.cjs` (an emulated phone played with gestures, run by browser-test), `device-test.cjs` (what each device is offered in Settings and the bar, and live changes; run by browser-test), `econ-test.cjs` (the economy against models of play: placement bots on the real engine, a puzzle model, the factory measured, a career that spends what it earns; every assumption about players in its one MODEL block; run by test.cjs), `golden.cjs` and `golden.json` (the golden identity run, and its record), `sizes-test.cjs` (board sizes: the New board window, every extreme size, pay by width, layout; run by browser-test), `undo-test.cjs` (every way of buying an Undo, and the cards that offer it at every size; run by browser-test), `retired-test.cjs` (a retired board in full view at every size, by keys and by touch; run by browser-test), `tabbar-test.cjs` (the tab bar at the bottom of a narrow window: every place fits above it, the menu and toasts, wider and rolled up; run by browser-test), `recipe-test.cjs` and `recipe-pixels.json` (the board recipe in the page: the New board window, labels, the controller, and the board drawn pixel for pixel as recorded; run by browser-test) |
+| `scripts/` | `make-app.sh`, `icon.swift`, `line-glyph.py` (builds the line glyph's font into `lull.css`), `test.cjs`, `browser-test.cjs`, `audio-render.cjs` (renders and measures the synthesized audio offline), `pitch.cjs` (finds the notes in a render, to check sound effects are in the music's key), `voice-clips.cjs` (embeds the announcer's clips with where her speech is and their loudness trims; `voice-measure.cjs` is its measuring tape, shared with `voice-test.cjs`, her checks, run by browser-test), `web-build.cjs` (the site as deployed), `web-icons.cjs` (the Home Screen icons), `web-test.cjs` and `web-browser-test.cjs` (the web app's tests, run by the two above), `touch-test.cjs` (an emulated phone played with gestures, run by browser-test), `device-test.cjs` (what each device is offered in Settings and the bar, and live changes; run by browser-test), `econ-test.cjs` (the economy against models of play: placement bots on the real engine, a puzzle model, a career that spends what it earns; every assumption about players in its one MODEL block; run by test.cjs), `golden.cjs` and `golden.json` (the golden identity run, and its record), `sizes-test.cjs` (board sizes: the New board window, every extreme size, pay by width, layout; run by browser-test), `undo-test.cjs` (every way of buying an Undo, and the cards that offer it at every size; run by browser-test), `retired-test.cjs` (a retired board in full view at every size, by keys and by touch; run by browser-test), `tabbar-test.cjs` (the tab bar at the bottom of a narrow window: every place fits above it, the menu and toasts, wider and rolled up; run by browser-test), `recipe-test.cjs` and `recipe-pixels.json` (the board recipe in the page: the New board window, labels, the controller, and the board drawn pixel for pixel as recorded; run by browser-test) |
+| `Shelved/` | work set aside for now, loaded, cached and deployed by nothing: `factory/` (the Factory, with what to put back where) |
 
 ## Credits
 

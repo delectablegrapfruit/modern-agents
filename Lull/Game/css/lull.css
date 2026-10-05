@@ -97,7 +97,7 @@
   --focus: color-mix(in srgb, var(--accent) 85%, transparent);
 }
 /* Areas: the places to play, each with its own quiet colour — Relaxed (Free Play) sea-glass teal, Classic the olive of
-   an old handheld, Puzzles orchid, Factory copper — and a neutral slate for Lifetime, across all of them. Hues sit
+   an old handheld, Puzzles orchid, Factory copper (shelved for now: Lull/Shelved/factory/) — and a neutral slate for Lifetime, across all of them. Hues sit
    between the accent's blue, the legendary gold and the good and bad colours, softer than all of them, and apart in
    lightness too (so they stay apart from the accent and the gold for colour-blind eyes as well, with each place's own
    icon beside them). Dark: soft mid-tones on dark, Lifetime a pale slate clear of the muted text; light: deep inks,
@@ -131,7 +131,7 @@ html { -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%;
 html, body { overscroll-behavior: none; }
 #app { touch-action: manipulation; -webkit-touch-callout: none; }
 #cv-play, #cv-puzzle { touch-action: none; }
-header#titlebar, .statusbar, .itembar, .puz-bar, .puz-card, .puz-actions, .fac-plate { touch-action: none; }
+header#titlebar, .statusbar, .itembar, .puz-bar, .puz-card, .puz-actions { touch-action: none; }
 .scroll, .item-tray, .modal .body, .set-pane { overscroll-behavior: contain; }
 input, textarea { -webkit-touch-callout: default; -webkit-user-select: text; user-select: text; }
 button, input, select, textarea { font: inherit; color: inherit; }
@@ -161,9 +161,9 @@ body.browser #app.bg-glass { background: rgba(var(--bg), 0.64); -webkit-backdrop
 #app.bg-solid { background: rgb(var(--bg)); }
 #app.bg-clear header#titlebar, #app.bg-clear .statusbar, #app.bg-clear .puz-bar, #app.bg-clear .puz-card { text-shadow: 0 1px 2px rgba(0,0,0,0.6); }
 
-/* The title bar, left to right: the places to play (Play, Puzzles, Factory, Classic) in one recessed track; room to
+/* The title bar, left to right: the places to play (Play, Puzzles) in one recessed track; room to
    drag; the places to look (Stats, Achievements) as quiet icons beside the wallet, which is the Shop's way in; then
-   sound and Settings, and in the app the window's own buttons. ⌘1–⌘7 run in that order (the wallet last). Labels give
+   sound and Settings, and in the app the window's own buttons. ⌘1–⌘5 run in that order (the wallet last). Labels give
    way as the window narrows: all of them, then only the tab you are on, then icons alone. */
 header#titlebar {
   flex: none; height: 42px;
@@ -660,49 +660,7 @@ kbd {
 
 /* ==== factory ======================================================================================================== */
 
-/* The Factory fills its tab: the floor on the board's plate, the same size from the first day, with nothing under it
-   (the parts are the buttons) and no scrolling. The canvas fits the floor inside the plate and centres it
-   (js/factoryview.js); the parts' buttons sit over it, and a part's card opens on it. */
-#view-factory { padding: 8px 10px 10px; overflow: hidden; }
-.fac-plate {
-  flex: 1 1 auto; min-height: 0; width: 100%; max-width: 720px; margin-inline: auto; position: relative; border-radius: 16px;
-  border: 1px solid var(--plate-line); isolation: isolate;
-  background: linear-gradient(color-mix(in srgb, var(--accent) 7%, transparent), transparent 50%), linear-gradient(var(--plate), var(--plate-2)), var(--plate-base);
-  box-shadow: 0 12px 30px -6px var(--plate-shadow);
-}
-:root[data-theme="light"] .fac-plate { background: linear-gradient(color-mix(in srgb, var(--accent) 5%, transparent), transparent 50%), linear-gradient(var(--plate), var(--plate-2)), var(--plate-base); }
-.fac-plate::after { content: ""; position: absolute; top: 1px; left: 16px; right: 16px; height: 1px; pointer-events: none; background: linear-gradient(90deg, transparent, var(--plate-hi), transparent); }
-.fac-clip { position: absolute; inset: 0; border-radius: 15px; overflow: hidden; }
-.fac-clip canvas { display: block; width: 100%; height: 100%; }
-/* The parts: real buttons over the floor, invisible but for focus (their boxes are drawn on the canvas). */
-.fac-hots { position: absolute; inset: 0; pointer-events: none; }
-.fac-hot { position: absolute; pointer-events: auto; padding: 0; margin: 0; border: 0; background: transparent; border-radius: 10px; cursor: pointer; }
-.fac-hot:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-@media (hover: hover) { .fac-hot:hover { background: color-mix(in srgb, var(--fg) 4%, transparent); } }
-.fac-hot[aria-expanded="true"] { outline: 1px solid var(--accent-line); outline-offset: 1px; }
-
-/* A part's card: what its upgrade does, the price, Buy; anchored to the part, inside the floor. */
-.fac-card {
-  position: absolute; z-index: 3; width: min(240px, calc(100% - 12px)); display: flex; flex-direction: column; gap: 10px; padding: 12px;
-  background: var(--raised); border: 1px solid var(--line-2); border-radius: var(--r-lg); box-shadow: var(--sh-3); color: var(--fg);
-  animation: fac-card-in var(--t-med) var(--ease-out);
-}
-@keyframes fac-card-in { from { opacity: 0; transform: translateY(-3px); } }
-.fac-card:focus { outline: none; }
-.fac-card h3 { margin: 0; font-size: var(--fs-md); font-weight: 650; line-height: 1.2; }
-.fac-card p { margin: 0; font-size: var(--fs-sm); color: var(--muted); line-height: 1.4; }
-.fac-opt { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: center; }
-.fac-opt b { font-size: var(--fs-sm); font-weight: 650; line-height: 1.3; }
-.fac-opt small { grid-column: 1; font-size: var(--fs-xs); color: var(--muted); line-height: 1.3; font-variant-numeric: tabular-nums; }
-.fac-opt .btn { grid-row: 1 / 3; grid-column: 2; min-width: 64px; height: 40px; padding: 0 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.fac-opt .btn[aria-disabled="true"] { background: var(--panel); border-color: var(--line-2); color: var(--muted); box-shadow: none; cursor: default; }
-.fac-card.flash { animation: fac-flash 0.7s var(--ease-out); }
-@keyframes fac-flash { 25% { box-shadow: var(--sh-3), 0 0 0 3px color-mix(in srgb, var(--warn) 40%, transparent); border-color: var(--warn); } }
-.fac-still .fac-card, .fac-still .fac-card.flash { animation: none; }
-@media (prefers-reduced-motion: reduce) { .fac-card, .fac-card.flash { animation: none; } }
-/* By touch, 44 px buttons in the card. */
-@media (hover: none) and (pointer: coarse) { .fac-opt .btn { height: 44px; } }
-@media (max-width: 400px) { #view-factory { padding: 6px 6px 8px; } }
+/* Shelved for now, its rules with it (Lull/Shelved/factory/factory.css). */
 
 /* Stats: every shape of a size, pressed ones first, square tiles edge to edge. */
 .catalog.sm { grid-template-columns: repeat(auto-fill, minmax(30px, 1fr)); gap: 3px; margin-bottom: 4px; }
@@ -1722,7 +1680,7 @@ body.webapp #app { inset: var(--safe-top) var(--safe-right) var(--safe-bottom) v
 @media (hover: none) and (pointer: coarse) { #toasts.through .toast.link.update:not(.out) { pointer-events: auto; } }
 /* ==== the tab bar at the bottom ============================================================================================ */
 /* At 500 px and under the places to play leave the title bar for a bar along the bottom of the window, where a thumb
-   reaches them: Play, Puzzles and Factory side by side, each its icon over its name. 500 is where this file already
+   reaches them: Play and Puzzles side by side, each its icon over its name. 500 is where this file already
    gives up naming them up top (the narrow tiers above: icons alone from 500 down), and every phone held upright is
    narrower; a window a little wider (520) keeps the bar at the top and its board's height. The views end above it
    (#main), and so do the Play menu's page and toasts; in a Safari tab it stands clear of the home indicator

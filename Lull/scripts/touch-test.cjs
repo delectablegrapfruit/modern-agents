@@ -478,15 +478,15 @@ module.exports = async function touchTests({ browser, check, PAGE, OUT }) {
   }), [sel, dx, ms]);
   await ev(() => Lull.app.setTab('puzzle'));
   const sw = { next: await swipe('#view-puzzle', -120, 120) };
-  await ev(() => Lull.app.setTab('factory'));
-  sw.last = await swipe('#view-factory', -120, 120);
-  sw.back = await swipe('#view-factory', 120, 120);
-  await ev(() => Lull.app.setTab('factory'));
-  sw.slow = await swipe('#view-factory', 120, 600);
+  await ev(() => Lull.app.setTab('achievements'));
+  sw.last = await swipe('#view-achievements', -120, 120);
+  sw.back = await swipe('#view-achievements', 120, 120);
+  await ev(() => Lull.app.setTab('achievements'));
+  sw.slow = await swipe('#view-achievements', 120, 600);
   await ev(() => Lull.app.setTab('play'));
   sw.board = await swipe('#cv-play', -120, 120);
   check('a quick sideways swipe never changes tab (off the board, on it, either way)',
-    sw.next === 'puzzle' && sw.last === 'factory' && sw.back === 'factory' && sw.slow === 'factory' && sw.board === 'play', JSON.stringify(sw));
+    sw.next === 'puzzle' && sw.last === 'achievements' && sw.back === 'achievements' && sw.slow === 'achievements' && sw.board === 'play', JSON.stringify(sw));
 
   check('no page errors on the phone', errors.length === 0, errors.slice(0, 5).join('\n'));
   await P.ctx.close();

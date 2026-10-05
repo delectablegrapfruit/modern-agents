@@ -29,7 +29,7 @@ Math.random = () => { mrs ^= mrs << 13; mrs >>>= 0; mrs ^= mrs >>> 17; mrs ^= mr
 
 const load = require('./load.cjs');
 const JS = path.join(__dirname, '..', 'Game', 'js');
-const files = ['util.js', 'pieces.js', 'board.js', 'recipe.js', 'engine.js', 'items.js', 'library.js', 'puzzlegen.js', 'factory.js', 'store.js', 'achievements.js'].filter((f) => fs.existsSync(path.join(JS, f)));
+const files = ['util.js', 'pieces.js', 'board.js', 'recipe.js', 'engine.js', 'items.js', 'library.js', 'puzzlegen.js', 'store.js', 'achievements.js'].filter((f) => fs.existsSync(path.join(JS, f)));
 const L = load(files);
 const { Game, Board, Pieces, RNG, Library, Chain, Pay, Combos, Earn, Gifts, Luck, ITEMS, ITEM_ORDER, Puzzles } = L;
 

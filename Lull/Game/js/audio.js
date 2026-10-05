@@ -74,8 +74,8 @@
       fail() { return [this.pad(76, 0, 0.055, 0.7, { to: hz(69), a: 0.06, sw: [1200, 500] })]; },
       golden() { return [76, 79, 81, 79, 84].map((m, i) => this.ring(m, i * 0.07, 0.058, 1)); },
       item() { return [this.mote(64, 0, 0.038, 0.3, { to: hz(69), q: 1600 }), this.ring(76, 0.08, 0.015, 0.6)]; },
-      // The factory line, heard only while you watch it: a muffled stamp, a note onto the belt, a soft pluck as a piece
-      // ships into the crate, and two quiet bell tones when the crate is full.
+      // The factory line (shelved for now, and silent), heard only while you watch it: a muffled stamp, a note onto the
+      // belt, a soft pluck as a piece ships into the crate, and two quiet bell tones when the crate is full.
       stamp() { return [{ f: hz(45), d: 0.16, g: 0.038, a: 0.012, q: 380, rv: 0.2 }]; },
       pack() { return [this.mote(69, 0, 0.02, 0.16)]; },
       land() { return [this.tone(64, 0, 0.02, 0.5, { rv: 0.3 })]; },

@@ -631,9 +631,8 @@
       if (!keep) app.state.collapsed = on;
       if (!first && !keep) app.store.touch();
       if (on) {
-        // Like switching away from the tab: a Classic board pauses (app.frame: pausePlay('collapse')), the factory runs on unseen.
+        // Like switching away from the tab: a Classic board pauses (app.frame: pausePlay('collapse')).
         if (L.Music && L.Music.playing) L.Music.stop();
-        if (app.tab === 'factory') app.modes.factory.hide();
         app.keys && app.keys.releaseAll();
         const tip = document.querySelector('#app > .tip');
         if (tip) tip.classList.add('hidden');
@@ -647,7 +646,6 @@
       if (on) this.idle.start();
       else {
         this.idle.stop();
-        if (app.tab === 'factory' && !first) app.modes.factory.show();
         app.onResize();
         // Achievements earned while rolled up are told now, when their toasts can be seen (and clicked).
         if (!first) setTimeout(() => app.announceUnheard(), 300);

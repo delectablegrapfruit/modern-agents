@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 // Lull's game logic, tested in Node: pieces and kicks, the floating-piece engine and every item, puzzle generation
-// (each seed is replayed through the real engine to prove it can be solved), the factory economy, and the save.
+// (each seed is replayed through the real engine to prove it can be solved), the economy, and the save.
 //   node Lull/scripts/test.cjs
 'use strict';
 const assert = require('assert');
 const load = require('./load.cjs');
 const L = load([
-  'util.js', 'pieces.js', 'board.js', 'recipe.js', 'engine.js', 'items.js', 'library.js', 'puzzlegen.js', 'factory.js', 'store.js', 'achievements.js',
+  'util.js', 'pieces.js', 'board.js', 'recipe.js', 'engine.js', 'items.js', 'library.js', 'puzzlegen.js', 'store.js', 'achievements.js',
   // The board options' pure parts (js/recipe.js): each branch replaces its own line.
   'polytable.js', 'minsize.js', 'shapes.js',
   'mirror.js',
@@ -22,7 +22,7 @@ const L = load([
   // The Play menu's rules (Solo or Multiplayer, resume by rules): its page is drawn only in a browser.
   'menu.js',
 ]);
-const { Pieces, Board, Game, Puzzles, Factory, RNG } = L;
+const { Pieces, Board, Game, Puzzles, RNG } = L;
 
 let passed = 0, failed = 0;
 function test(name, fn) {
@@ -1118,454 +1118,8 @@ test('daily seeds change with the day', () => {
   assert(Puzzles.parseSeed(Puzzles.dailySeed('H', '2026-09-26')));
 });
 
-console.log('factory');
+// The Factory is shelved for now (Lull/Shelved/factory/): its tests went with it.
 const HOUR = 3600e3, MIN = 60e3;
-const T = Factory.TUNE, TR = Factory.TRACK, FB = Factory.Board;
-/** A new factory with a fixed seed, so a run of it always makes the same line. */
-function seeded(seed) { const f = Factory.create(); f.seed = seed; return f; }
-/** Builds every kind up to its top (paid for, as a player would). */
-function maxOut(f) { for (const k of Factory.KINDS) while (Factory.upgrade(f, k)); return f; }
-const boardCells = (f) => f.grid.reduce((n, row) => n + row.replace(/\./g, '').length, 0);
-const height = (f) => { const y = f.grid.findIndex((row) => row !== FB.EMPTY_ROW); return y < 0 ? 0 : T.BOARD_H - y; };
-const riders = (f) => f.top.filter((m) => !(m.y > 0));
-/** Every mino dropped is somewhere: on a conveyor, in the store, in an assembler, on the belt, on the board, or it was
- *  cleared or sold. */
-function conserved(f) {
-  const st = f.stats, inAsm = f.asm.reduce((a, x) => a + x.got, 0), onBelt = f.belt.reduce((a, it) => a + it.n, 0), cur = f.cur ? f.cur.n : 0;
-  return st.made === Factory.pileCount(f) + f.top.length + f.out.length + inAsm + onBelt + cur + boardCells(f) + st.cleared + st.sold;
-}
-function invariants(f) {
-  if (!conserved(f)) return 'minos not conserved';
-  if (f.stats.resets) return 'the board topped out';
-  if (Factory.inStore(f) > Factory.storeCap(f) || f.pile.some((h) => h > Factory.storeRows(f))) return 'store overfull';
-  const r = riders(f);
-  for (let i = 1; i < r.length; i++) if (r[i - 1].s - r[i].s < T.GAP) return 'top conveyor gap ' + (r[i - 1].s - r[i].s);
-  const o = f.out.filter((m) => !m.h);
-  for (let i = 1; i < o.length; i++) if (o[i - 1].s - o[i].s < T.GAP) return 'lower conveyor gap';
-  for (const m of f.out) if (m.s > TR.TAP_S[m.k]) return 'a mino rode past its assembler';
-  for (let k = 0; k < f.asm.length; k++) { const a = f.asm[k]; if (!(a.set <= a.got && a.got + Factory.pending(f, k) <= a.n)) return 'assembler ' + k + ' overfull'; }
-  for (let i = 0; i < f.belt.length; i++) {
-    const it = f.belt[i];
-    if (!(it.p >= 0 && it.p <= TR.BELT_LEN)) return 'belt p ' + it.p;
-    if (i && f.belt[i - 1].p - it.p < T.PIECE_GAP * 100) return 'belt gap';
-  }
-  for (const d of f.drops) if (d.held && d.t !== Factory.dropTicks(f)) return 'dropper held early';
-  if (!f.ct && f.grid.some((row) => row.indexOf('.') < 0)) return 'a full row left on the board';
-  if (f.cur && !(f.cur.in > 0) && !FB.fits(FB.masks(f.grid), FB.turns(f.cur.n, f.cur.s)[f.cur.r], f.cur.x, f.cur.y)) return 'the piece in play overlaps';
-  return '';
-}
-const bare = (f) => { const g = JSON.parse(JSON.stringify(f)); delete g.lastTick; return g; };
-const clone = (f) => JSON.parse(JSON.stringify(f));
-
-test('the factory\'s numbers: every tuning constant pinned, in one frozen block', () => {
-  assert(Object.isFrozen(T) && Object.isFrozen(T.COST) && Object.isFrozen(T.COST.size) && Object.isFrozen(Factory.GEO.drop));
-  assert.deepStrictEqual([T.DROP_T, T.STORE_ROWS, Factory.STORE_CAP, T.SIZES, T.FEED_T, T.SET_T, T.BELT_T, T.PTS, T.LOOSE_PTS, T.BOARD_W, T.BOARD_H, T.BONUS, T.AWAY_H, T.MINO_V, T.GAP, T.PIECE_GAP],
-    [[12, 10, 8, 6.5], [3, 6, 10, 14], [21, 42, 70, 98], [2, 3, 4, 5], 8, 2, [90, 60, 40, 25], 40, 2, 27, 18, [1, 1, 1.25, 1.5, 2, 2.5], 1, 2, 12, 30]);
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(T.PIECE_PTS)), { 2: 5, 3: 9, 4: 14, 5: 20 });
-  assert.strictEqual(T.LOOSE_PTS * 20, T.PTS, 'twenty loose minos are a line');
-  // A built piece is worth more than its loose minos, and more so the bigger it is; each of its cells carries a whole
-  // number of sixteenths of a point, and so does every bonus.
-  let prev = 1;
-  for (const n of T.SIZES) {
-    const r = T.PIECE_PTS[n] / (n * T.LOOSE_PTS);
-    assert(r > prev, n + ': ×' + r); prev = r;
-    assert(Number.isInteger(FB.cellWorth(n)) && FB.cellWorth(n) % 8 === 0 && FB.cellWorth(n) * n === T.PIECE_PTS[n] * Factory.SUB);
-  }
-  assert.deepStrictEqual(Factory.KINDS, ['dropper', 'speed', 'store', 'assembler', 'size', 'beltSpeed']);
-  assert(!('beltLen' in T.COST), 'the belt is full length from the first day');
-  // The whole ride: about 90 s new, about 25 s with its three upgrades.
-  const rides = TR.BELT_V.map((v) => (TR.BELT_LEN / v) * T.TICK);
-  rides.forEach((s, i) => assert(Math.abs(s - T.BELT_T[i]) <= 0.5, 'ride ' + s));
-  // The floor: 360 units wide; the board fills its box; the lifts never cross (the top conveyor comes in above where the
-  // lower one leaves).
-  const G = Factory.GEO;
-  assert.strictEqual(G.W, 360);
-  assert(G.board.cell * T.BOARD_W <= G.board.w && G.board.cell * T.BOARD_H <= G.board.h);
-  assert(G.rail.y[0] < G.rail.y[1] && Math.max(...Factory.paths.top.map((p) => p[1])) < Math.min(...Factory.paths.low.map((p) => p[1])));
-  assert.strictEqual(G.pile.bot - 14 * G.pile.s > G.store.y + G.HEAD, true, 'fourteen rows fit under the store\'s header');
-});
-
-test('a new factory: one dropper, six minos in its store, no assemblers, the whole belt and an empty board; the rest is bought on its parts, at rising prices', () => {
-  const f = Factory.create();
-  assert.deepStrictEqual([f.droppers, f.asm.length, Factory.pileCount(f), Factory.storeCap(f), f.belt.length, f.bank, boardCells(f), f.v], [1, 0, 6, 21, 0, 0, 0, 9]);
-  assert.deepStrictEqual(f.pile, [1, 1, 1, 1, 1, 1, 0], 'like sand: spread from the lift');
-  for (const k of Factory.KINDS) {
-    const prices = [];
-    let u;
-    while ((u = Factory.nextUpgrade(f, k))) { prices.push(u.cost); assert(Factory.upgrade(f, k)); }
-    assert.strictEqual(Factory.nextUpgrade(f, k), null); assert(!Factory.upgrade(f, k), k + ' stops at its top');
-    assert.deepStrictEqual(prices, T.COST[k], k);
-    for (let i = 1; i < prices.length; i++) assert(prices[i] > prices[i - 1], k + ' rises: ' + prices);
-  }
-  assert.deepStrictEqual([f.droppers, f.speed, f.storeLevel, f.asm.length, f.size, f.beltSpeed], [3, 3, 3, 3, 3, 3]);
-  assert(Factory.maxed(f));
-  assert.strictEqual(f.stats.spent, 998);
-  assert.strictEqual(f.stats.spent, Object.values(T.COST).flat().reduce((a, b) => a + b, 0));
-  const s = new L.Store();
-  assert(!s.spend(Factory.nextUpgrade(s.state.factory, 'assembler').cost + 1), 'short of lines');
-});
-
-test('minos ride the conveyors at a steady speed, a gap apart, through the store\'s door and up its lift', () => {
-  const f = seeded(1);
-  f.drops[0].t = Factory.dropTicks(f) - 1;
-  const evs = [];
-  Factory.tick(f, evs, false);
-  assert.deepStrictEqual(evs.map((e) => e.kind), ['drop']);
-  const m = f.top[0];
-  assert.deepStrictEqual([f.top.length, m.s, m.f], [1, TR.DROP_S[0], TR.DROP_FALL], 'dropping onto the conveyor under its dropper');
-  Factory.tick(f, null, false);
-  assert.strictEqual(m.f, 0, 'on the conveyor');
-  const s0 = m.s;
-  for (let i = 0; i < 10; i++) Factory.tick(f, null, false);
-  assert.strictEqual(m.s, s0 + 10 * T.MINO_V, 'two units a tick');
-  // On to the store: through its door, up the lift, across to the lowest column and down onto the pile.
-  let ticks = 0, land = null, stages = new Set();
-  while (!land && ticks < 1000) {
-    const e = [];
-    Factory.tick(f, e, false); ticks++;
-    if (f.top.includes(m)) stages.add(m.y > 0 ? 'fall' : m.s > TR.TOP_END ? 'across' : m.s > TR.GATE ? 'lift' : 'conveyor');
-    land = e.find((x) => x.kind === 'land');
-  }
-  assert.deepStrictEqual([...stages], ['conveyor', 'lift', 'across', 'fall']);
-  assert.strictEqual(land.c, 6, 'into the one empty column');
-  assert.deepStrictEqual(f.pile, [1, 1, 1, 1, 1, 1, 1]);
-  const ride = Math.ceil((TR.TOP_END + TR.ACROSS(6) - s0) / T.MINO_V);
-  assert(ticks >= ride - 10 && ticks <= ride + 20, 'the ride takes its time: ' + ticks + ' ticks for ' + ride + ' of conveyor');
-  // Riders keep a gap: three droppers drop faster than the conveyor carries them off when the store is full.
-  const g = seeded(2);
-  Factory.upgrade(g, 'dropper'); Factory.upgrade(g, 'dropper');
-  let bad = '';
-  for (let i = 0; i < 4000 && !bad; i++) { Factory.tick(g, null, false); bad = invariants(g); }
-  assert.strictEqual(bad, '');
-});
-
-test('a full store backs the top conveyor up: minos queue a gap apart from its door, the droppers wait, the sign turns amber; selling frees it', () => {
-  const g = seeded(2);
-  Factory.upgrade(g, 'dropper'); Factory.upgrade(g, 'dropper');
-  Factory.run(g, 30 * MIN, null, false);
-  assert.strictEqual(Factory.inStore(g), Factory.storeCap(g));
-  const q = riders(g);
-  assert.strictEqual(q[0].s, TR.GATE, 'the first waits at the door');
-  for (let i = 1; i < 6; i++) assert.strictEqual(q[i - 1].s - q[i].s, T.GAP, 'packed a gap apart');
-  assert(g.drops.every((d) => d.held), 'the droppers wait');
-  const m = Factory.mood(g);
-  assert.deepStrictEqual([m.mood, m.stuck, m.storeFull], ['full', true, true]);
-  const made = g.stats.made;
-  Factory.run(g, 10 * MIN, null, false);
-  assert.strictEqual(g.stats.made, made, 'nothing is made while it waits');
-  // Sell: every mino in the store at the loose rate, into the bank; the line moves again.
-  const r = Factory.sell(g);
-  assert.deepStrictEqual([r.sold, g.bank, g.stats.sold], [21, 21 * T.LOOSE_PTS * Factory.SUB, 21]);
-  assert.strictEqual(Factory.takeLines(g), 1);
-  assert.strictEqual(g.bank, 2 * Factory.SUB, 'two points left over');
-  Factory.run(g, MIN, null, false);
-  assert(g.stats.made > made, 'moving again');
-  const e = seeded(5); e.pile.fill(0); e.stats.made = 0;
-  assert.strictEqual(Factory.sell(e), null, 'nothing to sell');
-});
-
-test('the store fills like sand and empties from the bottom: into the lowest column (ties nearest the lift), out of the column nearest the lift that has any', () => {
-  const f = seeded(3);
-  f.pile.fill(0); f.stats.made = 0;
-  Factory.upgrade(f, 'store');
-  const lands = [];
-  for (let i = 0; i < 20000 && lands.length < 16; i++) { const e = []; Factory.tick(f, e, false); for (const x of e) if (x.kind === 'land') lands.push(x.c); }
-  assert.deepStrictEqual(lands, [0, 1, 2, 3, 4, 5, 6, 0, 1, 2, 3, 4, 5, 6, 0, 1]);
-  // The outlet: an assembler needs minos, so the bottom mino of the first column with any leaves for the lower lift,
-  // and that column settles a cell.
-  const g = seeded(4);
-  g.pile = [0, 0, 2, 1, 1, 1, 1]; g.stats.made = 6; g.drops[0].t = 0;
-  Factory.upgrade(g, 'assembler');
-  const e = [];
-  Factory.tick(g, e, false);
-  assert.deepStrictEqual(e.filter((x) => x.kind === 'out'), [{ kind: 'out', c: 2 }]);
-  assert.deepStrictEqual([g.pile, g.out.length, g.out[0].s, g.out[0].k], [[0, 0, 1, 1, 1, 1, 1], 1, TR.OUTLET(2), 0]);
-  // Along the bottom, up the lift and out along the lower conveyor to its assembler, which takes it as it passes.
-  const m = g.out[0];
-  let ticks = 0;
-  while (g.out.includes(m) && ticks < 1000) { Factory.tick(g, null, false); ticks++; }
-  assert.strictEqual(g.asm[0].got >= 1, true);
-  assert(Math.abs(ticks - ((TR.TAP_S[0] - TR.OUTLET(2)) / T.MINO_V + TR.HOP)) <= 2, 'the ride to the far assembler: ' + ticks + ' ticks');
-  // A falling mino lands on the pile, never in a column a mino is sliding out under: it waits on it, then drops.
-  // And the store lets out no more than the assemblers still need: nothing rides past them all.
-  const h = maxOut(seeded(6));
-  let bad = '', most = 0;
-  for (let i = 0; i < 20000 && !bad; i++) { Factory.tick(h, null, false); bad = invariants(h); most = Math.max(most, h.out.length); }
-  assert.strictEqual(bad, '');
-  assert(most <= 15, 'never more on the way than three pentominoes: ' + most);
-});
-
-test('an assembler sets the minos it receives one at a time (grey until set), then drops the piece onto the belt right below; it waits while there is no room', () => {
-  const f = seeded(4);
-  Factory.upgrade(f, 'assembler');
-  const a = f.asm[0];
-  assert.deepStrictEqual([a.n, a.got, a.set], [2, 0, 0]);
-  const at = [];
-  let t = 0, built = null;
-  while (!built && t < 2000) {
-    const e = [];
-    Factory.tick(f, e, false); t++;
-    for (const x of e) if (x.kind === 'got' || x.kind === 'set') at.push(x.kind + '@' + t);
-    built = e.find((x) => x.kind === 'build');
-  }
-  const got = at.filter((x) => x.startsWith('got')).map((x) => +x.split('@')[1]), set = at.filter((x) => x.startsWith('set')).map((x) => +x.split('@')[1]);
-  assert.strictEqual(got.length, 2);
-  assert.strictEqual(set[0] - got[0], Factory.FEED_TT, 'the first set a feed after it came in');
-  assert.strictEqual(set[1] - set[0], Factory.FEED_TT, 'then the next');
-  assert.strictEqual(t - set[1], Factory.SET_TT + 1, 'finished, then dropped');
-  assert.deepStrictEqual([built.item.p, built.item.f, built.item.k, built.item.n], [TR.ENTRY[0], TR.CHUTE, 0, 2]);
-  assert.deepStrictEqual([a.got, a.set, f.stats.built], [0, 0, 1], 'the next piece begun');
-  // Its piece falls down the chute, then rides.
-  const it = built.item;
-  for (let i = 0; i < TR.CHUTE; i++) { Factory.tick(f, null, false); assert.strictEqual(it.p, TR.ENTRY[0]); }
-  Factory.tick(f, null, false);
-  assert.strictEqual(it.p, TR.ENTRY[0] + Factory.beltV(f));
-  // No room under it (a piece sitting there): it holds its finished piece and the sign counts it.
-  const g = seeded(9);
-  Factory.upgrade(g, 'assembler');
-  Object.assign(g.asm[0], { got: 2, set: 2, t: Factory.SET_TT });
-  g.belt = [{ n: 2, s: 0, c: 1, p: TR.ENTRY[0] + 1000, pp: TR.ENTRY[0] + 1000, f: 0, k: 0 }];
-  g.cur = { n: 2, s: 0, c: 1, in: 0, r: 0, x: 0, y: 0, ox: 0, oy: 0, tr: 0, tx: 0, t: 1e9 };
-  g.belt.unshift({ n: 2, s: 0, c: 1, p: TR.BELT_LEN, pp: TR.BELT_LEN, f: 0, k: 0 });
-  Factory.tick(g, null, false);
-  // The piece ahead of the entry rolls on; the assembler only drops once it has gone a gap ahead.
-  let held = g.asm[0].held, n = 0;
-  while (g.asm[0].got === 2 && n < 100) { Factory.tick(g, null, false); n++; }
-  assert(held && n > 0 && g.belt.some((x) => x.p === TR.ENTRY[0] && x.f > 0), 'held, then dropped: ' + n);
-});
-
-test('the belt carries pieces the whole way in about 90 s, 25 s fully upgraded; a gap apart; they queue at its end while the board is busy', () => {
-  for (let l = 0; l < T.BELT_T.length; l++) {
-    const f = seeded(10);
-    f.beltSpeed = l;
-    f.belt = [{ n: 3, s: 0, c: 2, p: 0, pp: 0, f: 0, k: 2 }];
-    let t = 0;
-    while (f.belt.length && f.belt[0].p < TR.BELT_LEN) { Factory.tick(f, null, false); t++; }
-    assert(Math.abs(t * T.TICK - T.BELT_T[l]) <= 0.5, 'level ' + l + ': ' + t * T.TICK + ' s');
-  }
-  // Pieces queue at the end, a gap apart, while the board has a piece in play.
-  const g = seeded(11);
-  g.cur = { n: 2, s: 0, c: 1, in: 0, r: 0, x: 0, y: 0, ox: 0, oy: 0, tr: 0, tx: 0, t: 1e9 };
-  g.belt = [0, 1, 2, 3].map((i) => ({ n: 2, s: 0, c: 1, p: 60000 - i * 6000, pp: 60000 - i * 6000, f: 0, k: 0 }));
-  Factory.run(g, 3 * MIN, null, false);
-  assert.deepStrictEqual(g.belt.map((it) => it.p), [0, 1, 2, 3].map((i) => TR.BELT_LEN - i * T.PIECE_GAP * 100));
-});
-
-test('the board plays each piece itself: in under the chute, turning a step and sliding a column at a time, then dropping; it clears lines and pays each one into the bank', () => {
-  // A domino arrives over a bottom row missing two cells at the left: it goes there and clears the row.
-  const f = seeded(12);
-  f.grid = f.grid.slice(0, T.BOARD_H - 1).concat(['..' + FB.cellChar(3, 5).repeat(T.BOARD_W - 2)]);
-  f.belt = [{ n: 2, s: 0, c: 4, p: TR.BELT_LEN, pp: TR.BELT_LEN, f: 0, k: 0 }];
-  const evs = [], path = [];
-  for (let i = 0; i < 200 && !evs.some((e) => e.kind === 'clear'); i++) {
-    Factory.tick(f, evs, false);
-    if (f.cur && !(f.cur.in > 0)) path.push([f.cur.r, f.cur.x, f.cur.y]);
-  }
-  const kinds = evs.map((e) => e.kind).filter((k) => k !== 'drop');
-  assert.deepStrictEqual(kinds, ['enter', 'lock', 'clear']);
-  assert.deepStrictEqual(path[0], [0, Math.min(T.BOARD_W - 2, TR.SPAWN_X), 0], 'in at the top, under the chute');
-  for (let i = 1; i < path.length; i++) {
-    const [r0, x0, y0] = path[i - 1], [r1, x1, y1] = path[i];
-    assert(Math.abs(x1 - x0) <= 1 && y1 - y0 >= 0 && y1 - y0 <= 2 && (r1 === r0 || x1 === x0), 'one step at a time: ' + JSON.stringify([path[i - 1], path[i]]));
-  }
-  const clear = evs.find((e) => e.kind === 'clear');
-  // 25 pentomino cells and 2 domino cells: 25 × 4 + 2 × 2.5 points, one line.
-  assert.deepStrictEqual([clear.rows, clear.pay, f.stats.lines, f.stats.best, f.stats.delivered, boardCells(f)], [[T.BOARD_H - 1], (25 * 4 + 2 * 2.5) * Factory.SUB, 1, 1, 1, 0]);
-  assert.strictEqual(f.bank, clear.pay);
-  // Several at once pay ×1.25, ×1.5, ×2, ×2.5 (five or more).
-  for (const n of [1, 2, 3, 4, 5, 6]) {
-    const g = seeded(13);
-    const full = FB.cellChar(2, 4).repeat(T.BOARD_W);
-    g.grid = g.grid.slice(0, T.BOARD_H - n).concat(new Array(n).fill(full));
-    g.clr = g.grid.map((_, y) => y).slice(T.BOARD_H - n); g.ct = 1;
-    Factory.tick(g, null, false);
-    assert.strictEqual(g.bank, n * T.BOARD_W * 3.5 * Factory.SUB * T.BONUS[Math.min(5, n)], n + ' at once');
-    assert.strictEqual(g.stats.lines, n);
-    assert.strictEqual(boardCells(g), 0);
-  }
-  // Whole lines go to the wallet; the rest stays in the bank.
-  const h = seeded(14);
-  h.bank = 2 * Factory.LINE_SUB + 7;
-  assert.deepStrictEqual([Factory.takeLines(h), h.bank, Factory.takeLines(h)], [2, 7, 0]);
-});
-
-test('the board never tops out: 20,000 pentominoes and 20,000 pieces of two to five, grown as the line grows them, played tick by tick, looking one piece ahead', () => {
-  const play = (n, sizes, seed) => {
-    const f = seeded(seed), r = new L.RNG('stream' + seed);
-    f.drops = []; f.droppers = 1;
-    const next = () => { const k = sizes[r.int(sizes.length)]; return { n: k, s: FB.grow(r, k), c: 1 + r.int(7), p: TR.BELT_LEN, pp: TR.BELT_LEN, f: 0, k: 0 }; };
-    f.belt = [next(), next()];
-    let worst = 0, done = 0;
-    while (done < n) {
-      Factory.tick(f, null, false);
-      if (f.belt.length < 2) { f.belt.push(next()); done++; worst = Math.max(worst, height(f)); }
-    }
-    return { resets: f.stats.resets, worst, lines: f.stats.lines };
-  };
-  const a = play(20000, [5], 1), b = play(20000, [2, 3, 4, 5], 2);
-  assert.deepStrictEqual([a.resets, b.resets], [0, 0], JSON.stringify([a, b]));
-  assert(a.worst <= 13 && b.worst <= 10, 'the stack stays well down: ' + JSON.stringify([a, b]));
-  console.log('       20,000 pentominoes: worst height ' + a.worst + ' of ' + T.BOARD_H + ', ' + a.lines + ' lines; 20,000 mixed: worst ' + b.worst + ', ' + b.lines + ' lines');
-  // The safety net, never reached in play: a board whose top is taken quietly empties and plays on.
-  const f = seeded(3);
-  f.grid = new Array(T.BOARD_H).fill(FB.cellChar(1, 2).repeat(T.BOARD_W - 1) + '.');
-  f.belt = [{ n: 5, s: 0, c: 1, p: TR.BELT_LEN, pp: TR.BELT_LEN, f: 0, k: 0 }];
-  for (let i = 0; i < 10; i++) Factory.tick(f, null, false);
-  assert.strictEqual(f.stats.resets, 1);
-  assert.strictEqual(f.cur && boardCells(f), 0);
-});
-
-test('the line keeps earning while nobody is around, for up to an hour (TUNE.AWAY_H), then rests', () => {
-  const f = maxOut(seeded(7));
-  Factory.run(f, 20 * MIN, null, false);
-  const lines0 = f.stats.lines, paid0 = f.stats.paid;
-  Factory.run(f, 40 * MIN, null, true);
-  assert(f.stats.lines - lines0 >= 10 && f.stats.paid > paid0, 'forty minutes away clear lines: ' + (f.stats.lines - lines0));
-  Factory.run(f, T.AWAY_H * HOUR, null, true);
-  assert.strictEqual(f.away, Factory.AWAY_TT);
-  const snap = bare(f);
-  Factory.run(f, 6 * HOUR, null, true);
-  assert.deepStrictEqual(bare(f), snap, 'at rest: nothing moves');
-  Factory.run(f, MIN, null, false);
-  assert(f.away === 0 && bare(f).stats.made > snap.stats.made, 'back: it runs again');
-});
-
-test('time away replays exactly the ticks that running would have, whatever slices the time comes in: the line on screen and the line replayed for time away are the same line', () => {
-  const base = maxOut(seeded(8));
-  Factory.run(base, 17 * MIN, null, false);
-  const ref = clone(base);
-  Factory.run(ref, 100 * MIN, null, true);
-  assert(ref.stats.lines > base.stats.lines + 5, 'lines cleared while away');
-  const r = new L.RNG('slices'), chunked = clone(base);
-  for (let left = 100 * MIN; left > 0;) { const ms = Math.min(left, 1 + r.int(90000)); Factory.run(chunked, ms, null, true); left -= ms; }
-  assert.deepStrictEqual(bare(chunked), bare(ref));
-  const c = clone(base), now = c.lastTick + 100 * MIN;
-  const res = Factory.catchUp(c, now);
-  assert.deepStrictEqual(bare(c), bare(ref), 'catch-up is the same line');
-  assert.deepStrictEqual([res.seconds, res.lines, res.built], [6000, ref.stats.lines - base.stats.lines, ref.stats.built - base.stats.built]);
-  assert(Math.abs(res.earned - Factory.linesOf(ref.stats.paid - base.stats.paid)) < 1e-9);
-  // On screen with nobody around (frames of 17 ms): the same line again.
-  const s = clone(base);
-  let n = 0;
-  for (; n * 17 < 100 * MIN; n++) Factory.step(s, 17 / 1000, true);
-  const one = clone(base);
-  Factory.run(one, n * 17, [], true);
-  assert.deepStrictEqual(bare(s), bare(one), 'frames of 17 ms or one run: the same line');
-  // And in front: frames or one run.
-  const o = clone(base), p = clone(base);
-  for (n = 0; n * 17 < 20 * MIN; n++) Factory.step(o, 17 / 1000);
-  Factory.run(p, n * 17, [], false);
-  assert.deepStrictEqual(bare(o), bare(p), 'frames of 17 ms or one run, in front: the same line');
-  // A clock set back starts over, and nothing runs.
-  const g = seeded(9), t0 = g.lastTick;
-  assert.strictEqual(Factory.catchUp(g, t0 - 5000), null);
-  assert.strictEqual(g.lastTick, t0 - 5000);
-  // Thirty days away is quick, and the same as AWAY_H away: the line rests after it.
-  const long = clone(base), two = clone(base), at = Date.now();
-  Factory.catchUp(long, long.lastTick + 30 * 24 * HOUR);
-  const ms = Date.now() - at;
-  Factory.catchUp(two, two.lastTick + T.AWAY_H * HOUR);
-  assert.deepStrictEqual(bare(long), bare(two));
-  assert(ms < 2000, 'a month away in ' + ms + ' ms');
-  console.log('       a month away (a full factory) replayed in ' + ms + ' ms');
-});
-
-test('the sign: amber when the store is full and the droppers wait; smooth when the line runs freely; idle or working otherwise', () => {
-  const f = seeded(11);
-  assert.strictEqual(Factory.mood(f).mood, 'smooth', 'one dropper at work');
-  Factory.run(f, 10 * MIN, null, false);
-  assert.strictEqual(Factory.mood(f).mood, 'full');
-  // Starve it: no minos, two assemblers waiting.
-  const h = seeded(13);
-  Factory.upgrade(h, 'assembler'); Factory.upgrade(h, 'assembler');
-  h.pile.fill(0); h.stats.made = 0;
-  const m = Factory.mood(h);
-  assert(m.mood === 'working' && m.busy < 0.8 && m.starved === 2, JSON.stringify(m));
-  h.drops[0].held = true; h.drops[0].t = Factory.dropTicks(h);
-  assert.strictEqual(Factory.mood(h).mood, 'full');
-  h.drops[0].held = false; h.drops = []; 
-  assert.strictEqual(Factory.mood(h).mood, 'idle');
-});
-
-test('a long random run: minos conserved, every invariant held, repair leaves a good factory alone', () => {
-  const r = new L.RNG('fuzz'), f = seeded(14);
-  let bad = '';
-  for (let i = 0; i < 3000 && !bad; i++) {
-    const ms = r.int(20000), closed = r.next() < 0.3;
-    for (let left = ms; left > 0 && !bad; left -= 250) { Factory.run(f, Math.min(250, left), null, closed); bad = invariants(f); }
-    const roll = r.next();
-    if (roll < 0.05) Factory.sell(f);
-    else if (roll < 0.15) { const k = Factory.KINDS[r.int(Factory.KINDS.length)]; Factory.upgrade(f, k); }
-    else if (roll < 0.2) { const g = bare(f); if (Factory.repair(f) !== f) bad = 'repair made a new factory'; else if (!require('util').isDeepStrictEqual(bare(f), g)) bad = 'repair changed a good factory: ' + JSON.stringify(require('util').inspect(bare(f))).length; }
-    bad = bad || invariants(f);
-    Factory.takeLines(f);
-  }
-  assert.strictEqual(bad, '');
-  assert(Factory.maxed(f), 'everything got built');
-  assert(f.stats.lines > 50, 'the board cleared lines: ' + f.stats.lines);
-});
-
-test('a broken factory is repaired; any other version is a new one', () => {
-  const junk = Factory.repair({
-    v: Factory.VERSION, droppers: 9, speed: -2, storeLevel: 'x', size: 7, beltSpeed: 2.6, pile: [9, -1, 'a', 3], away: -5,
-    drops: [{ t: 9999, held: true }, null], asm: [{ n: 5, s: 3, got: 9, set: 7, t: 99, held: true }, { n: 6, s: 0 }, 'x', {}],
-    top: [{ s: 9999 }, { s: 100 }, { s: 104 }, 'q', { s: 50, c: 3, y: 600, v: 99 }], out: [{ s: 50, k: 0 }, { s: 999, k: 7 }],
-    belt: [{ n: 2, s: 0, p: 9e9 }, { n: 3, s: 1, p: 9e9 }, { n: 9, s: 0, p: 3 }, { n: 4, s: 2, p: -4 }],
-    grid: ['#'.repeat(27), 'abc', 5], cur: { n: 5, s: 99 }, bank: -3, stats: { made: -1, delivered: 'a', extra: 1, lines: 12 }, odd: 1,
-  });
-  assert.deepStrictEqual([junk.droppers, junk.speed, junk.storeLevel, junk.size, junk.beltSpeed, junk.away], [3, 0, 0, 3, 3, 0]);
-  assert.deepStrictEqual(junk.pile, [3, 0, 0, 3, 0, 0, 0], 'heights within the rows bought');
-  assert.strictEqual(junk.drops.length, 3);
-  assert.strictEqual(junk.asm.length, 3);
-  assert.deepStrictEqual([junk.asm[0].got, junk.asm[0].set, junk.asm[0].t], [5, 5, Factory.SET_TT]);
-  assert.deepStrictEqual(junk.belt.map((it) => it.p), [TR.BELT_LEN, TR.BELT_LEN - T.PIECE_GAP * 100, 0], 'on the belt, a gap apart, from the end');
-  assert.deepStrictEqual(riders(junk).map((m) => m.s), [TR.TOP_END, 104, 92].slice(0, riders(junk).length));
-  assert(junk.grid.length === T.BOARD_H && junk.grid.every((row) => row.length === T.BOARD_W) && boardCells(junk) === 0, 'an unknown board starts empty');
-  assert.deepStrictEqual([junk.cur, junk.bank, junk.stats.made, junk.stats.delivered, junk.stats.lines, 'extra' in junk.stats, 'odd' in junk], [null, 0, 0, 0, 12, false, false]);
-  Factory.run(junk, 3 * HOUR, null, false);
-  // A good factory comes through unchanged.
-  const good = maxOut(seeded(15));
-  Factory.run(good, 2 * HOUR, null, false);
-  const before = bare(good);
-  assert.deepStrictEqual(bare(Factory.repair(good)), before);
-  // No migrations: an old save's factory starts again.
-  const v8 = Factory.repair({ v: 8, droppers: 3, store: 60, beltLen: 2, belt: [], stats: { made: 5000, collected: 30 } });
-  assert.deepStrictEqual([v8.v, v8.droppers, v8.asm.length, v8.stats.made, 'collected' in v8.stats], [Factory.VERSION, 1, 0, T.START_STORE, false]);
-  assert.strictEqual(L.loadState({ factory: null }).factory.droppers, 1, 'a save without one gets a new factory');
-});
-
-test('saved and restored: a factory through JSON runs on exactly as the one kept in memory, its lifetime lines kept', () => {
-  const f = maxOut(seeded(16));
-  Factory.run(f, 37 * MIN + 125, null, false);
-  const s = new L.Store();
-  s.state.factory = f;
-  const copy = L.loadState(JSON.parse(JSON.stringify(s.state))).factory;
-  assert(copy.stats.lines > 0 && copy.stats.lines === f.stats.lines);
-  Factory.run(f, HOUR, null, false); Factory.run(copy, HOUR, null, false);
-  assert.deepStrictEqual(bare(copy), bare(f));
-});
-
-test('the pieces: every one-sided domino to pentomino, lying flat; their turns are the distinct ones', () => {
-  assert.deepStrictEqual(T.SIZES.map((n) => Factory.shapes(n).length), [1, 2, 7, 18]);
-  for (const n of T.SIZES) {
-    const keys = new Set();
-    let all = 0;
-    for (let s = 0; s < Factory.shapes(n).length; s++) {
-      const c = Factory.shapes(n)[s], b = Pieces.boundsOf(c);
-      assert(b.w >= b.h && b.w <= 5 && b.h <= 3 && c.length === n && c.w === b.w && c.h === b.h);
-      const turns = FB.turns(n, s);
-      assert(turns.length >= 1 && turns.length <= 4 && new Set(turns.map((t) => t.cells.join(';'))).size === turns.length);
-      for (const t of turns) keys.add(t.cells.join(';'));
-      all += turns.length;
-      assert.deepStrictEqual(turns[0].cells, c.map((p) => p.slice()), 'the first turn is the piece as it rides the belt');
-    }
-    assert.strictEqual(keys.size, all, 'no two pieces turn into each other: mirror images are apart');
-  }
-  // The colours and shapes come from the factory's seed: the same seed builds the same pieces.
-  const a = maxOut(seeded(17)), b = maxOut(seeded(17));
-  Factory.run(a, 30 * MIN, null, false); Factory.run(b, 30 * MIN, null, false);
-  assert.deepStrictEqual(a.grid, b.grid);
-});
 
 console.log('achievements');
 test('achievements: earned once, by the right events, none of them a gimme', () => {
@@ -1587,8 +1141,6 @@ test('achievements: earned once, by the right events, none of them a gimme', () 
   const big = A.check(st, { mode: 'play', r: { lines: 2, twist: true, combo: 10, hand: true }, g }).map((a) => a.id).sort();
   assert.deepStrictEqual(big, ['b2b3', 'b2b8', 'combo10', 'combo5', 'tsd'].sort());
   assert.deepStrictEqual(A.check(st, { mode: 'classic', score: 120000, level: 10, quads: 1 }).map((a) => a.id).sort(), ['cl_100k', 'cl_l10']);
-  st.factory.droppers = 3;
-  assert.deepStrictEqual(A.check(st, { mode: 'factory' }).map((a) => a.id), ['fac_three']);
   assert.deepStrictEqual(A.check(st, { mode: 'puzzle', diff: 'H', firstTry: true, hinted: true, mods: [] }), [], 'a hinted solve is not a Hard Nut');
 });
 test('achievements: Recent lists the latest earned, newest first (a shared moment keeps the toasts\' order, reversed)', () => {
@@ -1607,31 +1159,6 @@ test('how long ago, short', () => {
   assert.strictEqual(L.fmtAgo(now + 5000, now), 'now', 'a clock turned back reads as now');
   assert(/\d/.test(L.fmtAgo(now - 8 * 86400e3, now)) && !/ d$/.test(L.fmtAgo(now - 8 * 86400e3, now)), 'a week on, the date');
 });
-test('factory achievements: the new parts, counted from the factory\'s own statistics', () => {
-  const A = L.Achievements, st = L.defaultState(), F = L.Factory;
-  assert.deepStrictEqual(A.check(st, { mode: 'factory' }), [], 'nothing for a fresh line');
-  st.factory.stats.delivered = 1;
-  assert.deepStrictEqual(A.check(st, { mode: 'factory' }).map((a) => a.id), ['fac_first']);
-  st.factory.stats.bySize[3] = 1; st.factory.stats.lines = 100;
-  assert.deepStrictEqual(A.check(st, { mode: 'factory' }).map((a) => a.id).sort(), ['fac_hand', 'fac_penta']);
-  const f = st.factory;
-  F.upgrade(f, 'assembler'); F.upgrade(f, 'assembler');
-  assert.deepStrictEqual(A.check(st, { mode: 'factory' }), [], 'two assemblers are not three');
-  for (const k of F.KINDS) while (F.upgrade(f, k));
-  assert.deepStrictEqual(A.check(st, { mode: 'factory' }).map((a) => a.id).sort(), ['fac_all', 'fac_belt', 'fac_crew', 'fac_store', 'fac_three']);
-  f.stats.smoothMs = 3600e3 - 1;
-  assert.deepStrictEqual(A.check(st, { mode: 'factory' }), []);
-  f.stats.smoothMs = 3600e3;
-  assert.deepStrictEqual(A.check(st, { mode: 'factory' }).map((a) => a.id), ['fac_smooth']);
-  f.stats.delivered = 10000; f.stats.made = 50000; f.stats.days = 100;
-  assert.deepStrictEqual(A.check(st, { mode: 'factory' }).map((a) => a.id).sort(), ['fac_10k', 'fac_1k', 'fac_days100', 'fac_days30', 'fac_mountain']);
-  const fac = A.LIST.filter((a) => a.group === 'factory');
-  assert.strictEqual(fac.length, 14);
-  assert(!fac.some((a) => /\b(press|stamp|crate|mold|bins?|collect|drop-off|conveyor)/i.test(a.name + ' ' + a.desc)), 'nothing of the old line left');
-  assert.deepStrictEqual([fac.filter((a) => a.tier !== 'legend').reduce((n, a) => n + a.pay, 0), fac.filter((a) => a.tier === 'legend').reduce((n, a) => n + a.pay, 0)], [610, 1125]);
-  assert.deepStrictEqual(['fac_1k', 'fac_10k', 'fac_mountain'].map((id) => A.LIST.find((a) => a.id === id).desc), ['Deliver 1,000 pieces.', 'Deliver 10,000 pieces.', 'Drop 50,000 minos.']);
-});
-
 console.log('effects physics');
 {
   load(['fxphysics.js']);
@@ -1760,8 +1287,7 @@ test('achievements pay a modest share: bands, the old order kept, a total well u
     1500, pz_h50: 2000, pz_clean: 120, pz_daily3: 150, pz_spin: 250, pz_fast: 300, pz_wild3: 300, pz_first20: 400,
     pz_hfirst25: 500, pz_h100: 600, pz_wildH: 1500, pz_daily30: 2000, pz_first100: 3000, lu_triathlon: 150,
     lu_hours10: 150, lu_days30: 300, lu_half: 400, lu_100k: 500, lu_curator: 2000, lu_hours100: 2000, lu_days100:
-    2000, lu_1m: 5000, lu_all: 5000, fac_first: 15, fac_hand: 25, fac_store: 50, fac_three: 80, fac_penta: 80, fac_belt: 80,
-    fac_crew: 120, fac_1k: 150, fac_days30: 150, fac_smooth: 200, fac_all: 600, fac_days100: 1200, fac_10k: 1500, fac_mountain: 2500
+    2000, lu_1m: 5000, lu_all: 5000,
   };
   // The game's own achievements (a board option's own, Achievements.add, are its tests' to hold).
   const LIST = A.LIST.filter((a) => a.id in OLD);
@@ -1774,10 +1300,10 @@ test('achievements pay a modest share: bands, the old order kept, a total well u
   const total = LIST.reduce((n, a) => n + a.pay, 0);
   const forSale = Object.values(L.COSMETICS).flatMap((k) => Object.values(k)).filter((c) => c.price > 0 && !c.reward).reduce((n, c) => n + c.price, 0);
   assert(total <= 20000 && total <= 0.5 * forSale, total + ' against ' + forSale + ' for sale');
-  assert.strictEqual(total, 19165);
+  assert.strictEqual(total, 17430);
   const sums = {};
   for (const a of LIST) { const k = a.group; sums[k] = sums[k] || [0, 0]; sums[k][a.tier === 'legend' ? 1 : 0] += a.pay; }
-  assert.deepStrictEqual(sums, { play: [2430, 3925], classic: [1450, 2800], puzzle: [1080, 2300], lull: [495, 2950], factory: [610, 1125] });
+  assert.deepStrictEqual(sums, { play: [2430, 3925], classic: [1450, 2800], puzzle: [1080, 2300], lull: [495, 2950] });
 });
 test('achievements: a fresh save and a short ordinary game earn nothing', () => {
   const st = L.defaultState(), A = L.Achievements;
@@ -2064,7 +1590,7 @@ test('achievement stats: days played', () => {
   const s = new L.Store();
   assert.strictEqual(s.state.stats.days, 0);
   s.day(); s.day();
-  assert.strictEqual(s.state.stats.days, 0, 'a day log entry alone (the factory running) is not a day played');
+  assert.strictEqual(s.state.stats.days, 0, 'a day log entry alone is not a day played');
   s.played(); s.played();
   assert.strictEqual(s.state.stats.days, 1, 'a day played counts once');
   assert.strictEqual(L.loadState(JSON.parse(s.serialize())).stats.days, 1, 'and a later load keeps it');
@@ -2582,67 +2108,6 @@ console.log('economy');
     for (const c of Combos.LIST) assert(Combos.reward(c, 0).lines < cheapest, c.id + ' pays ' + Combos.reward(c, 0).lines);
     assert(!/B\.list\.length\) B\.taper = \{\}/.test(require('fs').readFileSync(require('path').join(__dirname, '..', 'Game', 'js', 'library.js'), 'utf8')), 'nothing resets the taper');
   });
-  // The factory measured on its real line: open an hour (a look every five minutes; `sell`: selling the store's loose
-  // minos whenever it is full), away eleven (it runs on for two of them); lines an open hour, counting what the bank
-  // holds, over three days after a warm one, four seeds.
-  function factoryPerOpenHour(build, sell) {
-    let tot = 0, hrs = 0;
-    for (const seed of [99, 7, 1234, 55]) {
-      const f = seeded(seed);
-      for (const k of build) assert(Factory.upgrade(f, k), k);
-      for (let d = 0; d < 4; d++) {
-        const v0 = f.bank / Factory.LINE_SUB;
-        let got = 0;
-        for (let m = 0; m < 60; m += 5) {
-          Factory.run(f, 5 * MIN, null, false);
-          got += Factory.takeLines(f);
-          if (sell && Factory.mood(f).stuck) { Factory.sell(f); got += Factory.takeLines(f); }
-        }
-        got += f.bank / Factory.LINE_SUB - v0;
-        Factory.run(f, 11 * HOUR, null, true);
-        Factory.takeLines(f);
-        if (d) { tot += got; hrs++; }
-      }
-    }
-    return tot / hrs;
-  }
-  // The order a player builds in (each the thing that adds most for its price, roughly).
-  const FAC_LADDER = ['assembler', 'dropper', 'size', 'assembler', 'size', 'dropper', 'speed', 'beltSpeed', 'store', 'assembler', 'size', 'speed',
-    'beltSpeed', 'store', 'speed', 'beltSpeed', 'store'];
-  test('the factory\'s paybacks, measured on a line left to itself: the first assembler pays back within the hour; a full line makes many times a new one', () => {
-    const lv = {}, rows = [], pay = [];
-    for (const k of Factory.KINDS) lv[k] = 0;
-    let have = [], before = factoryPerOpenHour(have, false);
-    assert.strictEqual(before, 0, 'with no assembler nothing reaches the board');
-    for (const kind of FAC_LADDER) {
-      const price = T.COST[kind][lv[kind]];
-      have = have.concat([kind]);
-      const after = factoryPerOpenHour(have, false), gain = after - before;
-      rows.push(kind + ' ' + (lv[kind] + 1) + ': ' + price + ' for ' + (gain >= 0 ? '+' : '') + gain.toFixed(1) + '/h' + (gain > 0.5 ? ', ' + (price / gain).toFixed(1) + ' h' : ''));
-      pay.push(gain > 0 ? price / gain : Infinity);
-      lv[kind]++; before = after;
-    }
-    assert.strictEqual(have.length, Object.values(T.COST).flat().length, 'the ladder builds everything');
-    const first = factoryPerOpenHour(['assembler'], false);
-    assert(pay[0] <= 1, 'the first assembler pays back within the hour: ' + rows[0]);
-    assert(before >= 6 * first, 'a full factory makes ' + before.toFixed(0) + ' an open hour, one assembler ' + first.toFixed(0));
-    const tended = factoryPerOpenHour(have, true);
-    assert(tended >= before, 'selling the store when it is full adds to it: ' + tended.toFixed(1));
-    console.log('       factory paybacks (lines an open hour, left to itself): one assembler ' + first.toFixed(1) + ', full ' + before.toFixed(1) + ' (' + tended.toFixed(1) + ' selling when full)\n         ' + rows.join('\n         '));
-  });
-  test('the factory never pays faster than play: fully built and tended every minute (selling whenever the store is full), it makes under half a casual Standard hour', () => {
-    const f = maxOut(seeded(21));
-    Factory.run(f, 30 * MIN, null, false);
-    Factory.takeLines(f);
-    let got = 0;
-    for (let m = 0; m < 120; m++) { Factory.run(f, MIN, null, false); got += Factory.takeLines(f); if (Factory.mood(f).stuck) { Factory.sell(f); got += Factory.takeLines(f); } }
-    const perHour = got / 2, model = Factory.rates(f);
-    // Casual Standard (Relaxed, 10 × 20) is about 460 an hour by the bots (econ-test.cjs measures it against the engine).
-    assert(perHour <= 230, 'tended every minute: ' + perHour + ' an hour');
-    // The rates are the line's ceiling (assemblers never waiting for a mino on its way): the line runs under it.
-    assert(perHour <= model.auto * T.BONUS[T.BONUS.length - 1] + model.loose, 'under the model\'s ceiling: ' + JSON.stringify(model) + ' vs ' + perHour);
-    console.log('       a full factory tended every minute: ' + perHour + ' lines an hour (its ceiling ' + model.auto.toFixed(1) + ' from pieces, ' + model.loose.toFixed(1) + ' loose)');
-  });
   test('cosmetics: each kind rises in catalogue order, from 450 or less to 5,000 at most; 39,500 in all', () => {
     let total = 0;
     for (const [kind, cat] of Object.entries(L.COSMETICS)) {
@@ -2652,7 +2117,13 @@ console.log('economy');
       total += prices.reduce((a, b) => a + b, 0);
     }
     assert.strictEqual(total, 39500);
-    for (const cat of Object.values(L.COSMETICS)) for (const c of Object.values(cat)) if (c.reward) assert.strictEqual(c.price, 0, c.name + ' is a factory reward');
+    for (const cat of Object.values(L.COSMETICS)) for (const c of Object.values(cat)) if (c.reward) assert.strictEqual(c.price, 0, c.name + ' is a reward');
+  });
+  test('the Factory\'s reward looks are shelved with it: out of the shop and its counts, unless a save owns one', () => {
+    const rewards = Object.entries(L.COSMETICS).flatMap(([k, cat]) => Object.keys(cat).filter((id) => cat[id].reward).map((id) => [k, id]));
+    assert.strictEqual(rewards.length, 5);
+    for (const [k, id] of rewards) { assert(!L.inShop(k, id, []), k + ':' + id); assert(L.inShop(k, id, [id]), k + ':' + id + ' owned'); }
+    for (const [k, cat] of Object.entries(L.COSMETICS)) for (const id of Object.keys(cat)) if (!cat[id].reward) assert(L.inShop(k, id, []), k + ':' + id);
   });
   test('no dead code: nothing reads a Jackpot or lines.luck any more', () => {
     const dir = require('path').join(__dirname, '..', 'Game', 'js');
@@ -2715,7 +2186,12 @@ test('a loaded save gains missing fields and keeps its own', () => {
   assert.strictEqual(merged.settings.sound, true);
   assert.strictEqual(merged.settings.das, 230);
   assert.deepStrictEqual(merged.owned.skin, ['flat', 'gem']);
-  assert(merged.factory && merged.factory.v === Factory.VERSION && merged.factory.droppers === 1 && merged.factory.asm.length === 0);
+  assert(!('factory' in merged), 'no factory for a new save: it is shelved');
+  // A save from before the Factory was shelved loads, its factory kept as it was.
+  const old = { v: 9, droppers: 3, asm: [{ n: 4 }], stats: { made: 5000, delivered: 12 } };
+  const kept = L.loadState(JSON.parse(JSON.stringify({ lines: 9, factory: old, achievements: { fac_first: 1 }, stats: { timeMs: { factory: 6e4 }, lines: { factory: 40 } } })));
+  assert.deepStrictEqual([kept.lines, kept.factory, kept.achievements.fac_first, kept.stats.timeMs.factory, kept.stats.lines.factory], [9, old, 1, 6e4, 40]);
+  assert.deepStrictEqual(L.Achievements.check(kept, { mode: 'any' }), [], 'an old achievement id is left alone');
 });
 test('mute: off by default, kept by a save', () => {
   assert.strictEqual(L.defaultState().settings.muted, false);
@@ -2754,13 +2230,13 @@ test('native Reset: the fresh save goes to the panel as one reset message, and t
     assert(L.native.available);
     const s = new L.Store();
     s.state.lines = 900; s.state.achievements.quad = 1; s.state.settings.das = 199;
-    s.state.boards.retired.push({ id: 'b1' }); s.state.factory.stats.sold = 4;
+    s.state.boards.retired.push({ id: 'b1' });
     s.save();
     assert.deepStrictEqual(posts.map((m) => m.type), ['save']);
     s.reset();
     assert.deepStrictEqual(posts.map((m) => m.type), ['save', 'reset']);
     const sent = JSON.parse(posts[1].data);
-    assert.deepStrictEqual([sent.lines, Object.keys(sent.achievements).length, sent.boards.retired.length, sent.factory.stats.sold, sent.settings.das], [0, 0, 0, 0, 199]);
+    assert.deepStrictEqual([sent.lines, Object.keys(sent.achievements).length, sent.boards.retired.length, sent.settings.das], [0, 0, 0, 199]);
     // The page on its way out (a pending autosave, a flush, pagehide) writes nothing over it.
     s.state.lines = 5; s.touch(); s.save(); s.save();
     assert.strictEqual(posts.length, 2);
@@ -4388,11 +3864,6 @@ console.log('sound and music');
     const fs = require('fs'), path = require('path'), dir = path.join(__dirname, '..', 'Game', 'js');
     const played = new Set(['move', 'rotate', 'lower', 'lock', 'hold', 'clear', 'quad', 'twist', 'perfect', 'combo', 'boom', 'drill']);
     for (const f of fs.readdirSync(dir)) for (const m of fs.readFileSync(path.join(dir, f), 'utf8').matchAll(/\.play\('([a-z]+)'/g)) played.add(m[1]);
-    // The factory plays its line's sounds through a table.
-    const table = fs.readFileSync(path.join(dir, 'modes.js'), 'utf8').match(/LINE_SOUNDS = \{([^}]*)\}/);
-    assert(table, 'the factory\'s sound table');
-    for (const m of table[1].matchAll(/'([a-z]+)'/g)) played.add(m[1]);
-    for (const n of ['stamp', 'pack', 'land', 'bell']) assert(played.has(n), n);
     const soft = Sound.PACKS.soft;
     assert.strictEqual(L.defaultState().equipped.sound, 'soft');
     for (const n of played.add('a-sound-nobody-has-voiced-yet')) {
