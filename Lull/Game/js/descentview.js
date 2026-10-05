@@ -1,8 +1,8 @@
 // Lull — Descent's look and its place in Free Play (the rules are js/descent.js): the hanging blocks, stone and rods on
 // the board, each lane's next lowering as a tick at its top, shots as thin lines of light, the clock that runs the
 // descent (its Ready and Paused cards, pausing whenever the board is not in front), Stage, Broken and Next in the status
-// bar, the Cleared and Topped out cards, Rewind 5 s in Undo's place, the New board window's level row and stage picker,
-// the library's tags and the summary's tiles, and the Descent line in Stats.
+// bar, the Cleared and Topped out cards, Rewind 5 s in Undo's place, the Custom window's level row and stage picker
+// (and the menu's Descent setup), the summary's tiles, and the Descent line in Stats.
 //
 //   Blocks     glass, a clear pane with a slow shimmer; dense, smoky and thicker (a crack once hit); armoured, banded top
 //              and bottom; prism, faceted; drip, a bead underneath that swells before it falls; weight, dark with two
@@ -215,14 +215,13 @@
       view.dirty = true;
     },
     busy() { return false; },
-    /** The New board preview and the library's thumbnails: the rows that hang when the board starts. */
+    /** The Custom window's preview: the rows that hang when the board starts. */
     preview(ctx, gm, recipe, theme) {
       if (!Descent.on(recipe)) return;
       const lv = Descent.LEVELS[recipe.descent.level] || Descent.LEVELS.easy, rows = Math.max(2, Math.round(gm.h * lv.start)), c = gm.c, col = colorsFor(theme);
       for (let yy = 0; yy < rows; yy++) for (let x = 0; x < gm.w; x++) {
         const px = gm.x + x * c, py = gm.y + yy * c;
-        if (gm.style === 'thumb') { ctx.fillStyle = col.edge; const gap = c >= 5 ? 1 : 0; ctx.fillRect(px, py, c - gap, c - gap); }
-        else drawBlock(ctx, { k: 'glass', hp: 1 }, px, py, c, col, { still: true });
+        drawBlock(ctx, { k: 'glass', hp: 1 }, px, py, c, col, { still: true });
       }
     },
   };
@@ -300,7 +299,7 @@
       /** The clock runs now: Free Play in front, nothing over the board, the page shown and focused, not waiting, not over. */
       running() {
         const gm = g();
-        return !!gm && !!D() && app.tab === 'play' && !(L.Collapse && L.Collapse.on) && !UI.modalOpen() && !play.cardOpen && !play.fullView && !document.hidden && document.hasFocus() && !this.waiting && !gm.over;
+        return !!gm && !!D() && app.tab === 'play' && !(L.Collapse && L.Collapse.on) && !UI.modalOpen() && !play.cardOpen && !document.hidden && document.hasFocus() && !this.waiting && !gm.over;
       },
       counts() { return this.running(); },
       blocked() { return this.waiting; },
@@ -319,7 +318,7 @@
           first && st ? h('p', { class: 'ds-line' }, st.line) : null,
           first && !st ? h('p', { class: 'ds-line' }, best ? 'Best ' + fmtInt(best) + ' rows' : 'The descent never runs out.') : null,
           h('div', { class: 'row' },
-            h('button', { class: 'btn', onclick: () => play.openLibrary() }, ico('boards'), 'Boards'),
+            play.menuButton(),
             h('button', { class: 'btn primary', id: 'ds-go', onclick: () => this.go() }, first ? 'Start ' : 'Resume ', h('kbd', null, 'Space'))),
         ], 'ds-card ds-wait');
         play.renderStatus();
@@ -337,7 +336,7 @@
       /** Away from the board (blur, the pointer gone, hidden, another tab, a window over it, rolled up): Paused. */
       pause() {
         const x = D();
-        if (this.waiting || !x || !x.started || g().over || play.cardOpen || play.fullView) return;
+        if (this.waiting || !x || !x.started || g().over || play.cardOpen) return;
         this.wait();
       },
       gate(act, rep) {
@@ -429,21 +428,10 @@
         if (kind === 'cleared') this.startStage(nextOf(x.stage), 'cleared');
         else this.startStage(x.stage, kind || 'full');
       },
-      /** This board retired (as Retire does) and a new one of the same size and level at that stage, waiting at its Ready card. */
+      /** A new game in this one's place (New game), of the same size and level at that stage, waiting at its Ready card. */
       startStage(stage, reason) {
-        const st = app.store, now = Date.now(), gm = g();
-        Library.ensure(st.state, now);
-        play.syncCounters();
-        const recipe = Recipe.normalize(Object.assign({}, gm.recipe, { descent: { level: gm.recipe.descent.level, stage } }));
-        const size = { w: gm.w, h: gm.h };
-        if (gm.s.pieces) {
-          play.logBoard(gm.s, reason);
-          Library.retire(st.state, st.state.boards.cur, gm.toJSON(), now, reason);
-          Library.newCurrent(st.state, now);
-        }
-        st.state.boards.recipe = recipe;
-        play.freshGame(size, recipe);
-        play.persist();
+        const gm = g();
+        play.newBoard(reason, Recipe.normalize(Object.assign({}, gm.recipe, { descent: { level: gm.recipe.descent.level, stage } })));
       },
       cards: {
         cleared(pm) {
@@ -453,7 +441,7 @@
             h('p', { class: 'cl-sub' }, subOf(x)),
             h('p', null, fmtInt(x.total / x.w) + ' rows in ' + fmtDuration(Math.max(1000, x.tk * MS))),
             h('div', { class: 'row' },
-              h('button', { class: 'btn', onclick: () => pm.openLibrary() }, ico('boards'), 'Boards'),
+              pm.menuButton(),
               h('button', { class: 'btn primary', id: 'ds-next', onclick: () => ctl.primary('cleared') }, nxt === 'endless' ? 'Endless ' : 'Stage ' + nxt + ' ', h('kbd', null, 'Space'))),
           ];
         },
@@ -467,7 +455,7 @@
             x ? h('p', null, endless ? h('span', { class: 'big' }, fmtInt(Descent.rowsBroken(x))) : null, endless ? ' rows' + (best > Descent.rowsBroken(x) ? ' · best ' + fmtInt(best) : '') : Descent.rowsBroken(x) + ' of ' + (x.total / x.w) + ' rows broken') : null,
             h('div', { class: 'row' },
               X2 && X2.rewindTarget() && !gm.rules.refuse.rewind ? ctl.rewindButton({ class: 'btn', id: 'ds-rewind', onclick: () => ctl.cardRewind() }) : null,
-              h('button', { class: 'btn', onclick: () => pm.openLibrary() }, ico('boards'), 'Boards'),
+              pm.menuButton(),
               h('button', { class: 'btn primary', id: 'ds-again', onclick: () => ctl.primary('full') }, 'Try again ', h('kbd', null, 'Space'))),
           ];
         },
@@ -527,7 +515,7 @@
   const clockOf = (ms) => { const s = Math.floor((ms || 0) / 1000); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
   const tilesOf = (ext) => (ext && ext.rows != null ? [[fmtInt(ext.rows), 'Rows broken'], [fmtInt(ext.stones || 0), 'Stone'], [clockOf(ext.ms), 'Time']] : []);
 
-  // ---- the New board window, the library, Stats ---------------------------------------------------------------------------
+  // ---- the Custom window and the menu's setup, Stats ----------------------------------------------------------------
 
   Recipe.uiPart({
     key: 'descent', order: 47, mode: 'descent', name: 'Descent',
@@ -550,13 +538,6 @@
           h('button', { type: 'button', class: 'icon-btn nb-step', 'data-focus': path + '+', 'aria-label': 'Later stage', 'aria-disabled': String(i >= all.length - 1), html: L.Icons.icon('plus'), onclick: () => to(i + 1) })));
     },
     said(path, v) { return path === 'descent.stage' ? Descent.stageName(v) : null; },
-    tags: (r, x, info) => {
-      if (!Descent.on(r)) return [];
-      const out = [];
-      if (info && info.ended === 'cleared') out.push({ text: 'Cleared', cls: 'full cleared' });
-      else if (r.descent.stage === 'endless' && x) { const rows = x.rows != null ? x.rows : Math.floor((x.broken || 0) / (x.w || 10)); if (rows) out.push({ text: rows + ' rows' }); }
-      return out;
-    },
     tiles: (ext) => tilesOf(ext),
     endName: (reason) => (reason === 'cleared' ? 'Cleared' : null),
   });

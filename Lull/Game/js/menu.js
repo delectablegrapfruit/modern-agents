@@ -1,14 +1,16 @@
 // Lull — the Play menu (PlayMode.openMenu): a page over the Play tab, opened only by hand (the Menu button under the
-// board, or Esc in a browser) and never by itself. Its home is two big tiles side by side and one button under them:
-//   Solo         Relaxed, Classic, Descent, Mural, then Custom (the full New board window)
+// board, or Esc in a browser) and never by itself. Its home is two big tiles side by side:
+//   Solo         Relaxed, Classic, Descent, Mural, then Custom
 //   Multiplayer  Race and Battle, against the computer
-//   Manage       the library (its Solo and Multiplayer tabs)
 // The X at the top right (or Esc) closes it: back to the board in play, as it was. Solo and Multiplayer are pages of
 // big tiles too, one a mode, with Back beside the X.
-// A mode opens a short setup with only that mode's settings (the parts' own controls, from Recipe.uiPart: a level row,
-// a panel, presets, chips), then Start (Classic has Watch beside it: the computer plays, js/watch.js). Resume by rules: when a saved board still to be played has exactly these rules
-// (Library.match), the setup offers "Resume: <name> (<progress>)" above Start new, and Enter resumes it; a new board is
-// made only by Start (no match), Start new, or Custom. Each mode's last setup is kept (state.boards.menu).
+// Each mode keeps one game (js/library.js). A mode opens a short setup with only that mode's settings (the parts' own
+// controls, from Recipe.uiPart: a level row, a panel, presets, chips). With a game kept, Continue (the primary: Enter)
+// resumes it where it was left and New game replaces it with one of these settings (after asking, when it was played);
+// with none, Start. Classic has Watch beside it (the computer plays, js/watch.js). Each mode's last setup is kept
+// (state.boards.menu) and applies to its next new game.
+// Custom is a page of its own: New custom game (the Custom window, js/modes.js openNewBoard) and the presets saved
+// from it, each with Start, Rename and Delete. A Custom game is never kept (PlayMode.startCustom).
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
@@ -49,7 +51,7 @@
   }
 
   /**
-   * A mode's setup: as last chosen in the menu, or else that mode's settings as last chosen in New board, at its first
+   * A mode's setup: as last chosen in the menu, or else that mode's settings as last chosen in the Custom window, at its first
    * size. Normal shapes and no modifiers (Custom has those), except Relaxed's shapes, which the setup offers.
    */
   function setupOf(B, mode) {
@@ -62,7 +64,7 @@
     return { mode, recipe, size: R.clampSize((kept && kept.size) || firstSize(mode), recipe) };
   }
 
-  /** How far a saved board has got, in a few words: a picture's pieces, a match's tally, else its lines. */
+  /** How far a kept game has got, in a few words: a picture's pieces, a match's tally, else its lines. */
   function progress(json) {
     if (!json || typeof json !== 'object') return '';
     if (json.ended) { const u = L.Recipe && L.Recipe.uis().find((x) => x.endName && x.endName(json.ended)); return u ? u.endName(json.ended) : 'Ended'; }
@@ -73,8 +75,14 @@
       const e = ext[k];
       if (e && e.level && P) return 'vs ' + P.NAMES[e.level] + ' ' + (e.won || 0) + '–' + (e.lost || 0);
     }
-    return 'Lines ' + fmtInt((json.s && json.s.lines) || 0);
+    // Nothing cleared yet: the pieces set.
+    const s = json.s || {};
+    if (!s.lines && s.pieces) return fmtInt(s.pieces) + (s.pieces === 1 ? ' piece' : ' pieces');
+    return 'Lines ' + fmtInt(s.lines || 0);
   }
+
+  /** Has anything been played on a kept game (a piece set, or it ended)? Only then is there a game to continue. */
+  const played = (json) => !!json && typeof json === 'object' && (!!(json.s && json.s.pieces) || !!json.over || !!json.ended);
 
   /** A board's mode in words, short: "Relaxed" (and its shapes or modifiers), else its recipe's label ("Classic A"). */
   function modeLabel(recipe) {
@@ -85,8 +93,9 @@
   }
 
   /**
-   * The menu, one page over the Play tab with pages: home (Solo, Multiplayer, Manage), solo, multi and a mode's setup. Esc closes it from any
-   * page (Back steps back a page). One at a time: asked again, the open one stays. Returns its handle.
+   * The menu, one page over the Play tab with pages: home (Solo, Multiplayer), solo, multi, custom and a mode's setup.
+   * Esc closes it from any page (Back steps back a page). One at a time: asked again, the open one stays. Returns its
+   * handle.
    */
   function open(play, startAt) {
     if (play.menuHandle && play.menuHandle.el.isConnected) return play.menuHandle;
@@ -107,7 +116,7 @@
       h('span', { class: 'pic', 'aria-hidden': 'true', html: pic || '' }), h('b', null, name), line ? h('span', { class: 'ln' }, line) : null);
     const modeTile = (x) => tile('mn-mode', L.Icons.icon(ICON_OF[x.mode]) || L.Icons.icon('play'), x.name, x.line, () => openSetup(x.mode), { 'data-mode': x.mode });
 
-    // ---- what the setup chooses (as the New board window does: Recipe.resolve, the last choice wins) ----
+    // ---- what the setup chooses (as the Custom window does: Recipe.resolve, the last choice wins) ----
     const idOf = (path, v) => path + '=' + (typeof v === 'string' ? v : JSON.stringify(v));
     const option = (path, value, cls, kids, role) => {
       const bad = R.conflicts(setup.recipe)[idOf(path, value)] || null;
@@ -159,27 +168,65 @@
       if (m === 'descent') return [levelRow('Level'), panel()];
       return [panel()];
     };
-    /** The board these rules would resume (Library.match), or null. */
-    const matchNow = () => Library.match(B(), play.boardJSON(), setup.recipe, setup.size);
-    const curJSON = () => play.boardJSON();
-    const jsonOf = (rec) => (rec.id === B().cur ? curJSON() : rec.game);
+    /** The game this mode kept, when something was played on it (Library.saved), or null. */
+    const keptNow = () => { const j = Library.saved(B(), setup.mode, play.boardJSON()); return played(j) ? j : null; };
 
-    const resume = (rec) => {
-      if (!rec) return;
-      // (The board in play while a game is watched is the one set aside for it: back to it.)
-      if (rec.id === B().cur) play.unwatch();
-      if (rec.id !== B().cur && !play.switchTo(rec.id)) return;
-      close();
-    };
+    /** Continue: the mode's game, where it was left. */
+    const resume = () => { play.resumeMode(setup.mode); close(); };
     /** Watch (Classic): the bot plays these rules; the board in play waits (js/watch.js). */
     const watch = () => {
       remember();
       if (L.Watch && L.Watch.start(play, R.normalize(setup.recipe), setup.size)) close();
     };
+    /** New game (Start): these settings in place of the mode's game; a game that was played is replaced only once asked. */
     const start = () => {
       remember();
-      const made = play.shelveAndNew({ w: setup.size.w, h: setup.size.h }, R.normalize(setup.recipe));
-      if (made) close();
+      const go = () => { if (play.newGame(R.normalize(setup.recipe), { w: setup.size.w, h: setup.size.h })) close(); };
+      if (!keptNow()) { go(); return; }
+      const name = (info(setup.mode) || { name: setup.mode }).name;
+      L.UI.confirm('New ' + name + ' game?', 'The ' + name + ' game you have now is replaced.', 'New game', go, 'primary', 'newBoard');
+    };
+
+    // ---- Custom: New custom game, and the presets ----
+    let renaming = null;
+    /** The Custom window over the menu: Start closes both; a preset saved shows here at once. */
+    const customWindow = () => play.openNewBoard((made) => { if (made) close(); }, () => { if (page === 'custom') draw(); });
+    const startPreset = (p) => { play.startCustom(p.recipe, p.size); close(); };
+    const removePreset = (p) => L.UI.confirm('Delete ' + p.name + '?', null, 'Delete', () => {
+      Library.removePreset(B(), p.id); st.save(); draw();
+      // Once the question has gone (it gives focus back as it closes): the first preset left, or New custom game.
+      setTimeout(() => { const f = body.querySelector('.mn-preset .mn-pstart') || body.querySelector('.mn-newcustom'); if (f && f.isConnected) f.focus({ preventScroll: true }); }, 0);
+    }, 'danger', 'trash');
+    /** A preset's name, or the field that renames it (Enter or leaving it keeps the name; Esc does not). */
+    const presetName = (p) => {
+      if (renaming !== p.id) return h('b', { class: 'nm' }, p.name);
+      const input = h('input', { type: 'text', class: 'mn-pname', value: p.name, maxlength: String(Library.NAME_MAX), 'aria-label': 'Name', spellcheck: 'false' });
+      let done = false;
+      const finish = (keep) => {
+        if (done) return;
+        done = true;
+        if (keep && Library.renamePreset(B(), p.id, input.value)) st.save();
+        renaming = null;
+        draw();
+        const f = body.querySelector('.mn-preset[data-id="' + p.id + '"] .mn-pren');
+        if (f) f.focus({ preventScroll: true });
+      };
+      input.addEventListener('keydown', (e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') { e.preventDefault(); finish(true); } else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+      });
+      input.addEventListener('blur', () => { if (input.isConnected) finish(true); });
+      return input;
+    };
+    const presetRow = (p) => {
+      const lbl = R.label(p.recipe, true) || 'Normal';
+      const icon = (name, label, fn, cls) => h('button', { type: 'button', class: 'icon-btn ' + cls, 'aria-label': label + ' ' + p.name, 'data-tip': label, html: L.Icons.icon(name), onclick: fn });
+      return h('div', { class: 'mn-preset', 'data-id': p.id },
+        h('div', { class: 'mn-pinfo' }, presetName(p), h('span', { class: 'ln', title: R.label(p.recipe) || null }, Library.sizeLabel(p.size.w, p.size.h) + ' · ' + lbl)),
+        h('div', { class: 'mn-pacts' },
+          icon('rename', 'Rename', () => { renaming = p.id; draw(); const f = body.querySelector('.mn-pname'); if (f) { f.focus(); f.select(); } }, 'mn-pren'),
+          icon('trash', 'Delete', () => removePreset(p), 'mn-pdel del'),
+          h('button', { type: 'button', class: 'btn sm mn-pstart', 'aria-label': 'Start ' + p.name, onclick: () => startPreset(p) }, 'Start')));
     };
 
     // ---- the pages ----
@@ -189,14 +236,13 @@
         body: [h('div', { class: 'mn-page mn-home' },
           h('div', { class: 'mn-tiles mn-two' },
             tile('mn-solo', PICS.solo, 'Solo', here(SOLO).map((x) => x.name).join(', '), () => go('solo')),
-            tile('mn-multi', PICS.multi, 'Multiplayer', here(MULTI).map((x) => x.name).join(', '), () => go('multi'))),
-          h('button', { type: 'button', class: 'btn mn-manage', onclick: manage }, L.UI.icon('boards'), 'Manage'))],
+            tile('mn-multi', PICS.multi, 'Multiplayer', here(MULTI).map((x) => x.name).join(', '), () => go('multi'))))],
         foot: null,
       }),
       solo: () => ({
         title: 'Solo', back: 'home',
         body: [h('div', { class: 'mn-page' }, h('div', { class: 'mn-tiles mn-modes' }, here(SOLO).map(modeTile),
-          tile('mn-mode mn-custom', L.Icons.icon(ICON_OF.custom), 'Custom', 'Any size, shapes, modifiers and mode', custom, { 'data-mode': 'custom' })))],
+          tile('mn-mode mn-custom', L.Icons.icon(ICON_OF.custom), 'Custom', 'Any size, shapes, modifiers and mode', () => go('custom'), { 'data-mode': 'custom' })))],
         foot: null,
       }),
       multi: () => ({
@@ -204,26 +250,40 @@
         body: [h('div', { class: 'mn-page' }, h('div', { class: 'mn-tiles mn-two' }, here(MULTI).map(modeTile)))],
         foot: null,
       }),
-      setup: () => {
-        const m = setup.mode, hit = matchNow();
-        const resumeBtn = hit ? h('button', { type: 'button', class: 'btn primary mn-resume', onclick: () => resume(hit) },
-          h('span', { class: 'lbl' }, 'Resume: ' + hit.name + ' (' + progress(jsonOf(hit)) + ')')) : null;
+      custom: () => {
+        const list = B().presets;
         return {
-          title: (info(m) || { name: m }).name, back: Library.side(setup.recipe) === 'multi' ? 'multi' : 'solo',
-          body: [h('div', { class: 'nb-body mn-setup', 'data-mode': m }, ...setupControls().filter(Boolean), why)],
-          foot: [h('div', { class: 'mn-btns' }, resumeBtn,
+          title: 'Custom', back: 'solo',
+          body: [h('div', { class: 'mn-custom-page' },
+            h('button', { type: 'button', class: 'mn-newcustom', onclick: customWindow },
+              h('span', { class: 'pic', 'aria-hidden': 'true', html: L.Icons.icon(ICON_OF.custom) }),
+              h('span', { class: 'tx' }, h('b', null, 'New custom game'), h('span', { class: 'ln' }, 'Any size, shapes, modifiers and mode'))),
+            h('div', { class: 'mn-presets-head' }, h('span', { class: 'mn-lab' }, 'Presets'), h('span', { class: 'mn-count' }, list.length + ' of ' + Library.MAX_PRESETS)),
+            list.length ? h('div', { class: 'mn-presets', role: 'list' }, list.map((p) => { const r = presetRow(p); r.setAttribute('role', 'listitem'); return r; }))
+              : h('p', { class: 'mn-empty' }, 'Save preset in the Custom window keeps its rules here.'),
+            h('p', { class: 'mn-note' }, 'A custom game is not saved. It ends when you leave it.'))],
+          foot: null,
+        };
+      },
+      setup: () => {
+        const m = setup.mode, kept = keptNow(), name = (info(m) || { name: m }).name;
+        return {
+          title: name, back: Library.side(setup.recipe) === 'multi' ? 'multi' : 'solo',
+          body: [h('div', { class: 'nb-body mn-setup', 'data-mode': m }, ...setupControls().filter(Boolean), why,
+            kept ? h('p', { class: 'mn-note' }, 'These settings apply to a new game.') : null)],
+          foot: [h('div', { class: 'mn-btns' },
+            kept ? h('button', { type: 'button', class: 'btn primary mn-continue', onclick: resume },
+              h('span', { class: 'lbl' }, 'Continue'), h('span', { class: 'mn-prog' }, progress(kept))) : null,
             h('div', { class: 'mn-pair' },
               m === 'classic' && L.Watch ? h('button', { type: 'button', class: 'btn mn-watch', 'data-tip': 'The computer plays; take over any time', onclick: watch }, L.UI.icon('watch'), 'Watch') : null,
-              h('button', { type: 'button', class: 'btn mn-start' + (hit ? '' : ' primary'), onclick: start }, hit ? 'Start new' : 'Start')))],
+              h('button', { type: 'button', class: 'btn mn-start' + (kept ? '' : ' primary'), onclick: start }, kept ? 'New game' : 'Start')))],
         };
       },
     };
     let backTo = null;
     const backBtn = h('button', { type: 'button', class: 'btn ghost mn-back', onclick: () => { if (backTo) go(backTo); } }, L.UI.icon('chevLeft'), 'Back');
     function openSetup(mode) { setup = setupOf(B(), mode); memo = {}; showWhy(''); go('setup'); }
-    function custom() { close(); play.openNewBoard(); }
-    function manage() { close(); play.openLibrary(); }
-    function go(p) { const from = page; page = p; draw(true, from); }
+    function go(p) { const from = page; page = p; renaming = null; draw(true, from); }
 
     /** Draws the page; the control that had focus keeps it (a part's by data-focus, an option by path and value). */
     function draw(fresh, from) {
@@ -243,7 +303,8 @@
       if (fresh) {
         body.scrollTop = 0;
         // Focus where the page starts: back on the area or mode it came from, else its first control.
-        const back = from === 'solo' || from === 'multi' ? body.querySelector('.mn-' + from) : from === 'setup' && setup ? body.querySelector('[data-mode="' + setup.mode + '"]') : null;
+        const back = from === 'solo' || from === 'multi' ? body.querySelector('.mn-' + from) : from === 'setup' && setup ? body.querySelector('[data-mode="' + setup.mode + '"]')
+          : from === 'custom' ? body.querySelector('[data-mode="custom"]') : null;
         const first = back || (page === 'setup' ? (foot.querySelector('.btn.primary') || body.querySelector('button')) : body.querySelector('button'));
         if (first) first.focus({ preventScroll: true });
       } else if (focused) {
@@ -263,10 +324,10 @@
     handle.el.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.closest && e.target.closest('button') && !e.target.closest('.btn.primary')) e.stopPropagation(); });
     play.menuHandle = handle;
     // For the tests: the page and the setup as they stand.
-    handle.menu = { get page() { return page; }, get setup() { return setup; }, go, openSetup, match: () => (setup ? matchNow() : null) };
+    handle.menu = { get page() { return page; }, get setup() { return setup; }, go, openSetup, kept: () => (setup ? keptNow() : null) };
     if (startAt && info(startAt)) openSetup(startAt); else go(startAt && pages[startAt] && startAt !== 'setup' ? startAt : 'home');
     return handle;
   }
 
-  L.Menu = { SOLO, MULTI, open, setupOf, progress, modeLabel, firstSize };
+  L.Menu = { SOLO, MULTI, open, setupOf, progress, played, modeLabel, firstSize };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

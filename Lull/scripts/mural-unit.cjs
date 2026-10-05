@@ -59,8 +59,6 @@ module.exports = function muralUnit({ L, test }) {
     assert(res.recipe.mode === 'mural' && !res.recipe.mods.mirror);
     const rules = Recipe.rules(R(), 8);
     assert(!rules.undo && !rules.hints && !rules.rated && rules.refuse.bomb === 'Not in Mural' && rules.refuse.rewind === 'Not in Mural');
-    assert.strictEqual(Recipe.editConflicts(R(), R())['mode=plain'], 'A Mural board stays Mural');
-    assert.strictEqual(M.PART.noEdit(R()), 'A mural keeps its picture');
   });
 
   /** Checks a plan: every cell of the picture covered once (a cell over it only within UP rows), every piece resting

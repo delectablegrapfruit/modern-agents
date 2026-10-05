@@ -1,9 +1,8 @@
-// Lull — the Mirror modifier's look (js/mirror.js has its rules) and its place in the New board window. The copy of the
+// Lull — the Mirror modifier's look (js/mirror.js has its rules) and its place in the Custom window. The copy of the
 // piece in play is drawn at 0.8 of the piece's opacity, so the piece you steer reads first (the pair's ghost is drawn
 // in full); the line down the middle is still, never animated, and runs through the open well (never across a block):
 // on an even width a 1.5 px accent line between the two middle columns at 0.35, on an odd width the centre column (its
-// own mirror) tinted at 0.06 with a hairline on each edge. The same line is on the New board preview and the library's
-// thumbnails.
+// own mirror) tinted at 0.06 with a hairline on each edge. The same line is on the Custom window's preview.
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
@@ -57,19 +56,19 @@
     stroke(runs(m - 1).concat(runs(m)), 1, HAIR_ALPHA);
   }
 
-  /** The line on a board drawn small (Render.previewBoard: the New board preview, a library thumbnail). */
+  /** The line on a board drawn small (Render.previewBoard: the Custom window's preview). */
   function drawPreview(ctx, geom, theme) {
     const { x, y, c, w, h } = geom, dpr = geom.dpr || 1, acc = theme.accent, H = h * c;
     if (w % 2 === 0) {
       const lw = Math.max(1, Math.round(LINE_W * dpr));
-      ctx.fillStyle = Render.rgba(acc, geom.style === 'thumb' ? 0.5 : LINE_ALPHA + 0.1);
+      ctx.fillStyle = Render.rgba(acc, LINE_ALPHA + 0.1);
       ctx.fillRect(Math.round(x + (w / 2) * c - lw / 2), y, lw, H);
       return;
     }
     const m = (w - 1) / 2, hw = Math.max(1, Math.round(dpr));
     ctx.fillStyle = Render.rgba(acc, TINT_ALPHA * 2);
     ctx.fillRect(x + m * c, y, c, H);
-    ctx.fillStyle = Render.rgba(acc, geom.style === 'thumb' ? 0.45 : HAIR_ALPHA + 0.1);
+    ctx.fillStyle = Render.rgba(acc, HAIR_ALPHA + 0.1);
     ctx.fillRect(Math.round(x + m * c) - Math.floor(hw / 2), y, hw, H);
     ctx.fillRect(Math.round(x + (m + 1) * c) - Math.floor(hw / 2), y, hw, H);
   }
@@ -82,7 +81,7 @@
     preview(ctx, geom, recipe, theme) { if (L.Mirror && L.Mirror.on(recipe)) drawPreview(ctx, geom, theme); },
   });
 
-  // The New board window: a switch on the Modifiers tab.
+  // The Custom window: a switch on the Modifiers tab.
   Recipe.uiPart({ key: 'mirror', order: 20, mod: 'mirror', name: 'Mirror' });
 
   L.MirrorView = { drawLine, drawPreview, COPY_ALPHA, LINE_ALPHA };

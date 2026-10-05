@@ -1,9 +1,9 @@
-// Descent in the browser (js/descent.js, js/descentview.js): made in the New board window (Mode ▸ Descent between
+// Descent in the browser (js/descent.js, js/descentview.js): made in the Custom window (Mode ▸ Descent between
 // Classic and Race; its level and stage; 4 × 8 raised to 8 × 14; the preview's hanging rows), the board it makes (the
 // hanging blocks drawn, Stage, Broken and Next in the status bar), the clock (the Ready card; Space starts it; it runs in
 // real time; it pauses at the Paused card on a blur, the page hidden, a window over it and P), a clear's shots, Rewind
 // 5 s (Undo's place: its name, five seconds back, paid as an Undo), the Cleared card and its next stage, the Topped out
-// card, a reload at the Paused card, the library's tags, Stats and the achievements' group, the phones (390 × 844,
+// card, a reload at the Paused card, Stats and the achievements' group, the phones (390 × 844,
 // 320 × 568: the status bar and the window fit, 44 px targets, a tap starts), and frames at four sizes in both themes.
 // Run by browser-test.cjs: require('./descent-test.cjs')({ browser, check, PAGE, OUT }).
 'use strict';
@@ -19,6 +19,8 @@ const SCENE = (o) => {
   const app = Lull.app, m = app.modes.play, R = Lull.Recipe, P = Lull.Pieces, Ds = Lull.Descent;
   while (Lull.UI.modalOpen()) Lull.UI.closeTopModal();
   m.hideCard();
+  // (A game put in play by hand is the mode's own game in play, never a Custom one: a reload finds it.)
+  m.custom = null;
   m.setGame(new Lull.Game({ w: o.w || 10, h: o.h || 20, seed: o.seed || 5, recipe: R.normalize({ mode: 'descent', descent: { level: o.level || 'medium', stage: o.stage || 1 } }), previewCount: m.settings.preview }));
   const g = m.game, D = Ds.of(g);
   const KIND = { g: 'glass', d: 'dense', a: 'armour', p: 'prism', r: 'drip', w: 'weight', e: 'echo', k: 'lock' };
@@ -76,7 +78,7 @@ module.exports = async function descentTests({ browser, check, PAGE, OUT }) {
   const card = (ev) => ev(() => { const m = Lull.app.modes.play, ov = m.overlay; return { open: m.cardOpen, title: (ov.querySelector('h2') || {}).textContent, sub: (ov.querySelector('.cl-sub') || {}).textContent || null, line: (ov.querySelector('.ds-line') || {}).textContent || null, btns: [...ov.querySelectorAll('.btn')].map((b) => b.textContent.trim()) }; });
   const status = (ev) => ev(() => [...document.querySelectorAll('#play-status .stat')].map((s) => s.textContent.trim()));
 
-  // ---- the New board window: Mode ▸ Descent ▸ Hard, stage 3; 4 × 8 raised to 8 × 14; the preview; Create ----------------
+  // ---- the Custom window: Mode ▸ Descent ▸ Hard, stage 3; 4 × 8 raised to 8 × 14; the preview; Start ----------------
   const D = await open();
   let { page, ev } = D;
   await ev(() => { const B = Lull.app.store.state.boards; B.size = { w: 4, h: 8 }; B.recipe = Lull.Recipe.normalize({}); Lull.app.modes.play.openNewBoard(); });
@@ -99,10 +101,10 @@ module.exports = async function descentTests({ browser, check, PAGE, OUT }) {
   }));
   check('Descent ▸ Hard ▸ Stage 3: the level row, the stage stepper (read out), 8 × 14 at least; the preview shows the hanging rows', win.levels.join() === 'Easy,Medium,Hard' && win.pressed.join() === 'Hard' && win.stage === '3' && win.valuetext === 'Stage 3' && win.w === '8' && win.h === '14' && win.tab === 'Descent' && /Stage 3/.test(win.live) && win.preview > 20, JSON.stringify(win));
   await D.shot('descent-newboard-520x760');
-  await ev(() => { [...document.querySelectorAll('.modal .btn')].find((b) => b.textContent.trim() === 'Create').click(); });
+  await ev(() => { [...document.querySelectorAll('.modal .btn')].find((b) => b.textContent.trim() === 'Start').click(); });
   await page.waitForTimeout(200);
   const made = await ev(() => { const m = Lull.app.modes.play, g = m.game; return { label: Lull.Recipe.label(g.recipe), w: g.w, h: g.h, ext: g.ext.map((e) => e.key).join(), parts: m.view.parts.map((p) => p.key).join(), title: (m.overlay.querySelector('h2') || {}).textContent, sub: (m.overlay.querySelector('.cl-sub') || {}).textContent, line: (m.overlay.querySelector('.ds-line') || {}).textContent, want: Lull.Descent.STAGES[2].line }; });
-  check('Create: a Descent board (8 × 14, Hard, Stage 3), waiting at its Ready card with the stage’s line', made.label === 'Descent Hard · Stage 3' && made.w === 8 && made.h === 14 && made.ext === 'descent' && made.parts === 'descent' && made.title === 'Descent' && made.sub === 'Stage 3 · Hard' && made.line === made.want, JSON.stringify(made));
+  check('Start: a Descent board (8 × 14, Hard, Stage 3), waiting at its Ready card with the stage’s line', made.label === 'Descent Hard · Stage 3' && made.w === 8 && made.h === 14 && made.ext === 'descent' && made.parts === 'descent' && made.title === 'Descent' && made.sub === 'Stage 3 · Hard' && made.line === made.want, JSON.stringify(made));
 
   // ---- the clock: Space starts it; it runs in real time; the board takes no moves while it waits -------------------------
   await ev(SCENE, { w: 10, h: 20, level: 'medium', stage: 2 });
@@ -110,7 +112,7 @@ module.exports = async function descentTests({ browser, check, PAGE, OUT }) {
   const blocked = await ev(() => { const m = Lull.app.modes.play, x = m.game.piece.x; m.action('left'); return m.game.piece.x === x; });
   await page.waitForTimeout(400);
   const t1 = await tk(ev);
-  check('the Ready card (Descent, Stage 2 · Medium, its line, Boards and Start); waiting: no clock and no moves', ready.open && ready.title === 'Descent' && ready.sub === 'Stage 2 · Medium' && !!ready.line && ready.btns.join() === 'Boards,Start Space' && t0 === 0 && t1 === 0 && blocked, JSON.stringify({ ready, t0, t1, blocked }));
+  check('the Ready card (Descent, Stage 2 · Medium, its line, Menu and Start); waiting: no clock and no moves', ready.open && ready.title === 'Descent' && ready.sub === 'Stage 2 · Medium' && !!ready.line && ready.btns.join() === 'Menu,Start Space' && t0 === 0 && t1 === 0 && blocked, JSON.stringify({ ready, t0, t1, blocked }));
   await D.shot('descent-ready-520x760');
   await page.keyboard.press('Space');
   await page.waitForTimeout(700);
@@ -175,22 +177,15 @@ module.exports = async function descentTests({ browser, check, PAGE, OUT }) {
     const ov = m.overlay;
     return { over: g.over, kind: g.endKind, title: (ov.querySelector('h2') || {}).textContent, sub: (ov.querySelector('.cl-sub') || {}).textContent, btns: [...ov.querySelectorAll('.btn')].map((b) => b.textContent.trim()), stages: Lull.app.store.state.stats.free.descent.stages.easy.join(), ach: Object.keys(Lull.app.store.state.achievements).filter((k) => /^ds_/.test(k)).join() };
   });
-  check('the last block broken: the Cleared card (Stage 5 · Easy; Boards, Stage 6); the stage counted cleared; Daylight earned', cl.over && cl.kind === 'cleared' && cl.title === 'Cleared' && cl.sub === 'Stage 5 · Easy' && cl.btns.join() === 'Boards,Stage 6 Space' && cl.stages === '5' && /ds_first/.test(cl.ach), JSON.stringify(cl));
+  check('the last block broken: the Cleared card (Stage 5 · Easy; Menu, Stage 6); the stage counted cleared; Daylight earned', cl.over && cl.kind === 'cleared' && cl.title === 'Cleared' && cl.sub === 'Stage 5 · Easy' && cl.btns.join() === 'Menu,Stage 6 Space' && cl.stages === '5' && /ds_first/.test(cl.ach), JSON.stringify(cl));
   await D.shot('descent-cleared-520x760');
   await page.waitForTimeout(250);
   await page.keyboard.press('Space');
   await page.waitForTimeout(200);
-  const nx = await ev(() => { const m = Lull.app.modes.play, g = m.game, B = Lull.app.store.state.boards; return { label: Lull.Recipe.label(g.recipe), title: (m.overlay.querySelector('h2') || {}).textContent, retired: B.retired[0] && B.retired[0].reason, rec: B.retired[0] && B.retired[0].recipe && B.retired[0].recipe.descent && B.retired[0].recipe.descent.stage, chosen: B.recipe.descent && B.recipe.descent.stage }; });
-  check('Space on Cleared: the board retired (cleared) and Stage 6 waits at its Ready card', nx.label === 'Descent Easy · Stage 6' && nx.title === 'Descent' && nx.retired === 'cleared' && nx.rec === 5 && nx.chosen === 6, JSON.stringify(nx));
-  await ev(() => Lull.app.modes.play.openLibrary());
-  await page.waitForTimeout(150);
-  await ev(() => { const t = [...document.querySelectorAll('.modal-lib .lib-tabs button')].find((b) => b.dataset.k === 'retired'); if (t) t.click(); });
-  await page.waitForTimeout(150);
-  const rrow = await ev(() => { const r = document.querySelector('.modal-lib .lib-row.retired'); return r ? { tags: [...r.querySelectorAll('.tag')].map((t) => t.textContent), sz: (r.querySelector('.sz') || {}).textContent } : null; });
-  check('the retired row is tagged Cleared (not Full) and says "Descent Easy · Stage 5"', !!rrow && rrow.tags.includes('Cleared') && !rrow.tags.includes('Full') && /Descent Easy · Stage 5/.test(rrow.sz || ''), JSON.stringify(rrow));
-  await ev(() => { while (Lull.UI.modalOpen()) Lull.UI.closeTopModal(); });
+  const nx = await ev(() => { const m = Lull.app.modes.play, g = m.game, F = Lull.app.store.state.stats.free, log = F.boardLog[0]; return { label: Lull.Recipe.label(g.recipe), title: (m.overlay.querySelector('h2') || {}).textContent, pieces: g.s.pieces, log: log && log.reason, rec: log && log.recipe && log.recipe.descent && log.recipe.descent.stage }; });
+  check('Space on Cleared: a new game in its place (the cleared one in Past boards) and Stage 6 waits at its Ready card', nx.label === 'Descent Easy · Stage 6' && nx.title === 'Descent' && nx.pieces === 0 && nx.log === 'cleared' && nx.rec === 5, JSON.stringify(nx));
 
-  // ---- topped out: the Topped out card (Rewind 5 s, Boards, Try again); its numbers ---------------------------------------
+  // ---- topped out: the Topped out card (Rewind 5 s, Menu, Try again); its numbers -----------------------------------
   await ev(SCENE, { w: 10, h: 20, level: 'medium', stage: 3, go: true, lanes: Array.from({ length: 10 }, () => [4, 'gggggggggggggggg', 1e6]), total: 70, rows: ['ZZZZZZZZZ.', 'ZZZZZZZZ.Z', 'ZZZ..ZZZ.Z', 'ZZZ..ZZZZ.'], piece: ['O', 3, 2, 0] });
   const top = await ev(() => {
     const m = Lull.app.modes.play, g = m.game, Ds = Lull.Descent;
@@ -199,7 +194,7 @@ module.exports = async function descentTests({ browser, check, PAGE, OUT }) {
     const ov = m.overlay;
     return { over: g.over, title: (ov.querySelector('h2') || {}).textContent, sub: (ov.querySelector('.cl-sub') || {}).textContent, btns: [...ov.querySelectorAll('.btn')].map((b) => b.textContent.trim().replace(/\s+/g, ' ')), topped: Lull.app.store.state.stats.free.descent.topped };
   });
-  check('no room for the next piece: the Topped out card (Rewind 5 s, Boards, Try again), counted', top.over && top.title === 'Topped out' && top.sub === 'Stage 3 · Medium' && /^Rewind 5 s/.test(top.btns[0]) && top.btns[1] === 'Boards' && top.btns[2] === 'Try again Space' && top.topped >= 1, JSON.stringify(top));
+  check('no room for the next piece: the Topped out card (Rewind 5 s, Menu, Try again), counted', top.over && top.title === 'Topped out' && top.sub === 'Stage 3 · Medium' && /^Rewind 5 s/.test(top.btns[0]) && top.btns[1] === 'Menu' && top.btns[2] === 'Try again Space' && top.topped >= 1, JSON.stringify(top));
   await D.shot('descent-topped-520x760');
   await ev(() => { Lull.app.store.state.inventory.rewind = 1; document.querySelector('#ds-rewind').click(); });
   await page.waitForTimeout(120);

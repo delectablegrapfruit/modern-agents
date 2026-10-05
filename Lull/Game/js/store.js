@@ -5,7 +5,8 @@
   const L = (root.Lull = root.Lull || {});
   const { native, dateKey, Emitter } = L;
 
-  const SAVE_VERSION = 2;
+  // 3: one game a mode and Custom's presets in place of the board library (Library.migrate).
+  const SAVE_VERSION = 3;
   const LS_KEY = 'lull.save.v1';
 
   // ---- the catalog --------------------------------------------------------------------------------------------------
@@ -190,15 +191,15 @@
         watchMistakes: 'off', // Watch (Classic, js/watch.js): how often the bot errs: 'off', 'rare', 'some', 'often'
       },
       tab: 'play',
-      free: null, // the Relaxed board in play (Game.toJSON)
-      boards: { seq: 0, cur: null, list: [], retired: [] }, // the board library (js/library.js): shelved and retired boards, the last size and recipe chosen
+      free: null, // the game in play (Game.toJSON), of the mode boards.cur
+      boards: { cur: null, games: {}, presets: [], seq: 0 }, // the games kept, one a mode, and Custom's presets (js/library.js)
       achievements: {},
       // Control hints (js/hints.js): pieces and board time toward retiring them all, times each was shown, good uses
       // of each control, the ones retired for good.
       hints: { pieces: 0, ms: 0, over: false, shown: {}, skill: {}, retired: {} },
       combos: {}, // Free Play combos found: id → { n: times, lines: paid, first: when }
       gift: { at: null, n: 0, log: [] }, // the daily gift: when it was last opened (ms), how many, the last few
-      earn: { board: null, paid: 0 }, // power-ups earned by lines on one board (js/items.js, Earn): which board, how many paid
+      earn: { board: null, paid: 0 }, // power-ups earned by lines on the game in play (js/items.js, Earn): which game, how many paid
       // tries: seeds started on and not yet solved → { n: tries that set a piece, hint, undos } (what solving pays).
       puzzle: { diff: 'E', next: { E: 1, M: 1, H: 1 }, current: null, solved: {}, tries: {}, history: [], saved: [] },
       // A save from before the Factory was shelved keeps its `factory`, untouched.
@@ -268,10 +269,14 @@
     return out;
   }
 
-  /** A parsed save made whole: the defaults filled in. */
+  /**
+   * A parsed save made whole: the defaults filled in. One from before version 3 had a board library: its boards become
+   * one game a mode (Library.migrate; Library.ensure makes the rest whole when the board comes into play).
+   */
   function loadState(saved) {
     const st = merge(defaults(), saved);
     if (st.puzzle && typeof st.puzzle === 'object') st.puzzle.tries = repairTries(st.puzzle.tries);
+    if (!(saved && saved.v >= 3) && L.Library) L.Library.migrate(st, Date.now());
     st.v = SAVE_VERSION;
     return st;
   }

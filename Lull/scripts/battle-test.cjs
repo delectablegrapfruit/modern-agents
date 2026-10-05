@@ -1,4 +1,4 @@
-// Battle in the browser (js/battle.js, js/battleview.js): made in the New board window (Mode ▸ Battle after Race, a
+// Battle in the browser (js/battle.js, js/battleview.js): made in the Custom window (Mode ▸ Battle after Race, a
 // level, the presets), the Ready card and its 3-2-1, aiming and throwing by keys (T, arrows, turns, Esc, Space, Enter),
 // by the Throw button (44 px, its six charge dots; Cancel and Throw here while aiming), by mouse (the shadow follows the
 // pointer over their board, a click throws) and by touch (Throw, a drag, a tap on their board, a tap on the shadow), the
@@ -13,6 +13,8 @@ const SCENE = (o) => {
   const app = Lull.app, m = app.modes.play, R = Lull.Recipe, B = Lull.Battle;
   while (Lull.UI.modalOpen()) Lull.UI.closeTopModal();
   m.hideCard();
+  // (A game put in play by hand is the mode's own game in play, never a Custom one: a reload finds it.)
+  m.custom = null;
   m.setGame(new Lull.Game({ w: o.w || 10, h: o.h || 14, seed: o.seed || 5, recipe: R.normalize({ mode: 'battle', battle: { level: o.level || 'steady' }, shapes: { preset: o.shapes || 'normal' } }), previewCount: m.settings.preview }));
   const M = B.matchOf(m.game);
   if (o.play) {
@@ -76,7 +78,7 @@ module.exports = async function battleTests({ browser, check, PAGE, OUT }) {
   const D = await open();
   const { page, ev, shot } = D;
 
-  // ---- the New board window: Mode ▸ Battle (after Race) ▸ Brisk, the presets, Create ------------------------------------------
+  // ---- the Custom window: Mode ▸ Battle (after Race) ▸ Brisk, the presets, Start ------------------------------------
   await ev(() => { const B = Lull.app.store.state.boards; B.size = { w: 10, h: 20 }; B.recipe = Lull.Recipe.normalize({}); Lull.app.modes.play.openNewBoard(); });
   await page.waitForTimeout(150);
   await ev(() => document.querySelector('.nb-tab[data-tab="mode"]').click());
@@ -92,9 +94,9 @@ module.exports = async function battleTests({ browser, check, PAGE, OUT }) {
   await ev(() => document.querySelector('.modal-newboard footer .btn.primary').click());
   await page.waitForTimeout(250);
   const made = await ev(() => { const g = Lull.app.modes.play.game, B = Lull.Battle; return { w: g.w, h: g.h, level: B.matchOf(g).level, card: (document.querySelector('#play-overlay .card') || {}).textContent || '', label: Lull.Recipe.label(g.recipe) }; });
-  check('New board: the Mode tab reads Plain, Classic, Descent, Race, Battle; Battle has its levels, a Battle size (10 × 14) and the presets Quick, Standard and Long',
+  check('Custom: the Mode tab reads Plain, Classic, Descent, Race, Battle; Battle has its levels, a Battle size (10 × 14) and the presets Quick, Standard and Long',
     modes.join() === 'Plain,Classic,Descent,Race,Battle' && win.levels === 'Easy,Steady,Brisk*,Swift' && win.size === '10x14' && presets === 'Quick 8 × 12, Standard 10 × 14, Long 10 × 16', JSON.stringify({ modes, win, presets }));
-  check('Create makes the board: 10 × 14 against Brisk, at the Ready card', made.w === 10 && made.h === 14 && made.level === 'brisk' && /Battle/.test(made.card) && /vs Brisk/.test(made.card) && made.label === 'Battle · Brisk', JSON.stringify(made));
+  check('Start makes the board: 10 × 14 against Brisk, at the Ready card', made.w === 10 && made.h === 14 && made.level === 'brisk' && /Battle/.test(made.card) && /vs Brisk/.test(made.card) && made.label === 'Battle · Brisk', JSON.stringify(made));
   await shot('battle-ready');
   await page.keyboard.press('Space');
   await page.waitForTimeout(150);

@@ -482,7 +482,7 @@
     return best;
   }
 
-  /** The board's own numbers for its summary (and the library's record). */
+  /** The board's own numbers for its summary. */
   const summaryOf = (D) => (D ? { level: D.level, stage: D.stage, ms: D.tk * (1000 / TPS), rows: rowsBroken(D), broken: D.broken, fused: D.fused, stones: D.stones, depth: D.total ? D.total / D.w : 0, cleared: D.stage !== 'endless' && left(D) === 0 } : null);
 
   // ---- the engine's extension -------------------------------------------------------------------------------------------
@@ -749,8 +749,6 @@
   const PART = {
     key: 'descent', order: 47, mode: 'descent', name: 'Descent', owns: ['descent'],
     options: { 'descent.level': IDS.slice(), 'descent.stage': STAGES_ALL.slice() },
-    // The stage is set when the board is made: an edit never makes a board Descent, or a Descent board another.
-    editFixed: true,
     normalize(raw, out) {
       if (out.mode !== 'descent') return;
       const d = isObj(raw.descent) ? raw.descent : {};

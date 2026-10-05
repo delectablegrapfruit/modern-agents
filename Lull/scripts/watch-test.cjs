@@ -2,7 +2,7 @@
 // rules, played through the board's own actions (every move the bot makes is a press of play.action), at a hand's
 // pace; your keys and the mouse do nothing to it but pause it; Mistakes kept in Settings and changed as it plays; the
 // pause card; Take over (the bot lets go, your keys play on); the end card's Play again and Done; and nothing of it
-// counted or kept: Stats, bests, the day's log, achievements, the wallet, the library and the board you were playing
+// counted or kept: Stats, bests, the day's log, achievements, the wallet, the games kept and the board you were playing
 // are exactly as they were. Then the four sizes in both themes (reduced motion too): the bar clear of the phones' tab
 // bar, nothing sideways; frames of each (OUT, or the scratch folder in WATCH_SHOTS).
 // Run by browser-test.cjs: require('./watch-test.cjs')({ browser, check, PAGE, OUT }).
@@ -34,7 +34,7 @@ module.exports = async function watchTests({ browser, check, PAGE, OUT }) {
     // (The day's time and its played mark tick by themselves while your own board is in front: watching's are checked apart.)
     const S = Lull.app.store.state, d = Object.assign({}, S.history[Lull.dateKey()] || {});
     delete d.ms; delete d.played;
-    return JSON.stringify({ classic: S.stats.classic, free: S.stats.free, lines: S.lines, ach: Object.keys(S.achievements).sort(), day: d, boards: S.boards.list.map((b) => b.id), cur: S.boards.cur, retired: S.boards.retired.length, saved: S.free, hints: S.hints, combos: S.combos });
+    return JSON.stringify({ classic: S.stats.classic, free: S.stats.free, lines: S.lines, ach: Object.keys(S.achievements).sort(), day: d, games: S.boards.games, cur: S.boards.cur, presets: S.boards.presets, saved: S.free, hints: S.hints, combos: S.combos });
   });
 
   // ---- a Classic game of your own first, then Watch ------------------------------------------------------------------
@@ -137,7 +137,7 @@ module.exports = async function watchTests({ browser, check, PAGE, OUT }) {
   await page.keyboard.press('Space');
   await page.waitForTimeout(250);
   const mid = await ledger(ev);
-  check('a watched (and taken over) game counts toward nothing: Stats, bests, the day, achievements, wallet, library and your saved board as they were', mid === before, mid === before ? '' : diff(before, mid));
+  check('a watched (and taken over) game counts toward nothing: Stats, bests, the day, achievements, wallet, the games kept and your saved board as they were', mid === before, mid === before ? '' : diff(before, mid));
 
   // The end: the pile, the card, Play again (a new watched game), Done (your board back, as it was).
   await ev(() => {
@@ -182,25 +182,23 @@ module.exports = async function watchTests({ browser, check, PAGE, OUT }) {
   await page.waitForTimeout(100);
   const esc = await ev(() => ({ watch: !!Lull.app.modes.play.watch, menu: !!document.querySelector('.modal-menu') }));
   check('the menu over a watched game: the board it knows is yours; Esc goes back to watching', inMenu.watch && inMenu.match === mine.pieces && esc.watch && !esc.menu, JSON.stringify([inMenu, esc]));
-  // Resume (your Classic board, by its rules) from the menu over a watched game: your board, the watching over.
+  // Continue (your Classic game) from the menu over a watched game: your board, the watching over.
   await ev(() => Lull.app.modes.play.openMenu('classic'));
   await page.waitForTimeout(100);
   // (Back to your board's rules: level 1, Next 3.)
   await page.click('.mn-setup [data-path="classic.next"][data-value="3"]');
   for (let i = 0; i < 5; i++) await page.click('.mn-setup [data-focus="classic.level-"]');
-  const canResume = await ev(() => !!document.querySelector('.mn-foot .mn-resume'));
-  if (canResume) await page.click('.mn-foot .mn-resume');
+  const canResume = await ev(() => !!document.querySelector('.mn-foot .mn-continue'));
+  if (canResume) await page.click('.mn-foot .mn-continue');
   await page.waitForTimeout(100);
   const resumed = await ev(() => { const m = Lull.app.modes.play; return { watch: !!m.watch, menu: !!document.querySelector('.modal-menu'), json: JSON.stringify(m.game.toJSON()) }; });
-  check('Resume from the menu over a watched game: your own board again', canResume && !resumed.watch && !resumed.menu && resumed.json === mine.json, JSON.stringify({ canResume, watch: resumed.watch, menu: resumed.menu }));
+  check('Continue from the menu over a watched game: your own board again', canResume && !resumed.watch && !resumed.menu && resumed.json === mine.json, JSON.stringify({ canResume, watch: resumed.watch, menu: resumed.menu }));
   await ev(() => Lull.app.modes.play.openMenu('classic'));
   await page.waitForTimeout(100);
   await page.click('.mn-foot .mn-watch');
   await page.waitForTimeout(400);
-  await ev(() => Lull.app.modes.play.openLibrary());
-  await page.waitForTimeout(150);
-  const lib = await ev(() => { const m = Lull.app.modes.play; const r = { watch: !!m.watch, json: JSON.stringify(m.game.toJSON()) }; while (Lull.UI.modalOpen()) Lull.UI.closeTopModal(); return r; });
-  check('the library (Manage) ends the watching first: your board in play again', !lib.watch && lib.json === mine.json, JSON.stringify({ watch: lib.watch }));
+  await ev(() => Lull.app.modes.play.resumeMode('classic'));
+  check('Continue ends the watching first: your board in play again', await ev((j) => !Lull.app.modes.play.watch && JSON.stringify(Lull.app.modes.play.game.toJSON()) === j, mine.json));
   // Reloaded mid-watch, the save holds your board (the watched game is never written).
   await ev(() => { Lull.app.modes.play.openMenu('classic'); });
   await page.click('.mn-foot .mn-watch');
@@ -212,6 +210,15 @@ module.exports = async function watchTests({ browser, check, PAGE, OUT }) {
   check('saved mid-watch and reloaded: your own board, as it was', !reloaded.watch && reloaded.json === mine.json);
   const last = await ledger(ev);
   check('and the ledger as it was', last === before, diff(before, last));
+  // A Custom game started over a watched game ends the watching first: the game set aside for it is your board.
+  await ev(() => { Lull.app.modes.play.openMenu('classic'); });
+  await page.click('.mn-foot .mn-watch');
+  await page.waitForTimeout(300);
+  await ev(() => Lull.app.modes.play.openNewBoard());
+  await page.click('.modal-newboard footer .btn.primary');
+  await page.waitForTimeout(150);
+  const cu = await ev(() => { const m = Lull.app.modes.play; const r = { watch: !!m.watch, custom: !!m.custom, aside: m.custom && JSON.stringify(m.custom.saved) }; m.resumeMode('classic'); r.json = JSON.stringify(m.game.toJSON()); r.after = !!m.custom; return r; });
+  check('a Custom game over a watched game: the watching ends, your board set aside; Continue brings it back', !cu.watch && cu.custom && cu.aside === mine.json && !cu.after && cu.json === mine.json, JSON.stringify({ watch: cu.watch, custom: cu.custom, after: cu.after }));
   await D.ctx.close();
 
   // ---- four sizes, both themes (and reduced motion): the bar clear of the tab bar, nothing sideways; frames ----------

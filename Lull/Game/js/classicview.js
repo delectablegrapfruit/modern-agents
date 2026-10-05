@@ -1,5 +1,5 @@
 // Lull — Classic in Free Play (js/classic.js has its rules): the controller that makes a Classic board fall, pause and
-// top out, its bar under the board, and its settings in the New board window's Mode tab.
+// top out, its bar under the board, and its settings in the Custom window's Mode tab.
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
@@ -57,14 +57,14 @@
       /** Falling now: the Play tab in front, nothing over the board, started, not paused, not over. */
       running() {
         const G = g(), c = C();
-        return !!G && !!c && app.tab === 'play' && !(L.Collapse && L.Collapse.on) && !UI.modalOpen() && !play.cardOpen && !play.fullView && !document.hidden
+        return !!G && !!c && app.tab === 'play' && !(L.Collapse && L.Collapse.on) && !UI.modalOpen() && !play.cardOpen && !document.hidden
           && c.started && !this.paused && !this.pile && !G.over;
       },
       blocked() { const c = C(); return this.paused || !(c && c.started) || !!this.pile; },
       tapStarts() { return (this.paused || !C().started) && !this.pile && !g().over && !UI.modalOpen(); },
       counts() { return this.running(); },
 
-      /** The card it waits at: Start before the first piece falls, then Paused (Resume). Edit rules from either. */
+      /** The card it waits at: Start before the first piece falls, then Paused (Resume). The Menu from either. */
       showWait() {
         const c = C(), first = !c.started, k = K();
         const lbl = Recipe.label(g().recipe) || 'Classic';
@@ -74,11 +74,11 @@
           first && best() ? h('p', null, 'Best ', h('span', { class: 'big' }, fmtInt(best()))) : null,
           k.type === 'b' ? h('p', null, 'Clear ' + Classic.B_LINES + ' lines') : null,
           h('div', { class: 'row' },
-            h('button', { class: 'btn', onclick: () => play.openEditRules(app.store.state.boards.cur) }, ico('settings'), 'Edit rules'),
+            play.menuButton(),
             h('button', { class: 'btn primary', id: 'cl-go', onclick: () => this.go() }, first ? 'Start ' : 'Resume ', h('kbd', null, 'Space'))),
         ], 'cl-wait');
       },
-      /** Play again: this board is retired (as Retire does) and the next, of the same rules, starts at once. */
+      /** Play again: a new game of the same rules in this one's place (New game), started at once. */
       again(kind) {
         play.classicBest = (C() && C().best) || 0;
         play.playAgain = true;
@@ -261,8 +261,8 @@
             h('p', null, h('span', { class: 'big' }, fmtInt(G.s.score)), ' points'),
             h('p', null, cleared ? Classic.B_LINES + ' lines in ' + fmtDuration(Math.max(1000, c.ms)) : 'Level ' + lv + ' · ' + c.lines + ' lines'),
             h('div', { class: 'row' },
-              h('button', { class: 'btn', onclick: () => pm.openLibrary() }, ico('boards'), 'Boards'),
-              h('button', { class: 'btn primary', id: 'cl-again', onclick: () => ctl.again(cleared ? 'cleared' : 'full') }, ico('retire'), 'Play again')),
+              pm.menuButton(),
+              h('button', { class: 'btn primary', id: 'cl-again', onclick: () => ctl.again(cleared ? 'cleared' : 'full') }, ico('newBoard'), 'Play again')),
           ];
         },
       },
@@ -353,7 +353,7 @@
     };
   }
 
-  // ---- the New board window's Mode tab: Classic's settings ------------------------------------------------------------
+  // ---- the Custom window's Mode tab: Classic's settings ------------------------------------------------------------
 
   const seg = (label, kids) => h('div', { class: 'cl-row' }, h('span', { class: 'cl-nm' }, label), h('div', { class: 'seg cl-seg', role: 'group', 'aria-label': label }, kids));
 
@@ -393,7 +393,6 @@
       if (path === 'classic.music') return 'Music ' + (Classic.MUSIC_NAMES[v] || v);
       return null;
     },
-    tags: (r, x, info) => (Classic.on(r) && info && info.ended === 'cleared' ? [{ text: 'Cleared', cls: 'full cleared' }] : []),
     tiles: (ext) => (ext && ext.level != null ? [[String(ext.level), 'Level'], [fmtInt(ext.quads), 'Quads']] : []),
     endName: (reason) => (reason === 'cleared' ? 'Cleared' : null),
   });

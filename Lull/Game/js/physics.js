@@ -1215,7 +1215,7 @@
     const k = game.recipe.physics;
     const W = new World(game.w, game.h, k.material);
     const ok = saved && unpack(W, saved.world);
-    // The grid holds nothing on a Physics board: the save's cells are only a picture of the bodies (thumbnails).
+    // The grid holds nothing on a Physics board: the save's cells are only a picture of the bodies.
     game.board.cells.fill(0);
     game.findRoom = false;
     const X = {
@@ -1268,7 +1268,7 @@
     game.rotate = pushed(game.rotate);
     // A new piece (spawned, from hold, rewound) starts on its row.
     game.on('spawn', () => { X.off = 0; X.restT = 0; });
-    // The save's cells: the bodies' minos where their centres are (for the library's thumbnails).
+    // The save's cells: the bodies' minos where their centres are (a picture of them; the bodies are the board).
     const baseJSON = game.toJSON;
     game.toJSON = function () {
       const out = baseJSON.call(game);
@@ -1473,7 +1473,7 @@
     return X;
   }
 
-  /** The grid picture of the bodies: each mino's value in the cell its centre is in (thumbnails). */
+  /** The grid picture of the bodies: each mino's value in the cell its centre is in. */
   function raster(W, w, h) {
     const out = new Array(w * h).fill(0);
     for (const b of W.bodies) for (let k = 0; k < b.m; k++) {
@@ -1515,8 +1515,6 @@
   const PART = {
     key: 'physics', order: 30, mod: 'physics', owns: ['mods.physics', 'physics'],
     options: { 'physics.material': MATERIAL_IDS.slice() },
-    // A Physics board stays Physics (its bodies have no grid to go back to), and no board becomes one by an edit.
-    editFixed: true,
     normalize(raw, out) {
       if (!on(out)) return;
       const m = raw && raw.physics && typeof raw.physics === 'object' ? raw.physics.material : null;

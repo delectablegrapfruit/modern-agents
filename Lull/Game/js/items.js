@@ -66,7 +66,7 @@
   const SHARE = [1, 0.5, 0.25];
 
   /**
-   * What a combo pays the (k+1)th time it comes round in the board library (Library.taper). Its lines are Standard
+   * What a combo pays the (k+1)th time it comes round in any game (Library.taper). Its lines are Standard
    * lines: Free Play pays them by the board's width (Library.scale), as every clear.
    */
   function reward(c, k) {

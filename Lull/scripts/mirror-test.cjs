@@ -1,5 +1,5 @@
-// The Mirror modifier in the browser (js/mirror.js, js/mirrorview.js): made in the New board window (its switch, the
-// line on the preview), the board it makes (the controller, Mirror World refused, the library label and thumbnail), the
+// The Mirror modifier in the browser (js/mirror.js, js/mirrorview.js): made in the Custom window (its switch, the
+// line on the preview), the board it makes (the controller, Mirror World refused, its label), the
 // line and the copy as pixels, the mouse aiming the copy from its side, a touch on the copy's side moving the copy, and
 // the screenshots: 10 × 20 and 11 × 20 in both themes, an L meeting its reflection, and the smallest phone.
 // Run by browser-test.cjs: require('./mirror-test.cjs')({ browser, check, PAGE, OUT }).
@@ -60,11 +60,10 @@ module.exports = async function mirrorTests({ browser, check, PAGE, OUT }) {
   const STACK = ['IIII.', 'JLLL.', 'JJJL.', 'OO.S.', 'OOSS.', '.TS..', 'TTT..'];
   const CENTRE = 'TTT';
 
-  // ---- the New board window: the switch, the line on the preview; Create -------------------------------------------
+  // ---- the Custom window: the switch, the line on the preview; Start ------------------------------------------------
   const D = await open();
   let { page, ev } = D;
-  await ev(() => { Lull.app.store.state.boards.size = { w: 10, h: 20 }; Lull.app.modes.play.openLibrary(); });
-  await page.click('.modal-lib .lib-new');
+  await ev(() => { Lull.app.store.state.boards.size = { w: 10, h: 20 }; Lull.app.modes.play.openNewBoard(); });
   await page.waitForTimeout(200);
   /** How far the preview's middle boundary is from the one two columns left (a pixel probe: the line is extra there). */
   const previewLine = () => ev(() => {
@@ -78,28 +77,17 @@ module.exports = async function mirrorTests({ browser, check, PAGE, OUT }) {
   await ev(() => { document.querySelector('.nb-tab[data-tab="mods"]').click(); document.querySelector('.nb-switch[data-path="mods.mirror"]').click(); });
   const sw = await ev(() => ({ on: document.querySelector('.nb-switch[data-path="mods.mirror"]').getAttribute('aria-checked'), name: document.querySelector('.nb-switch[data-path="mods.mirror"] .nm').textContent, val: document.querySelector('.nb-tab[data-tab="mods"] .vl').textContent, live: document.querySelector('.nb-live').textContent }));
   const onLine = await previewLine();
-  check('New board: the Mirror switch turns on, the Modifiers tab says Mirror, the live region says so', sw.on === 'true' && sw.name === 'Mirror' && sw.val === 'Mirror' && /Mirror on/.test(sw.live), JSON.stringify(sw));
-  check('the New board preview draws the line down the middle once Mirror is on (a pixel probe)', onLine > 25 && offLine < 6, JSON.stringify({ offLine, onLine }));
+  check('Custom: the Mirror switch turns on, the Modifiers tab says Mirror, the live region says so', sw.on === 'true' && sw.name === 'Mirror' && sw.val === 'Mirror' && /Mirror on/.test(sw.live), JSON.stringify(sw));
+  check('the Custom window\'s preview draws the line down the middle once Mirror is on (a pixel probe)', onLine > 25 && offLine < 6, JSON.stringify({ offLine, onLine }));
   await page.click('.modal-newboard footer .btn.primary');
   await page.waitForTimeout(200);
   const made = await ev(() => {
-    const m = Lull.app.modes.play, g = m.game, row = document.querySelector('.modal-lib .lib-row.current .sz');
-    return { mirror: g.recipe.mods.mirror, size: g.w + 'x' + g.h, ctl: m.ctl.id, row: row && row.textContent, flip: (() => { m.openTray('board'); const b = document.querySelector('.item-btn[data-item="flip"]'); return b && [b.getAttribute('aria-disabled'), b.dataset.tip]; })(),
+    const m = Lull.app.modes.play, g = m.game;
+    return { mirror: g.recipe.mods.mirror, size: g.w + 'x' + g.h, ctl: m.ctl.id, row: Lull.Recipe.label(g.recipe), flip: (() => { m.openTray('board'); const b = document.querySelector('.item-btn[data-item="flip"]'); return b && [b.getAttribute('aria-disabled'), b.dataset.tip]; })(),
       turnabout: (() => { m.openTray('shape'); const b = document.querySelector('.item-btn[data-item="mirror"]'); const t = b && [b.querySelector('.il').textContent, b.getAttribute('aria-disabled')]; m.openTray(null); return t; })() };
   });
-  check('Create makes a Mirror board (its controller in play), its library row reads "10 × 20 · Mirror"', made.mirror === true && made.size === '10x20' && made.ctl === 'mirror' && made.row === '10 × 20 · Mirror', JSON.stringify(made));
+  check('Start plays a Mirror board (its controller in play), its label "Mirror"', made.mirror === true && made.size === '10x20' && made.ctl === 'mirror' && made.row === 'Mirror', JSON.stringify(made));
   check('Mirror World is off on a Mirror board, its reason as the tip; the power-up that flips a piece is Turnabout', made.flip && made.flip[0] === 'true' && made.flip[1] === 'Not on a Mirror board' && made.turnabout && made.turnabout[0] === 'Turnabout' && made.turnabout[1] === null, JSON.stringify(made));
-  // The library's thumbnail carries the line too.
-  const thumb = await ev(() => {
-    const img = document.querySelector('.modal-lib .lib-row.current .lib-thumb'), c = document.createElement('canvas');
-    c.width = img.naturalWidth; c.height = img.naturalHeight;
-    const x = c.getContext('2d'); x.drawImage(img, 0, 0);
-    const d = x.getImageData(0, 0, c.width, c.height).data, a = Lull.Render.rgb(Lull.app.theme.accent), mid = Math.round(c.width / 2);
-    let hits = 0;
-    for (let y = 0; y < c.height; y++) for (let dx = -2; dx <= 2; dx++) { const i = (y * c.width + mid + dx) * 4; if (Math.abs(d[i] - a[0]) + Math.abs(d[i + 1] - a[1]) + Math.abs(d[i + 2] - a[2]) < 150) hits++; }
-    return hits;
-  });
-  check('the library thumbnail of a Mirror board shows the line', thumb > 8, String(thumb));
   await ev(() => { while (Lull.UI.modalOpen()) Lull.UI.closeTopModal(); });
 
   // ---- the line and the copy as pixels -------------------------------------------------------------------------------

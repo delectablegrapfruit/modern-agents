@@ -1,7 +1,7 @@
 // Lull — Shapes: the board recipe's shape sets (js/recipe.js). A Relaxed board deals the seven in a 7-bag (Normal), or
 // one of the presets (Tiny, Frantic, Pentominoes, Big), or a Custom set: groups of 1 to 12 blocks, each All or hand-
 // picked (up to 60 picks, as canonical keys), clusters of blocks joined through corners, and Big pieces (a share of
-// them, or all). Pure rules and data, no DOM (the New board window's part and the Custom shapes window are in
+// them, or all). Pure rules and data, no DOM (the Custom window's part and the Custom shapes window are in
 // js/shapepicker.js).
 //
 //   recipe.shapes = { preset: 'normal' | 'tiny' | 'frantic' | 'pentominoes' | 'big' | 'custom',
@@ -329,7 +329,7 @@
         // Every shape of the group picked is All.
         if (keys.length && keys.length < TOTAL[g.n]) o.picks = keys;
       }
-      // A retired board's thin copy keeps how many were picked (only shown).
+      // A past board's thin copy keeps how many were picked (only shown).
       if (!o.picks && intIn(g.picked, 1, MAX_PICKS) && g.picked < TOTAL[g.n]) o.picked = g.picked;
       out.groups.push(o);
     }
@@ -341,7 +341,7 @@
     if (!out.groups.length && !out.clusters && out.big === 'off') return { preset: 'normal' };
     return { preset, custom: out };
   }
-  /** A thin copy (a retired board's): picks become a count. */
+  /** A thin copy (a past board's): picks become a count. */
   function thin(sh) {
     const out = normalize(sh);
     if (out.custom) for (const g of out.custom.groups) if (g.picks) { g.picked = g.picks.length; delete g.picks; }

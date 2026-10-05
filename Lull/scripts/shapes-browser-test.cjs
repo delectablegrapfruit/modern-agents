@@ -1,5 +1,5 @@
-// Shapes in the browser (js/shapes.js, js/shapepicker.js): the Shapes chips of the New board window, Big raising the
-// size and giving it back, the library row, Custom (its line, the Custom shapes window, a group's picker: three shapes
+// Shapes in the browser (js/shapes.js, js/shapepicker.js): the Shapes chips of the Custom window, Big raising the
+// size and giving it back, its label, Custom (its line, the Custom shapes window, a group's picker: three shapes
 // picked and one drawn, and the board dealing only those), a reload keeping the queue, 12-block pieces in the trays of
 // the smallest phone, and every window fitting 320 × 568 by touch. Screenshots (with an out dir): the Shapes panel at
 // 320 × 568 and 520 × 760 in both themes, the Custom window, the picker and the Draw view at 320, a Frantic game, 12
@@ -41,7 +41,7 @@ module.exports = async function shapesBrowserTests({ browser, check, PAGE, OUT }
     return { inside: r.top >= 0 && r.left >= 0 && r.bottom <= innerHeight + 0.5 && r.right <= innerWidth + 0.5, footer: f.bottom <= r.bottom + 0.5 && f.top >= r.top, noSide: body.scrollWidth <= body.clientWidth + 1, small, wide, w: Math.round(r.width), h: Math.round(r.height) };
   }, [sel, targets]);
 
-  // ---- 520 × 760: the chips, Big raising the size, a Big board and its library row ------------------------------------
+  // ---- 520 × 760: the chips, Big raising the size, a Big board and its label ----------------------------------------
   {
     const { ctx, page, ev, shot } = await open();
     await openNB(ev, page);
@@ -60,8 +60,8 @@ module.exports = async function shapesBrowserTests({ browser, check, PAGE, OUT }
     await ev(() => document.querySelector('.nb-chip[data-value="big"]').click());
     await page.click('.modal-newboard footer .btn.primary');
     await page.waitForTimeout(200);
-    const made = await ev(() => { const g = Lull.app.modes.play.game; Lull.app.modes.play.openLibrary(); const r = document.querySelector('.modal-lib .lib-row.current .sz'); return { size: g.w + 'x' + g.h, big: g.piece.type.big, text: r.textContent, title: r.title }; });
-    check('a Big board: made at that size, dealing Big pieces; its library row reads "' + want.replace('x', ' × ') + ' · Big"', made.size === want && made.big && made.text === want.replace('x', ' × ') + ' · Big' && made.title === 'Big', JSON.stringify(made));
+    const made = await ev(() => { const g = Lull.app.modes.play.game; return { size: g.w + 'x' + g.h, big: g.piece.type.big, label: Lull.Recipe.label(g.recipe) }; });
+    check('a Big board: made at that size, dealing Big pieces; its label reads "Big"', made.size === want && made.big && made.label === 'Big', JSON.stringify(made));
     await ev(() => { while (Lull.UI.modalOpen()) Lull.UI.closeTopModal(); const m = Lull.app.modes.play, g = m.game; for (let i = 0; i < 3; i++) { const p = g.piece, b = p.type.rotBounds[p.rot]; p.x = i === 1 ? g.w - 1 - b.maxX : i ? Math.floor((g.w - b.w) / 2) - b.minX : -b.minX; g.drop(); } m.view.dirty = true; });
     await page.waitForTimeout(700);
     await shot('shapes-02-big-' + want + '-520x760-light');
@@ -186,8 +186,9 @@ module.exports = async function shapesBrowserTests({ browser, check, PAGE, OUT }
       return { only: [...got].every((k) => keys.includes(k)), n: got.size, label: Lull.Recipe.label(g.recipe, true) };
     }, drew.picks);
     check('the board deals only the four picked (three picked, one drawn)', deals.only && deals.n === 4 && deals.label === 'Custom', JSON.stringify(deals));
-    // A reload keeps the queue (the rest of the round, the stream).
-    const before = await ev(() => { const m = Lull.app.modes.play, g = m.game; g.drop(); m.persist(); Lull.app.saveNow && Lull.app.saveNow(); return [g.piece.type.id].concat(g.queue.map((e) => e.id)); });
+    // A reload keeps the queue (the rest of the round, the stream). A Custom game is never kept, so this board is made
+    // Relaxed's own game in play here, as a board of picks from an older save is.
+    const before = await ev(() => { const m = Lull.app.modes.play, g = m.game; m.custom = null; g.drop(); m.persist(); Lull.app.saveNow && Lull.app.saveNow(); return [g.piece.type.id].concat(g.queue.map((e) => e.id)); });
     await page.reload();
     await page.waitForTimeout(500);
     const reloaded = await ev(() => { while (Lull.UI.modalOpen()) Lull.UI.closeTopModal(); const g = Lull.app.modes.play.game; return { q: [g.piece.type.id].concat(g.queue.map((e) => e.id)), label: Lull.Recipe.label(g.recipe) }; });
@@ -204,7 +205,7 @@ module.exports = async function shapesBrowserTests({ browser, check, PAGE, OUT }
     const panel = await ev(() => { const p = document.querySelector('.nb-panel'), e = document.querySelector('.nb-custom .btn'), c = e.getBoundingClientRect(), chip = document.querySelector('.nb-chip[data-value="custom"]').getBoundingClientRect(); return { scrolls: p.scrollHeight > p.clientHeight + 1, gap: Math.round(c.top + parseFloat(getComputedStyle(e).borderTopWidth) - chip.bottom) }; });
     check('320 × 568 ' + theme + ': the Shapes panel with Custom never scrolls, and Edit is drawn clear of the chips', !panel.scrolls && panel.gap >= 2, JSON.stringify(panel));
     const heights = await ev(() => ['size', 'shapes', 'mods', 'mode'].map((k) => { document.querySelector('.nb-tab[data-tab="' + k + '"]').click(); return Math.round(document.querySelector('.modal-newboard').getBoundingClientRect().height); }));
-    check('320 × 568 ' + theme + ': New board with Custom fits (footer shown, 44 px targets), one height on every tab', nb.inside && nb.footer && nb.noSide && !nb.small.length && new Set(heights).size === 1, JSON.stringify({ nb, heights }));
+    check('320 × 568 ' + theme + ': the Custom window with Custom shapes fits (footer shown, 44 px targets), one height on every tab', nb.inside && nb.footer && nb.noSide && !nb.small.length && new Set(heights).size === 1, JSON.stringify({ nb, heights }));
     await ev(() => document.querySelector('.nb-tab[data-tab="shapes"]').click());
     await shot('shapes-06-panel-320x568-' + theme);
     if (theme === 'dark') { await ctx.close(); continue; }

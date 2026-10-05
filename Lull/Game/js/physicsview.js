@@ -3,7 +3,7 @@
 // comes again while it rests (or is held against what it rests on), pays the bands as they
 // clear and turns time back five seconds (Rewind 5 s, in Undo's place); the look (each body one soft outline drawn
 // from its particles, so every squash and stretch on screen is the simulation's own, with a rim and a shine); the
-// New board window's Material setting; the summary's tile and the Stats rows.
+// Custom window's Material setting; the summary's tile and the Stats rows.
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
@@ -37,7 +37,7 @@
       /** The world moves now: Free Play in front, nothing over the board, the page shown, the board not over. */
       running() {
         const G = g();
-        return !!G && !!X() && app.tab === 'play' && !(L.Collapse && L.Collapse.on) && !UI.modalOpen() && !play.cardOpen && !play.fullView && !document.hidden && !G.over;
+        return !!G && !!X() && app.tab === 'play' && !(L.Collapse && L.Collapse.on) && !UI.modalOpen() && !play.cardOpen && !document.hidden && !G.over;
       },
       counts() { return this.running(); },
       frame(now, dt) {
@@ -102,7 +102,7 @@
         // A window over the board only holds it; Classic has its own Paused card.
         if (why === 'modal' || classic()) return;
         const G = g();
-        if (!G || G.over || play.cardOpen || play.fullView) return;
+        if (!G || G.over || play.cardOpen) return;
         this.waiting = true;
         play.showCard([
           h('h2', null, 'Paused'),
@@ -135,7 +135,7 @@
         play.fadeEdges(play.overlay.querySelector('.board-sum'));
       },
       cards: {
-        /** Board full: the board's numbers, then Rewind 5 s (while there is a moment to go back to), Boards, Retire. */
+        /** Board full: the board's numbers, then Rewind 5 s (while there is a moment to go back to), Menu, New game. */
         full(pm) {
           const G = pm.game, x = Physics.of(G), ctl = pm.ctl;
           return [
@@ -143,8 +143,8 @@
             pm.boardSummary(L.Library.summarize(G.s, Date.now(), G), G.recipe, ctl.tiles(G)),
             h('div', { class: 'row' },
               x && x.rewindTarget() && !G.rules.refuse.rewind ? ctl.rewindButton({ class: 'btn', id: 'topout-rewind', onclick: () => ctl.cardRewind() }) : null,
-              h('button', { class: 'btn', onclick: () => pm.openLibrary() }, UI.icon('boards'), 'Boards'),
-              h('button', { class: 'btn primary', onclick: () => pm.newBoard('full') }, UI.icon('retire'), 'Retire')),
+              pm.menuButton(),
+              h('button', { class: 'btn primary', onclick: () => pm.newBoard('full') }, UI.icon('newBoard'), 'New game')),
           ];
         },
       },
@@ -355,7 +355,7 @@
   };
   Recipe.viewPart(viewPart);
 
-  // ---- the New board window, the summary, Stats ----------------------------------------------------------------------
+  // ---- the Custom window, the summary, Stats ----------------------------------------------------------------------
 
   if (UI && h) {
     Recipe.uiPart({

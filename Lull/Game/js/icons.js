@@ -46,12 +46,8 @@
     minus: svg('<path d="M3.75 8h8.5"/>'),
     plus: svg('<path d="M8 3.75v8.5M3.75 8h8.5"/>'),
     newBoard: svg('<rect x="2.25" y="2.25" width="11.5" height="11.5" rx="2.5"/><path d="M8 5.25v5.5M5.25 8h5.5"/>'),
-    // The board library: a board in front of another, holding a small stack; retire files it away; rename, delete.
+    // The menu; a preset's Rename and Delete.
     menu: svg('<path d="M2.75 4h10.5M2.75 8h10.5M2.75 12h10.5"/>'),
-    boards: svg('<path d="M6 1.75h6.25a1.5 1.5 0 0 1 1.5 1.5v8"/><rect x="2.25" y="4.25" width="8.5" height="10" rx="1.6"/>' + blk(4, 10.6, 2.4, 0.6) + blk(6.6, 10.6, 2.4, 0.6) + blk(6.6, 8, 2.4, 0.6)),
-    // Full view (a retired board at play size): the four corners of a screen.
-    expand: svg('<path d="M2 5.5V2h3.5M10.5 2H14v3.5M14 10.5V14h-3.5M5.5 14H2v-3.5"/>'),
-    retire: svg('<rect x="1.75" y="2.5" width="12.5" height="3.5" rx="1"/><path d="M2.75 6v6.25a1.5 1.5 0 0 0 1.5 1.5h7.5a1.5 1.5 0 0 0 1.5-1.5V6M6.5 9h3"/>'),
     rename: svg('<path d="M10.6 2.4a1.5 1.5 0 0 1 2.1 2.1L5.5 11.7l-2.75.75.75-2.75z"/><path d="M9.25 3.75l2.1 2.1M8.75 13.75h4.5"/>'),
     trash: svg('<path d="M2.75 4.25h10.5M6.25 4.25v-1.5h3.5v1.5M4 4.25l.7 9a1 1 0 0 0 1 .9h4.6a1 1 0 0 0 1-.9l.7-9M6.75 7v4.25M9.25 7v4.25"/>'),
     playIcon: svg('<path d="M5 3.1v9.8c0 .5.55.8.95.5l7.1-4.9a.6.6 0 0 0 0-1L5.95 2.6C5.55 2.3 5 2.6 5 3.1z" fill="currentColor" stroke="none"/>'),

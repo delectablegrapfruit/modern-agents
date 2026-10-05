@@ -1,7 +1,7 @@
 // Lull — Battle in Free Play (js/battle.js has its rules and the AI): the controller that runs a round (the cards and
 // the clock are js/versusview.js's; here the opponent's turns in time slices, aiming and throwing, the ceilings, the end),
 // the view that draws both boards (the opponent's on top, turned 180°) with the aiming shadow, its bar under the board
-// (Throw with its charge dots, Pause), and its place in the New board window, the library and Stats.
+// (Throw with its charge dots, Pause), and its place in the Custom window, the menu and Stats.
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
@@ -531,7 +531,7 @@
   };
   Recipe.viewPart(VIEW);
 
-  // ---- the New board window, the library, Stats ------------------------------------------------------------------------------
+  // ---- the Custom window, the menu, Stats ---------------------------------------------------------------------------
 
   // Battle keeps its own size: entering it, the size asked for before is put aside (and comes back on leaving).
   let asideAsked = null, battleAsked = null;
@@ -549,7 +549,6 @@
       if (asideAsked && inB(asked)) { battleAsked = asked; const back = asideAsked; asideAsked = null; return back; }
       return null;
     },
-    tags: (r, x) => (Battle.on(r) && x && x.match ? [{ text: Battle.tallyText(Object.assign({ tally: {} }, x.match, { tally: Object.assign({}, x.match.tally) })) }] : []),
     tiles: (ext) => (ext && ext.level ? [[ext.won + '–' + ext.lost, 'vs ' + Battle.NAMES[ext.level]], [fmtInt(ext.rounds), 'Rounds']] : []),
   });
 

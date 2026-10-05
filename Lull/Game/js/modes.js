@@ -448,8 +448,7 @@
    *   status(parts, { stat, prev }) -> [elements]   the status bar's figures; parts: { lines, score, chain, side }, the
    *                                 plain ones; stat(label, value, cls, tip) makes one more; prev: the list before it
    *   bar(el) -> true               it drew the bar under the board itself (plain: the power-up groups)
-   *   tiles(game) -> [[value, label]]   more tiles for the board in play's summary (the Board full and Retire cards;
-   *                                 a record's own numbers are its uiPart's tiles)
+   *   tiles(game) -> [[value, label]]   more tiles for the board in play's summary (the Board full card)
    *   onKey(e) -> true              a key it took, before the game's own keys (Race's S, Shift+S; Battle's T)
    *   action(a, rep) -> ok          an action the game does not know (P: 'pause')
    *   input(kind, v, pos) -> v      what an input means here: 'aim' (the mouse's target column), 'touch' (a gesture's
@@ -488,15 +487,14 @@
       this.view.opts.cellCap = 1.4;
       this.status = document.getElementById('play-status');
       this.itembar = document.getElementById('itembar');
-      // The board library (js/library.js): a record for the board in play, shelved ones, retired ones.
+      // The games kept, one a mode (js/library.js): the one in play is the save's free, of the mode boards.cur.
       const B = Library.ensure(app.store.state, Date.now());
       let game = null;
       const saved = app.store.state.free;
-      // A board in play of a size no board can have (a save edited by hand) is not resumed: a new one takes its place.
+      // A game of a size no board can have (a save edited by hand) is not resumed: a new one of its mode takes its place.
       if (saved && Library.playable(saved)) { try { game = new Game({ saved, previewCount: this.settings.preview }); } catch (e) { game = null; } }
-      if (!game) game = new Game({ w: B.size.w, h: B.size.h, recipe: B.recipe, previewCount: this.settings.preview });
+      if (!game) { const su = this.setupFor(B.cur); game = new Game({ w: su.size.w, h: su.size.h, recipe: su.recipe, previewCount: this.settings.preview }); }
       game.previewCount = this.settings.preview;
-      this.thumbs = new Map(); // thumbnail images (data URLs) by board, stack and look
       this.attachGame(game, {});
       this.view.showBank = true;
       // The daily gift's button says when the next one comes; it is kept current as the time passes.
@@ -550,7 +548,7 @@
      * page shown and the window focused, and a board in play (Classic's running() and document.hasFocus()).
      */
     canRun() {
-      return this.app.tab === 'play' && !(L.Collapse && L.Collapse.on) && !UI.modalOpen() && !this.cardOpen && !this.fullView && !document.hidden && document.hasFocus() && !!this.game && !this.game.over;
+      return this.app.tab === 'play' && !(L.Collapse && L.Collapse.on) && !UI.modalOpen() && !this.cardOpen && !document.hidden && document.hasFocus() && !!this.game && !this.game.over;
     }
 
     frame(now, dt) {
@@ -558,8 +556,6 @@
       const modal = UI.modalOpen();
       if (modal && !this.modalUp) this.ctl.pause('modal');
       this.modalUp = modal;
-      // While a retired board is in full view (a window too), it is what is drawn; the board in play waits, untouched.
-      if (this.fullView) { this.fullView.frame(now, dt); return; }
       this.ctl.frame(now, dt, this.canRun());
       super.frame(now, dt);
     }
@@ -686,7 +682,7 @@
 
     /**
      * A combo (js/items.js): its reward — lines, a boost for the next few clears, points — shrinking each time it
-     * comes round in the board library (Library.taper: a new board is not a fresh start); a small callout on the board; and, the first time it is ever found, a power-up.
+     * comes round in any game (Library.taper: a new game is not a fresh start); a small callout on the board; and, the first time it is ever found, a power-up.
      */
     combo(id, i) {
       const st = this.app.store, g = this.game, s = g.s, c = Combos.get(id);
@@ -719,7 +715,7 @@
 
     /**
      * The Board full card: the board's numbers, and Undo (whenever there is a placement to take back: how many are held,
-     * or the price), Boards and Retire. The numbers scroll on a short screen; the buttons always show.
+     * or the price), Menu and New game. The numbers scroll on a short screen; the buttons always show.
      */
     onTopout(silent) { this.ctl.onEnd(this.game.endKind || 'full', silent); }
 
@@ -732,7 +728,7 @@
       this.fadeEdges(this.overlay.querySelector('.board-sum'));
     }
 
-    /** The Board full card's content: the board's summary, then Undo, Boards and Retire. */
+    /** The Board full card's content: the board's summary, then Undo, Menu and New game. */
     fullCard() {
       const g = this.game;
       return [
@@ -740,8 +736,8 @@
         this.boardSummary(Library.summarize(g.s, Date.now(), g), g.recipe, this.ctl.tiles(g)),
         h('div', { class: 'row' },
           g.history.length ? undoButton(this.app.store, { class: 'btn', id: 'topout-undo', onclick: () => this.topoutUndo() }, ico('item-rewind'), ITEMS.rewind.name) : null,
-          h('button', { class: 'btn', onclick: () => this.openLibrary() }, ico('boards'), 'Boards'),
-          h('button', { class: 'btn primary', onclick: () => this.newBoard('full') }, ico('retire'), 'Retire')),
+          this.menuButton(),
+          h('button', { class: 'btn primary', onclick: () => this.newBoard('full') }, ico('newBoard'), 'New game')),
       ];
     }
 
@@ -785,8 +781,8 @@
     }
 
     /**
-     * A board's lifelong numbers (Library.summarize), as a grid of small tiles. Its size is the summary's own (a record,
-     * or one made with it), else the board in play's (the full board's card). Lines is the board's own count; Lines
+     * A board's lifelong numbers (Library.summarize), as a grid of small tiles. Its size is the summary's own (one made
+     * with it), else the board in play's (the full board's card). Lines is the board's own count; Lines
      * banked is what it paid, in Standard lines. Then the board's recipe (a Board tile), each part's own numbers from
      * the summary (m.ext: a uiPart's tiles(ext, recipe, m) -> [[value, label]]), and extra (the controller's tiles for
      * the board in play).
@@ -823,25 +819,7 @@
       return out;
     }
 
-    /**
-     * A library row's tags: Playing, Full (a board that ended full: not one a part ended its own way), then each part's
-     * (a uiPart's tags(recipe, x, info) -> [{ text, cls }]: Descent's Cleared, Race's and Battle's "vs Steady 3–2"; x is the part's
-     * saved state, or its summary numbers on a retired record; info: { cur, over, ended, reason, retired }).
-     */
-    rowTags(recipe, xs, info) {
-      const out = [];
-      if (info.cur) out.push(h('span', { class: 'tag on' }, 'Playing'));
-      if (info.retired ? info.reason === 'full' : info.over && !info.ended) out.push(h('span', { class: 'tag full' }, 'Full'));
-      const R = L.Recipe, uis = R && recipe ? R.uis().filter((u) => typeof u.tags === 'function') : [];
-      // The board in play's state is read only when a part asks for it.
-      if (uis.length && typeof xs === 'function') xs = xs();
-      for (const u of uis) {
-        for (const t of u.tags(recipe, xs && typeof xs === 'object' ? xs[u.key] : undefined, info) || []) if (t && t.text) out.push(h('span', { class: 'tag' + (t.cls ? ' ' + t.cls : '') }, String(t.text)));
-      }
-      return out;
-    }
-
-    /** Stats ▸ Free Play's log of past boards (kept apart from the library's records; deleting a record keeps it). */
+    /** Stats ▸ Free Play's log of past boards: every game that ended or was replaced, with something played on it. */
     logBoard(s, reason, size) {
       if (!s || !s.pieces) return;
       const F = this.app.store.state.stats.free, now = Date.now(), m = Library.summarize(s, now);
@@ -855,60 +833,57 @@
     }
 
     /**
-     * Retires the board in play (to the library's retired records) and starts a new one in its place: a new game with
-     * its own seed, nothing of the old one's piece, queue or random stream. Saved at once.
+     * New game in place of the one in play, on the same rules (a full board's New game, Classic's Play again, Descent's
+     * next stage): the old one is logged (Past boards) and a new game, with its own seed, takes its place. Nothing of
+     * the old one's piece, queue or random stream is kept. A Custom game is followed by another, also never kept.
+     * Saved at once. `recipe` in place of the board's own when given (Descent's next stage).
      */
-    newBoard(reason) {
+    newBoard(reason, recipe) {
       this.unwatch();
-      const st = this.app.store, now = Date.now();
-      Library.ensure(st.state, now);
       this.syncCounters();
-      const s = this.game.s, recipe = this.game.recipe, size = { w: this.game.w, h: this.game.h - this.bufferRows(recipe, this.game.w) };
-      if (s.pieces) {
-        this.logBoard(s, reason);
-        Library.retire(st.state, st.state.boards.cur, this.game.toJSON(), now, reason);
-        Library.newCurrent(st.state, now);
-      }
-      // The new board is the old one's size and recipe: nothing asks (New board is where they are chosen).
-      this.freshGame(size, recipe);
+      const st = this.app.store, g = this.game, r = recipe || g.recipe, size = { w: g.w, h: g.h - this.bufferRows(g.recipe, g.w) };
+      if (g.s.pieces) this.logBoard(g.s, reason);
+      if (!this.custom) { this.syncMode(); Library.replace(st.state, Library.modeOf(r), null, Date.now()); }
+      this.freshGame(size, r);
       this.persist();
     }
 
     /**
-     * A new, empty game for the board in play (after Retire, Delete or New board), at `size` and of `recipe` (the size
-     * clamped to what a board of it can be): by default the size and recipe last chosen in the New board window.
+     * A new, empty game for the board in play, at `size` and of `recipe` (the size clamped to what a board of it can be):
+     * by default the setup of the mode in play, as last chosen in the menu.
      */
     freshGame(size, recipe) {
-      const B = this.app.store.state.boards;
-      const r = recipe || B.recipe || (L.Recipe && L.Recipe.DEFAULT);
-      const z = Library.clampSize(size || B.size, r);
+      const su = recipe ? null : this.setupFor(this.app.store.state.boards.cur);
+      const r = recipe || su.recipe;
+      const z = Library.clampSize(size || (su ? su.size : null), r);
       this.app.store.state.stats.free.boards++;
       this.setGame(new Game({ w: z.w, h: z.h, recipe: r, previewCount: this.settings.preview }));
     }
 
-    // ---- the board library -------------------------------------------------------------------------------------------
-
-    /**
-     * True for a board nothing has been done on yet (a new board from it would be the same board): no piece set, an
-     * empty stack (as the recipe sees it: Descent's hanging blocks do not count, Game.isClean) and no power-up used on it
-     * (gold, a net or a Giant waiting there would be lost with it).
-     */
-    untouched() {
-      const s = this.game.s;
-      return !s.pieces && this.game.isClean() && !Object.values(s.items || {}).some((n) => n > 0) && !s.gold && !s.double && !s.net && !s.boost;
+    /** A mode's setup as the menu has it ({ recipe, size }: js/menu.js), or Relaxed's Standard board. */
+    setupFor(mode) {
+      const B = this.app.store.state.boards;
+      if (L.Menu) return L.Menu.setupOf(B, mode || 'plain');
+      return { recipe: L.Recipe ? L.Recipe.normalize(null) : undefined, size: { w: Library.STANDARD.w, h: Library.STANDARD.h } };
     }
 
-    /** Is the board in play of this recipe (Recipe.equal: the same board, whatever order its keys were written in)? */
-    sameRecipe(r) { return !L.Recipe || L.Recipe.equal(r || L.Recipe.DEFAULT, this.game.recipe || L.Recipe.DEFAULT); }
+    // ---- one game a mode, and Custom games --------------------------------------------------------------------------
 
-    /** The board in play as saved, marked when it is full (for the library's list). */
+    /** The board in play as saved, marked when it is full (a Custom or watched game: the mode's game set aside for it). */
     boardJSON() {
-      if (this.watch && this.watch.saved) return JSON.parse(JSON.stringify(this.watch.saved));
+      const aside = this.watch || this.custom;
+      if (aside && aside.saved) return JSON.parse(JSON.stringify(aside.saved));
       const j = this.game.toJSON(); if (this.game.over) j.over = true; return j;
     }
 
-    /** Watching ends (js/watch.js) before anything changes the library: the board set aside for it comes back first. */
+    /** Watching ends (js/watch.js) before anything changes the games kept: the game set aside for it comes back first. */
     unwatch() { if (this.watch && L.Watch) L.Watch.stop(this); }
+
+    /** Leaving whatever is played on the side (a watched game, a Custom game): the mode's game set aside comes back. */
+    leave() { this.unwatch(); this.endCustom(); this.syncMode(); }
+
+    /** The mode in play is the game in play's (whatever put it there), so it is kept under its own mode. */
+    syncMode() { if (!this.watch && !this.custom && this.game) this.app.store.state.boards.cur = Library.modeOf(this.game.recipe); }
 
     /** A different board comes into play: a new game object, everything about the old one's piece in hand let go. */
     setGame(game) {
@@ -924,28 +899,42 @@
       if (game.over) this.onTopout(true);
     }
 
-    /** Saves the board in play and the save at once (a library change is never left to the next autosave). */
+    /** Saves the board in play and the save at once (a change of game is never left to the next autosave). */
     persist() { this.save(); this.app.store.save(); }
 
+    /** A game from the save, or null when it cannot be resumed. */
+    gameFrom(json) {
+      if (!Library.playable(json)) return null;
+      try { return new Game({ saved: json, previewCount: this.settings.preview }); } catch (e) { return null; }
+    }
+
     /**
-     * Shelves the board in play and starts a new one (its own seed) at `size` and of `recipe`, by default the ones last chosen. A board
-     * nothing has been done on is not shelved (it would be an empty board kept): it is made again at that size, in its
-     * own record. False when the library is full, or when an untouched board would be made again as it is.
+     * Continue: `mode`'s game comes into play exactly as it was left (the one in play is kept under its own mode);
+     * a mode with none starts a new game of its setup. The mode in play just carries on. Saved at once.
      */
-    shelveAndNew(size, recipe) {
-      this.unwatch();
-      const st = this.app.store, now = Date.now(), r = recipe || st.state.boards.recipe || (L.Recipe && L.Recipe.DEFAULT), z = Library.clampSize(size || st.state.boards.size, r);
-      if (this.untouched()) {
-        // An untouched board of another recipe is made again with it, as one of another size is.
-        if (!size && z.w === this.game.w && z.h === this.game.h - this.bufferRows(r, z.w) && this.sameRecipe(r)) return false;
-        this.setGame(new Game({ w: z.w, h: z.h, recipe: r, previewCount: this.settings.preview }));
-        this.app.sound.play('hold');
-        this.persist();
-        return true;
-      }
-      if (Library.full(st.state.boards)) { toast('Library full', 'bad'); this.app.sound.play('error'); return false; }
+    resumeMode(mode) {
+      this.leave();
+      const st = this.app.store;
+      if (mode === st.state.boards.cur) return true;
       this.syncCounters();
-      Library.startNew(st.state, this.boardJSON(), now);
+      const json = Library.open(st.state, mode, this.boardJSON(), Date.now());
+      const game = this.gameFrom(json);
+      if (game) this.setGame(game); else this.freshGame();
+      this.app.sound.play('hold');
+      this.persist();
+      return true;
+    }
+
+    /**
+     * New game: a new game of `recipe` at `size` (each part's commit made) replaces the one its mode kept (logged in
+     * Past boards when it was played); the game in play, if another mode's, is kept under its own. Saved at once.
+     */
+    newGame(recipe, size) {
+      this.leave();
+      const st = this.app.store, r = L.Recipe ? L.Recipe.normalize(recipe) : recipe, z = Library.clampSize(size, r);
+      this.syncCounters();
+      const gone = Library.replace(st.state, Library.modeOf(r), this.boardJSON(), Date.now());
+      if (gone && gone.s && gone.s.pieces) this.logBoard(gone.s, gone.over ? gone.ended || 'full' : 'manual', gone);
       this.freshGame(z, r);
       this.app.sound.play('hold');
       this.persist();
@@ -953,7 +942,46 @@
     }
 
     /**
-     * The New board window: the board's size and recipe, and Create. On top, always: the empty well drawn small and the
+     * A Custom game (the Custom window's Start, or a preset): played on the side and never kept. The mode's game in
+     * play is saved as it is and set aside (the save keeps it as the game in play, so a reload or a closed window
+     * finds it again); the Custom game is gone once it is left (endCustom: the menu's Continue or New game, another
+     * Custom game takes its place). Lines, power-ups and Stats count as in any game.
+     */
+    startCustom(recipe, size) {
+      this.unwatch();
+      const st = this.app.store, r = L.Recipe ? L.Recipe.normalize(recipe) : recipe, z = Library.clampSize(size, r);
+      this.syncCounters();
+      if (this.custom) { if (this.game.s.pieces) this.logBoard(this.game.s, this.game.over ? this.game.endKind || 'full' : 'manual'); }
+      else {
+        this.save();
+        this.custom = { saved: st.state.free, earn: JSON.parse(JSON.stringify(st.state.earn || {})) };
+      }
+      st.state.earn = { board: null, paid: 0 };
+      this.freshGame(z, r);
+      // Saved at once: the mode's game as it was set aside (never the Custom one), the window's choice.
+      this.persist();
+      this.app.sound.play('hold');
+      toast('Custom game · not saved', '', 1800);
+      return true;
+    }
+
+    /** The Custom game ends for good: the mode's game set aside comes back exactly as it was saved. */
+    endCustom() {
+      const c = this.custom;
+      if (!c) return false;
+      this.syncCounters();
+      if (this.game.s.pieces) this.logBoard(this.game.s, this.game.over ? this.game.endKind || 'full' : 'manual');
+      this.custom = null;
+      const st = this.app.store;
+      st.state.earn = Object.assign({ board: null, paid: 0 }, c.earn);
+      const game = this.gameFrom(c.saved);
+      if (game) this.setGame(game); else this.freshGame();
+      this.persist();
+      return true;
+    }
+
+    /**
+     * The Custom window: a game's size and recipe, then Start (a Custom game: startCustom) or Save preset. On top, always: the empty well drawn small and the
      * Width and Height steppers. Under them four tabs (Size, Shapes, Modifiers, Mode), each with a short value, and one
      * panel: Size has the presets; Shapes its chips (Normal, and each shapes part's); Modifiers a switch for each
      * modifier; Mode the modes and the level of the one chosen. It opens on the Size tab, with focus on Width, at the
@@ -961,8 +989,9 @@
      * allowed one (and comes back when it is allowed again), and the live region says what changed; an option the
      * other choices rule out stays in place, off (aria-disabled), and a press on it shows why in one muted line. The
      * size shown is the one asked for, clamped to what a board of the recipe can be (Recipe.clampSize), so it comes
-     * back when the recipe allows it again. Create remembers both and makes the board (shelveAndNew). `done(true)` once
-     * a board was made.
+     * back when the recipe allows it again. Start remembers both and starts a Custom game with them; Save preset asks for a
+     * name and keeps them (Library.addPreset: twelve at most, a press when full says so). `done(true)` once a game
+     * started; `saved(preset)` once a preset was kept.
      *
      * The feature parts fill it through Recipe.uiPart({ key, order, … }), every field optional:
      *   chips: [{ value, name, piece | sample(ctx, px, look), when?(r) }]   Shapes chips (path 'shapes.preset'; shown only
@@ -974,31 +1003,22 @@
      *   stepper(r, key) -> { label } | null   a stepper's name ('w', 'h': Race's Height is Rows)
      *   presets(r) -> [[name, w, h]] | null   the Size tab's presets
      *   sizeFor(r, asked) -> asked | null     the size to show once the recipe changed (Race and Battle keep their own)
-     *   commit(r, size) -> { recipe, size } | null   what Create makes
+     *   commit(r, size) -> { recipe, size } | null   what Start makes (and Save preset keeps)
      *   said(path, value, r) -> text | null   a value of its own in words, for the live region (Custom's sources), where
      *                             a chip's or a level's name does not say it
-     *   tags(r, x, info) -> [{ text, cls }]   more tags on its boards' library rows (see PlayMode.rowTags)
      *   tiles(ext, r, m) -> [[value, label]]  its numbers on a board's summary, from the summary's ext (Recipe.summary)
      * api: { recipe, size (the size shown), choose(path, value), why(text), refresh(), look, app }. A panel's control keeps focus through a
      * refresh when it carries data-focus="a name of its own" (or an id, or data-path and data-value as the options do);
-     * one that cannot be found again leaves focus on the tab, never outside the window (where Enter is Create).
-     *
-     * With `edit` ({ id, recipe, size, json }: a saved board), it is Edit rules: the same window on that board's
-     * recipe and size, with Apply in place of Create. Apply's price is on it (Recipe.editPrice: a flat price for each
-     * section changed; nothing when nothing did); a size that would cut the stack, or rules the board cannot take as
-     * it stands, are refused with the reason (Library.rebuild); a mode a board keeps for life (Descent) can be neither
-     * entered nor left (Recipe.editConflicts). Apply spends the lines and changes the board (applyEdit).
+     * one that cannot be found again leaves focus on the tab, never outside the window (where Enter is Start).
      */
-    openNewBoard(done, edit) {
-      this.unwatch();
+    openNewBoard(done, saved) {
       const st = this.app.store, B = st.state.boards, R = L.Recipe;
       const clone = (v) => JSON.parse(JSON.stringify(v));
-      let recipe = R.normalize(edit ? edit.recipe : B.recipe), memo = {}, tab = 'size';
+      let recipe = R.normalize(B.recipe), memo = {}, tab = 'size';
       // What was asked for (any size a board can have) and what is shown (that, as a board of this recipe can be).
-      let asked = Library.clampSize(edit ? edit.size : B.size), z = R.clampSize(asked, recipe), lim = R.limits(recipe);
-      /** Every option ruled out now: the recipe's conflicts, and in an edit what the board keeps for life. */
-      const conflictsOf = (r) => (edit ? Object.assign(R.editConflicts(edit.recipe, r), R.conflicts(r)) : R.conflicts(r));
-      let applyBtn = null, price = null, lastCut = null;
+      let asked = Library.clampSize(B.size), z = R.clampSize(asked, recipe), lim = R.limits(recipe);
+      /** Every option ruled out now: the recipe's conflicts. */
+      const conflictsOf = (r) => R.conflicts(r);
       const uis = () => R.uis();
       const cap = (t) => String(t).charAt(0).toUpperCase() + String(t).slice(1);
       const modName = (k) => { const u = uis().find((x) => x.mod === k); return (u && u.name) || cap(k); };
@@ -1053,17 +1073,14 @@
       };
       const steppers = [stepper('w', 'Width'), stepper('h', 'Height')];
       const paint = () => {
-        // The empty well at this size, fitted in a fixed box on whole device pixels (as the library's thumbnails).
+        // The empty well at this size, fitted in a fixed box on whole device pixels.
         const dpr = Math.min(3, root.devicePixelRatio || 1);
         const narrow = !!(root.matchMedia && root.matchMedia('(max-width: 380px)').matches), boxW = narrow ? 56 : 76, boxH = narrow ? 106 : 124; // (as .nb-well)
         const c = Math.max(1, Math.floor(Math.min(boxW * dpr / z.w, boxH * dpr / z.h)));
         const W = z.w * c, H = z.h * c;
         preview.width = W; preview.height = H;
         preview.style.width = W / dpr + 'px'; preview.style.height = H / dpr + 'px';
-        // In an edit, the board's own stack at the size shown (none where that size would cut it).
-        const cut = edit ? Library.reshape(edit.json, z.w, z.h).json : null;
-        const cells = cut ? cut.cells.map((v) => v & CELL.COLOR) : undefined;
-        Render.previewBoard(preview.getContext('2d'), { x: 0, y: 0, w: W, h: H }, z.w, z.h, recipe, this.app.theme, cells ? { cell: c, dpr, cells, look: Render.makeLook(this.app.store.state.equipped, this.app.theme, 0, true) } : { cell: c, dpr });
+        Render.previewBoard(preview.getContext('2d'), { x: 0, y: 0, w: W, h: H }, z.w, z.h, recipe, this.app.theme, { cell: c, dpr });
       };
       // A button, a preset or an option changes what does not have focus: the change is read out (VoiceOver).
       const live = h('div', { class: 'nb-live', 'aria-live': 'polite' });
@@ -1123,7 +1140,7 @@
         if (was.w !== z.w || was.h !== z.h) words.push(Library.sizeLabel(z.w, z.h));
         live.textContent = words.join(', ');
       };
-      const api = { get recipe() { return recipe; }, get size() { return z; }, choose, why: showWhy, refresh: () => refresh(), look, app: this.app, option, edit: edit || null };
+      const api = { get recipe() { return recipe; }, get size() { return z; }, choose, why: showWhy, refresh: () => refresh(), look, app: this.app, option };
       const extras = (k) => uis().filter((u) => u.tab === k && u.panel).map((u) => u.panel(recipe, api)).filter(Boolean);
       const panels = {
         size: () => {
@@ -1191,20 +1208,8 @@
           sp.plus.setAttribute('aria-disabled', String(z[sp.key] >= hi));
         }
         paint();
-        if (edit) {
-          // Apply says its price, and is quiet when the size would cut the stack (a press says why).
-          price = R.editPrice(edit.recipe, recipe, edit.size, z);
-          const cut = (z.w !== edit.size.w || z.h !== edit.size.h) ? Library.reshape(edit.json, z.w, z.h).why : null;
-          price.why = cut || null;
-          if (applyBtn) {
-            applyBtn.replaceChildren(...['Apply', price.cost ? h('span', { class: 'gem' }, ' ' + LINE + fmtInt(price.cost)) : null].filter(Boolean));
-            applyBtn.setAttribute('aria-label', price.cost ? 'Apply, costs ' + fmtInt(price.cost) + ' lines' : 'Apply');
-            applyBtn.setAttribute('aria-disabled', String(!!cut));
-            if (cut) why.textContent = cut;
-            else if (why.textContent && why.textContent === lastCut) why.textContent = '';
-            lastCut = cut;
-          }
-        }
+        // Save preset is off once twelve are kept (a press says so).
+        if (presetBtn) presetBtn.setAttribute('aria-disabled', String(Library.presetsFull(B)));
       };
       const set = (o, say) => {
         const was = z;
@@ -1213,398 +1218,62 @@
         refresh();
         if (say && (was.w !== z.w || was.h !== z.h)) live.textContent = was.h === z.h ? steppers[0].name.textContent + ' ' + z.w : was.w === z.w ? steppers[1].name.textContent + ' ' + z.h : Library.sizeLabel(z.w, z.h);
       };
+      let presetBtn = null;
       refresh();
       const body = h('div', { class: 'nb-body' },
         h('div', { class: 'nb-main' }, h('div', { class: 'nb-well' }, preview), h('div', { class: 'nb-fields' }, steppers.map((sp) => sp.el))),
         tabs, panel, live);
+      /** What Start plays and Save preset keeps: the window's choice, as each part commits it. */
+      const made = () => {
+        let out = { recipe, size: { w: z.w, h: z.h } };
+        for (const u of uis()) if (u.commit) out = u.commit(out.recipe, out.size) || out;
+        return { recipe: R.normalize(out.recipe), size: { w: out.size.w, h: out.size.h } };
+      };
+      const remember = () => { B.size = { w: z.w, h: z.h }; B.recipe = R.normalize(recipe); st.touch(); };
       const handle = UI.openModal({
-        title: edit ? 'Edit rules' : 'New board', icon: edit ? 'settings' : 'newBoard', cls: 'modal-newboard' + (edit ? ' modal-edit' : ''), body,
-        buttons: [{ label: 'Cancel' }, edit ? { label: 'Apply', kind: 'primary', onClick: () => this.applyEdit(edit, recipe, { w: z.w, h: z.h }, price, (text) => { showWhy(text); this.app.sound.play('error'); }, done) } : { label: 'Create', kind: 'primary', onClick: () => {
-          let out = { recipe, size: { w: z.w, h: z.h } };
-          for (const u of uis()) if (u.commit) out = u.commit(out.recipe, out.size) || out;
-          B.size = { w: out.size.w, h: out.size.h };
-          B.recipe = R.normalize(out.recipe);
-          const made = this.shelveAndNew(B.size, B.recipe);
-          if (!made) st.touch();
-          if (done) done(made);
+        title: 'Custom', icon: 'newBoard', cls: 'modal-newboard', body,
+        buttons: [{ label: 'Cancel' }, { label: 'Save preset', kind: 'nb-save', onClick: () => { savePreset(); return false; } }, { label: 'Start', kind: 'primary', onClick: () => {
+          remember();
+          const m = made();
+          this.startCustom(m.recipe, m.size);
+          if (done) done(true);
         } }],
       });
-      if (edit) { applyBtn = handle.el.querySelector('footer .btn.primary'); refresh(); }
+      presetBtn = handle.el.querySelector('footer .nb-save');
+      refresh();
+      /** Save preset: a name (the rules in words to start from), then kept; the window stays open. */
+      const savePreset = () => {
+        if (Library.presetsFull(B)) { showWhy(Library.MAX_PRESETS + ' presets kept: delete one first'); this.app.sound.play('error'); return; }
+        const m = made();
+        const input = h('input', { type: 'text', class: 'nb-name', value: R.label(m.recipe, true) || 'Custom', maxlength: String(Library.NAME_MAX), 'aria-label': 'Name', spellcheck: 'false' });
+        const keep = () => {
+          const p = Library.addPreset(B, input.value, m.recipe, m.size, Date.now());
+          if (!p) { input.focus(); return false; }
+          remember();
+          this.app.store.save();
+          toast('Preset saved', 'good', 1400);
+          if (saved) saved(p);
+          return true;
+        };
+        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); if (keep()) ask.close(); } });
+        const ask = UI.openModal({ title: 'Save preset', icon: 'newBoard', width: 360, cls: 'modal-preset', body: h('label', { class: 'nb-name-row' }, h('span', null, 'Name'), input),
+          buttons: [{ label: 'Cancel' }, { label: 'Save', kind: 'primary', onClick: keep }] });
+        setTimeout(() => { if (input.isConnected) input.select(); }, 40);
+        return ask;
+      };
       // Enter on a button (a stepper's, a preset, a tab, an option, Cancel, Close) presses that button; anywhere else
-      // it is Create.
+      // it is Start.
       handle.el.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.closest('button') && !e.target.closest('.btn.primary')) e.stopPropagation(); });
       steppers[0].val.focus();
       // For the tests: the window's recipe and size as they stand.
-      handle.nb = { get recipe() { return recipe; }, get size() { return z; }, get price() { return price; }, select, choose };
+      handle.nb = { get recipe() { return recipe; }, get size() { return z; }, select, choose, savePreset };
       this.lastNB = handle;
       return handle;
     }
 
-    /**
-     * Edit rules for a saved board (the one in play, or a shelved one): the New board window on its recipe and size.
-     * A board that ended keeps its rules (the action is not offered).
-     */
-    openEditRules(id, done) {
-      this.unwatch();
-      const B = this.app.store.state.boards, rec = Library.find(B, id);
-      if (!rec) return null;
-      const cur = id === B.cur, json = cur ? this.boardJSON() : rec.game;
-      if (!json || json.over || json.ended) { toast('A board that ended keeps its rules', 'bad'); return null; }
-      const keeps = this.keepsRules(json.recipe);
-      if (keeps) { toast(keeps, 'bad'); return null; }
-      const R = L.Recipe;
-      return this.openNewBoard(done, { id, recipe: R.normalize(json.recipe), size: { w: json.w, h: json.h }, json });
-    }
-
-    /**
-     * Apply in Edit rules: nothing changed closes it for nothing; else the board is rebuilt with the new rules
-     * (Library.rebuild: refused, with why, when the stack or the piece would not fit), the price is spent (short: Not
-     * enough lines, nothing changes) and the board changes where it is: in play (a new game object: no Undo history),
-     * or on the shelf. False keeps the window open.
-     */
-    applyEdit(edit, recipe, size, price, why, done) {
-      const st = this.app.store, B = st.state.boards, R = L.Recipe;
-      price = price || R.editPrice(edit.recipe, recipe, edit.size, size);
-      if (!price.cost) { if (done) done(false); return true; }
-      const res = Library.rebuild(edit.json, recipe, size);
-      if (res.why) { why(res.why); return false; }
-      if (st.state.lines < price.cost) { why('Not enough lines'); toast('Not enough lines', 'bad'); return false; }
-      const cur = edit.id === B.cur, rec = Library.find(B, edit.id);
-      if (!rec) return true;
-      st.spend(price.cost);
-      this.app.refreshWallet();
-      if (cur) {
-        this.syncCounters();
-        this.setGame(res.game);
-      } else rec.game = res.json;
-      this.app.sound.play('hold');
-      toast('Rules changed', 'good', 1600);
-      this.persist();
-      if (done) done(true);
-      return true;
-    }
-
     /** The rows a board keeps on top of its own as a buffer (R.k: Race's), left out of the size it is shown at. */
     bufferRows(recipe, w) { return L.Recipe && recipe ? L.Recipe.rules(recipe, w).k || 0 : 0; }
-    /** Why a board of this recipe offers no Edit rules (a part's noEdit: Race, Battle), or null. */
-    keepsRules(recipe) {
-      const R = L.Recipe;
-      if (!R || !recipe) return null;
-      const r = R.normalize(recipe);
-      for (const p of R.parts()) { const t = typeof p.noEdit === 'function' ? p.noEdit(r) : null; if (t) return t; }
-      return null;
-    }
-
-    /** Resumes a shelved board exactly as it was left; the one in play is shelved as it stands. */
-    switchTo(id) {
-      this.unwatch();
-      const st = this.app.store;
-      const json = Library.open(st.state, id, this.boardJSON(), Date.now());
-      if (!json) return false;
-      this.syncCounters();
-      let game = null;
-      if (Library.playable(json)) { try { game = new Game({ saved: json, previewCount: this.settings.preview }); } catch (e) { game = null; } }
-      if (!game) {
-        const r = L.Recipe ? L.Recipe.normalize(json.recipe) : undefined, z = Library.clampSize(json, r);
-        game = new Game({ w: z.w, h: z.h, recipe: r, previewCount: this.settings.preview });
-      }
-      this.setGame(game);
-      this.app.sound.play('hold');
-      this.persist();
-      return true;
-    }
-
-    /** Retires a board after showing its life: the one in play (a new one takes its place) or a shelved one. */
-    confirmRetire(id, after) {
-      const st = this.app.store, B = st.state.boards, rec = Library.find(B, id);
-      if (!rec) return;
-      const cur = id === B.cur, s = cur ? this.game.s : rec.game && rec.game.s;
-      if (!s || !s.pieces) return;
-      UI.openModal({
-        title: 'Retire ' + rec.name + '?', icon: 'retire', width: 420, cls: 'modal-retire',
-        body: [this.boardSummary(Library.summarize(s, Date.now(), cur ? this.game : rec.game), cur ? this.game.recipe : rec.game.recipe, cur ? this.ctl.tiles(this.game) : []), B.retired.length >= Library.MAX_RETIRED ? h('p', { class: 'lib-note' }, 'Oldest retired board is removed') : null],
-        buttons: [{ label: 'Cancel' }, { label: 'Retire', kind: 'primary', onClick: () => { this.retire(id); if (after) after(); } }],
-      });
-    }
-
-    retire(id) {
-      const st = this.app.store, B = st.state.boards;
-      // Why it ended: full, or a part's own end (Descent's 'cleared'), or retired by hand.
-      if (id === B.cur) { this.newBoard(this.game.over ? this.game.endKind || 'full' : 'manual'); return; }
-      const rec = Library.find(B, id);
-      if (!rec || !rec.game) return;
-      const why = rec.game.over ? rec.game.ended || 'full' : 'manual';
-      this.logBoard(rec.game.s, why, rec.game);
-      Library.retire(st.state, id, rec.game, Date.now(), why);
-      this.persist();
-    }
-
-    /** Deletes a board for good, after asking; the one in play is replaced by a new board. */
-    confirmDelete(id, after) {
-      const B = this.app.store.state.boards, rec = Library.find(B, id) || Library.findRetired(B, id);
-      if (!rec) return;
-      UI.confirm('Delete ' + rec.name + '?', null, 'Delete', () => { this.deleteBoard(id); if (after) after(); }, 'danger', 'trash');
-    }
-
-    deleteBoard(id) {
-      const st = this.app.store, B = st.state.boards, now = Date.now();
-      if (Library.findRetired(B, id)) { Library.removeRetired(B, id); this.persist(); return; }
-      if (id === B.cur) {
-        // The board that takes its place is its size and recipe.
-        const recipe = this.game.recipe, size = { w: this.game.w, h: this.game.h - this.bufferRows(recipe, this.game.w) };
-        this.syncCounters();
-        Library.remove(st.state, id);
-        Library.newCurrent(st.state, now);
-        this.freshGame(size, recipe);
-      } else Library.remove(st.state, id);
-      this.persist();
-    }
-
-    rename(id, raw) {
-      const name = Library.rename(this.app.store.state.boards, id, raw);
-      if (name) this.persist();
-      return name;
-    }
-
-    /**
-     * A board's stack in miniature, in the current palette (still: Prism at rest), as an image. Drawn on whole device
-     * pixels, as plain squares (a skin's detail does not survive at three pixels a cell), so it stays crisp at any
-     * scale. Every thumbnail is the size of a Standard board's (three pixels a cell): a smaller board sits in the middle
-     * of it at that scale, a larger one is fitted in, at one device pixel a cell or more, so every row is as tall. Cached by board, stack, look and scale, so it is redrawn only when one of those
-     * changed.
-     */
-    thumb(id, cells, w, hh, recipe, tip) {
-      const eq = this.app.store.state.equipped, theme = this.app.theme;
-      const dpr = Math.min(3, root.devicePixelRatio || 1);
-      const str = typeof cells === 'string' ? cells : Library.encodeCells(cells);
-      // A view part can draw its option over the stack (Render.previewBoard: Mirror's line, the descent): by recipe too.
-      const rk = recipe && L.Recipe && !L.Recipe.isDefault(recipe) ? L.Recipe.key(recipe) : '';
-      const key = [id, eq.palette, theme.name, theme.wellTop, dpr, w, hh, str, rk].join('|');
-      let url = this.thumbs.get(id);
-      if (!url || url.key !== key) {
-        const vals = (typeof cells === 'string' ? Library.decodeCells(cells) : cells) || [];
-        // The box a Standard board fills (three pixels a cell, or whole device pixels near it); any size is fitted in it.
-        const c0 = Math.max(3, Math.round(3 * dpr)), BW = Library.STANDARD.w * c0, BH = Library.STANDARD.h * c0;
-        const c = Math.max(1, Math.min(c0, Math.floor(BW / w), Math.floor(BH / hh))), pad = Math.max(2, Math.round(2 * dpr));
-        const W = BW + pad * 2, H = BH + pad * 2, ww = w * c + pad * 2, wh = hh * c + pad * 2;
-        const ox = Math.floor((W - ww) / 2), oy = Math.floor((H - wh) / 2);
-        const look = Render.makeLook(eq, theme, 0, true);
-        const cv = document.createElement('canvas');
-        cv.width = W; cv.height = H;
-        Render.previewBoard(cv.getContext('2d'), { x: ox, y: oy, w: ww, h: wh }, w, hh, recipe, theme, { style: 'thumb', cell: c, pad, dpr, cells: vals, look });
-        url = { key, src: cv.toDataURL(), W: W / dpr, H: H / dpr };
-        this.thumbs.set(id, url);
-        if (this.thumbs.size > 80) this.thumbs.delete(this.thumbs.keys().next().value);
-      }
-      return h('img', { class: 'lib-thumb', src: url.src, alt: '', 'data-tip': tip || null, style: { width: url.W + 'px', height: url.H + 'px' } });
-    }
-
-    /**
-     * The Boards window: Saved (the board in play first, then the rest by when they were last played) and Retired.
-     * A saved board resumes with a click (or Enter); each has Rename, Retire and Delete. A retired one opens its
-     * summary; View (or its thumbnail) shows it in full view; it can be deleted. New board shelves the one in play.
-     * One at a time: asked again, the open one stays.
-     */
-    openLibrary(sideAt) {
-      this.unwatch();
-      if (this.libHandle && this.libHandle.el.isConnected) return this.libHandle;
-      const st = this.app.store;
-      Library.ensure(st.state, Date.now());
-      this.hideCard();
-      // Solo or Multiplayer (Race and Battle boards: Library.side), opened on the side of the board in play.
-      let tab = 'saved', handle = null, editing = null, side = sideAt === 'multi' || sideAt === 'solo' ? sideAt : Library.side(this.game.recipe);
-      const sideOf = (rec) => Library.side(rec.id === st.state.boards.cur ? this.game.recipe : rec.game && rec.game.recipe);
-      const list = h('div', { class: 'lib-list', role: 'tabpanel', id: 'lib-panel' });
-      const when = (t) => {
-        if (!t) return '';
-        const d = new Date(t), now = new Date();
-        return d.toDateString() === now.toDateString() ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-          : d.toLocaleDateString([], { month: 'short', day: 'numeric', year: d.getFullYear() === now.getFullYear() ? undefined : 'numeric' });
-      };
-      const act = (icon, label, fn, cls) => h('button', { class: 'icon-btn' + (cls ? ' ' + cls : ''), 'aria-label': label, 'data-tip': label, html: L.Icons.icon(icon), onclick: (e) => { e.stopPropagation(); fn(); } });
-      // An empty slot where a row has no Retire, so the actions stay in their columns down the list.
-      const gap = () => h('span', { class: 'icon-btn ph', 'aria-hidden': 'true' });
-      const close = () => handle && handle.close();
-      // The row at position i of the tab as it is now (after a board left it: the one that took its place, or the last).
-      const focusAt = (i) => {
-        const opens = [...list.querySelectorAll('.lib-open')];
-        const f = opens[Math.max(0, Math.min(opens.length - 1, i))];
-        if (f && f.focus) f.focus();
-      };
-      const indexOf = (id) => [...list.querySelectorAll('.lib-row')].findIndex((r) => r.dataset.id === id);
-      // After a board was retired or deleted: redrawn, and, once the dialog asking has gone, focus on the nearest row.
-      const afterGone = (id) => { const i = Math.max(0, indexOf(id)); return () => { draw(); setTimeout(() => { if (handle && handle.el.isConnected) focusAt(i); }, 0); }; };
-      const nameEl = (rec, B) => {
-        if (editing !== rec.id) return h('div', { class: 't' }, rec.name);
-        const input = h('input', { type: 'text', class: 'lib-name', value: rec.name, maxlength: String(Library.NAME_MAX), 'aria-label': 'Name', spellcheck: 'false' });
-        let done = false;
-        // Enter or Esc: redrawn at once, focus back on the row. Focus gone elsewhere (a click, Tab): the name is kept
-        // and only the field turns back into the name, so whatever was clicked or tabbed to is still there and gets
-        // it; the row is rebuilt once that click is over.
-        const finish = (keep, away) => {
-          if (done) return;
-          done = true;
-          if (keep) this.rename(rec.id, input.value);
-          if (editing === rec.id) editing = null;
-          if (!away) { draw(rec.id); return; }
-          const row = input.closest('.lib-row');
-          input.replaceWith(h('div', { class: 't' }, rec.name));
-          const rebuild = () => setTimeout(() => {
-            if (!row.isConnected || editing || !(handle && handle.el.isConnected)) return;
-            const a = document.activeElement, inRow = row.contains(a), label = inRow && a.getAttribute('aria-label');
-            const fresh = savedRow(rec, st.state.boards);
-            row.replaceWith(fresh);
-            if (inRow) { const f = label && fresh.querySelector('.lib-acts [aria-label="' + label + '"]'); (f || fresh.querySelector('.lib-open')).focus(); }
-          }, 0);
-          if (pointerDown) window.addEventListener('pointerup', rebuild, { once: true }); else rebuild();
-        };
-        input.addEventListener('keydown', (e) => {
-          e.stopPropagation();
-          if (e.key === 'Enter') { e.preventDefault(); finish(true); }
-          else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
-        });
-        // A field taken out by a redraw (not by the player) says nothing.
-        input.addEventListener('blur', () => { if (input.isConnected) finish(true, true); });
-        input.addEventListener('click', (e) => e.stopPropagation());
-        return input;
-      };
-      let pointerDown = false;
-      const down = () => { pointerDown = true; }, up = () => { pointerDown = false; };
-      window.addEventListener('pointerdown', down, true);
-      window.addEventListener('pointerup', up, true);
-      const savedRow = (rec, B) => {
-        const cur = rec.id === B.cur, g = cur ? null : rec.game;
-        const s = cur ? this.game.s : (g && g.s) || {};
-        const full = cur ? this.game.over : !!(g && g.over);
-        const cells = cur ? this.game.board.cells : g ? g.cells : [];
-        const z = cur ? this.game : Library.clampSize(g), w = z.w, hh = z.h;
-        const recipe = cur ? this.game.recipe : g && g.recipe, label = recipe && L.Recipe ? L.Recipe.label(recipe) : '', short = label && L.Recipe.label(recipe, true);
-        const open = h(editing === rec.id ? 'div' : 'button', {
-          class: 'lib-open', 'data-id': rec.id, 'aria-label': editing === rec.id ? null : (cur ? rec.name + ', in play' : 'Play ' + rec.name),
-          onclick: editing === rec.id ? null : () => { if (!cur) this.switchTo(rec.id); close(); },
-        }, this.thumb(rec.id, cells, w, hh, recipe), h('div', { class: 'grow' }, nameEl(rec, B),
-          h('div', { class: 'd' + (short ? ' labelled' : '') }, this.rowTags(recipe, cur ? () => this.game.toJSON().x : g && g.x, { cur, over: full, ended: cur ? this.game.endKind || null : (g && g.ended) || null, retired: false }),
-            // The size, when, then the board's recipe in short (Recipe.label: nothing on a default board; in full as its
-            // tip), so an ellipsis only ever takes the label.
-            h('span', { class: 'sz', title: label || null }, [Library.sizeLabel(w, hh - this.bufferRows(recipe, w)), cur ? null : when(rec.touched), short].filter(Boolean).join(' · ')),
-            h('span', { class: 'st' }, ['Lines ' + fmtInt(s.lines || 0), 'Score ' + fmtInt(s.score || 0)].join(' · ')))));
-        return h('div', { class: 'lib-row' + (cur ? ' current' : ''), 'data-id': rec.id }, open,
-          h('div', { class: 'lib-acts' },
-            act('rename', 'Rename', () => { editing = rec.id; draw(); }),
-            full || (g && g.ended) || this.keepsRules(recipe) ? gap() : act('settings', 'Edit rules', () => this.openEditRules(rec.id, (made) => { if (made && handle && handle.el.isConnected) draw(rec.id); })),
-            s.pieces ? act('retire', 'Retire', () => this.confirmRetire(rec.id, afterGone(rec.id))) : gap(),
-            act('trash', 'Delete', () => this.confirmDelete(rec.id, afterGone(rec.id)), 'del')));
-      };
-      // A retired row opens its record; its thumbnail (or View) opens the board in full view.
-      const retiredRow = (e) => {
-        const label = e.recipe && L.Recipe ? L.Recipe.label(e.recipe) : '', short = label && L.Recipe.label(e.recipe, true);
-        return h('div', { class: 'lib-row retired', 'data-id': e.id },
-        h('button', { class: 'lib-open', 'data-id': e.id, 'aria-label': e.name, onclick: (ev) => { if (ev.target.closest && ev.target.closest('.lib-thumb')) this.openRetiredView(e.id, ev.currentTarget); else this.openRetired(e.id, afterGone(e.id)); } },
-          this.thumb(e.id, e.cells, e.w, e.h, e.recipe, 'View'),
-          h('div', { class: 'grow' }, h('div', { class: 't' }, e.name),
-            h('div', { class: 'd' + (short ? ' labelled' : '') }, this.rowTags(e.recipe, e.sum && e.sum.ext, { cur: false, over: e.reason !== 'manual', ended: e.reason !== 'manual' && e.reason !== 'full' ? e.reason : null, reason: e.reason, retired: true }),
-              h('span', { class: 'sz', title: label || null }, [when(e.at), Library.sizeLabel(e.w, e.h - this.bufferRows(e.recipe, e.w)), short].filter(Boolean).join(' · ')),
-              h('span', { class: 'st' }, ['Lines ' + fmtInt(e.sum.lines || 0), 'Score ' + fmtInt(e.sum.score || 0)].join(' · '))))),
-        h('div', { class: 'lib-acts' },
-          h('button', { class: 'icon-btn fv-open', 'aria-label': 'View', 'data-tip': 'View', html: L.Icons.icon('expand'), onclick: (ev) => { ev.stopPropagation(); this.openRetiredView(e.id, ev.currentTarget); } }),
-          act('trash', 'Delete', () => this.confirmDelete(e.id, afterGone(e.id)), 'del')));
-      };
-      const newBtn = h('button', { class: 'btn sm primary lib-new', 'aria-label': 'New board', onclick: () => this.openNewBoard((made) => { if (made && handle && handle.el.isConnected) { tab = 'saved'; editing = null; draw(st.state.boards.cur); } }) }, ico('newBoard'), h('span', { class: 'lbl' }, 'New board'));
-      const seg = h('div', { class: 'seg lib-tabs' }, [['saved', 'Saved'], ['retired', 'Retired']].map(([k, l]) =>
-        h('button', { 'data-k': k, 'aria-pressed': String(k === tab), onclick: () => { tab = k; editing = null; draw(); } }, l, h('span', { class: 'c' }))));
-      const SIDES = [['solo', 'Solo'], ['multi', 'Multiplayer']];
-      const sideBtns = SIDES.map(([k, l]) => h('button', { type: 'button', role: 'tab', class: 'lib-side', id: 'lib-side-' + k, 'data-side': k, 'aria-controls': 'lib-panel', onclick: () => { side = k; editing = null; draw(); } }, l));
-      const sides = h('div', { class: 'lib-sides', role: 'tablist', 'aria-label': 'Boards' }, sideBtns);
-      sides.addEventListener('keydown', (e) => {
-        const i = SIDES.findIndex(([k]) => k === side), j = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: SIDES.length - 1 }[e.key];
-        if (j == null) return;
-        e.preventDefault(); e.stopPropagation();
-        side = SIDES[(j + SIDES.length) % SIDES.length][0]; editing = null; draw();
-        sideBtns.find((b) => b.dataset.side === side).focus();
-      });
-      const draw = (focusId) => {
-        const B = st.state.boards;
-        const mine = Library.ordered(B).filter((r) => sideOf(r) === side), gone = B.retired.filter((e) => Library.side(e.recipe) === side);
-        sideBtns.forEach((b) => {
-          const on = b.dataset.side === side;
-          b.setAttribute('aria-selected', String(on)); b.tabIndex = on ? 0 : -1;
-        });
-        list.setAttribute('aria-labelledby', 'lib-side-' + side);
-        seg.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.k === tab)));
-        // Saved: this side's boards (the library holds 12, Solo and Multiplayer together: New board says when it is full).
-        seg.querySelector('[data-k="saved"] .c').textContent = String(mine.length);
-        seg.querySelector('[data-k="retired"] .c').textContent = String(gone.length);
-        // Full, a board that was played cannot be shelved; an untouched one can still be made again at another size.
-        const isFull = Library.full(B) && !this.untouched();
-        newBtn.disabled = isFull;
-        newBtn.dataset.tip = isFull ? 'Library full' : 'New board';
-        const rows = tab === 'saved' ? mine.map((r) => savedRow(r, B)) : gone.map(retiredRow);
-        list.replaceChildren(...(rows.length ? rows : [h('p', { class: 'empty' }, 'None')]));
-        const field = list.querySelector('input.lib-name');
-        if (field) { field.focus(); field.select(); }
-        else if (focusId) { const f = list.querySelector('.lib-open[data-id="' + focusId + '"]'); if (f && f.focus) f.focus(); }
-      };
-      // ↑ ↓ step between boards.
-      list.addEventListener('keydown', (e) => {
-        if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-        const opens = [...list.querySelectorAll('button.lib-open')], i = opens.indexOf(document.activeElement);
-        if (i < 0) return;
-        e.preventDefault(); e.stopPropagation();
-        const n = opens[Math.max(0, Math.min(opens.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))];
-        if (n) n.focus();
-      });
-      draw();
-      handle = UI.openModal({
-        title: 'Boards', icon: 'boards', width: 460, cls: 'modal-lib', body: h('div', { class: 'lib-wrap' }, sides, h('div', { class: 'lib-head' }, seg, newBtn), list),
-        // Closed on a full board (from its card's Boards button): the card comes back.
-        onClose: () => {
-          this.libHandle = null;
-          window.removeEventListener('pointerdown', down, true);
-          window.removeEventListener('pointerup', up, true);
-          if (this.game.over && !this.cardOpen) this.onTopout(true);
-        },
-      });
-      this.libHandle = handle;
-      // Focus on the board in play, so ↑ ↓ and Enter work straight away (however the window was opened); on a side
-      // without it, its first board, or its tab.
-      const first = list.querySelector('button.lib-open') || sideBtns.find((b) => b.dataset.side === side);
-      if (first) first.focus();
-      return handle;
-    }
-
-    /** A retired record's dates (started, retired; beside its thumbnail when asked) and its summary. */
-    recordBody(e, withThumb) {
-      const day = (t) => new Date(t).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
-      return [h('div', { class: 'lib-dates' }, withThumb ? this.thumb(e.id, e.cells, e.w, e.h, e.recipe) : null, h('div', null, h('div', null, h('i', null, 'Started '), day(e.sum.startedAt || e.created)), h('div', null, h('i', null, 'Retired '), day(e.at)))), this.boardSummary(e.sum, e.recipe)];
-    }
-
-    /** A retired board's record: its name, when it lived, its summary. Read-only; View shows it in full; it can be deleted. */
-    openRetired(id, after) {
-      const B = this.app.store.state.boards, e = Library.findRetired(B, id);
-      if (!e) return;
-      // Delete asks first; only once it is done does the record close (Cancel leaves it open, where it was).
-      const rec = UI.openModal({
-        title: e.name, icon: 'retire', width: 420, cls: 'modal-retire',
-        body: this.recordBody(e, true),
-        buttons: [{ label: 'Delete', kind: 'danger', onClick: () => { this.confirmDelete(id, () => { rec.close(); if (after) after(); }); return false; } },
-          { label: 'View', kind: 'fv-view', onClick: () => { this.openRetiredView(id, rec.el.querySelector('footer .fv-view')); return false; } },
-          { label: 'Close', kind: 'primary' }],
-      });
-      return rec;
-    }
-
-    /**
-     * A retired board in full view (js/retiredview.js): at play size where the board in play is, read-only, with
-     * Previous and Next through the retired boards; Back or Esc returns, focus to `back`. One at a time.
-     */
-    openRetiredView(id, back) {
-      if (this.fullView || !Library.findRetired(this.app.store.state.boards, id)) return this.fullView || null;
-      // A record that cannot be drawn opens nothing (the view makes its first board before it opens a thing).
-      try { this.fullView = new L.RetiredView(this, id, back || document.activeElement); } catch (err) { console.warn('Lull: a retired board could not be drawn', err); return null; }
-      return this.fullView;
-    }
-
-    blocked() { return this.cardOpen || !!this.fullView || !!(this.ctl && typeof this.ctl.handsOff === 'function' && this.ctl.handsOff()); }
+    blocked() { return this.cardOpen || !!(this.ctl && typeof this.ctl.handsOff === 'function' && this.ctl.handsOff()); }
 
     renderStatus() {
       const s = this.game.s;
@@ -1628,8 +1297,11 @@
           h('button', { class: 'btn sm menu-btn', 'aria-label': 'Menu', 'aria-haspopup': 'dialog', 'data-tip': 'Menu', 'data-tip-foot': L.native && L.native.available ? null : 'Esc', onclick: () => this.openMenu() }, ico('menu'), h('span', { class: 'lbl' }, 'Menu'))));
     }
 
-    /** The Play menu (js/menu.js): Solo, Multiplayer, Recent and Escape; `page` a page or a mode's setup to open on. */
+    /** The Play menu (js/menu.js): Solo, Multiplayer and each mode; `page` a page or a mode's setup to open on. */
     openMenu(page) { return L.Menu ? L.Menu.open(this, page) : null; }
+
+    /** A card's Menu button: the Play menu, where each mode's game, New game and Custom are. */
+    menuButton() { return h('button', { class: 'btn card-menu', onclick: () => this.openMenu() }, ico('menu'), 'Menu'); }
 
     // ---- the daily gift ------------------------------------------------------------------------------------------------
 
@@ -1880,8 +1552,11 @@
       }
     }
 
-    /** The board in play, saved (while a game is watched: the board set aside for it, as it was: js/watch.js). */
-    save() { this.app.store.state.free = this.watch ? this.watch.saved : this.game.toJSON(); }
+    /**
+     * The board in play, saved (while a game is watched or a Custom one played: the mode's game set aside for it, as it
+     * was: js/watch.js, startCustom).
+     */
+    save() { const aside = this.watch || this.custom; this.app.store.state.free = aside ? aside.saved : this.game.toJSON(); }
   }
 
   // ---- puzzles ------------------------------------------------------------------------------------------------------

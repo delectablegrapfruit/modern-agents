@@ -35,7 +35,7 @@
   //                              that would be drawn too small to read is left out
   //   pieceAlpha(view, p, cell, copy) -> alpha   how opaque a cell of the piece in play is drawn (copy: a cell the
   //                              recipe added to the piece's own, placed: Mirror's copy at 0.8); the answers multiply
-  //   preview(ctx, geom, recipe, theme)   over the New board preview and the library thumbnails (previewBoard)
+  //   preview(ctx, geom, recipe, theme)   over the Custom window's preview (previewBoard)
   //   layout: 'battle', render(view, ctx, now)   a whole frame of its own for that controller view (BoardView.shell)
   const viewParts = () => (L.Recipe && L.Recipe.views ? L.Recipe.views() : []);
   /** The view parts on for this game. */
@@ -929,56 +929,25 @@
   }
 
   /**
-   * A board drawn small, on whole device pixels, where the box is (canvas pixels), c pixels a cell:
-   *  - style 'well' (the New board window): the empty well's wash and, at 4 px a cell or more, its grid;
-   *  - style 'thumb' (a library thumbnail): a rounded well of pad around the cells, the stack (o.cells, one value a
-   *    cell, row 0 at the bottom) as plain squares in o.look's colours (gap between them from 5 px a cell), a hairline rim.
-   * Then each view part's preview(ctx, geom, recipe, theme) draws over it (geom: { x, y, c, w, h, style, dpr }, the
-   * cells' top-left in canvas pixels).
+   * A board drawn small (the Custom window's preview), on whole device pixels, where the box is (canvas pixels), c
+   * pixels a cell: the empty well's wash and, at 4 px a cell or more, its grid. Then each view part's
+   * preview(ctx, geom, recipe, theme) draws over it (geom: { x, y, c, w, h, dpr }, the cells' top-left in canvas pixels).
    */
   function previewBoard(ctx, box, w, h, recipe, theme, o) {
     o = o || {};
-    const c = o.cell, style = o.style || 'well';
+    const c = o.cell;
     ctx.save();
     ctx.translate(box.x, box.y);
-    let geom;
-    if (style === 'thumb') {
-      const pad = o.pad || 0, gap = c >= 5 ? 1 : 0, dpr = o.dpr || 1, ww = box.w, wh = box.h, vals = o.cells || [], look = o.look;
-      const gr = ctx.createLinearGradient(0, 0, 0, wh);
-      gr.addColorStop(0, theme.wellTop || theme.well); gr.addColorStop(1, theme.wellBottom || theme.well);
-      ctx.fillStyle = gr; rr(ctx, 0, 0, ww, wh, Math.min(4 * dpr, ww / 4)); ctx.fill();
-      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-        const v = vals[y * w + x];
-        if (!v) continue;
-        ctx.fillStyle = look.colors[v & CELL.COLOR] || look.colors[8];
-        ctx.fillRect(pad + x * c, pad + (h - 1 - y) * c, c - gap, c - gap);
-      }
-      const lw = Math.max(1, Math.round(dpr));
-      ctx.strokeStyle = theme.rim || theme.line; ctx.lineWidth = lw;
-      rr(ctx, lw / 2, lw / 2, ww - lw, wh - lw, Math.min(4 * dpr, ww / 4)); ctx.stroke();
-      geom = { x: pad, y: pad, c, w, h, style, dpr, cells: vals };
-    } else {
-      const W = w * c, H = h * c;
-      const gr = ctx.createLinearGradient(0, 0, 0, H);
-      gr.addColorStop(0, theme.wellTop || theme.well); gr.addColorStop(1, theme.wellBottom || theme.well);
-      ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H);
-      if (c >= 4) {
-        ctx.fillStyle = theme.grid || theme.line;
-        for (let x = 1; x < w; x++) ctx.fillRect(x * c, 0, 1, H);
-        for (let y = 1; y < h; y++) ctx.fillRect(0, y * c, W, 1);
-      }
-      // A stack to show (Edit rules: the board's own), as plain squares.
-      if (o.cells && o.look) {
-        const gap = c >= 5 ? 1 : 0;
-        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-          const v = o.cells[y * w + x];
-          if (!v) continue;
-          ctx.fillStyle = o.look.colors[v & CELL.COLOR] || o.look.colors[8];
-          ctx.fillRect(x * c, (h - 1 - y) * c, c - gap, c - gap);
-        }
-      }
-      geom = { x: 0, y: 0, c, w, h, style, dpr: o.dpr || 1 };
+    const W = w * c, H = h * c;
+    const gr = ctx.createLinearGradient(0, 0, 0, H);
+    gr.addColorStop(0, theme.wellTop || theme.well); gr.addColorStop(1, theme.wellBottom || theme.well);
+    ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H);
+    if (c >= 4) {
+      ctx.fillStyle = theme.grid || theme.line;
+      for (let x = 1; x < w; x++) ctx.fillRect(x * c, 0, 1, H);
+      for (let y = 1; y < h; y++) ctx.fillRect(0, y * c, W, 1);
     }
+    const geom = { x: 0, y: 0, c, w, h, dpr: o.dpr || 1 };
     for (const p of viewParts()) if (p.preview) { ctx.save(); p.preview(ctx, geom, recipe, theme); ctx.restore(); }
     ctx.restore();
   }

@@ -149,7 +149,7 @@
       running() {
         // (play.canRun, less its "not over": the board's own rules say when a round ends.)
         return M().round.phase === 'play' && !this.paused && !this.count && app.tab === 'play' && !(L.Collapse && L.Collapse.on) && !UI.modalOpen()
-          && !play.cardOpen && !play.fullView && !document.hidden && document.hasFocus();
+          && !play.cardOpen && !document.hidden && document.hasFocus();
       },
       counts() { return this.running(); },
       tapStarts() { const ph = M().round.phase; return (ph === 'ready' || (ph === 'play' && this.paused)) && !UI.modalOpen(); },
@@ -168,7 +168,7 @@
           h('h2', null, o.title),
           h('p', { class: 'vs-sub' }, 'vs ' + name()),
           h('div', { class: 'row' },
-            h('button', { class: 'btn', onclick: () => play.openLibrary() }, ico('boards'), 'Boards'),
+            play.menuButton(),
             h('button', { class: 'btn primary', id: 'vs-go', onclick: () => this.go() }, 'Start ', h('kbd', null, 'Space'))),
         ], 'vs-card vs-ready');
       },
@@ -177,7 +177,7 @@
           h('h2', null, 'Paused'),
           h('p', { class: 'vs-sub' }, this.sub()),
           h('div', { class: 'row' },
-            h('button', { class: 'btn', onclick: () => play.openLibrary() }, ico('boards'), 'Boards'),
+            play.menuButton(),
             h('button', { class: 'btn primary', id: 'vs-go', onclick: () => this.go() }, 'Resume ', h('kbd', null, 'Space'))),
         ], 'vs-card vs-paused');
       },
@@ -198,8 +198,8 @@
           ...o.endBody.call(this),
           h('div', { class: 'vs-opp' }, h('span', { class: 'vs-opp-l' }, 'Opponent'), picker),
           h('div', { class: 'row' },
-            h('button', { class: 'btn', onclick: () => play.openLibrary() }, ico('boards'), 'Boards'),
-            h('button', { class: 'btn', onclick: () => play.newBoard('manual') }, ico('retire'), 'Retire'),
+            play.menuButton(),
+            h('button', { class: 'btn', onclick: () => play.newBoard('manual') }, ico('newBoard'), 'New game'),
             h('button', { class: 'btn primary', id: 'vs-again', onclick: () => this.rematch() }, 'Rematch ', h('kbd', null, 'Space'))),
         ], 'vs-card vs-end topout');
       },
@@ -263,7 +263,7 @@
         if (!this.count) return false;
         const m = M();
         // The countdown runs only where play would (nothing over the board but its own card).
-        const ok = app.tab === 'play' && !UI.modalOpen() && !document.hidden && !(L.Collapse && L.Collapse.on) && !play.fullView;
+        const ok = app.tab === 'play' && !UI.modalOpen() && !document.hidden && !(L.Collapse && L.Collapse.on);
         if (ok) this.count.left -= dt;
         if (this.count.left <= 0) {
           this.count = null;

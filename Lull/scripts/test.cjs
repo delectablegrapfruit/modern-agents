@@ -2230,13 +2230,13 @@ test('native Reset: the fresh save goes to the panel as one reset message, and t
     assert(L.native.available);
     const s = new L.Store();
     s.state.lines = 900; s.state.achievements.quad = 1; s.state.settings.das = 199;
-    s.state.boards.retired.push({ id: 'b1' });
+    s.state.boards.presets.push({ id: 'p1', name: 'Kept' });
     s.save();
     assert.deepStrictEqual(posts.map((m) => m.type), ['save']);
     s.reset();
     assert.deepStrictEqual(posts.map((m) => m.type), ['save', 'reset']);
     const sent = JSON.parse(posts[1].data);
-    assert.deepStrictEqual([sent.lines, Object.keys(sent.achievements).length, sent.boards.retired.length, sent.settings.das], [0, 0, 0, 199]);
+    assert.deepStrictEqual([sent.lines, Object.keys(sent.achievements).length, sent.boards.presets.length, sent.settings.das], [0, 0, 0, 199]);
     // The page on its way out (a pending autosave, a flush, pagehide) writes nothing over it.
     s.state.lines = 5; s.touch(); s.save(); s.save();
     assert.strictEqual(posts.length, 2);
@@ -2287,261 +2287,194 @@ test('the shop sells cosmetics', () => {
   assert(s.equip('skin', 'bevel'));
 });
 
-console.log('board library');
+console.log('one game a mode, and presets');
 {
-  const { Library } = L;
+  const { Library, Recipe: R } = L;
   const clone = (x) => JSON.parse(JSON.stringify(x));
-  /** A save with a played board in it, the way PlayMode leaves it. */
-  const played = (seed, n) => {
-    const g = new Game({ w: 10, h: 20, seed });
-    for (let i = 0; i < n; i++) { g.move((i % 5) - 2); if (i % 4 === 1) g.holdPiece(); if (i % 3 === 0) g.rotate(1); g.drop(); }
+  /** A played game of `recipe` (Relaxed by default), the way PlayMode leaves it. */
+  const played = (seed, n, recipe, size) => {
+    const z = size || { w: 10, h: 20 };
+    const g = new Game({ w: z.w, h: z.h, seed, recipe });
+    for (let i = 0; i < n && !g.over; i++) { g.move((i % 5) - 2); if (i % 4 === 1) g.holdPiece(); if (i % 3 === 0) g.rotate(1); g.drop(); }
     return g;
   };
-  let rn = 0;
-  const rnd = () => { rn = (rn * 16807 + 11) % 2147483647; return rn / 2147483647; };
-  test('a new save has an empty library; the board in play gets a record with a calm two-word name', () => {
+  test('a new save keeps no games and no presets; the game in play is Relaxed\'s', () => {
     const st = L.loadState({});
-    assert.deepStrictEqual(st.boards, { seq: 0, cur: null, list: [], retired: [] });
-    const B = Library.ensure(st, 1000, rnd);
-    assert.strictEqual(B.list.length, 1);
-    assert.strictEqual(B.cur, B.list[0].id);
-    assert(/^[A-Z][a-z]+ [A-Z][a-z]+$/.test(B.list[0].name), B.list[0].name);
-    assert(Library.ADJ.includes(B.list[0].name.split(' ')[0]) && Library.NOUN.includes(B.list[0].name.split(' ')[1]));
-    Library.ensure(st, 2000, rnd);
-    assert.strictEqual(B.list.length, 1, 'ensure is idempotent');
+    assert.deepStrictEqual(st.boards, { cur: null, games: {}, presets: [], seq: 0 });
+    const B = Library.ensure(st, 1000);
+    assert.deepStrictEqual([B.cur, Object.keys(B.games), B.presets], ['plain', [], []]);
+    st.free = played(3, 2, R.normalize({ mode: 'classic' })).toJSON();
+    Library.ensure(st, 2000);
+    assert.strictEqual(B.cur, 'classic', 'cur is the mode of the game in play');
+    assert.strictEqual(Library.ensure(st, 3000), B, 'ensure is idempotent, in place');
   });
-  test('save and switch: a shelved board comes back exactly (cells, piece, hold, queue, bag, RNG, stats) and plays on the same', () => {
+  test('Continue: a mode\'s game comes back exactly (cells, piece, hold, queue, bag, RNG, stats, Earn) and plays on the same', () => {
     const st = L.loadState({});
     const a = played(21, 17);
     a.s.gold = 3; a.s.boost = { x: 1.25, left: 2 }; a.s.playMs = 123456; a.s.items = { bomb: 1 }; a.s.hand = false;
     st.free = a.toJSON();
     st.earn = { board: a.s.startedAt, paid: 1 };
-    Library.ensure(st, 1000, rnd);
-    const idA = st.boards.cur;
-    const ref = new Game({ saved: clone(a.toJSON()) }); // what board A should go on to be
-    const nb = Library.startNew(st, a.toJSON(), 2000, rnd);
-    assert(nb && st.boards.cur === nb.id && st.free === null);
-    assert.deepStrictEqual(st.earn, { board: null, paid: 0 }, 'the new board earns from nothing');
-    const b = played(99, 9);
+    Library.ensure(st, 1000);
+    const ref = new Game({ saved: clone(a.toJSON()) });
+    // Classic, from the menu: none kept yet, so nothing to resume (the caller starts one); Relaxed is parked.
+    assert.strictEqual(Library.open(st, 'classic', a.toJSON(), 2000), null);
+    assert.deepStrictEqual([st.boards.cur, Object.keys(st.boards.games), st.free], ['classic', ['plain'], null]);
+    assert.deepStrictEqual(st.earn, { board: null, paid: 0 }, 'the new game earns from nothing');
+    const c = played(99, 9, R.normalize({ mode: 'classic' }));
     // Through a reload: the whole save as JSON and back.
     const st2 = L.loadState(JSON.parse(JSON.stringify(st)));
-    const json = Library.open(st2, idA, b.toJSON(), 3000);
-    assert(json, 'opened');
-    assert.strictEqual(st2.boards.cur, idA);
-    assert.strictEqual(st2.free, json);
+    Library.ensure(st2, 2500);
+    const json = Library.open(st2, 'plain', c.toJSON(), 3000);
+    assert.deepStrictEqual([st2.boards.cur, Object.keys(st2.boards.games), st2.free === json], ['plain', ['classic'], true]);
     assert.deepStrictEqual(st2.earn, { board: a.s.startedAt, paid: 1 }, 'its Earn record comes back with it');
     const back = new Game({ saved: clone(json) });
     assert.deepStrictEqual(back.toJSON(), ref.toJSON(), 'exactly as it was');
-    assert.deepStrictEqual(Array.from(back.board.cells), Array.from(a.board.cells));
     assert.deepStrictEqual([back.hold, back.queue, back.bag, back.rng.state(), back.piece.x, back.piece.y, back.piece.rot], [ref.hold, ref.queue, ref.bag, ref.rng.state(), ref.piece.x, ref.piece.y, ref.piece.rot]);
     for (let i = 0; i < 40 && !ref.over; i++) { ref.move(i % 3 - 1); back.move(i % 3 - 1); ref.drop(); back.drop(); }
     assert.deepStrictEqual(back.toJSON(), ref.toJSON(), 'the same future: the RNG goes on where it was');
-    // Board B was shelved as it stood, and comes back the same way.
-    const bj = Library.find(st2.boards, nb.id).game;
-    assert.deepStrictEqual(clone(bj), clone(b.toJSON()));
-    const json2 = Library.open(st2, nb.id, back.toJSON(), 4000);
-    assert.deepStrictEqual(new Game({ saved: clone(json2) }).toJSON(), b.toJSON());
+    assert.deepStrictEqual(clone(Library.saved(st2.boards, 'classic')), clone(c.toJSON()), 'Classic\'s game was parked as it stood');
+    assert.strictEqual(Library.saved(st2.boards, 'plain', 'x'), 'x', 'the mode in play: the game in play');
+    assert.strictEqual(Library.open(st2, 'plain', back.toJSON(), 4000), null, 'the mode in play is not opened again');
+    assert.deepStrictEqual(Object.keys(st2.boards.games), ['classic'], 'and nothing moved');
   });
-  test('switching: the board in play and one with no game cannot be opened; order is current first, then last played', () => {
+  test('New game: the mode\'s game is replaced (returned for the log); another mode\'s is parked; one game a mode, always', () => {
     const st = L.loadState({});
-    st.free = played(3, 2).toJSON();
-    Library.ensure(st, 1000, rnd);
-    const first = st.boards.cur;
-    assert.strictEqual(Library.open(st, first, st.free, 1100), null);
-    const r2 = Library.startNew(st, played(4, 3).toJSON(), 2000, rnd);
-    const r3 = Library.startNew(st, played(5, 3).toJSON(), 3000, rnd);
-    assert.deepStrictEqual(Library.ordered(st.boards).map((r) => r.id), [r3.id, r2.id, first]);
-    Library.open(st, first, played(6, 1).toJSON(), 4000);
-    assert.deepStrictEqual(Library.ordered(st.boards).map((r) => r.id), [first, r3.id, r2.id]);
-    assert.strictEqual(Library.open(st, 'nope', st.free, 5000), null);
-  });
-  test('rename: trimmed, spaces collapsed, capped at 24 characters; an empty name is refused', () => {
-    const st = L.loadState({});
-    Library.ensure(st, 1000, rnd);
-    const id = st.boards.cur, was = st.boards.list[0].name;
-    assert.strictEqual(Library.rename(st.boards, id, '   '), null);
-    assert.strictEqual(Library.rename(st.boards, id, ''), null);
-    assert.strictEqual(st.boards.list[0].name, was, 'unchanged');
-    assert.strictEqual(Library.rename(st.boards, id, '  Rainy   Sunday\n '), 'Rainy Sunday');
-    const long = Library.rename(st.boards, id, 'A'.repeat(40));
-    assert.strictEqual(long.length, Library.NAME_MAX);
-    assert.strictEqual(Library.rename(st.boards, 'nope', 'X'), null);
-    assert.strictEqual(Library.cleanName('Tab\there'), 'Tab here');
-  });
-  test('retire: out of the list into the records, with its summary and last stack; the current one leaves room for a new board', () => {
-    const st = L.loadState({});
-    const a = played(31, 20);
-    a.s.items = { laser: 2 }; a.s.startedAt = 500;
+    const a = played(5, 6);
     st.free = a.toJSON();
-    Library.ensure(st, 1000, rnd);
-    const id = st.boards.cur, name = st.boards.list[0].name;
-    const e = Library.retire(st, id, a.toJSON(), 9000, 'full');
-    assert.strictEqual(st.boards.cur, null);
-    assert.strictEqual(st.boards.list.length, 0);
-    assert.strictEqual(st.boards.retired[0], e);
-    assert.deepStrictEqual([e.id, e.name, e.reason, e.at, e.sum.pieces, e.sum.lines, e.sum.score, e.sum.items.laser, e.sum.life], [id, name, 'full', 9000, a.s.pieces, a.s.lines, a.s.score, 2, 8500]);
-    assert.deepStrictEqual(Library.decodeCells(e.cells), Array.from(a.board.cells));
-    const n = Library.newCurrent(st, 9100, rnd);
-    assert.strictEqual(st.boards.cur, n.id);
-    assert.notStrictEqual(n.name, name, 'a name no board has');
-    assert.strictEqual(Library.rename(st.boards, id, 'Kept'), 'Kept', 'a record can be renamed by id');
-    assert(Library.removeRetired(st.boards, id));
-    assert.strictEqual(st.boards.retired.length, 0);
-    assert(!Library.removeRetired(st.boards, id));
+    Library.ensure(st, 1000);
+    // New Relaxed game in place of the one in play.
+    const gone = Library.replace(st, 'plain', a.toJSON(), 2000);
+    assert.deepStrictEqual(clone(gone), clone(a.toJSON()));
+    assert.deepStrictEqual([st.boards.cur, Object.keys(st.boards.games), st.free, st.earn], ['plain', [], null, { board: null, paid: 0 }]);
+    const b = played(6, 4);
+    // New Descent game while Relaxed is in play: Relaxed parked, nothing replaced.
+    assert.strictEqual(Library.replace(st, 'descent', b.toJSON(), 3000), null);
+    assert.deepStrictEqual([st.boards.cur, Object.keys(st.boards.games)], ['descent', ['plain']]);
+    const d = played(7, 3, R.normalize({ mode: 'descent' }));
+    // New Relaxed game from Descent: Relaxed's kept game is the one replaced; Descent's is parked.
+    const gone2 = Library.replace(st, 'plain', d.toJSON(), 4000);
+    assert.deepStrictEqual(clone(gone2), clone(b.toJSON()));
+    assert.deepStrictEqual([st.boards.cur, Object.keys(st.boards.games).sort()], ['plain', ['descent']]);
+    // Every mode at once: still one each.
+    const modes = ['classic', 'descent', 'mural', 'race', 'battle', 'plain'];
+    let cur = played(8, 2);
+    for (const m of modes) { Library.replace(st, m, cur.toJSON(), 5000); cur = played(9, 2, R.normalize({ mode: m }), m === 'race' ? { w: 10, h: 10 } : m === 'battle' ? { w: 10, h: 14 } : null); }
+    st.free = cur.toJSON();
+    const B = Library.ensure(L.loadState(clone(st)), 6000);
+    assert.strictEqual(B.cur, 'plain');
+    assert.deepStrictEqual(Object.keys(B.games).sort(), ['battle', 'classic', 'descent', 'mural', 'race']);
+    for (const [k, e] of Object.entries(B.games)) assert.strictEqual(Library.modeOf(e.game.recipe), k, k + ' kept under its own mode');
   });
-  test('retire keeps the pieces a board ended with: in play (on a full board, the one that could not come in), held and next', () => {
-    const st = L.loadState({});
-    const g = played(41, 3);
-    g.holdPiece();
-    for (let y = 0; y < g.h - 2; y++) for (let x = 0; x < g.w - 1; x++) g.board.set(x, y, 8);
-    let guard = 0;
-    while (!g.over && guard++ < 50) g.drop();
-    assert(g.over && g.piece, 'the board filled up');
-    st.free = g.toJSON();
-    Library.ensure(st, 1000, rnd);
-    const e = Library.retire(st, st.boards.cur, g.toJSON(), 9000, 'full');
-    assert.deepStrictEqual(e.piece, { entry: Object.assign({}, g.piece.entry, { special: g.piece.special || null }), rot: g.piece.rot, x: g.piece.x, y: g.piece.y });
-    assert(!g.fitsAt(g.piece, e.piece.rot, e.piece.x, e.piece.y), 'the piece kept is the one with no room');
-    assert.deepStrictEqual(e.hold, g.hold);
-    assert.strictEqual(e.next.length, Library.NEXT_KEPT);
-    assert.deepStrictEqual(e.next, g.queue.slice(0, Library.NEXT_KEPT));
-    // Copies, not the game's own objects.
-    const kept = [e.hold.id, e.next[0].id];
-    g.hold.id = 'changed'; g.queue[0].id = 'changed';
-    assert.deepStrictEqual([e.hold.id, e.next[0].id], kept);
-    // Through the save and back: kept exactly; broken ones are dropped, never the record.
-    const back = L.loadState(JSON.parse(JSON.stringify(st)));
-    const B = Library.ensure(back, 9500, rnd), r = B.retired[0];
-    assert.deepStrictEqual([r.piece, r.hold, r.next, r.cells, r.reason], [e.piece, e.hold, e.next, e.cells, 'full']);
-    const odd = L.loadState({ v: 1, boards: { retired: [
-      { id: 'b7', w: 10, h: 20, piece: { entry: { id: 'T' }, rot: 0, x: 400, y: 3 }, hold: 'T', next: [{ id: 'I' }, null, { id: 5 }, { id: 'O', rot: 0 }] },
-      { id: 'b8', w: 10, h: 20, piece: { entry: {}, rot: 0, x: 3, y: 3 }, next: 'x' },
-      { id: 'b9', w: 6, h: 12 },
-    ] } });
-    const B2 = Library.ensure(odd, 1, rnd);
-    assert.deepStrictEqual(B2.retired.map((x) => [x.id, x.piece, x.hold, x.next.map((n) => n.id).join('')]), [['b7', null, null, 'IO'], ['b8', null, null, ''], ['b9', null, null, '']]);
-  });
-  test('retired pieces in a turn no piece has (a hand-edited or broken save) are dropped, never kept to be drawn', () => {
-    const odd = L.loadState({ v: 1, boards: { retired: [
-      { id: 'b1', w: 10, h: 20, reason: 'full', piece: { entry: { id: 'T' }, rot: 6, x: 4, y: 17 }, hold: { id: 'T', rot: 6 }, next: [{ id: 'I', rot: 6 }, { id: 'O', rot: 7 }, { id: 'S', rot: -1 }, { id: 'Z', rot: 1.5 }, { id: 'L', rot: 3 }, { id: 'J' }] },
-      { id: 'b2', w: 10, h: 20, reason: 'full', piece: { entry: { id: 'T', rot: 9 }, rot: 0, x: 4, y: 17 }, hold: { id: 'T', rot: 9 }, next: [{ id: 'T', rot: 7 }] },
-      { id: 'b3', w: 10, h: 20, reason: 'full', piece: { entry: { id: 'T', rot: 2 }, rot: 3, x: 4, y: 17 }, hold: { id: 'I', rot: 1 }, next: [{ id: 'T', rot: 0 }] },
-    ] } });
-    const B = Library.ensure(odd, 1, rnd);
-    assert.deepStrictEqual(B.retired.map((x) => [x.id, x.piece && x.piece.rot, x.hold && x.hold.rot, x.next.map((n) => n.id + (n.rot == null ? '' : n.rot)).join(' ')]),
-      [['b1', null, null, 'L3 J'], ['b2', null, null, ''], ['b3', 3, 1, 'T0']]);
-  });
-  test('delete: a shelved board goes for good; deleting the one in play leaves cur empty for a new one', () => {
-    const st = L.loadState({});
-    st.free = played(7, 2).toJSON();
-    Library.ensure(st, 1000, rnd);
-    const first = st.boards.cur;
-    const r2 = Library.startNew(st, st.free, 2000, rnd);
-    assert(Library.remove(st, first));
-    assert.deepStrictEqual(st.boards.list.map((r) => r.id), [r2.id]);
-    assert.strictEqual(st.boards.cur, r2.id);
-    assert(Library.remove(st, r2.id));
-    assert.strictEqual(st.boards.cur, null);
-    assert(!Library.remove(st, r2.id));
-    assert.strictEqual(st.boards.retired.length, 0, 'nothing kept');
-  });
-  test('caps: 12 boards in the library (a 13th is refused, nothing changes); 50 retired records, the oldest dropped', () => {
-    const st = L.loadState({});
-    st.free = played(8, 1).toJSON();
-    Library.ensure(st, 1000, rnd);
-    for (let i = 1; i < Library.MAX_ACTIVE; i++) assert(Library.startNew(st, played(10 + i, 1).toJSON(), 1000 + i, rnd));
-    assert.strictEqual(st.boards.list.length, 12);
-    assert(Library.full(st.boards));
-    const before = JSON.stringify(st.boards), cur = st.boards.cur;
-    assert.strictEqual(Library.startNew(st, played(50, 1).toJSON(), 5000, rnd), null);
-    assert.strictEqual(JSON.stringify(st.boards), before, 'refused: nothing shelved, nothing added');
-    assert.strictEqual(st.boards.cur, cur);
-    const names = new Set(st.boards.list.map((r) => r.name));
-    assert.strictEqual(names.size, 12, 'every name different');
-    const g = played(60, 3);
-    for (let i = 0; i < 55; i++) {
-      const r = Library.newCurrent(st, 6000 + i, rnd);
-      Library.retire(st, r.id, g.toJSON(), 7000 + i, 'manual');
+  test('migration: an old library keeps the most recently played board of each mode, the board in play stays in play, the rest and every retired record go', () => {
+    const classic = R.normalize({ mode: 'classic' }), tiny = R.normalize({ shapes: { preset: 'tiny' } });
+    const g = (seed, recipe) => played(seed, 3, recipe).toJSON();
+    const list = [
+      { id: 'b1', name: 'In play', created: 1, touched: 100 },
+      { id: 'b2', name: 'Old plain', touched: 900, game: g(2), earn: { board: 5, paid: 2 } },
+      { id: 'b3', name: 'Old classic', touched: 300, game: g(3, classic) },
+      { id: 'b4', name: 'New classic', touched: 800, game: g(4, classic), earn: { board: 4, paid: 1 } },
+      { id: 'b5', name: 'Tiny', touched: 700, game: g(5, tiny) },
+      { id: 'b6', name: 'Broken', touched: 9999, game: { w: 10, h: 20 } },
+      null, 7,
+    ];
+    const retired = Array.from({ length: 50 }, (_, i) => ({ id: 'r' + i, name: 'Gone ' + i, at: i, w: 10, h: 20, cells: '' }));
+    const free = g(1);
+    const old = { v: 2, lines: 42, free, earn: { board: 1, paid: 3 }, boards: { seq: 60, cur: 'b1', list, retired, taper: { painted: 4 }, size: { w: 12, h: 24 }, recipe: tiny, menu: { classic: { recipe: classic, size: { w: 10, h: 20 } } } } };
+    const st = L.loadState(JSON.parse(JSON.stringify(old)));
+    assert.strictEqual(st.v, L.SAVE_VERSION);
+    assert(L.SAVE_VERSION >= 3);
+    const B = st.boards;
+    assert(!('list' in B) && !('retired' in B), 'no library left');
+    assert.strictEqual(B.cur, 'plain', 'the board in play stays in play');
+    assert.deepStrictEqual(clone(st.free), clone(free));
+    assert.deepStrictEqual(st.earn, { board: 1, paid: 3 });
+    assert.deepStrictEqual(Object.keys(B.games), ['classic'], 'Relaxed\'s is the board in play (newer than any shelved one); the newest Classic kept');
+    assert.deepStrictEqual(clone(B.games.classic.game), clone(list[3].game));
+    assert.deepStrictEqual([B.games.classic.earn, B.games.classic.touched], [{ board: 4, paid: 1 }, 800]);
+    assert.deepStrictEqual([B.taper, B.size, B.menu.classic.size], [{ painted: 4 }, { w: 12, h: 24 }, { w: 10, h: 20 }], 'the rest of it stays');
+    assert.strictEqual(st.lines, 42);
+    Library.ensure(st, 5000);
+    assert.deepStrictEqual([B.presets, Object.keys(B.games)], [[], ['classic']]);
+    // A board in play with no record (cur pointing nowhere), and no board in play at all.
+    const st2 = L.loadState({ v: 1, free: g(11, classic), boards: { cur: 'zz', list: [{ id: 'b2', touched: 5, game: g(12, classic) }, { id: 'b3', touched: 6, game: g(13) }], retired: [{ id: 'x' }] } });
+    assert.deepStrictEqual([st2.boards.cur, Object.keys(st2.boards.games)], ['classic', ['plain']], 'the save\'s free is the game in play; a shelved Classic is passed over for it');
+    const st3 = L.loadState({ v: 2, free: null, boards: { cur: null, list: [{ id: 'b2', touched: 5, game: g(14, classic) }], retired: [] } });
+    Library.ensure(st3, 1);
+    assert.deepStrictEqual([st3.boards.cur, Object.keys(st3.boards.games)], ['plain', ['classic']]);
+    // Broken old libraries load without a throw.
+    for (const boards of [{ list: 'x', retired: {}, cur: 5 }, { list: [null, { id: 3 }], retired: null }, { retired: [] }]) {
+      const s = L.loadState({ v: 1, boards });
+      Library.ensure(s, 1);
+      assert.deepStrictEqual([s.boards.cur, s.boards.games, 'list' in s.boards], ['plain', {}, false], JSON.stringify(boards));
     }
-    assert.strictEqual(st.boards.retired.length, Library.MAX_RETIRED);
-    assert.strictEqual(st.boards.retired[0].at, 7054, 'newest first');
-    assert.strictEqual(st.boards.retired[49].at, 7005, 'the five oldest gone');
+    // A version 3 save is never migrated again.
+    assert.strictEqual(Library.migrate(st, 1), false);
   });
-  test('names: two words while there are any to give, then "Board N"', () => {
-    const B = Library.blank();
-    const all = [];
-    for (const a of Library.ADJ) for (const n of Library.NOUN) all.push({ name: a + ' ' + n });
-    B.retired = all; B.seq = 7;
-    assert.strictEqual(Library.makeName(B, rnd), 'Board 7');
+  test('a broken save is made safe: games that cannot be resumed, kept under another mode or under the one in play are dropped; cur follows the game in play', () => {
+    const classic = R.normalize({ mode: 'classic' });
+    const good = played(3, 2, classic).toJSON(), plain = played(4, 2).toJSON();
+    const st = L.loadState({ v: 3, free: plain, boards: { cur: 'race', games: { classic: { game: good, touched: 'x' }, descent: { game: plain }, plain: { game: plain }, mural: { game: { w: 10 } }, race: 5 }, presets: 'x', taper: 3, menu: 'bad' } });
+    const B = Library.ensure(st, 7000);
+    assert.deepStrictEqual([B.cur, Object.keys(B.games), B.games.classic.touched, B.presets, B.taper, B.menu], ['plain', ['classic'], 7000, [], {}, {}]);
   });
-  test('rename: invisible and bidi characters dropped (nothing visible left is refused); a name another board has gets a number', () => {
+  test('presets: named, cleaned and kept in order; a name another has gets a number; renamed; deleted; twelve at most', () => {
     const st = L.loadState({});
-    Library.ensure(st, 1000, rnd);
-    const a = st.boards.cur;
-    const b = Library.startNew(st, played(7, 3).toJSON(), 2000, rnd).id;
-    assert.strictEqual(Library.cleanName('\u200b\u200b'), null);
-    assert.strictEqual(Library.cleanName('\u202e\u2066'), null);
-    assert.strictEqual(Library.cleanName('\u202eevil\u200d'), 'evil');
-    assert.strictEqual(Library.cleanName('\u0085Soft\u009fRain'), 'SoftRain');
-    assert.strictEqual(Library.rename(st.boards, a, '\u200b'), null);
-    assert.strictEqual(Library.rename(st.boards, a, 'Rainy Sunday'), 'Rainy Sunday');
-    assert.strictEqual(Library.rename(st.boards, b, 'rainy sunday'), 'rainy sunday 2');
-    assert.strictEqual(Library.rename(st.boards, a, 'Rainy Sunday'), 'Rainy Sunday', 'its own name is not taken');
-    assert.strictEqual(Library.rename(st.boards, b, 'W'.repeat(30)), 'W'.repeat(24));
-    assert.strictEqual(Library.rename(st.boards, a, 'W'.repeat(30)), 'W'.repeat(22) + ' 2');
+    const B = Library.ensure(st, 1000);
+    const r = R.normalize({ shapes: { preset: 'tiny' }, mods: { mirror: true } });
+    const p1 = Library.addPreset(B, '  Little   mirror \n', r, { w: 12, h: 24 }, 2000);
+    assert.deepStrictEqual([p1.id, p1.name, p1.size, R.equal(p1.recipe, r)], ['p1', 'Little mirror', { w: 12, h: 24 }, true]);
+    assert.strictEqual(Library.addPreset(B, '​ ', r, { w: 10, h: 20 }, 2100), null, 'nothing visible: refused');
+    const p2 = Library.addPreset(B, 'little MIRROR', r, { w: 2, h: 99 }, 2200);
+    assert.deepStrictEqual([p2.name, p2.size], ['little MIRROR 2', L.Recipe.clampSize({ w: 2, h: 99 }, r)], 'a name taken gets a number; the size clamped for its recipe');
+    assert.strictEqual(Library.renamePreset(B, p2.id, 'Wide one'), 'Wide one');
+    assert.strictEqual(Library.renamePreset(B, p2.id, '   '), null);
+    assert.strictEqual(Library.renamePreset(B, 'nope', 'X'), null);
+    assert.strictEqual(Library.renamePreset(B, p1.id, 'W'.repeat(40)), 'W'.repeat(Library.NAME_MAX));
+    assert.strictEqual(Library.renamePreset(B, p2.id, 'W'.repeat(40)), 'W'.repeat(Library.NAME_MAX - 2) + ' 2');
+    assert(Library.removePreset(B, p1.id));
+    assert(!Library.removePreset(B, p1.id));
+    assert.deepStrictEqual(B.presets.map((p) => p.id), [p2.id]);
+    for (let i = 0; i < Library.MAX_PRESETS - 1; i++) assert(Library.addPreset(B, 'Set ' + i, R.normalize({ mode: 'classic' }), { w: 10, h: 20 }, 3000 + i));
+    assert.strictEqual(B.presets.length, 12);
+    assert(Library.presetsFull(B));
+    const before = JSON.stringify(B);
+    assert.strictEqual(Library.addPreset(B, 'Thirteenth', r, { w: 10, h: 20 }, 4000), null);
+    assert.strictEqual(JSON.stringify(B), before, 'refused: nothing changes');
+    // Kept in the save: through a reload, every one as it was; ids never reused.
+    const back = Library.ensure(L.loadState(JSON.parse(JSON.stringify(st))), 5000);
+    assert.deepStrictEqual(clone(back.presets), clone(B.presets));
+    Library.removePreset(back, back.presets[3].id);
+    assert.strictEqual(Library.addPreset(back, 'Again', r, { w: 10, h: 20 }, 6000).id, 'p14');
+    // Broken presets in a save: dropped, or made whole.
+    const odd = L.loadState({ v: 3, boards: { presets: [null, { id: 'p1', name: '​' }, { id: 'p2', name: 'Fine', recipe: 'junk', size: { w: 99 } }, { id: 'p2', name: 'Twin' }, { name: 'No id' }].concat(Array.from({ length: 20 }, (_, i) => ({ id: 'p' + (10 + i), name: 'N' + i }))) } });
+    const OB = Library.ensure(odd, 1);
+    assert.strictEqual(OB.presets.length, 12);
+    assert.deepStrictEqual([OB.presets[0].id, OB.presets[0].name, OB.presets[0].size, R.equal(OB.presets[0].recipe, R.DEFAULT)], ['p2', 'Fine', { w: 20, h: 20 }, true]);
+    assert(OB.seq >= Math.max(...OB.presets.map((p) => +p.id.slice(1))), 'ids go on past every one kept');
   });
-  test('a broken library in a save is made safe: bad records dropped, names and summaries filled in, seq past every id', () => {
-    const good = played(8, 4).toJSON();
-    const st = L.loadState({ v: 1, free: played(9, 2).toJSON(), boards: { seq: 0, cur: 'b1', list: [null, 7, { id: 'b1', name: 'Home' }, { id: 'b2', name: '\u200b', game: good }, { id: 'b3', name: 'Broken', game: { w: 10, h: 20 } }, { id: 'b2', name: 'Twin', game: good }, { name: 'No id', game: good }], retired: [null, { id: 'b5', name: 'Old' }, { id: 'b6', sum: 'x', cells: 5 }], taper: 3 } });
-    const B = Library.ensure(st, 5000, rnd);
-    assert.deepStrictEqual(B.list.map((r) => r.id), ['b1', 'b2'], 'nulls, a game that cannot be resumed, a second b2 and a record with no id go');
-    assert(B.list[1].name && B.list[1].name !== '\u200b', 'an invisible name is replaced');
-    assert.deepStrictEqual(B.retired.map((e) => e.id), ['b5', 'b6']);
-    B.retired.forEach((e) => { assert.strictEqual(typeof e.sum.lines, 'number'); assert.strictEqual(typeof e.cells, 'string'); assert(e.name); });
-    assert.deepStrictEqual(B.taper, {});
-    assert(B.seq >= 6);
-    const n = Library.startNew(st, played(10, 2).toJSON(), 6000, rnd);
-    assert.strictEqual(n.id, 'b7', 'a new id never repeats an old one');
-    assert.strictEqual(Library.find(B, 'b1').name, 'Home');
-    const st2 = L.loadState({ v: 1, boards: { list: 'x', retired: {}, cur: 5 } });
-    const B2 = Library.ensure(st2, 1, rnd);
-    assert.strictEqual(B2.list.length, 1);
-    assert.strictEqual(B2.cur, B2.list[0].id);
-  });
-  test('combos pay less each time they come round in the library, not per board: it never starts over', () => {
+  test('combos pay less each time they come round in any game, not per game: it never starts over', () => {
     const st = L.loadState({});
-    const B = Library.ensure(st, 1000, rnd);
+    const B = Library.ensure(st, 1000);
     assert.deepStrictEqual([0, 1, 2].map(() => Library.taper(B, 'painted', 0)), [0, 1, 2]);
-    Library.startNew(st, played(11, 3).toJSON(), 2000, rnd);
-    assert.strictEqual(Library.taper(B, 'painted', 0), 3, 'a new board beside the old one: no fresh start');
-    Library.remove(st, B.cur);
-    Library.newCurrent(st, 3000, rnd);
-    assert.strictEqual(Library.taper(B, 'painted', 0), 4, 'deleted and replaced while another board is saved: still none');
-    Library.retire(st, B.cur, played(12, 3).toJSON(), 4000);
-    Library.newCurrent(st, 4000, rnd);
-    assert.strictEqual(Library.taper(B, 'painted', 0), 5, 'retired and replaced while another board is saved: still none');
-    for (const r of B.list.slice()) Library.retire(st, r.id, played(13, 3).toJSON(), 5000);
-    Library.newCurrent(st, 5000, rnd);
-    assert.strictEqual(Library.taper(B, 'painted', 0), 6, 'every board gone: the new one does not start over either');
-    for (const r of B.list.slice()) Library.remove(st, r.id);
-    Library.newCurrent(st, 6000, rnd);
-    assert.strictEqual(Library.taper(B, 'painted', 0), 7, 'every board deleted: still none');
-    assert.strictEqual(Library.taper(B, 'keyhole', 2), 2, 'a board\'s own count is never undercut');
+    Library.replace(st, 'plain', played(11, 3).toJSON(), 2000);
+    assert.strictEqual(Library.taper(B, 'painted', 0), 3, 'a new game: no fresh start');
+    Library.replace(st, 'classic', played(12, 3).toJSON(), 3000);
+    Library.open(st, 'plain', played(13, 3, R.normalize({ mode: 'classic' })).toJSON(), 4000);
+    assert.strictEqual(Library.taper(B, 'painted', 0), 4, 'another mode and back: still none');
+    assert.strictEqual(Library.taper(B, 'keyhole', 2), 2, 'a game\'s own count is never undercut');
   });
-  test('a power-up per two hundred lines stays per board: switching away and back never pays a milestone twice', () => {
+  test('a power-up per two hundred lines stays per game: another mode and back never pays a milestone twice', () => {
     const st = L.loadState({});
     const a = played(40, 1);
     a.s.lines = 199;
     st.free = a.toJSON();
-    Library.ensure(st, 1000, rnd);
-    const idA = st.boards.cur;
+    Library.ensure(st, 1000);
     assert.strictEqual(L.Earn.lines(st.earn, a.s.startedAt, 200, 199), 1, 'the 200th line pays');
-    // Rewound to 199, shelved, another board played, then back: the 200th line again pays nothing.
-    const r2 = Library.startNew(st, a.toJSON(), 2000, rnd);
+    // Rewound to 199, another mode played, then back: the 200th line again pays nothing.
+    Library.open(st, 'classic', a.toJSON(), 2000);
     assert.strictEqual(L.Earn.lines(st.earn, 777, 50, 49), 0);
-    Library.open(st, idA, played(41, 1).toJSON(), 3000);
+    Library.open(st, 'plain', played(41, 1, R.normalize({ mode: 'classic' })).toJSON(), 3000);
     assert.strictEqual(L.Earn.lines(st.earn, a.s.startedAt, 200, 199), 0);
-    assert(r2);
   });
 }
 
@@ -2835,28 +2768,23 @@ console.log('board sizes');
       sane(g, 'after trapdoor');
     }
   });
-  test('sizes: saved and loaded with the board, shelved and resumed, and kept on a retired record; a size no board can have is dropped', () => {
+  test('sizes: saved and loaded with the game, parked and resumed; a size no board can have is dropped', () => {
     const st = L.loadState({});
-    let rn = 3; const rnd = () => { rn = (rn * 16807 + 11) % 2147483647; return rn / 2147483647; };
-    const B = Library.ensure(st, 1000, rnd);
+    const B = Library.ensure(st, 1000);
     assert.deepStrictEqual(B.size, { w: 10, h: 20 }, 'Standard until one is chosen');
     const a = new Game({ w: 7, h: 13, seed: 1 });
     for (let i = 0; i < 5; i++) a.drop();
     st.free = a.toJSON();
-    const idA = B.cur;
-    const b = new Game({ w: 20, h: 40, seed: 2 });
-    Library.startNew(st, a.toJSON(), 2000, rnd);
-    const back = Library.open(st, idA, b.toJSON(), 3000);
+    const b = new Game({ w: 20, h: 40, seed: 2, recipe: L.Recipe.normalize({ mode: 'classic' }) });
+    Library.open(st, 'classic', a.toJSON(), 2000);
+    const back = Library.open(st, 'plain', b.toJSON(), 3000);
     const g = new Game({ saved: JSON.parse(JSON.stringify(back)) });
     assert.deepStrictEqual([g.w, g.h, g.s.pieces], [7, 13, 5]);
-    const e = Library.retire(st, idA, g.toJSON(), 4000, 'manual');
-    assert.deepStrictEqual([e.w, e.h, e.sum.w, e.sum.h, e.cells.length], [7, 13, 7, 13, 91]);
-    // Edited by hand: a shelved board of an impossible size goes; a retired one is clamped (its stack no longer drawn).
-    const bad = Object.assign(new Game({ w: 10, h: 20, seed: 5 }).toJSON(), { w: 30 });
-    const st2 = L.loadState({ v: 1, boards: { cur: 'b1', list: [{ id: 'b1' }, { id: 'b2', game: bad }, { id: 'b3', game: new Game({ w: 4, h: 40 }).toJSON() }], retired: [{ id: 'b4', w: 50, h: 3, cells: 'abc' }], size: { w: 99, h: 'x' } } });
-    const B2 = Library.ensure(st2, 1, rnd);
-    assert.deepStrictEqual(B2.list.map((r) => r.id), ['b1', 'b3']);
-    assert.deepStrictEqual([B2.retired[0].w, B2.retired[0].h, B2.retired[0].cells], [20, 8, '']);
+    // Edited by hand: a kept game of an impossible size goes; the Custom window's size is clamped.
+    const bad = Object.assign(new Game({ w: 10, h: 20, seed: 5, recipe: L.Recipe.normalize({ mode: 'descent' }) }).toJSON(), { w: 30 });
+    const st2 = L.loadState({ v: 3, boards: { cur: 'plain', games: { descent: { game: bad }, classic: { game: new Game({ w: 4, h: 40, recipe: L.Recipe.normalize({ mode: 'classic' }) }).toJSON() } }, size: { w: 99, h: 'x' } } });
+    const B2 = Library.ensure(st2, 1);
+    assert.deepStrictEqual(Object.keys(B2.games), ['classic']);
     assert.deepStrictEqual(B2.size, { w: 20, h: 20 });
     assert(!Library.playable(bad) && Library.playable(new Game({ w: 4, h: 8 }).toJSON()));
   });
@@ -3058,29 +2986,21 @@ console.log('board recipe');
       assert.strictEqual(back.toJSON().x.tkeep.steps, 6);
       assert.strictEqual(new Game({ w: 10, h: 20, seed: 3 }).toJSON().recipe, undefined, 'no recipe, no key: Classic and Puzzles save as before');
       assert(Library.playable(json));
-      // The library: shelved, taken back, retired (thinned), and made safe when it loads.
+      // Kept as a mode's game: parked, taken back, and made safe when it loads.
       const st = L.loadState({});
       st.free = json;
       Library.ensure(st, 1000);
       assert.deepStrictEqual(clone(st.boards.recipe), clone(Recipe.DEFAULT), 'the last choice starts as the default');
-      const idA = st.boards.cur;
-      Library.startNew(st, json, 2000);
-      assert.deepStrictEqual(Library.find(st.boards, idA).game.recipe, json.recipe);
-      const opened = Library.open(L.loadState(clone(st)) && st, idA, new Game({ w: 10, h: 20, seed: 4, recipe: {} }).toJSON(), 3000);
+      Library.open(st, 'classic', json, 2000);
+      assert.deepStrictEqual(Library.saved(st.boards, 'plain').recipe, json.recipe);
+      const opened = Library.open(L.loadState(clone(st)) && st, 'plain', new Game({ w: 10, h: 20, seed: 4, recipe: { mode: 'classic' } }).toJSON(), 3000);
       assert.deepStrictEqual(opened.recipe, json.recipe);
-      const entry = Library.retire(st, st.boards.cur, opened, 4000, 'manual');
-      assert.deepStrictEqual(entry.recipe.tkeep, 2, 'a retired record keeps a thin copy');
-      assert.deepStrictEqual(entry.sum.ext, { tkeep: { steps: 5 } }, 'and the parts’ own numbers in its summary');
-      assert.deepStrictEqual(Library.summarize(g.s, 5000, g).ext, { tkeep: { steps: 5 } }, 'from a live game too');
+      assert.deepStrictEqual(Library.summarize(g.s, 5000, g).ext, { tkeep: { steps: 5 } }, 'the parts’ own numbers in a summary');
+      assert.deepStrictEqual(Recipe.thin(json.recipe).tkeep, 2, 'a past board keeps a thin copy');
       const junk = L.loadState(clone(st));
       junk.boards.recipe = 'junk';
-      junk.boards.retired[0].recipe = 'junk';
       Library.ensure(junk, 6000);
       assert.deepStrictEqual(clone(junk.boards.recipe), clone(Recipe.DEFAULT));
-      assert.deepStrictEqual(junk.boards.retired[0].recipe, clone(Recipe.DEFAULT));
-      const kept = L.loadState(clone(st));
-      Library.ensure(kept, 6000);
-      assert.deepStrictEqual(kept.boards.retired[0].recipe.tkeep, 2, 'a thin copy is kept as it is (never read back as a recipe to play)');
       // Not resumed: a recipe that is not an object, a part's own check, a height the recipe does not allow, a piece no one knows.
       const bad = (f) => { const j = clone(json); f(j); return Library.playable(j); };
       assert(!bad((j) => { j.recipe = 5; }));
@@ -3090,9 +3010,10 @@ console.log('board recipe');
       assert(!bad((j) => { j.piece.entry.id = 'Zz'; }));
       assert(bad((j) => { j.hold = { id: 'BC:0,0;1,0' }; }), 'any id the pieces can rebuild is fine');
       const listed = L.loadState(clone(st));
-      listed.boards.list.push({ id: 'b99', name: 'Odd', game: Object.assign(clone(json), { queue: [{ id: '??' }] }) });
+      listed.boards.games.plain = { game: Object.assign(clone(json), { queue: [{ id: '??' }] }) };
+      listed.free = new Game({ w: 10, h: 20, seed: 4, recipe: { mode: 'classic' } }).toJSON();
       Library.ensure(listed, 7000);
-      assert(!Library.find(listed.boards, 'b99'), 'a board that cannot be resumed is dropped');
+      assert(!listed.boards.games.plain, 'a game that cannot be resumed is dropped');
     });
   });
 
@@ -3516,12 +3437,11 @@ console.log('board recipe');
     const wrap = new Board(6, 6, { wrap: true });
     wrap.set(5, 0, 3);
     assert.strictEqual(wrap.get(-1, 0), 3, 'a wraparound board has no side walls');
-    // Every stored flag on a cell: the colour reads the same, the save encodes the same, the row clears as its own.
+    // Every stored flag on a cell: the colour reads the same, the row clears as its own.
     const flags = CELL.GEM | CELL.HIDDEN | CELL.SHOT | CELL.FILL;
     const plain = [1, 2, 3, 4, 5, 6, 7, 8, 9, 15], flagged = plain.map((v) => v | flags);
-    assert.strictEqual(Library.encodeCells(flagged), Library.encodeCells(plain));
     assert(flagged.every((v, i) => (v & CELL.COLOR) === plain[i]));
-    assert.strictEqual(Library.encodeCells([CELL.FOREIGN | CELL.HANG]), Library.encodeCells([0]), 'a rod (no colour) is empty in a thumbnail');
+    assert.strictEqual((CELL.FOREIGN | CELL.HANG) & CELL.COLOR, 0, 'a rod has no colour');
     const g = new Game({ w: 10, h: 20, seed: 3, recipe: {} });
     for (let x = 0; x < 9; x++) g.board.set(x, 0, 3 | (flags & ~CELL.HIDDEN));
     const r = dropAt(g, 'I', 7, 1);
@@ -3631,76 +3551,27 @@ console.log('play menu');
 {
   const { Library, Recipe: R, Menu } = L;
   const mk = (recipe, w, h, seed, n) => { const g = new Game({ w, h, recipe: R.normalize(recipe), seed }); for (let i = 0; i < (n || 0); i++) g.drop(); return g; };
-  /** A library: the board in play `cur` (a Game), then each of `shelf` shelved under it, oldest first. */
-  const lib = (shelf, cur) => {
-    const st = L.loadState({});
-    let t = 1000;
-    const all = shelf.concat([cur]);
-    st.free = all[0].toJSON();
-    Library.ensure(st, t);
-    const ids = [st.boards.cur];
-    for (const g of all.slice(1)) { Library.startNew(st, st.free, (t += 1000)); st.free = g.toJSON(); ids.push(st.boards.cur); }
-    return { st, B: st.boards, ids };
-  };
   test('Solo and Multiplayer: Race and Battle boards are Multiplayer, every other board (and a broken recipe) Solo', () => {
     assert.deepStrictEqual(['race', 'battle'].map((m) => Library.side(R.normalize({ mode: m }))), ['multi', 'multi']);
     assert.deepStrictEqual(['plain', 'classic', 'descent', 'mural'].map((m) => Library.side(R.normalize({ mode: m }))), ['solo', 'solo', 'solo', 'solo']);
     assert.strictEqual(Library.side(R.normalize({ shapes: { preset: 'tiny' }, mods: { mirror: true } })), 'solo');
     assert.strictEqual(Library.side(null), 'solo');
     assert.strictEqual(Library.side('race'), 'solo');
-    // A retired record's thin recipe says the same.
+    // A past board's thin recipe says the same.
     assert.strictEqual(Library.side(R.thin(R.normalize({ mode: 'battle' }))), 'multi');
     // The menu's two lists are the same split.
     assert.deepStrictEqual(Menu.SOLO.map((x) => x.mode), ['plain', 'classic', 'descent', 'mural']);
     assert.deepStrictEqual(Menu.MULTI.map((x) => x.mode), ['race', 'battle']);
     assert(Menu.SOLO.every((x) => Library.side(R.normalize({ mode: x.mode })) === 'solo') && Menu.MULTI.every((x) => Library.side(R.normalize({ mode: x.mode })) === 'multi'));
   });
-  test('resume by rules: the same rules at the same size find the board; another setting, size or mode does not', () => {
-    const classic = mk({ mode: 'classic' }, 10, 20, 1, 2), race = mk({ mode: 'race' }, 10, 10, 2, 1), plain = mk({}, 10, 20, 3, 3);
-    const { B, ids } = lib([classic, race], plain);
-    const cur = () => B.cur === ids[2] ? plain.toJSON() : null;
-    const find = (recipe, size) => { const r = Library.match(B, cur(), R.normalize(recipe), size); return r ? r.id : null; };
-    assert.strictEqual(find({ mode: 'classic' }, { w: 10, h: 20 }), ids[0], 'Classic A, the same settings');
-    assert.strictEqual(find({ mode: 'classic', classic: { level: 5 } }, { w: 10, h: 20 }), null, 'another start level');
-    assert.strictEqual(find({ mode: 'classic', classic: { type: 'b' } }, { w: 10, h: 20 }), null, 'B type');
-    assert.strictEqual(find({ mode: 'classic' }, { w: 12, h: 24 }), null, 'another size');
-    assert.strictEqual(find({ mode: 'classic', classic: { music: 'off' } }, { w: 10, h: 20 }), ids[0], 'the music changes for free: still the same rules');
-    // Race: the size as chosen (its rows), not the board's height with the buffer on top.
-    assert.strictEqual(find({ mode: 'race' }, { w: 10, h: 10 }), ids[1]);
-    assert.strictEqual(find({ mode: 'race', race: { level: 'swift' } }, { w: 10, h: 10 }), null, 'another opponent');
-    assert.strictEqual(find({ mode: 'race' }, { w: 8, h: 8 }), null, 'another preset');
-    // The board in play counts, first.
-    assert.strictEqual(find({}, { w: 10, h: 20 }), ids[2]);
-    assert.strictEqual(find({ shapes: { preset: 'tiny' } }, { w: 10, h: 20 }), null, 'other shapes');
-    assert.strictEqual(find({ mods: { mirror: true } }, { w: 10, h: 20 }), null, 'a modifier');
-    assert.strictEqual(find({ mode: 'descent' }, { w: 10, h: 20 }), null, 'a mode with no board');
+  test('Continue is offered for a game something was played on (a piece set, or it ended); a fresh one is started over', () => {
+    const fresh = mk({}, 10, 20, 7, 0), one = mk({}, 10, 20, 8, 1);
+    assert.deepStrictEqual([Menu.played(null), Menu.played(fresh.toJSON()), Menu.played(one.toJSON())], [false, false, true]);
+    const full = fresh.toJSON(); full.over = true;
+    const ended = fresh.toJSON(); ended.ended = 'cleared';
+    assert(Menu.played(full) && Menu.played(ended));
   });
-  test('resume by rules: only a board still to be played (not full, not ended, not retired); the most recent first', () => {
-    const a = mk({}, 10, 20, 4, 1), b = mk({}, 10, 20, 5, 1), c = mk({ mode: 'classic' }, 10, 20, 6, 1);
-    const { st, B, ids } = lib([a, b], c);
-    const plain = R.normalize({}), z = { w: 10, h: 20 };
-    assert.strictEqual(Library.match(B, c.toJSON(), plain, z).id, ids[1], 'the one played last');
-    Library.find(B, ids[1]).game.over = true;
-    assert.strictEqual(Library.match(B, c.toJSON(), plain, z).id, ids[0], 'a full board is passed over');
-    Library.find(B, ids[0]).game.ended = 'cleared';
-    assert.strictEqual(Library.match(B, c.toJSON(), plain, z), null, 'an ended one too');
-    delete Library.find(B, ids[0]).game.ended;
-    Library.retire(st, ids[0], Library.find(B, ids[0]).game, 9000, 'manual');
-    assert.strictEqual(Library.match(B, c.toJSON(), plain, z), null, 'a retired board is never resumed');
-    const cj = c.toJSON(); cj.over = true;
-    assert.strictEqual(Library.match(B, cj, R.normalize({ mode: 'classic' }), z), null, 'the board in play, full');
-    assert.strictEqual(Library.match(B, c.toJSON(), R.normalize({ mode: 'classic' }), z).id, ids[2]);
-    assert.strictEqual(Library.match(null, null, plain, z), null);
-  });
-  test('Recent: the last three boards played, not the one in play, most recent first', () => {
-    const gs = [1, 2, 3, 4, 5].map((s) => mk({}, 10, 20, 10 + s, 1));
-    const { B, ids } = lib(gs.slice(0, 4), gs[4]);
-    assert.deepStrictEqual(Library.recent(B).map((r) => r.id), [ids[3], ids[2], ids[1]]);
-    assert.deepStrictEqual(Library.recent(B, 5).map((r) => r.id), [ids[3], ids[2], ids[1], ids[0]]);
-    const one = lib([], gs[0]);
-    assert.deepStrictEqual(Library.recent(one.B), [], 'nothing but the board in play');
-  });
-  test('a mode\'s setup: its own last one, else its settings from New board, at its own size; no modifiers; kept in the save', () => {
+  test('a mode\'s setup: its own last one, else its settings from the Custom window, at its own size; no modifiers; kept in the save', () => {
     const B = Library.blank();
     assert.deepStrictEqual(B.menu, {});
     const race = Menu.setupOf(B, 'race');
@@ -3710,7 +3581,7 @@ console.log('play menu');
     assert.deepStrictEqual(Menu.setupOf(B, 'classic').size, { w: 10, h: 20 });
     B.recipe = R.normalize({ mode: 'classic', classic: { level: 7 }, mods: { mirror: true }, shapes: { preset: 'tiny' } });
     const cl = Menu.setupOf(B, 'classic');
-    assert.strictEqual(cl.recipe.classic.level, 7, 'its settings from New board');
+    assert.strictEqual(cl.recipe.classic.level, 7, 'its settings from the Custom window');
     assert(!R.MODS.some((k) => cl.recipe.mods[k]) && cl.recipe.shapes.preset === 'normal', 'no modifiers, Normal shapes');
     B.menu.classic = { recipe: R.normalize({ mode: 'classic', classic: { level: 3 } }), size: { w: 10, h: 20 } };
     assert.strictEqual(Menu.setupOf(B, 'classic').recipe.classic.level, 3, 'the menu\'s own last setup');
@@ -3731,10 +3602,15 @@ console.log('play menu');
     Library.ensure(st, 1000);
     assert.deepStrictEqual(st.boards.menu, {});
   });
-  test('progress in a few words: lines, a match\'s tally, a picture\'s pieces, Full, a mode\'s own end', () => {
+  test('progress in a few words: lines (or pieces), a match\'s tally, a picture\'s pieces, Full, a mode\'s own end', () => {
     const g = mk({}, 10, 20, 30, 2);
     g.s.lines = 12;
     assert.strictEqual(Menu.progress(g.toJSON()), 'Lines 12');
+    g.s.lines = 0;
+    assert.strictEqual(Menu.progress(g.toJSON()), '2 pieces', 'nothing cleared yet: the pieces set');
+    g.s.pieces = 1;
+    assert.strictEqual(Menu.progress(g.toJSON()), '1 piece');
+    g.s.pieces = 2; g.s.lines = 12;
     assert.strictEqual(Menu.progress(mk({ mode: 'race' }, 10, 10, 31).toJSON()), 'vs Steady 0\u20130');
     assert(/^0 of \d+ placed$/.test(Menu.progress(mk({ mode: 'mural' }, 10, 20, 32).toJSON())), Menu.progress(mk({ mode: 'mural' }, 10, 20, 32).toJSON()));
     const j = g.toJSON(); j.over = true;

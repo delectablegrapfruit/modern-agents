@@ -1,7 +1,7 @@
 // Lull — Race in Free Play (js/race.js has its rules and the AI): the controller that runs a round (the Ready card,
 // 3-2-1, the opponent's turns in time slices, Send, Start over, pausing, the End card), the view that draws both boards
 // (the opponent's on top, turned 180° and dimmer, the two buffers meeting in the middle), its bar under the board, and its
-// place in the New board window, the library and Stats.
+// place in the Custom window, the menu and Stats.
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
@@ -485,7 +485,7 @@
   Recipe.viewPart(VIEW);
 
 
-  // ---- the New board window, the library, Stats ------------------------------------------------------------------------------
+  // ---- the Custom window, the menu, Stats ---------------------------------------------------------------------------
 
   // Race keeps its own size: entering it, the size asked for before is put aside (and comes back on leaving).
   let asideAsked = null, raceAsked = null;
@@ -504,7 +504,6 @@
       if (asideAsked && inB(asked)) { raceAsked = asked; const back = asideAsked; asideAsked = null; return back; }
       return null;
     },
-    tags: (r, x) => (Race.on(r) && x && x.match ? [{ text: Race.tallyText(Object.assign({ tally: {} }, x.match, { tally: Object.assign({}, x.match.tally) })) }] : []),
     tiles: (ext) => (ext && ext.level ? [[ext.won + '–' + ext.lost, 'vs ' + Race.NAMES[ext.level]], [fmtInt(ext.rounds), 'Rounds']] : []),
   });
 

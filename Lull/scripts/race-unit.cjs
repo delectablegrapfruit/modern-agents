@@ -47,7 +47,6 @@ module.exports = function raceUnit({ L, test }) {
     assert.strictEqual(c['shapes.preset=big'], 'Not in Race');
     const res = Recipe.resolve({ mode: 'race', mods: { physics: true, mirror: false } }, 'mode', {});
     assert.strictEqual(res.recipe.mods.physics, false, 'choosing Race turns Physics off');
-    assert.strictEqual(B.PART.noEdit(R0()), 'A Race board keeps its rules');
   });
 
   test('race: the board is rows + k tall; a lock wholly in the buffer is refused, what is left there trimmed; no row ever clears', () => {

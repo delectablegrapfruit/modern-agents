@@ -2,8 +2,8 @@
 // cells in the picture's colours (on the board, in play and in Next, turned with the piece), the place the piece in
 // play belongs in outlined with its quarters lightly in it and a badge saying the turn to make (or a tick), the ghost as a plain outline, a set that is not in its place
 // declined without a sound or a shake (the outline brightens once), Placed and Level in the status bar and the mural's
-// progress under the board, the Finished card, the New board window's picture and level (a photo chosen, cropped and
-// previewed in its own window), the library's tags, thumbnails and tiles, and the Mural line in Stats.
+// progress under the board, the Finished card, the Custom window's picture and level (a photo chosen, cropped and
+// previewed in its own window; the menu's Mural setup too), the summary's tiles, and the Mural line in Stats.
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
@@ -44,7 +44,7 @@
     ctx.restore();
   }
 
-  /** The picture of a board: its mural's (in play), else its recipe's (a retired board in full view). */
+  /** The picture of a board: its mural's (in play), else its recipe's. */
   function picOf(game) {
     const X = Mural.extOf(game);
     if (X) return X.plan().pic;
@@ -274,12 +274,10 @@
     busy(view) { return (!!view.muralNudge && now() - view.muralNudge < NUDGE_MS) || !!(view.muralBuf && view.muralBuf.t1 + 60 > now()); },
     /** The picture's rows, and the buffer's as it opens (bufferRows). */
     shownRows(view) { return bufferRows(view); },
-    /** The New board preview: the whole picture; a library thumbnail: the picture where the board has blocks. */
+    /** The Custom window's preview: the whole picture. */
     preview(ctx, gm, recipe) {
       if (!Mural.on(recipe)) return;
       const r = Recipe.normalize(recipe);
-      // A thumbnail is a saved board's (its buffer on top); the New board window's is the picture's size.
-      if (gm.style === 'thumb') { if (gm.cells) paintPicture(ctx, Mural.picture(r, gm.w, Math.max(6, gm.h - Mural.BUF)), gm.w, gm.h, gm.x, gm.y, gm.c, gm.cells); return; }
       paintPicture(ctx, Mural.picture(r, gm.w, gm.h), gm.w, gm.h, gm.x, gm.y, gm.c, null);
     },
   };
@@ -399,11 +397,13 @@
         play.renderStatus();
         play.renderItems();
       },
-      /** The Finished card's main button (Space too): this mural kept in the library, and the New board window. */
+      /**
+       * The Finished card's main button (Space too): the Mural setup in the menu, for the next picture (its New game
+       * replaces this one); a Custom mural, the Custom window.
+       */
       primary() {
-        play.hideCard();
-        play.newBoard('finished');
-        if (play.openNewBoard) play.openNewBoard();
+        if (play.custom) { play.hideCard(); play.newBoard('finished'); play.openNewBoard(); return; }
+        play.openMenu('mural');
       },
       cards: {
         finished(pm) {
@@ -413,9 +413,9 @@
             h('p', { class: 'cl-sub' }, subOf(gm.recipe)),
             h('p', null, fmtInt(n) + ' pieces' + (gm.s.playMs ? ' in ' + fmtDuration(gm.s.playMs) : '')),
             h('div', { class: 'row' },
-              h('button', { class: 'btn', onclick: () => pm.openLibrary() }, ico('boards'), 'Boards'),
+              pm.menuButton(),
               h('button', { class: 'btn', id: 'mu-look', onclick: () => { pm.hideCard(); pm.renderStatus(); } }, 'Look'),
-              h('button', { class: 'btn primary', id: 'mu-new', onclick: () => ctl.primary() }, 'New board ', h('kbd', null, 'Space'))),
+              h('button', { class: 'btn primary', id: 'mu-new', onclick: () => ctl.primary() }, 'New game ', h('kbd', null, 'Space'))),
           ];
         },
       },
@@ -474,7 +474,7 @@
     ph.cx = (x + cw / 2) / ph.w; ph.cy = (y + ch / 2) / ph.h;
     return { x, y, w: cw, h: ch };
   }
-  /** The board size a photo is cropped for: the New board window's (api.size), else the level's. */
+  /** The board size a photo is cropped for: the Custom window's (api.size), else the level's. */
   const sizeOf = (api, level) => { const lv = Mural.LEVELS[level], z = api && api.size; return z && z.w && z.h ? { w: z.w, h: z.h } : { w: lv.w, h: lv.h }; };
   /**
    * The photo, as cropped, made a mural's grid at a level, for a board of size ({ w, h }; the level's by default):
@@ -493,7 +493,7 @@
 
   /**
    * The Photo window: the photo with the crop frame (drag it; Zoom), the frame showing the mural it makes in the level's
-   * colours (a photo has more than a built-in picture: LEVELS pk); Use photo makes it the picture. api: the New board window's.
+   * colours (a photo has more than a built-in picture: LEVELS pk); Use photo makes it the picture. api: the Custom window's.
    */
   function openCrop(api) {
     const r = api.recipe, level = r.mural.level, size = sizeOf(api, level), a = size.w / size.h, ph = PHOTO;
@@ -557,7 +557,7 @@
     return handle;
   }
 
-  // ---- the New board window, the library, Stats ---------------------------------------------------------------------------
+  // ---- the Custom window and the menu's setup, Stats ----------------------------------------------------------------
 
   /** A picture's chip sample: the picture small (a photo not chosen yet: a plain frame with a hill and a sun). */
   function sample(ctx, w, hh, r, pic) {
@@ -638,11 +638,6 @@
       if (path === 'mural.pic') return Mural.PIC_NAMES[v] || null;
       if (path === 'mural') return v && Mural.PIC_NAMES[v.pic] ? Mural.PIC_NAMES[v.pic] : null;
       return null;
-    },
-    tags: (r, x, info) => {
-      if (!Mural.on(r)) return [];
-      if (info && info.ended === 'finished') return [{ text: 'Finished', cls: 'full cleared' }];
-      return [];
     },
     tiles: (ext) => tilesOf(ext),
     endName: (reason) => (reason === 'finished' ? 'Finished' : null),

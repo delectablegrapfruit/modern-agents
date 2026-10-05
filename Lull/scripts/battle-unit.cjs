@@ -39,7 +39,6 @@ module.exports = function battleUnit({ L, test }) {
     assert.strictEqual(c['mods.physics=true'], 'Not in Battle');
     assert.strictEqual(c['shapes.preset=big'], 'Not in Battle');
     assert.strictEqual(Recipe.resolve({ mode: 'battle', mods: { physics: true } }, 'mode', {}).recipe.mods.physics, false, 'choosing Battle turns Physics off');
-    assert.strictEqual(B.PART.noEdit(R0()), 'A Battle board keeps its rules');
     assert.strictEqual(mk().h, 14, 'no buffer: the board is its height');
   });
 

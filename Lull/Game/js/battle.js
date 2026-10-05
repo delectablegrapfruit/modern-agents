@@ -501,9 +501,6 @@
 
   const PART = {
     key: 'battle', order: 55, mode: 'battle', name: 'Battle', owns: ['battle'], options: { 'battle.level': IDS.slice() },
-    // Fixed for the board's life: an edit never makes a board Battle or another, and Edit rules is not offered at all.
-    editFixed: true,
-    noEdit: (r) => (on(r) ? 'A Battle board keeps its rules' : null),
     normalize(raw, out) {
       if (out.mode !== 'battle') return;
       const lv = isObj(raw.battle) && raw.battle.level;

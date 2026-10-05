@@ -1,7 +1,8 @@
-/* Lull — the Play menu (js/menu.js): a page over the Play tab. Home: two big tiles side by side, Solo and Multiplayer,
-   and Manage under them; the X (top right) closes it. Solo and Multiplayer are pages of big tiles, one a mode, with Back
-   beside the X; a mode's setup is its short settings and Start. Every target is 44 px or more; nothing scrolls sideways,
-   and the home never scrolls, at 520 x 760, 400 x 700, 390 x 844 and 320 x 568. */
+/* Lull — the Play menu (js/menu.js): a page over the Play tab. Home: two big tiles side by side, Solo and Multiplayer;
+   the X (top right) closes it. Solo and Multiplayer are pages of big tiles, one a mode, with Back beside the X; a mode's
+   setup is its short settings, then Continue and New game (or Start); Custom is New custom game and the presets. Every
+   target is 44 px or more by touch; nothing scrolls sideways, and the home never scrolls, at 520 x 760, 400 x 700,
+   390 x 844 and 320 x 568. */
 #modal-root .scrim.mn-scrim { border-radius: 0 0 var(--radius) var(--radius); overflow: hidden; align-items: stretch; justify-content: stretch; }
 .modal.modal-menu {
   width: 100% !important; height: 100%; max-height: 100%; border-radius: 0 0 var(--radius) var(--radius); border: 0; box-shadow: none;
@@ -47,7 +48,6 @@
 .mn-modes .mn-custom .pic svg { width: 18px; height: 18px; }
 .mn-modes .mn-custom b { font-size: var(--fs-md); }
 .mn-modes .mn-custom .ln { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mn-manage { min-height: 44px; min-width: 168px; justify-content: center; border-radius: 14px; }
 
 /* A mode's setup: only its own settings (the New board window's controls), a field a row. */
 .mn-setup { gap: 12px; width: min(100%, 440px); margin: 0 auto; }
@@ -56,7 +56,7 @@
 .mn-setup .nb-why:empty { display: none; }
 .mn-setup .nb-why { margin: 0 !important; }
 
-/* The footer: Resume (when these rules have a board) above Start (Classic: Watch beside it). */
+/* The footer: Continue (when the mode has a game) above New game (Classic: Watch beside it). */
 .modal footer.mn-foot { justify-content: center; }
 .modal footer.mn-foot[hidden] { display: none; }
 .mn-btns { width: min(100%, 440px); display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
@@ -64,8 +64,41 @@
 /* Classic: Watch (the computer plays) beside Start. */
 .mn-pair { display: flex; gap: 8px; }
 .mn-pair .btn { flex: 1 1 0; min-width: 0; }
-.mn-resume { width: 100%; min-width: 0; }
-.mn-resume .lbl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mn-continue { width: 100%; min-width: 0; gap: 10px; }
+.mn-continue .lbl { flex: none; }
+.mn-continue .mn-prog { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; opacity: 0.8; font-variant-numeric: tabular-nums; }
+.mn-note { margin: 0; color: var(--muted); font-size: var(--fs-sm); text-align: center; }
+
+/* Custom: New custom game (the Custom window), then the presets, a row each: name and rules, Rename, Delete, Start. */
+.mn-custom-page { width: min(100%, 440px); margin: 0 auto; display: flex; flex-direction: column; gap: 12px; padding: 4px 0 12px; }
+.mn-newcustom {
+  min-height: 64px; display: flex; align-items: center; gap: 12px; padding: 10px 14px; text-align: left; border-radius: 18px;
+  border: 1px solid var(--line-2); background: var(--panel); color: var(--fg); box-shadow: var(--hi);
+}
+@media (hover: hover) { .mn-newcustom:hover { background: var(--panel-2); border-color: var(--accent-line); } }
+.mn-newcustom .pic { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; color: var(--accent-ink); background: var(--accent-soft); }
+.mn-newcustom .pic svg { width: 20px; height: 20px; }
+.mn-newcustom .tx { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mn-newcustom b { font-size: var(--fs-md); font-weight: 650; }
+.mn-newcustom .ln { color: var(--muted); font-size: var(--fs-sm); }
+.mn-presets-head { display: flex; align-items: baseline; justify-content: space-between; margin-top: 4px; }
+.mn-count { color: var(--faint); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+.mn-presets { display: flex; flex-direction: column; gap: 6px; }
+.mn-preset { display: flex; align-items: center; gap: 6px; padding: 6px 6px 6px 12px; border-radius: var(--r-md); border: 1px solid var(--line); background: var(--panel); min-width: 0; }
+.mn-pinfo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mn-pinfo .nm { font-weight: 650; font-size: var(--fs-md); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mn-pinfo .ln { color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.modal input.mn-pname { height: 28px; padding: 0 8px; font: 650 var(--fs-md) var(--font); border-radius: var(--r-sm); min-width: 0; width: 100%; }
+.mn-pacts { flex: none; display: flex; align-items: center; gap: 2px; }
+.mn-pacts .icon-btn { width: 32px; height: 32px; }
+.mn-pacts .icon-btn svg { width: 15px; height: 15px; }
+@media (hover: hover) { .mn-pacts .icon-btn.del:hover { color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, transparent); } }
+.mn-pacts .mn-pstart { min-width: 64px; justify-content: center; margin-left: 4px; }
+.mn-empty { margin: 0; padding: 18px 8px; text-align: center; color: var(--faint); font-size: var(--fs-sm); border: 1px dashed var(--line); border-radius: var(--r-md); }
+
+/* Save preset: its name. */
+.nb-name-row { display: flex; flex-direction: column; gap: 6px; color: var(--muted); font-size: var(--fs-sm); }
+.modal input.nb-name { height: 36px; padding: 0 10px; font: 600 var(--fs-md) var(--font); border-radius: var(--r-sm); width: 100%; }
 
 @media (max-width: 380px) {
   .modal-menu .body { padding-left: 12px; padding-right: 12px; }
@@ -85,17 +118,10 @@
 @media (hover: none) and (pointer: coarse) {
   .mn-btns .btn { min-height: 44px; }
   .modal-menu header .x { margin-right: 0; }
+  /* A setup's small choices (Classic's Next) and a preset's actions are 44 px. */
+  .mn-setup .cl-seg button, .mn-setup .nb-level { min-width: 44px; }
+  .mn-pacts .icon-btn { width: 44px; height: 44px; }
+  .mn-pacts .mn-pstart { min-height: 44px; }
+  .modal input.mn-pname { height: 44px; }
 }
 
-/* The library's two tabs (js/modes.js, openLibrary): Solo and Multiplayer, each with its Saved and Retired boards. */
-.lib-sides { flex: none; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px; margin-bottom: 10px; }
-.lib-side { height: 36px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0 8px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); font-weight: 650; font-size: var(--fs-sm); white-space: nowrap; }
-@media (hover: hover) { .lib-side:hover { background: var(--panel-2); } }
-.lib-side[aria-selected="true"] { border-color: var(--accent-line); background: var(--accent-soft); }
-@media (hover: none) and (pointer: coarse) { .lib-side { height: 44px; } }
-/* By touch: the library's Saved and Retired, New board, and a setup's small choices (Classic's Next) are 44 px. */
-@media (hover: none) and (pointer: coarse) {
-  .lib-head .seg button { min-height: 44px; }
-  .lib-head .lib-new { min-width: 44px; height: 44px; border-radius: 12px; }
-  .mn-setup .cl-seg button, .mn-setup .nb-level { min-width: 44px; }
-}

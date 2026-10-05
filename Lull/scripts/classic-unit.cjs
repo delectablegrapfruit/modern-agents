@@ -1,7 +1,6 @@
 // Classic as a board mode in Node (js/classic.js): the recipe part and its settings, rules and conflicts, the engine
 // (ceiling spawn, hold, Next, B type's garbage and its end, the retro randomizer, the score and levels), save and
-// resume, what it banks against Standard, and editing a board's rules (Recipe.editPrice, Recipe.editConflicts,
-// Library.reshape, Library.rebuild). Run by test.cjs: require('./classic-unit.cjs')({ L, test }).
+// resume, and what it banks against Standard. Run by test.cjs: require('./classic-unit.cjs')({ L, test }).
 'use strict';
 const assert = require('assert');
 
@@ -105,8 +104,6 @@ module.exports = function classicUnit({ L, test }) {
     const lv = L.Achievements.LIST.filter((x) => /^cl_l\d+$/.test(x.id));
     assert(lv.length >= 3);
     for (const a of lv) assert(!a.test({}, { level: Classic.featLevel(k, 250), g }), a.id);
-    const z = { w: 10, h: 20 };
-    assert.deepStrictEqual(Recipe.editPrice(CL(), CL({ levelLock: true }), z, z), { sections: ['mode'], cost: Recipe.EDIT_PRICE }, 'a Classic setting like the rest');
   });
 
   test('classic: B type: garbage by height (scaled to the board, never a full row, the board\'s own seed), and the board ends at 25 lines', () => {
@@ -171,72 +168,5 @@ module.exports = function classicUnit({ L, test }) {
       assert.strictEqual(lk, std, 'a Classic row is worth what a plain one is');
       for (let n = 0; n <= 30; n++) assert(lk * Chain.CLASSIC.rate * Chain.mult(n, 'classic') <= std * Chain.mult(n) + 1e-9);
     }
-  });
-
-  test('edit rules: the price is a flat 20 lines a section changed (music alone is free, nothing changed is free)', () => {
-    const z = { w: 10, h: 20 }, P = Recipe.EDIT_PRICE;
-    assert.strictEqual(P, 20);
-    assert.deepStrictEqual(Recipe.editPrice({}, {}, z, z), { sections: [], cost: 0 });
-    assert.deepStrictEqual(Recipe.editPrice({}, CL(), z, z), { sections: ['mode'], cost: P });
-    assert.deepStrictEqual(Recipe.editPrice(CL(), CL({ level: 4, hold: false }), z, z), { sections: ['mode'], cost: P }, 'a mode\'s settings are its section');
-    assert.deepStrictEqual(Recipe.editPrice(CL(), CL({ music: 'off' }), z, z), { sections: [], cost: 0 });
-    assert.deepStrictEqual(Recipe.editPrice({}, { shapes: { preset: 'tiny' }, mods: { mirror: true }, mode: 'classic' }, z, { w: 12, h: 20 }), { sections: ['size', 'shapes', 'mods', 'mode'], cost: 4 * P });
-    // Descent is kept for a board's life: an edit neither enters it nor leaves it.
-    assert.strictEqual(Recipe.editConflicts({}, {})['mode=descent'], 'Descent starts on a new board');
-    const fromP = Recipe.editConflicts({ mode: 'descent', descent: { level: 'easy', stage: 1 } }, {});
-    assert.strictEqual(fromP['mode=classic'], 'A Descent board stays Descent');
-    assert(fromP['descent.level=hard'] && !fromP['descent.level=easy']);
-  });
-
-  test('edit rules: a size change keeps the stack (columns on the right, rows at the top) and never cuts a block', () => {
-    const g = new Game({ w: 10, h: 20, seed: 2, recipe: {} });
-    g.board.set(0, 0, 5); g.board.set(7, 0, 5); g.board.set(8, 0, 5); g.board.set(2, 11, 5); g.board.set(2, 12, 5);
-    const j = g.toJSON();
-    assert.strictEqual(Library.reshape(j, 8, 20).why, 'Blocks stand in the columns it would lose');
-    assert.strictEqual(Library.reshape(j, 10, 12).why, 'Blocks stand in the rows it would lose');
-    assert(/No board/.test(Library.reshape(j, 3, 20).why));
-    const big = Library.reshape(j, 14, 30).json;
-    assert.strictEqual(big.cells.length, 14 * 30);
-    assert.strictEqual(big.cells[0], 5); assert.strictEqual(big.cells[8], 5); assert.strictEqual(big.cells[12 * 14 + 2], 5);
-    g.board.set(8, 0, 0); g.board.set(2, 12, 0);
-    const cut = Library.reshape(g.toJSON(), 8, 12).json;
-    assert.strictEqual(cut.cells[7], 5, 'a block against the new wall stays');
-    assert.strictEqual(cut.cells[11 * 8 + 2], 5);
-    assert.strictEqual(j.w, 10, 'the board it was made from is untouched');
-  });
-
-  test('edit rules: rebuild: the stack and the numbers stay, the piece in play comes again first, no Undo history; refusals say why', () => {
-    const g = new Game({ w: 10, h: 20, seed: 5, recipe: {} });
-    for (let i = 0; i < 4; i++) dropAt(g, 'O', i * 2);
-    const id = g.piece.type.id, cells = g.board.toArray(), s = JSON.parse(JSON.stringify(g.s));
-    assert(g.history.length > 0);
-    const res = Library.rebuild(g.toJSON(), CL({ level: 3 }), { w: 12, h: 22 });
-    assert(!res.why, res.why);
-    const n = res.game;
-    assert(n.ceiling && n.recipe.mode === 'classic' && n.w === 12 && n.h === 22 && n.history.length === 0);
-    assert.strictEqual(n.piece.type.id, id, 'the piece in play first');
-    assert.deepStrictEqual(n.s.score, s.score); assert.deepStrictEqual(n.s.pieces, s.pieces);
-    assert.strictEqual(n.board.count(), cells.filter(Boolean).length);
-    assert.strictEqual(n.board.get(0, 0), cells[0]);
-    assert(Library.playable(res.json));
-    assert.strictEqual(Classic.of(n).lines, 0, 'Classic counts from here');
-    // Back to plain: Classic's state goes; nothing else changes.
-    const back = Library.rebuild(res.json, {}, { w: 12, h: 22 });
-    assert(!back.why && !back.game.ceiling && !(back.json.x && back.json.x.classic));
-    // Refused: a cut, a board that ended, no room for the piece, Descent in or out.
-    assert.strictEqual(Library.rebuild(g.toJSON(), {}, { w: 10, h: 1 + 0 }).why, 'No board is 10 × 1');
-    const full = g.toJSON(); full.over = true;
-    assert.strictEqual(Library.rebuild(full, CL(), { w: 10, h: 20 }).why, 'A board that ended keeps its rules');
-    const tall = new Game({ w: 10, h: 20, seed: 6, recipe: {} });
-    for (let y = 0; y < 18; y++) for (let x = 0; x < 10; x++) if (x !== 0) tall.board.set(x, y, 5);
-    tall.board.set(4, 18, 5);
-    assert.strictEqual(Library.rebuild(tall.toJSON(), CL(), { w: 10, h: 20 }).why, 'No room for the piece in play');
-    assert.strictEqual(Library.rebuild(g.toJSON(), { mode: 'descent' }, { w: 10, h: 20 }).why, 'Descent starts on a new board');
-    const pg = new Game({ w: 10, h: 20, seed: 1, recipe: { mode: 'descent' } });
-    assert.strictEqual(Library.rebuild(pg.toJSON(), CL(), { w: 10, h: 20 }).why, 'A Descent board stays Descent');
-    // Shapes and modifiers carry over to the board as it stands.
-    const fr = Library.rebuild(g.toJSON(), { shapes: { preset: 'frantic' }, mods: { mirror: true }, mode: 'classic' }, { w: 10, h: 20 });
-    assert(!fr.why, fr.why);
-    assert(!fr.game.rules.rated && fr.game.recipe.mods.mirror);
   });
 };

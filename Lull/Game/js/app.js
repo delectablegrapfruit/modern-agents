@@ -10,9 +10,9 @@
 
   // The title bar's tabs, left to right: the places to play in one track, then the places to look by the wallet. The
   // Shop has no tab of its own: it is the wallet. ⌘1–⌘5 run in that order (the wallet last). A tab's tooltip is its
-  // name and key, nothing more: what each place is, you find by going there. Classic is a board mode now (the New board
-  // window's Mode tab: js/classic.js), played on the Play tab like any board. The Factory is shelved for now
-  // (Lull/Shelved/factory/): its tab went between Puzzles and Stats.
+  // name and key, nothing more: what each place is, you find by going there. Classic is a board mode now (the menu's
+  // Classic, or the Custom window's Mode tab: js/classic.js), played on the Play tab like any board. The Factory is
+  // shelved for now (Lull/Shelved/factory/): its tab went between Puzzles and Stats.
   const TABS = [
     { id: 'play', label: 'Play', icon: 'play', group: 'modes' },
     { id: 'puzzle', label: 'Puzzles', icon: 'puzzle', group: 'modes' },
@@ -378,8 +378,7 @@
       if (focused && !watching && !L.Collapse.on && performance.now() - (this.lastActivity || 0) < 120000) {
         const S = this.state.stats.timeMs;
         S.total += 1000;
-        // (A retired board in full view is not play: the board in play's time waits.)
-        if (this.tab === 'play' && !this.modes.play.fullView) {
+        if (this.tab === 'play') {
           // A Classic board's time is Classic's (its controller's timeKey), the rest Free Play's.
           const pm = this.modes.play, bs = pm.game.s, tk = pm.ctl && pm.ctl.timeKey;
           S[tk || 'play'] = (S[tk || 'play'] || 0) + 1000;

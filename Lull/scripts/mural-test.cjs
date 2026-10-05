@@ -1,9 +1,9 @@
-// Mural in the browser (js/mural.js, js/muralview.js): made in the New board window (Mode ▸ Mural; a picture and a
+// Mural in the browser (js/mural.js, js/muralview.js): made in the Custom window (Mode ▸ Mural; a picture and a
 // level; the size set by the level; the preview shows the picture; Physics, Mirror and other shapes off), the board it
 // makes (Placed and Level in the status bar, the progress under the board), the place outlined, a drop or a set out of
 // place declined with no sound, shake or note, a set in place paid, every block drawn as its four quarters (turned with
-// the piece in play and in Next), the Finished card (Look, Space), a reload mid-mural, the library (Finished, the
-// thumbnail in the picture's colours, the full view), a photo chosen through the file picker, cropped and previewed in
+// the piece in play and in Next), the Finished card (Look, Space: the Mural setup, its New game), a reload mid-mural,
+// a photo chosen through the file picker, cropped and previewed in
 // its own window and made a mural, Stats and the achievements, the phones (both themes: everything fits, quarters at
 // least 5 px, 44 px targets), and frames of the three pictures at levels 1, 3 and 5.
 // Run by browser-test.cjs: require('./mural-test.cjs')({ browser, check, PAGE, OUT }).
@@ -36,6 +36,8 @@ const SCENE = (o) => {
   while (Lull.UI.modalOpen()) Lull.UI.closeTopModal();
   m.hideCard();
   const r = R.normalize({ mode: 'mural', mural: { pic: o.pic || 'coast', level: o.level || 3 }, shapes: { preset: o.set || 'normal' } }), z = o.w ? { w: o.w, h: o.h } : R.clampSize({}, r);
+  // (A game put in play by hand is the mode's own game in play, never a Custom one: a reload finds it.)
+  m.custom = null;
   m.setGame(new Lull.Game({ w: z.w, h: z.h, seed: o.seed || 3, recipe: r, previewCount: m.settings.preview }));
   const g = m.game, X = Lull.Mural.extOf(g);
   const n = o.placed === 'all' ? X.plan().pieces.length : o.placed < 0 ? X.plan().pieces.length + o.placed : o.placed || 0;
@@ -72,7 +74,7 @@ module.exports = async function muralTests({ browser, check, PAGE, OUT }) {
   const card = (ev) => ev(() => { const m = Lull.app.modes.play, ov = m.overlay; return { open: m.cardOpen, title: (ov.querySelector('h2') || {}).textContent, sub: (ov.querySelector('.cl-sub') || {}).textContent || null, btns: [...ov.querySelectorAll('.btn')].map((b) => b.textContent.trim()) }; });
   const status = (ev) => ev(() => [...document.querySelectorAll('#play-status .stat')].map((s) => s.textContent.trim()));
 
-  // ---- the New board window: Mode ▸ Mural ▸ Still life ▸ Level 3; its size; the preview; Create ------------------------------
+  // ---- the Custom window: Mode ▸ Mural ▸ Still life ▸ Level 3; its size; the preview; Start -------------------------
   const D = await open();
   let { page, ev } = D;
   await ev(() => { const B = Lull.app.store.state.boards; B.size = { w: 10, h: 20 }; B.recipe = Lull.Recipe.normalize({ mods: { mirror: true } }); Lull.app.modes.play.openNewBoard(); });
@@ -109,11 +111,11 @@ module.exports = async function muralTests({ browser, check, PAGE, OUT }) {
   });
   check('Physics and Mirror are off ("Not in Mural"); the piece sets Mixed, Normal, Frantic and Pentominoes are on offer (Tiny, Big and Custom not shown); Size offers the level\'s size first, then larger ones up to 20 × 36',
     off.sw.every((s) => s[1] === 'true' && s[2] === 'Not in Mural') && ['mixed', 'normal', 'frantic', 'pentominoes'].every((v) => off.chips[v] === false) && ['tiny', 'big', 'custom'].every((v) => !(v in off.chips)) && off.presets[0] === 'Level 312 × 18' && off.presets[off.presets.length - 1] === 'Largest20 × 36', JSON.stringify(off));
-  await ev(() => { [...document.querySelectorAll('.modal .btn')].find((b) => b.textContent.trim() === 'Create').click(); });
+  await ev(() => { [...document.querySelectorAll('.modal .btn')].find((b) => b.textContent.trim() === 'Start').click(); });
   await page.waitForTimeout(200);
   const made = await ev(() => { const m = Lull.app.modes.play, g = m.game; return { label: Lull.Recipe.label(g.recipe), w: g.w, h: g.h - Lull.Mural.BUF, ext: g.ext.map((e) => e.key).join(), parts: m.view.parts.map((p) => p.key).join(), card: m.cardOpen, bar: document.querySelector('#itembar').classList.contains('mu-bar') && !!document.querySelector('#itembar .mu-prog'), next: (g.queue || []).length, fixed: g.fixed }; });
   const st0 = await status(ev);
-  check('Create: a Mural board (12 × 18, Still life, Level 3) in play at once; Placed and Level in the status bar; the progress under the board; Next counts down', made.label === 'Mural · Still life · Level 3' && made.w === 12 && made.h === 18 && made.ext === 'mural' && made.parts === 'mural' && !made.card && made.bar && made.fixed && made.next > 40 && /^Placed\s*0 of \d+$/.test(st0[0]) && /^Level\s*3$/.test(st0[1]), JSON.stringify({ made, st0 }));
+  check('Start: a Mural board (12 × 18, Still life, Level 3) in play at once; Placed and Level in the status bar; the progress under the board; Next counts down', made.label === 'Mural · Still life · Level 3' && made.w === 12 && made.h === 18 && made.ext === 'mural' && made.parts === 'mural' && !made.card && made.bar && made.fixed && made.next > 40 && /^Placed\s*0 of \d+$/.test(st0[0]) && /^Level\s*3$/.test(st0[1]), JSON.stringify({ made, st0 }));
 
   // ---- out of place: a drop and a set declined (no sound, no shake, no note); in place: set and paid ------------------------
   await ev(SCENE, { pic: 'still', level: 3, seed: 3, placed: 5 });
@@ -167,7 +169,7 @@ module.exports = async function muralTests({ browser, check, PAGE, OUT }) {
   });
   check('every block is drawn as its four quarters in the picture\'s colours: the stack, and the piece in play turned as it is', quarters.stack.bad <= 2 && quarters.stack.ok > 60 && quarters.piece.bad === 0 && quarters.piece.ok >= 4, JSON.stringify(quarters));
 
-  // ---- Finished: the card (Boards, Look, New board), Look, Space; Stats and the achievements --------------------------------------
+  // ---- Finished: the card (Menu, Look, New game), Look, Space; Stats and the achievements ---------------------------
   await ev(() => { const s = Lull.app.store.state; s.stats.free.mural = null; for (const k of Object.keys(s.achievements || {})) if (/^mu_/.test(k)) delete s.achievements[k]; });
   await ev(SCENE, { pic: 'still', level: 3, seed: 3, placed: 5 });
   await ev(() => {
@@ -176,7 +178,7 @@ module.exports = async function muralTests({ browser, check, PAGE, OUT }) {
   });
   await page.waitForTimeout(150);
   const fin = { card: await card(ev), st: await status(ev), stats: await ev(() => Lull.app.store.state.stats.free.mural), ach: await ev(() => Object.keys(Lull.app.store.state.achievements || {}).filter((k) => /^mu_/.test(k)).sort()) };
-  check('the last piece set: the Finished card (Still life · Level 3; Boards, Look, New board); Stats and the achievements (First Mural, Panel)', fin.card.open && fin.card.title === 'Finished' && fin.card.sub === 'Still life · Level 3' && fin.card.btns.join() === 'Boards,Look,New board Space' && fin.stats.finished === 1 && fin.stats.levels[3] === 1 && fin.ach.join() === 'mu_first,mu_l3' && /^Placed\s*(\d+) of \1$/.test(fin.st[0]), JSON.stringify(fin));
+  check('the last piece set: the Finished card (Still life · Level 3; Menu, Look, New game); Stats and the achievements (First Mural, Panel)', fin.card.open && fin.card.title === 'Finished' && fin.card.sub === 'Still life · Level 3' && fin.card.btns.join() === 'Menu,Look,New game Space' && fin.stats.finished === 1 && fin.stats.levels[3] === 1 && fin.ach.join() === 'mu_first,mu_l3' && /^Placed\s*(\d+) of \1$/.test(fin.st[0]), JSON.stringify(fin));
   await D.shot('mural-finished-card-520x760');
   await ev(() => document.querySelector('#mu-look').click());
   await page.waitForTimeout(80);
@@ -187,42 +189,17 @@ module.exports = async function muralTests({ browser, check, PAGE, OUT }) {
   const back = await card(ev);
   check('Look hides the card (the whole picture shows); Space brings it back', !look.open && back.open && back.title === 'Finished', JSON.stringify({ look, back }));
 
-  // ---- the library: New board keeps it as Finished, its thumbnail in the picture's colours; its full view draws the picture -----
+  // ---- New game on the card: the Mural setup, where New game replaces the finished mural (in Past boards as Finished) ---
   await page.keyboard.press('Space');
   await page.waitForTimeout(200);
-  const lib = await ev(() => {
-    const m = Lull.app.modes.play, B = Lull.app.store.state.boards, e = B.retired[0];
-    const nb = !!document.querySelector('.modal-newboard');
-    while (Lull.UI.modalOpen()) Lull.UI.closeTopModal();
-    return { nb, reason: e && e.reason, recipe: e && e.recipe && e.recipe.mode, fresh: m.game.s.pieces === 0 && Lull.Mural.on(m.game.recipe), id: e && e.id };
-  });
-  await ev(() => Lull.app.modes.play.openLibrary());
+  const su = await ev(() => { const md = document.querySelector('.modal-menu'); return { page: md && md.dataset.page, mode: md && md.querySelector('.mn-setup') && md.querySelector('.mn-setup').dataset.mode, cont: !!(md && md.querySelector('.mn-continue')), pics: md ? md.querySelectorAll('.mu-pics .nb-chip').length : 0 }; });
+  check('New game on the Finished card opens the Mural setup (a picture to choose; Continue goes back to the finished one)', su.page === 'setup' && su.mode === 'mural' && su.cont && su.pics === 4, JSON.stringify(su));
+  await D.shot('mural-setup-520x760');
+  await page.click('.modal-menu .mn-start');
+  await page.click('.modal:not(.modal-menu) footer .btn.primary');
   await page.waitForTimeout(150);
-  await ev(() => { const t = [...document.querySelectorAll('.modal-lib .lib-tabs button')].find((b) => b.dataset.k === 'retired'); if (t) t.click(); });
-  await page.waitForTimeout(200);
-  const row = await ev((id) => {
-    const r = document.querySelector('.lib-row.retired[data-id="' + id + '"]');
-    if (!r) return null;
-    const img = r.querySelector('.lib-thumb');
-    return { tags: [...r.querySelectorAll('.tag')].map((t) => t.textContent), src: img && img.src.length };
-  }, lib.id);
-  const thumbPx = await ev((id) => new Promise((res) => {
-    const img = document.querySelector('.lib-row.retired[data-id="' + id + '"] .lib-thumb');
-    if (!img) { res(null); return; }
-    const i = new Image(); i.onload = () => { const c = document.createElement('canvas'); c.width = i.width; c.height = i.height; const x = c.getContext('2d'); x.drawImage(i, 0, 0); const d = x.getImageData(0, 0, c.width, c.height).data; let blue = 0; for (let k = 0; k < d.length; k += 4) if (d[k + 2] > d[k] + 50) blue++; res(blue); }; i.src = img.src;
-  }), lib.id);
-  await D.shot('mural-library-520x760');
-  check('New board on the card: the mural kept in the library (Finished), the New board window opened; its thumbnail in the picture\'s colours', lib.nb && lib.reason === 'finished' && lib.recipe === 'mural' && lib.fresh && row && row.tags.includes('Finished') && thumbPx > 40, JSON.stringify({ lib, row, thumbPx }));
-  const full = await ev((id) => {
-    while (Lull.UI.modalOpen()) Lull.UI.closeTopModal();
-    const m = Lull.app.modes.play;
-    m.openRetiredView(id);
-    const fv = m.fullView;
-    return { open: !!fv, parts: fv && fv.view.parts.map((p) => p.key).join() };
-  }, lib.id);
-  await page.waitForTimeout(200);
-  await D.shot('mural-fullview-520x760');
-  check('its full view draws the picture (the Mural painter)', full.open && full.parts === 'mural', JSON.stringify(full));
+  const lib = await ev(() => { const m = Lull.app.modes.play, F = Lull.app.store.state.stats.free, e = F.boardLog[0]; return { menu: !!document.querySelector('.modal-menu'), reason: e && e.reason, recipe: e && e.recipe && e.recipe.mode, fresh: m.game.s.pieces === 0 && Lull.Mural.on(m.game.recipe) && !m.game.over, cur: Lull.app.store.state.boards.cur }; });
+  check('New game there: a new mural in its place, the finished one in Past boards (Finished)', !lib.menu && lib.reason === 'finished' && lib.recipe === 'mural' && lib.fresh && lib.cur === 'mural', JSON.stringify(lib));
   await ev(() => { while (Lull.UI.modalOpen()) Lull.UI.closeTopModal(); });
 
   // ---- a reload mid-mural: the same piece in play, the same count -------------------------------------------------------------
@@ -233,7 +210,7 @@ module.exports = async function muralTests({ browser, check, PAGE, OUT }) {
   const post = await ev(() => { while (Lull.UI.modalOpen()) Lull.UI.closeTopModal(); Lull.app.setTab('play'); const g = Lull.app.modes.play.game; return { i: Lull.Mural.of(g).i, id: g.piece.type.id, rot: g.piece.rot, x: g.piece.x, label: Lull.Recipe.label(g.recipe) }; });
   check('a reload mid-mural: the same mural, piece and count', post.i === pre.i && post.id === pre.id && post.rot === pre.rot && post.x === pre.x && post.label === 'Mural · Coast · Level 2', JSON.stringify({ pre, post }));
 
-  // ---- a photo: the file picker, the Photo window (crop, Zoom, the preview in the level's colours), Use photo, Create ---------------
+  // ---- a photo: the file picker, the Photo window (crop, Zoom, the preview in the level's colours), Use photo, Start ---
   await ev(() => { while (Lull.UI.modalOpen()) Lull.UI.closeTopModal(); const B = Lull.app.store.state.boards; B.recipe = Lull.Recipe.normalize({ mode: 'mural', mural: { pic: 'coast', level: 4 } }); B.size = { w: 14, h: 22 }; Lull.app.modes.play.openNewBoard(); });
   await page.waitForTimeout(150);
   await ev(() => document.querySelector('.nb-tab[data-tab="mode"]').click());
@@ -258,11 +235,11 @@ module.exports = async function muralTests({ browser, check, PAGE, OUT }) {
   await page.waitForTimeout(120);
   const used = await ev(() => { const nb = Lull.app.modes.play.lastNB.nb, r = nb.recipe; return { pic: r.mural.pic, w: r.mural.own && r.mural.own.w, pressed: (document.querySelector('.mu-pic[aria-pressed="true"]') || {}).dataset.value, size: nb.size, json: JSON.stringify(r).length }; });
   await D.shot('mural-photo-newboard-520x760');
-  await ev(() => { [...document.querySelectorAll('.modal .btn')].find((b) => b.textContent.trim() === 'Create').click(); });
+  await ev(() => { [...document.querySelectorAll('.modal .btn')].find((b) => b.textContent.trim() === 'Start').click(); });
   await page.waitForTimeout(200);
   const ownMade = await ev(() => { const g = Lull.app.modes.play.game; return { label: Lull.Recipe.label(g.recipe), w: g.w, h: g.h - Lull.Mural.BUF, saved: JSON.stringify(Lull.app.store.state.boards.recipe).length }; });
   await D.shot('mural-photo-play-520x760');
-  check('Use photo: the picture is the photo (its grid only, a few KB); Create makes a 14 × 22 mural of it', used.pic === 'own' && used.w === 28 && used.pressed === 'own' && used.size.w === 14 && used.json < 4000 && ownMade.label === 'Mural · Photo · Level 4' && ownMade.w === 14 && ownMade.h === 22 && ownMade.saved < 4000, JSON.stringify({ used, ownMade }));
+  check('Use photo: the picture is the photo (its grid only, a few KB); Start makes a 14 × 22 mural of it', used.pic === 'own' && used.w === 28 && used.pressed === 'own' && used.size.w === 14 && used.json < 4000 && ownMade.label === 'Mural · Photo · Level 4' && ownMade.w === 14 && ownMade.h === 22 && ownMade.saved < 4000, JSON.stringify({ used, ownMade }));
   // The level changed with the photo still at hand: cropped again for it.
   await ev(() => Lull.app.modes.play.openNewBoard());
   await page.waitForTimeout(150);
@@ -462,7 +439,7 @@ module.exports = async function muralTests({ browser, check, PAGE, OUT }) {
     await S2.ev(() => [...document.querySelectorAll('.nb-preset')].find((b) => /Detailed/.test(b.textContent)).click());
     await S2.page.waitForTimeout(60);
     await S2.shot('mural-sets-window-520x760');
-    await S2.ev(() => { [...document.querySelectorAll('.modal .btn')].find((b) => b.textContent.trim() === 'Create').click(); });
+    await S2.ev(() => { [...document.querySelectorAll('.modal .btn')].find((b) => b.textContent.trim() === 'Start').click(); });
     await S2.page.waitForTimeout(250);
     return tab;
   };
@@ -482,7 +459,7 @@ module.exports = async function muralTests({ browser, check, PAGE, OUT }) {
   await S2.page.waitForTimeout(150);
   await S2.ev(() => Lull.app.modes.play.hideCard());
   await S2.shot('mural-pentominoes-finished-520x760');
-  check('Shapes ▸ Pentominoes and Size ▸ Detailed in the window: Create makes a 16 × 26 Pentominoes mural (its picture at 32 × 52 quarters, every piece of five blocks), checked solvable; it plays to Finished, nothing left in the buffer',
+  check('Shapes ▸ Pentominoes and Size ▸ Detailed in the window: Start makes a 16 × 26 Pentominoes mural (its picture at 32 × 52 quarters, every piece of five blocks), checked solvable; it plays to Finished, nothing left in the buffer',
     setTab.value === 'Pentominoes' && setTab.pressed === 'pentominoes' && setMade.set === 'pentominoes' && setMade.label === 'Mural · Abstract · Level 2 · Pentominoes' && setMade.w === 16 && setMade.h === 26 && setMade.q.join() === '32,52' && setMade.five && setMade.ok && setPlayed.done && setPlayed.left === 0, JSON.stringify({ setTab, setMade: Object.assign({}, setMade, { first: undefined }), setPlayed }));
   await newWith();
   const again = await S2.ev(() => JSON.stringify(Lull.Mural.extOf(Lull.app.modes.play.game).plan().pieces.slice(0, 8).map((p) => p.cells)));

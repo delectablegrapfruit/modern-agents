@@ -1,4 +1,4 @@
-// Race in the browser (js/race.js, js/raceview.js): made in the New board window (Mode ▸ Race ▸ a level; Rows;
+// Race in the browser (js/race.js, js/raceview.js): made in the Custom window (Mode ▸ Race ▸ a level; Rows;
 // the presets), the Ready card and its 3-2-1, Send (S, Shift+S, a tap or click on the first Next slot), pausing (a
 // window, the window losing focus, a reload resumes paused), no control hints, a touch that starts on the opponent's
 // half moving your piece, the End card and Rematch, both boards' cells within their targets at four window sizes with
@@ -13,6 +13,8 @@ const SCENE = (o) => {
   const app = Lull.app, m = app.modes.play, R = Lull.Recipe, B = Lull.Race;
   while (Lull.UI.modalOpen()) Lull.UI.closeTopModal();
   m.hideCard();
+  // (A game put in play by hand is the mode's own game in play, never a Custom one: a reload finds it.)
+  m.custom = null;
   m.setGame(new Lull.Game({ w: o.w || 10, h: o.rows || 10, seed: o.seed || 5, recipe: R.normalize({ mode: 'race', race: { level: o.level || 'steady' }, shapes: { preset: o.shapes || 'normal' } }), previewCount: m.settings.preview }));
   const M = B.matchOf(m.game);
   if (o.play) {
@@ -51,7 +53,7 @@ module.exports = async function raceTests({ browser, check, PAGE, OUT }) {
   const D = await open();
   let { page, ev, shot } = D;
 
-  // ---- the New board window: Mode ▸ Race ▸ Brisk, Rows, the presets, Create --------------------------------------------
+  // ---- the Custom window: Mode ▸ Race ▸ Brisk, Rows, the presets, Start ---------------------------------------------
   await ev(() => { const B = Lull.app.store.state.boards; B.size = { w: 10, h: 20 }; B.recipe = Lull.Recipe.normalize({}); Lull.app.modes.play.openNewBoard(); });
   await page.waitForTimeout(150);
   await ev(() => { document.querySelector('.nb-tab[data-tab="mode"]').click(); document.querySelector('.nb-mode[data-value="race"]').click(); });
@@ -66,11 +68,9 @@ module.exports = async function raceTests({ browser, check, PAGE, OUT }) {
   await ev(() => document.querySelector('.modal-newboard footer .btn.primary').click());
   await page.waitForTimeout(250);
   const made = await ev(() => { const m = Lull.app.modes.play, g = m.game, B = Lull.Race; return { w: g.w, h: g.h, goal: B.goal(g), level: B.matchOf(g).level, card: (document.querySelector('#play-overlay .card') || {}).textContent || '', label: Lull.Recipe.label(g.recipe) }; });
-  check('New board: Mode ▸ Race with its levels (Steady first), Height named Rows, a Race size (10 × 10), the presets Quick, Standard and Long',
+  check('Custom: Mode ▸ Race with its levels (Steady first), Height named Rows, a Race size (10 × 10), the presets Quick, Standard and Long',
     win.levels === 'Easy,Steady,Brisk*,Swift' && win.rows === 'Rows' && win.size === '10x10' && presets === 'Quick 8 × 8, Standard 10 × 10, Long 10 × 12', JSON.stringify({ win, presets }));
-  check('Create makes the board: 8 × 8 rows under a 4-row buffer, against Brisk, at the Ready card', made.w === 8 && made.h === 12 && made.goal === 8 && made.level === 'brisk' && /Race/.test(made.card) && /vs Brisk/.test(made.card) && made.label === 'Race · Brisk', JSON.stringify(made));
-  const lib = await ev(() => { const m = Lull.app.modes.play; m.openLibrary(); const row = document.querySelector('.lib-row.current'); const out = { sz: row.querySelector('.sz').textContent, edit: !!row.querySelector('[aria-label="Edit rules"]') }; Lull.UI.closeTopModal(); return out; });
-  check('the library row says the board\'s own size and Race, and offers no Edit rules', /^8 × 8/.test(lib.sz) && /Race/.test(lib.sz) && !lib.edit, JSON.stringify(lib));
+  check('Start makes the board: 8 × 8 rows under a 4-row buffer, against Brisk, at the Ready card', made.w === 8 && made.h === 12 && made.goal === 8 && made.level === 'brisk' && /Race/.test(made.card) && /vs Brisk/.test(made.card) && made.label === 'Race · Brisk', JSON.stringify(made));
 
   // ---- the Ready card, Space, 3-2-1 ----------------------------------------------------------------------------------------
   await shot('race-ready');

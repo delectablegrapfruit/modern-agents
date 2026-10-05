@@ -102,9 +102,6 @@ module.exports = function physicsTests(test, L) {
     assert(Recipe.conflicts({ mods: { physics: true }, mode: 'classic' })['classic.height=3']);
     const r = Recipe.resolve({ mods: { physics: true, mirror: true } }, 'mods.physics', {});
     assert.strictEqual(r.recipe.mods.mirror, false, 'the last choice wins');
-    const e = Recipe.editConflicts(PHYS, PHYS);
-    assert(e['mods.physics=false'] && !e['mods.physics=true']);
-    assert(Recipe.editConflicts({}, {})['mods.physics=true']);
   });
 
   test('physics: refused power-ups are refused on Physics boards only, each with its reason; Undo is Rewind 5 s', () => {

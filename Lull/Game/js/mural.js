@@ -913,9 +913,6 @@
   const PART = {
     key: 'mural', order: 60, mode: 'mural', name: 'Mural', owns: ['mural'],
     options: { 'mural.level': LEVEL_IDS.slice(), 'mural.pic': PIC_IDS.slice() },
-    // Its picture and level are set when the board is made: it is never edited.
-    editFixed: true,
-    noEdit: (r) => (on(r) ? 'A mural keeps its picture' : null),
     normalize(raw, out) {
       // Mixed is Mural's own set: anywhere else it is Normal.
       if (out.mode !== 'mural') { if (out.shapes && out.shapes.preset === 'mixed') out.shapes = { preset: 'normal' }; return; }

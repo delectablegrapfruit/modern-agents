@@ -73,9 +73,6 @@ module.exports = function descentUnit({ L, test }) {
     // The last choice wins: Descent turns Mirror off, and Mirror back on leaves Descent for Plain.
     const res = Recipe.resolve({ mods: { mirror: true }, mode: 'descent' }, 'mode');
     assert(!res.recipe.mods.mirror && res.recipe.mode === 'descent');
-    assert.strictEqual(Recipe.editConflicts({}, {})['mode=descent'], 'Descent starts on a new board');
-    const fromD = Recipe.editConflicts(R('easy', 3), R('easy', 3));
-    assert(fromD['mode=plain'] && fromD['descent.stage=4'] && fromD['descent.level=hard'] && !fromD['descent.stage=3']);
     // With shapes: Pentominoes need their own room under the descent.
     assert(Recipe.limits({ mode: 'descent', shapes: { preset: 'pentominoes' } }).h[0] >= 14);
   });

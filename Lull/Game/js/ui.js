@@ -728,7 +728,7 @@
       const log = F.boardLog || [];
       if (log.length) {
         els.push(h('h4', null, 'Past boards'), h('table', { class: 'st cols' },
-          h('tr', null, ['Retired', 'Size', 'Lived', 'Lines', 'Score', 'Pieces', 'Power-ups'].map((c) => h('th', c === 'Lived' ? { class: 'opt' } : null, c))),
+          h('tr', null, ['Ended', 'Size', 'Lived', 'Lines', 'Score', 'Pieces', 'Power-ups'].map((c) => h('th', c === 'Lived' ? { class: 'opt' } : null, c))),
           log.slice(0, 15).map((b) => h('tr', null,
             // A board of another recipe shows it as a muted second line (its full label as the tip).
             h('td', null, new Date(b.at).toLocaleDateString([], { month: 'short', day: 'numeric' }) + (b.reason && b.reason !== 'manual' ? ' · ' + b.reason : ''), pastLabel(b)),

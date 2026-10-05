@@ -39,73 +39,78 @@ A piece that has no room where it appears (a new one, one swapped in from hold, 
 A full board just ends that board; the lines stay yours. Its Board full card shows the board's numbers (they scroll on
 a short screen, the cut edge fading while there is more; the buttons always show) with Undo — there whenever a placement
 can be taken back, with how many Undos you hold or its price, paid as in Puzzles: one held is used, with none one is
-bought for 5 ⦵ and used at once, short of lines a note says Not enough lines — then Boards and Retire. An Undo also
+bought for 5 ⦵ and used at once, short of lines a note says Not enough lines — then Menu and New game. An Undo also
 takes back what that placement banked, in full, so buying one needs the 5 and those lines, and using one held needs
 those lines (short, a note says Not enough lines and the Undo is kept: an Undo never pays, and the wallet never goes
 below 0); and
 like a set piece, an Undo that closes a card starts the set grace, so a double click does not drop the piece it
-brought back. The ⦵ glyph is a cleared line running into a small black hole; in the wallet it is drawn large, a dark disc in a thin glowing ring. Everywhere else it is one character, `L.LINE` (U+29B5, never an emoji), drawn by a one-glyph font of the page's own (`scripts/line-glyph.py`) that is first in every font list and in the canvas fonts, so text, prices, toasts and the boards all show the same shape. Retiring a board (Boards ▸ Retire, or Retire when it fills up) shows its whole life: how long it
+brought back. The ⦵ glyph is a cleared line running into a small black hole; in the wallet it is drawn large, a dark disc in a thin glowing ring. Everywhere else it is one character, `L.LINE` (U+29B5, never an emoji), drawn by a one-glyph font of the page's own (`scripts/line-glyph.py`) that is first in every font list and in the canvas fonts, so text, prices, toasts and the boards all show the same shape. A full board's card shows its whole life: how long it
 lived and was played, pieces, lines, score, quads, twists, spotless clears, best combo and streak, holds and
-every power-up used on it; Stats ▸ Free Play keeps the last boards.
+every power-up used on it; Stats ▸ Free Play ▸ Past boards keeps the last games that ended or were replaced.
 
-*The menu* (`js/menu.js`) — opened only by hand: the Menu button in the Relaxed status bar (where Boards was), or Esc
-on the Play tab in a browser when nothing else takes it (a tray, Battle's aim, a window; in the Mac app Esc still tucks
-the window away, and closes the menu when it is open). It never opens by itself: at start, after a reload and on a tab
-switch the last board is shown exactly as it was. It is a page over the Play tab (below the title bar; the board
-waits, as under any window), and its home holds only three things: two big tiles side by side, **Solo** (Relaxed,
-Classic, Descent, Mural, then Custom: the full New board window below) and **Multiplayer** (Race and Battle, against
-the computer), each a calm picture, its name and one short line; and **Manage** under them (the library). The X at the
-top right closes it, back to the board in play as it was; so does Esc, from any page. Solo and Multiplayer are pages of
-big tiles too, one a mode (its picture, name and a line; Custom a low dashed tile across the row), with Back beside
-the X. A mode opens a short setup with only its own settings, the New board window's own controls: Relaxed its size presets and
-shapes (Custom shapes are in Custom), Classic its type and settings, Descent its level and stage, Mural its picture
-(Photo too) and level, Race and Battle the opponent and a size preset; then Start. Each mode's last setup is kept
-(`boards.menu` in the save); a mode's setup first takes that mode's settings last chosen in New board, with Normal
-shapes and no modifier. *Resume by rules*: when a saved board still to be played (not full, not ended, not retired)
-has exactly these rules at this size (`Library.match`: `Recipe.editPrice` finds nothing to change, so Classic's music,
-which changes for free, does not count; the board in play first, then the most recently played), the setup shows
-"Resume: <name> (<progress>)" above Start new, focused, and Enter resumes it. A new board is made only when the
-settings differ (Start), by Start new, or by Custom. Back steps back a page (focus on where it came from); Enter on a
-button presses it, elsewhere it is the page's main button. Every target is 44 px or more, nothing scrolls sideways,
-the home never scrolls and its tiles stay side by side, at 520 × 760, 400 × 700, 390 × 844 and 320 × 568, light and
-dark, and under reduced motion nothing moves (`scripts/menu-test.cjs`).
+*The menu* (`js/menu.js`) — opened only by hand: the Menu button in the Relaxed status bar (and on a game's cards),
+or Esc on the Play tab in a browser when nothing else takes it (a tray, Battle's aim, a window; in the Mac app Esc still
+tucks the window away, and closes the menu when it is open). It never opens by itself: at start, after a reload and on
+a tab switch the game in play is shown exactly as it was. It is a page over the Play tab (below the title bar, above
+the tab bar on a phone; the board waits, as under any window), and its home holds only two big tiles side by side,
+**Solo** (Relaxed, Classic, Descent, Mural, then Custom) and **Multiplayer** (Race and Battle, against the computer),
+each a calm picture, its name and one short line. The X at the top right closes it, back to the game in play as it
+was; so does Esc, from any page. Solo and Multiplayer are pages of big tiles too, one a mode (its picture, name and a
+line; Custom a low dashed tile across the row), with Back beside the X. A mode opens a short setup with only its own
+settings, the Custom window's own controls: Relaxed its size presets and shapes (Custom shapes are in Custom), Classic
+its type and settings, Descent its level and stage, Mural its picture (Photo too) and level, Race and Battle the
+opponent and a size preset. Each mode's last setup is kept (`boards.menu` in the save); a mode's setup first takes that
+mode's settings last chosen in the Custom window, with Normal shapes and no modifier. Back steps back a page (focus on
+where it came from); Enter on a button presses it, elsewhere it is the page's main button. Every target is 44 px or
+more by touch, nothing scrolls sideways, the home never scrolls and its tiles stay side by side, at 520 × 760,
+900 × 700, 390 × 844 and 320 × 568, light and dark, and under reduced motion nothing moves (`scripts/menu-test.cjs`).
 
-*Boards* — the library, from Manage in the menu (and Boards on a board's end cards; `js/library.js` keeps it; the window is in
-`js/modes.js`). Two tabs, **Solo** and **Multiplayer** (Race and Battle boards: `Library.side`), opened on the side of
-the board in play; each has Saved and Retired (with that side's counts; the library holds 12 boards in all, Solo and
-Multiplayer together, and New board says Library full), and New board. Saved lists the board in play first (marked
-Playing), then the rest by when they were last played; each row is a thumbnail of its stack (in the current palette, plain squares
-on whole screen pixels so it stays crisp; cached and redrawn only when the stack or the look changed), its name, lines, score and when it was last played
-(Full on one that filled up). Click a row (or ↑/↓ and Enter) to resume it exactly as it was left: cells, the piece in
-play and where it was (a T turned into its slot still spins, an I brought out of hold is still one), hold, the queue, the bag and the random stream (it goes on with the same pieces it would have
-dealt), score, lines, chain and multiplier, gold, boosts and Luck, per-board stats and play time; the one in play is
-shelved as it stands. A power-up still waiting to be taken back is kept as used when you switch (the take-back ends
-there, as when the piece sets), and the Undo history stays behind, as it does across a reload. New board shelves the
-one in play and starts an empty board with its own seed (never the old board's queue); it is off when the library
-holds 12 (it says Library full; retire or delete one).
-New board first asks for a size (below); on a board nothing has been done on (no piece set, no power-up used: gold,
-a net or a Giant waiting there is never thrown away), Create makes that board again at the
-size chosen, in its own record, rather than shelving an empty one (so New board is on for it, and even with 12 saved). Each row has Rename (inline:
-Enter keeps it, Esc leaves it, a click elsewhere keeps it and still lands; up to 24 characters, never empty or
-invisible; a name another board has gets a number, "Rainy Sunday 2"), Retire (only a board that was played: its summary, then
-it moves to Retired; the one in play is replaced by a new board) and Delete (asks first; nothing is kept). New boards
-get a calm two-word name no other board has (Mossy Harbor, Quiet Orchard), then Board N.
+*One game a mode* (`js/library.js`, the save's `boards`) — Relaxed, Classic, Descent, Mural, Race and Battle each keep
+exactly one game. The one in play is the save's `free` (its mode is `boards.cur`); the others wait in `boards.games`,
+each exactly as it was left: cells, the piece in play and where it was (a T turned into its slot still spins, an I
+brought out of hold is still one), hold, the queue, the bag and the random stream (it goes on with the same pieces it
+would have dealt), score, lines, chain and multiplier, gold, boosts and Luck, per-game stats and play time, and its
+share of the power-ups paid every two hundred lines. Opening a mode from the menu with a game it has kept (something
+was played on it, or it ended) shows **Continue** (the primary, focused: Enter; with how far it got: "Lines 12",
+"3 pieces", "vs Steady 2–1", "40 of 96 placed", Full) above **New game**; with none, **Start**. Continue resumes that
+game where it was left, and the game in play is kept under its own mode as it stands. New game replaces the mode's game
+with a new one of the setup's settings, with its own seed (never the old game's queue); a game that was played is
+replaced only after asking ("New Classic game?"), and goes to Past boards. Settings changed in a setup apply to the next
+new game ("These settings apply to a new game."), never to the one kept. A power-up still waiting to be taken back is
+kept as used when you leave a game (the take-back ends there, as when the piece sets), and the Undo history stays
+behind, as it does across a reload. A full board's card has Undo, Menu and **New game** (the same rules again, in its
+place, without asking); Classic's Play again, Descent's next stage and Try again, and Race's and Battle's New game do
+the same.
 
-*Sizes* — a board is any size from 4 × 8 to 20 × 40, chosen when it is made and fixed for its life. New board opens a
-small window: Width and Height steppers (− and +; on the number, ↑ ↓, Page Up / Down by 5, Home and End; 44 px targets
+*Custom* — a page of its own in the menu: **New custom game** opens the Custom window (below: Size, Shapes, Modifiers,
+Mode), whose **Start** plays a Custom game. A Custom game is played on the side and never kept: the mode's game in
+play is saved as it is and set aside (the save still holds it as the game in play), nothing of the Custom game is
+written, and leaving it — Continue, New game or another Custom game in the menu, closing the app, a reload — ends it for
+good, the game set aside back exactly as it was. Lines, power-ups and Stats count in it as in any game. **Save preset**
+in the window asks for a name (the rules in words to start from: "Tiny · Mirror") and keeps the rules and size
+(`boards.presets`, up to 12; at twelve the button is off and a press says "12 presets kept: delete one first"). The
+Custom page lists them under New custom game ("3 of 12"), each with its name, size and rules, and Start (a Custom game
+of them), Rename (inline: Enter or leaving the field keeps it, Esc does not; up to 24 characters, never empty or
+invisible; a name another preset has gets a number, "Rainy Sunday 2") and Delete (asks first).
+
+*Older saves* — a save from before (version 2: a library of up to twelve boards and fifty retired records) loads as
+one game a mode (`Library.migrate`, from `loadState`): the board in play stays in play, the most recently played board
+of each other mode is kept as that mode's game, and the rest, and every retired record, go. A save edited by hand is
+made safe when it loads: a game that cannot be resumed, or one kept under another mode, is dropped.
+
+*Sizes* — a board is any size from 4 × 8 to 20 × 40, chosen when it is made and fixed for its life. The Custom
+window: Width and Height steppers (− and +; on the number, ↑ ↓, Page Up / Down by 5, Home and End; 44 px targets
 by touch) beside the empty well drawn at that size, always on top; under them four tabs, Size, Shapes, Modifiers and
-Mode (see [Board options](#board-options)), the Size tab holding four presets (Small 6 × 12, Standard 10 × 20, Tall 8 × 30, Wide 16 × 16), and Create (Enter, except on a button: that button, so Cancel is Cancel; a − or + at the limit
+Mode (see [Board options](#board-options)), the Size tab holding four presets (Small 6 × 12, Standard 10 × 20, Tall 8 × 30, Wide 16 × 16), and Start (Enter, except on a button: that button, so Cancel is Cancel; a − or + at the limit
 keeps focus and does nothing, and the new size is read out after a button or a preset). It opens on the size last
-chosen (`boards.size` in the save; Standard at first). A board made
-without asking — Retire on a full board's card, Retire or Delete of the board in play — is the size of the one it
-replaces. Four wide is the flat I; eight tall is a Giant I on end; nothing in the engine assumes 10 × 20 (pieces spawn
-centred at the top, a piece or item with no room is refused as always). The size is saved with the board
-(`Game.toJSON`, the shelved and retired records), shown on every library row and record (`12 × 24` first, then the time; up to 440 px wide the size and time
-share the tags' line and Lines and Score take their own, so neither is cut; and a Size tile in
-the summary) and in Stats ▸ Free Play ▸ Past boards; a save edited to a size no board can have is not resumed. On
+chosen (`boards.size` in the save; Standard at first). A game made
+without asking — New game on a full board's card — is the size of the one it replaces. Four wide is the flat I; eight tall is a Giant I on end; nothing in the engine assumes 10 × 20 (pieces spawn
+centred at the top, a piece or item with no room is refused as always). The size is saved with the game
+(`Game.toJSON`), shown on a preset's row (`12 × 24` first, then its rules), as a Size tile in the summary and in
+Stats ▸ Free Play ▸ Past boards; a save edited to a size no board can have is not resumed. On
 screen a board is fitted and centred like any other, its cells never more than 1.4 times a Standard board's in the
 same space (a 4 × 8 board is a small board, not a few giant blocks), and Hold and Next keep a readable width however
-small the cells of a tall board get; the library's thumbnails fit any size into a Standard one's box. At any size,
+small the cells of a tall board get. At any size,
 Trapdoor and Settle (like Tornado and Mirror World) are refused, "No room. Move the piece first", when a block would
 come down into the piece in play, and words over the board (SPOTLESS, a combo's name) fit the well (two lines,
 then smaller). A board full with a piece wider than the board keeps it inside the walls (turned upright), and a control
@@ -135,38 +140,16 @@ boards), clears by size, twist lines and the score. On a board narrower than Sta
 flat I on an empty board is a spotless clear and combos never end, so the Free Play feats (quads, streaks, combos,
 chains, twists, spotless clears, score, Showman) count only on boards 10 wide or more, as do Painted Row and the
 Triathlon's quad; the line counts, pace, Clean Sweep (60 blocks, six rows' worth when wider), Toolbox, Tried
-Everything, Tinkerer and Old Growth count on any board. The Free Play group's note in Achievements says this. Retired keeps up to 50 read-only
-records, newest first — name, started and retired dates, the final stack, the pieces it ended with (the one in play, the
-held one and the first six of the queue) and the whole summary — and past 50 the oldest
-goes (the Retire card says so). A record opens with a click and can be deleted.
-*Full view* — a retired board can be looked at whole (`js/retiredview.js`): View on its row (or a click or tap on its
-thumbnail) or View in its record. Its final stack is drawn at play size where the board in play is, by the same board
-view (palette, skin, frame, backdrop, the Hold and Next trays), at its own size (a 4 × 40 or a 20 × 8 as it was);
-a board retired full shows the piece that could not come in, drawn as the Board full card shows it and outlined in
-the theme's red, so it stands apart from the stack it lies over. There is no ghost
-and nothing moves. The status bar's place says its name, when it was retired and why (Full, or Retired by hand), with
-Summary (its record's dates and numbers, in a window over it) and Back; the item bar's place has Previous, where it is
-("2 of 7") and Next, through the retired boards in the list's order, stopping at either end (← and → too, or a swipe
-sideways on the board by touch). Back, Esc or a click outside returns to where it was opened, focus on the View that
-opened it, and the board in play is exactly as it was: the view is a window over the play view, which is only hidden
-meanwhile, so no key, click, touch or power-up reaches it, and nothing is played, paid, counted, timed (its play time
-waits) or saved differently. To a screen reader it is a dialog named "Retired board:" and the board's name; the board
-is an image described by its name, size and why it was retired, and a step reads out the new name and place. A kept piece in a turn no piece has (a broken or hand-edited save) is
-left out of its record; a record that still cannot be drawn does not open, and one that fails to draw closes the view. Retiring or deleting the board in play
-always starts a new game in its place, and a full board is recorded as Full however it was retired. The windows are
-kept for the keyboard: the library opens with focus on the board in play, a question over it takes focus (Enter on a
-Delete question is Cancel) and nothing under it can be reached, and afterwards focus is back on the nearest row. A
-library in a save that has been edited by hand is made safe when it loads: broken records are dropped.
+Everything, Tinkerer and Old Growth count on any board. The Free Play group's note in Achievements says this.
 
-The combos' shrinking pay is the library's, not a board's: a new board beside the others is no fresh start, and it
-never starts over, whatever is retired or deleted. Everything else about a board belongs to it: its stats, its hand-play record for the
-achievements ("no power-ups on the board", "on one board", Old Growth's age) and its share of the power-ups paid every
-two hundred lines (the save's per-board Earn record is parked with the board, so leaving and coming back never pays a
-milestone twice). Lifetime totals count play once, whichever board it was on, and switching adds nothing. There is no
-duplicate: a copy would be a way to replay a board's future. The daily gift and the control hints do not look at boards
-at all.
+The combos' shrinking pay is every game's together, not one game's: a new game is no fresh start, and it never starts
+over. Everything else about a game belongs to it: its stats, its hand-play record for the achievements ("no power-ups
+on the board", "on one board", Old Growth's age) and its share of the power-ups paid every two hundred lines (the save's
+per-game Earn record is parked with the game, so leaving and coming back never pays a milestone twice). Lifetime totals
+count play once, whichever game it was in, and switching adds nothing. The daily gift and the control hints do not look
+at games at all.
 
-**Classic** — a board mode ([Classic](#classic) under Board options: New board ▸ Mode ▸ Classic), played on the Play tab like any board; what follows is how it plays with its settings at their defaults. Plain falling blocks: pieces fall, faster every ten
+**Classic** — a board mode ([Classic](#classic) under Board options: the menu's Classic, or Custom ▸ Mode ▸ Classic), played on the Play tab like any board; what follows is how it plays with its settings at their defaults. Plain falling blocks: pieces fall, faster every ten
 lines (the modern speed curve), half-second lock delay, lowering and dropping, hold (once per piece), game over, best
 score. The well's top row is a row like any other: every piece appears with its top in it (the I too), a piece touching
 the ceiling still touches it after a turn (the space above the well counts as open, so a T turned flat against the
@@ -334,7 +317,7 @@ a Patch dropped into a covered hole (Patch Job); clear a line with a Ghost piece
 Wall); clear four lines at once with a Noodle or a Giant (Tall Order); three at once with a Blueprint piece
 (Architect); four with a Best Fit piece (Tailor-Made); win a Double or Nothing (All In); let a Safety Net keep a
 streak streak of five or more (Caught); take out ten blocks or more with one Bomb (Full Blast); swallow twenty
-or more with one Black Hole (Event Horizon). With no clock in Free Play, none is for repeating: across the board library each pays
+or more with one Black Hole (Event Horizon). With no clock in Free Play, none is for repeating: across every game each pays
 in full, then half, then a quarter, then nothing; boosts come with the first two; and a power-up combo pays less than
 the power-up it takes. Stats ▸ Free Play lists them: found ones by name, the rest as a question mark.
 
@@ -484,8 +467,8 @@ per piece or per action than a Standard board (`f = min(1, 4 / E)`, E the mean c
 `Board.get` reads as a wall (`CELL.WALL`); every cell bit has one name in `CELL` (`js/board.js`), and anything that
 reads a colour masks with `CELL.COLOR`.
 
-*The New board window* (`PlayMode.openNewBoard`) — the steppers and the well stay on top; under them a tablist of
-four tabs (roving focus: ← → Home End; Enter or Space on a tab selects it and never creates), each 44 px tall with its
+*The Custom window* (`PlayMode.openNewBoard`) — the steppers and the well stay on top; under them a tablist of
+four tabs (roving focus: ← → Home End; Enter or Space on a tab selects it and never starts a game), each 44 px tall with its
 name and, muted, its short value (Shapes "Normal", Modifiers "Off", "Mirror", "Physics" or "Both", Mode "Plain"; Size has
 none: its value is on the steppers), then one panel the same height on every tab (the tallest panel's at each size; a
 taller one scrolls inside itself and the footer stays): Size the presets, Shapes chips in 3 × 2 (a sample beside the
@@ -498,15 +481,12 @@ choices rule out (`Recipe.conflicts`) stays in its place, off (`aria-disabled`),
 line. The size shown is the one asked for as a board of the recipe can be (`Recipe.clampSize`): a larger minimum raises
 it, and going back restores what was asked (a stepper changes only its own side of it). The parts fill the tabs
 through `Recipe.uiPart` (chips, a switch, a mode and its levels, a panel of their own, the steppers' names, presets,
-Create), so the window's code never changes for them; a panel's control keeps focus through a redraw by its
-`data-focus`, and focus never falls out of the window (where Enter is Create). A board of another recipe than the
-default says so: after its size and when on its library row (the short label last, so an ellipsis only takes it, the
-full one as its tip; Lines and Score on a line of their own; on a phone, the label too), as a Board tile on its summary,
-and as a muted second line in Past boards. A part can add tags to its rows (`tags`: Cleared, "vs Steady 3–2"), its
-own numbers to a board's summary (`tiles`, from the summary's `ext`), and a name for its own end, which a retired
-board's full view says in place of "Retired by hand" (`endName`: Cleared).
-Retire, Delete and a full board's Retire start the next board with the same recipe; an untouched board asked for again
-with another recipe is made again, in its own record.
+Start), so the window's code never changes for them; a panel's control keeps focus through a redraw by its
+`data-focus`, and focus never falls out of the window (where Enter is Start). A board of another recipe than the
+default says so: on a preset's row (after its size), as a Board tile on its summary, and as a muted second line in
+Past boards. A part can add its own numbers to a board's summary (`tiles`, from the summary's `ext`), and a name for
+its own end, which the menu's Continue says as its progress (`endName`: Cleared). A full board's New game starts the
+next game with the same recipe.
 
 *What runs a board* — Free Play asks the board's *controller* at every turn (`plainController` in `js/modes.js` is
 today's Free Play exactly; each part can give its own, composed over it in the parts' order by `Recipe.compose`: a hook
@@ -527,11 +507,11 @@ piece, its ghost and the trays, then the plain cell; overlays after the stack, t
 frames coming; move (a mouse slide's steps too), turn and lock triggers; no red rim; which turn the trays draw and how
 long the first Next slot and the Hold box are for a long piece (`traySlot`), and how many pieces Next shows at most
 (`nextCount`: fewer when a later one would be specks); how opaque each cell of the piece in play
-is (`pieceAlpha`: Mirror's copy); and marks on the New board preview and the library's thumbnails
-(`Render.previewBoard`, which draws both). An item that acts at more than one spot (the engine's `targets`) is previewed
+is (`pieceAlpha`: Mirror's copy); and marks on the Custom window's preview
+(`Render.previewBoard`). An item that acts at more than one spot (the engine's `targets`) is previewed
 and animated at each. With `?freeze=1` every frame is drawn at one
 fixed moment (`Render.clock`), for tests that compare pixels: `scripts/recipe-pixels.json` holds the board, an animated
-look, the red rim, thumbnails and previews at four window sizes in both themes, recorded from the tree before the
+look, the red rim and the previews at four window sizes in both themes, recorded from the tree before the
 render split, and the drawing now matches it pixel for pixel.
 
 ### Shapes
@@ -544,7 +524,7 @@ one monomino: 3.8 blocks a piece), **Pentominoes** (the 18 one-sided ones in an 
 of the six that have one, `Fm Pm Nm Ym Z5m L5m`, each with its own colour: its base's turned round the hue wheel), **Big** (the seven doubled, TGM's big mode)
 and **Custom**, whose line under the chips says what it deals ("4 and 5 blocks", Custom first chosen) beside Edit.
 
-*The Custom shapes window* (over New board; Done keeps it, Cancel does not): a row for each group of 1 to 12 blocks
+*The Custom shapes window* (over the Custom window; Done keeps it, Cancel does not): a row for each group of 1 to 12 blocks
 (one-sided, mirror images apart as J and L are, a shape with a sealed hole left out: 1, 1, 2, 7, 18, 60, 195, 693, 2432,
 8808, 31968 and 117487 of them), Clusters and Big, each on or off (the last one on stays on, and a group whose picks would take the picks past 60 stays off: each says so). An on row's
 button ("All ›", "3 picked ›", "3–5 ›", "Even ›") opens its view (Back, or Escape): How often (Less, Even or More: 7,
@@ -573,7 +553,7 @@ from the set on its own random stream; Best Fit and Order Slip choose from the s
 with its top in the top row, turned its flattest way that fits (ties: more blocks on its bottom row, then the lowest
 turn: the seven appear in Lull's spawn orientation); the trays draw it that way, or in the turn whose blocks are more than a quarter
 larger in that slot; the first Next slot and the Hold box are half its length long; and when the piece after the first
-would be under 3 px a block (12 blocks on a phone), Next shows the first alone. The New board preview shows the set's
+would be under 3 px a block (12 blocks on a phone), Next shows the first alone. The Custom window's preview shows the set's
 first few pieces, faint, on its floor.
 
 *Sizes.* A set's smallest board is its sources' largest: at least the geometric floor (w ≥ max(4, M+2), h ≥ max(8,
@@ -621,7 +601,7 @@ counting less, so Standard is the measure there.) **Butterfly** (45): clear the 
 *The look* (`js/mirrorview.js`) — the copy is drawn at 0.8 of the piece's opacity, so the piece you steer reads first;
 the pair's ghost in full. The line is still and runs through the open well, never across a block: on an even width a
 1.5 px accent line between the middle columns at 0.35, on an odd width the centre column tinted, a hairline on each
-edge. The same line is on the New board preview and the library's thumbnails. *Controls* — keys steer the piece. A mouse pointed on the copy's side of the line aims the copy,
+edge. The same line is on the Custom window's preview. *Controls* — keys steer the piece. A mouse pointed on the copy's side of the line aims the copy,
 so the copy lands under the pointer; a touch that starts on the copy's side turns that gesture's sideways moves round,
 so the copy follows the finger. Taps are unchanged.
 
@@ -710,7 +690,7 @@ There is no exact Undo history (`R.undo` false).
 
 *The board fills up* when a new piece cannot appear (a body where it would), or when settled bodies (asleep, or slower
 than 2 cells/s as a whole) stand above the top line for 1.5 s. Its card is Board full: the board's numbers (Blocks
-cleared; no quad, twist, combo or chain tiles), Rewind 5 s (while there is a moment to go back to), Boards and Retire.
+cleared; no quad, twist, combo or chain tiles), Rewind 5 s (while there is a moment to go back to), Menu and New game.
 Away from the board (another window or app, the pointer gone with Pause when the pointer leaves) it waits at a Paused
 card (Space or Resume); a window over it only holds it.
 
@@ -734,9 +714,9 @@ level, B type's 25). Shapes, sizes 4 × 8 to 20 × 40 and Big play as they are.
 | Mirror World, Trapdoor, Tornado, Settle | refused: they flip, drop, shuffle or compact a still grid (bodies settle by themselves) |
 | Golden Piece, Double or Nothing, Safety Net | refused: Physics pays a flat rate per mino and has no quads or streak |
 | Reroll, Turnabout, Pebble, Noodle, Giant, Blueprint, Pick of Three, Order Slip | kept: they change the piece before it lands, which a moving board does not mind |
-| Board full card | its own: Rewind 5 s, Boards, Retire; no skill tiles |
+| Board full card | its own: Rewind 5 s, Menu, New game; no skill tiles |
 | Classic + Physics | its stacked top-out animation is cut (it draws a grid pile over moving bodies); B type's garbage is ruled out (grid cells the bodies could not stand on) |
-| Saves | keep the bodies themselves (`x.physics`; no exact replay: the simulation is not deterministic, and needs not be); the save's cells are only a picture of the bodies for the library's thumbnails |
+| Saves | keep the bodies themselves (`x.physics`; no exact replay: the simulation is not deterministic, and needs not be); the save's cells are only a picture of the bodies |
 
 The golden run (`scripts/golden.cjs`) never touches a Physics board and stays identical.
 
@@ -748,14 +728,14 @@ drawn the same way, rigid, where it is. A clear's minos swell and fade where the
 
 ### Classic
 A mode (`js/classic.js`, its controller and settings `js/classicview.js`): the board plays by Classic's rules (see
-**Classic** under Play) and is a Relaxed board in every other way — made in New board, named, saved and shelved in the
-library, resumed exactly, retired and deleted like any other; its row and record say `Classic A` (or B), with its
-level. It waits at a Start card (Space, a tap or Start; Edit rules from there too) and after a switch or a reload at a
+**Classic** under Play) and is a Relaxed board in every other way — made from the menu's Classic (its one game,
+resumed exactly by Continue) or as a Custom game; its label says `Classic A` (or B), with its
+level. It waits at a Start card (Space, a tap or Start; the Menu from there too) and after a switch or a reload at a
 Paused card; away from the board (another tab, window or app, the pointer gone with Pause when the pointer leaves,
 rolled up) it pauses there; a window over it only holds it. Pieces fall by the level's gravity (the modern curve,
 as before), spawn flush with the ceiling, and a piece that cannot appear where it appears is the classic top out,
-pile and all, then the Game over card (its score, level and lines; Boards, and Play again, which retires the board as
-Retire does and starts the next of the same rules at once; Space there too). The score is Classic's (a clear's points
+pile and all, then the Game over card (its score, level and lines; Menu, and Play again, which puts a new game of the same rules in its
+place, as New game does, and starts it at once; Space there too). The score is Classic's (a clear's points
 times its level, two a row of hard drop, one of soft drop); the board banks at Classic's rate (0.7 of a line a row,
 by the board's worth like every board, times the streak to ×1.5; an unrated board has no streak), so it
 never earns faster than Standard. No power-ups (each says Not in Classic; its bar under the board is Music and
@@ -793,9 +773,9 @@ little jitter, now and then a slide one column too far and back, all of it quick
 board: a quiet *Watching*, Mistakes (Off, Rare, Some, Often: the chance a piece goes otherwise than its best, a lesser
 placement or a lapse such as a hold or a tuck forgotten, at random and never into danger; kept in Settings, changed as
 it plays), Pause and Take over, which hands you the game where it stands (the bot lets go). At the end, Play again (and
-Space) or Done. A watched game is nobody's: never saved or shelved, and it counts toward nothing (bests, Stats, the
+Space) or Done. A watched game is nobody's: never saved or kept as Classic's game, and it counts toward nothing (bests, Stats, the
 day's log and time, achievements, lines banked); the board you were playing is saved as it was and comes back with
-Done, the menu's Start or Resume, or the library. Your keys, taps and the mouse do nothing to it but pause it, until
+Done, or the menu's Continue, New game or Custom. Your keys, taps and the mouse do nothing to it but pause it, until
 Take over; it pauses when Lull is left, not when the pointer only wanders off.
 
 How it plays: every spot a piece can reach by the engine's own moves (a search over turn, column and row with the real
@@ -831,8 +811,7 @@ cleared row fires one shot up its lane at the lowest hanging block, and the piec
 Where a hanging block reaches your stack it fuses into the board as stone, and the play space closes in from above; the
 board ends as any Relaxed board does, when the next piece has no room (Topped out). A stage has a set depth: when none
 of it is left (broken, or fused) the stage is Cleared; Endless never runs out. Pieces never fall by themselves: the
-descent sets the pace. A board is at least 8 × 14 (the shapes' own minimum height plus 6); it is kept for its life
-(no Edit rules into or out of it). Physics and Mirror are not in Descent ("Not in Descent" / "Not with Physics" /
+descent sets the pace. A board is at least 8 × 14 (the shapes' own minimum height plus 6); it keeps its stage and level for life. Physics and Mirror are not in Descent ("Not in Descent" / "Not with Physics" /
 "Not with Mirror", the last choice wins); it combines with every shape set.
 
 *Lanes.* Each lane lowers on its own timer, always announced: a short bar over the lane's top fills toward its next
@@ -904,16 +883,16 @@ Standard's 0.403, and 0.088 / 0.089 / 0.085 an action against 0.097.
 of play (the board, the descent, the piece, the queue, the numbers and what was banked since), costs an Undo (5), and
 waits at the Paused card. From the Topped out card too.
 
-*In Free Play* — a new board waits at its Ready card (Descent, "Stage 3 · Hard", the stage's line; Boards, Start,
+*In Free Play* — a new board waits at its Ready card (Descent, "Stage 3 · Hard", the stage's line; Menu, Start,
 Space or a tap). Away from the board (another tab, window or app, the page hidden, a window over it, the window losing
 focus, rolled up) and on P it pauses at the Paused card ("Stage 3 · Hard · 1:24"; Resume). Stage, Broken (rows broken:
 blocks broken over the lanes; its tip the rows left) and Next (the next lowering, its tip the lane) take Score's place
 in the status bar, Lines steps aside on a phone, and a Pause button ends the row. Cleared: the stage, its rows and time,
-Boards and the next stage (Space: this board retired as cleared, the next stage of the same level and size at its Ready
-card; after 12, Endless). Topped out: the rows broken, Rewind 5 s, Boards and Try again (Space: the same stage anew). The
-library tags a cleared board Cleared (an Endless one its rows); its summary adds Rows broken, Stone and Time; Stats ▸
+Menu and the next stage (Space: a new game in this one's place, in Past boards as cleared, the next stage of the same
+level and size at its Ready card; after 12, Endless). Topped out: the rows broken, Rewind 5 s, Menu and Try again
+(Space: the same stage anew). The menu's Continue says Cleared for a cleared one; its summary adds Rows broken, Stone and Time; Stats ▸
 Free Play has a Descent section (time, stages cleared, blocks broken, turned to stone, topped out, stages cleared on each
-level, Endless best). The New board window's Mode tab has Descent between Classic and Race, its level row and a Stage
+level, Endless best). The Custom window's Mode tab has Descent between Classic and Race, its level row and a Stage
 stepper (1–12, Endless) with how many of the 12 are cleared on that level (the stage's number marked when cleared); the
 preview shows the hanging rows. Shots are thin lines of light from the cleared cells to what they hit; a broken block
 fades out; with reduced motion nothing shimmers. No red rim. Tests: `scripts/descent-unit.cjs` (Node) and
@@ -924,20 +903,6 @@ fades out; with reduced motion nothing shimmers. No red rim. Tests: `scripts/des
 break 50 rows on one Endless board; **All Twelve** (200) clear all 12 stages on one level; **The Deep** (250, legend)
 clear stage 12 on Hard.
 
-### Editing a board's rules
-Every saved board that has not ended (the board in play too, and from a Classic board's Start and Paused card) has
-Edit rules on its library row: the New board window on that board's size and recipe, with Apply. Its price is on it:
-20 lines for each section changed (Size, Shapes, Modifiers, Mode; a mode's own settings are its section; Classic's
-music alone is free), nothing when nothing changed (`Recipe.editPrice`, `EDIT_PRICE`). A size keeps the stack:
-columns come and go on the right, rows at the top, and a size that would cut a block is refused with the reason
-("Blocks stand in the rows it would lose"), Apply quiet (`Library.reshape`); the preview shows the stack at the size
-chosen. Descent is kept for a board's life: an edit neither makes a board Descent nor changes one
-(`Recipe.editConflicts`: a part's `editFixed`). Apply rebuilds the board (`Library.rebuild`): the stack, its numbers
-and every other part's state stay, the piece in play comes again first as the new rules place it (no room: refused),
-another dealer starts its own bag, the mode it left drops its state, and the Undo history is cleared; short of lines,
-Not enough lines and nothing changes. Pay stays fair: an edit only costs, and every board, however edited, pays by its
-own rules, never faster than Standard.
-
 ### Race
 A mode (`js/race.js`, its controller, view and window `js/raceview.js`; what it shares with Battle: `js/versus.js`, `js/versusview.js`): your board against an opponent's, the
 first to fill every cell of its board wins the round. No row ever clears. A board is 6–12 wide and 6–12 rows (the
@@ -945,7 +910,7 @@ Height stepper is named Rows; presets Quick 8 × 8, Standard 10 × 10, Long 10 �
 k rows (4 for Normal shapes, 3 Tiny, 5 Frantic and Pentominoes; `R.k`), where pieces come in, move and turn. A piece
 must touch the board to set ("Set it on your board"); what it leaves in the buffer is trimmed away (and fades). Big,
 Custom with groups over 5 blocks or Clusters, Mirror and Physics are not in Race; Classic, Descent and Battle are other modes.
-A Race board keeps its rules (no Edit rules); the opponent can be changed between rounds.
+A Race board keeps its rules; the opponent can be changed between rounds.
 
 *Send* — S sends the piece in play to the opponent; Shift+S, or a tap or click on the first Next slot, sends the first
 Next piece. Send is ready once every six pieces you set (a ring of six on the Send button fills as they go), and a piece
@@ -988,8 +953,8 @@ window over it, the window losing focus, rolled up) it pauses at the Paused card
 reloaded comes back paused. Race and Battle are the Relaxed boards with an opponent and a clock. The status bar reads You 64% · Steady 58%
 (the tally in its tip); the bar under the board is Send, Start over and Pause (P). No power-ups, Undo, Luck, control
 hints, shake or red rim. The End card says You win or Opponent wins, both boards' fill, the tally, the time and what it
-paid, with Rematch (Space), Boards, Retire and the opponent for the next round. The library row reads "10 × 10 · Race"
-and "vs Steady 3–2"; its summary adds the tally and rounds; Stats ▸ Free Play has a Race section (rounds, won, lost,
+paid, with Rematch (Space), Menu, New game and the opponent for the next round. The menu's Continue says "vs Steady
+3–2"; its summary adds the tally and rounds; Stats ▸ Free Play has a Race section (rounds, won, lost,
 most in a row, sent, Gap fillers, started over, by opponent, time).
 
 *Pay* — once a round, for your board as the round ends: a tenth of a line for each of your own cells on it, times the
@@ -1007,7 +972,7 @@ A mode (`js/battle.js`, its controller, view and window `js/battleview.js`; the 
 the cards and the countdown are Race's, shared in `js/versus.js` and `js/versusview.js`): your board against an
 opponent's, both played as plain boards (rows clear, pieces float as everywhere in Relaxed play). A board is 6–12 wide
 and 10–16 high (presets Quick 8 × 12, Standard 10 × 14, Long 10 × 16); Big, Custom with groups over 5 blocks or
-Clusters, Mirror and Physics are not in Battle. A Battle board keeps its rules (no Edit rules); the opponent can be
+Clusters, Mirror and Physics are not in Battle. A Battle board keeps its rules; the opponent can be
 changed between rounds. No power-ups, Undo, Luck, control hints or red rim.
 
 *Charges and throws* — every row you clear is a charge, six at most (the dots on Throw: a quad is four). T (or Throw)
@@ -1052,8 +1017,8 @@ your cells stay 16 px or more, half yours at the least). A round starts at the R
 Space) with 3-2-1, and pauses away from the board as Race's does; a board reloaded comes back paused. The status bar
 reads You 5 · Steady 3 (rows cleared; the tally in the tip) and the round's time, amber once the ceilings come down; the
 bar under the board is Throw (44 px, its six charge dots) and Pause (P). The End card says You win or Opponent wins, the
-rows each cleared, the tally, the time and what it paid, with Rematch (Space), Boards, Retire and the opponent for the
-next round. The library row reads "10 × 14 · Battle" and "vs Steady 3–2"; Stats ▸ Free Play has a Battle section
+rows each cleared, the tally, the time and what it paid, with Rematch (Space), Menu, New game and the opponent for the
+next round. The menu's Continue says "vs Steady 3–2"; Stats ▸ Free Play has a Battle section
 (rounds, won, lost, most in a row, rows cleared, thrown, backfired, won in sudden death, by opponent, time).
 
 *Pay* — once a round: a Standard row's worth (w/10 × the set's `f`) for each row you cleared, at most a Standard piece's
@@ -1105,9 +1070,9 @@ buffer opens with it added.
 A piece must be turned and moved into its place by hand: a drop or a set anywhere else, or in
 another turn, simply does not happen (the piece stays where it was; no sound, no shake, no note; the outline brightens
 once). Hold is off; Undo, the hints and every power-up are off ("Not in Mural"). The last piece set: the **Finished**
-card (Boards; Look, which hides it to show the whole picture, Space or a tap brings it back; New board, which keeps the
-mural in the library, tagged Finished, and opens the New board window). A finished mural is drawn flat, no gaps, and
-stays viewable in the library (its thumbnail and full view in the picture's colours). Status bar: Placed "n of N" and
+card (Menu; Look, which hides it to show the whole picture, Space or a tap brings it back; New game, which opens the
+Mural setup for the next picture, where New game puts it in place of this one, and Continue comes back to it; a Custom
+mural opens the Custom window). A finished mural is drawn flat, no gaps. Status bar: Placed "n of N" and
 Level; under the board, a slim progress track.
 
 *The cut, different every time.* Every new mural is cut from a fresh random seed, so its pieces, their order and their
@@ -1160,7 +1125,7 @@ colour out). The colours are drawn exactly as kept: no theme, palette or skin to
 the mean OKLab error a quarter, the chroma kept on vivid quarters and the distance of each feature colour from the
 palette each meet a mark at levels 1, 3 and 5 (`scripts/mural-unit.cjs`). Use photo keeps only the small grid in the recipe
 (`mural.own = { w, h, pal, px }`, one base-36 digit a quarter: about 1-2 KB), never the photo. Another level or size with the
-photo still at hand crops it again (Create too, for the size chosen); without it, the grid is resampled and quantised
+photo still at hand crops it again (Start too, for the size chosen); without it, the grid is resampled and quantised
 again.
 
 *Recipe and window.* `mural: { pic: 'coast' | 'still' | 'soft' | 'own', level: 1-5, own? }` and its piece set in
@@ -1172,7 +1137,7 @@ Mixed (no other chip shows there); Size offers the level's size first, then Deta
 the level's), and the steppers any size in the limits; choosing Mural or a level brings the level's size unless a size of
 its own was set. The preview is the picture at the size shown. It combines with nothing else: Physics, Mirror and the
 other shape sets (Tiny, Big, Custom) are off ("Not in Mural"; choosing Mural turns them off), and it keeps its picture
-for life (no Edit rules). A board from before sizes and sets (`v: 1`) keeps its level's size and its Mixed cut.
+for life. A board from before sizes and sets (`v: 1`) keeps its level's size and its Mixed cut.
 
 *Pay* — 0.04 of a line for each block set inside the picture (0.04 to 0.2 a piece): a mural bot earns 0.10–0.14 a piece and
 0.02–0.03 an action, against a careful Standard bot's 0.41 and 0.10 (`scripts/mural-unit.cjs`). *Achievements* (their
@@ -1310,16 +1275,15 @@ cd Lull && swift run          # the same, straight from the package
 
 open Lull/Game/index.html     # any browser, any OS (saves to localStorage)
 
-node Lull/scripts/test.cjs            # game logic: 750 puzzles replayed through the engine, turns, items, board library, save, economy
+node Lull/scripts/test.cjs            # game logic: 750 puzzles replayed through the engine, turns, items, one game a mode and presets, save, economy
 node Lull/scripts/econ-test.cjs       # the economy against models of play: bots on the engine, puzzles, a career (test.cjs runs it)
 node Lull/scripts/golden.cjs          # the golden identity run: a default board plays lock for lock as recorded (--write records it)
 node Lull/scripts/bot-soak.cjs 200 300   # Watch's bot: 200 seeded Classic games to 300 lines on four processes: lines, Quads, Twists, top outs
-node Lull/scripts/browser-test.cjs    # the page played in headless Chromium (needs Playwright), then touch-, device-, undo-, retired- and tabbar-test
+node Lull/scripts/browser-test.cjs    # the page played in headless Chromium (needs Playwright), then touch-, device-, undo-, menu- and tabbar-test
 node Lull/scripts/touch-test.cjs      # an emulated phone played with real touches: gestures, layout, 44 px targets
 node Lull/scripts/device-test.cjs     # what a phone, a desktop browser, the app and a tablet with a trackpad are offered
 node Lull/scripts/undo-test.cjs       # every way of buying an Undo charges 5; the Board full and puzzle cards fit, down to 320 x 568
 node Lull/scripts/recipe-test.cjs --write-pixels <Game dir>   # records recipe-pixels.json from a tree (browser-test runs recipe-test)
-node Lull/scripts/retired-test.cjs    # a retired board in full view: cell for cell at play size, read-only, stepping, back exactly
 node Lull/scripts/audio-render.cjs out/   # every sound and a minute of music rendered offline: WAVs, peak, loudness, brightness
 node Lull/scripts/audio-render.cjs out/ --harmony   # every pack's pitched sounds in every section: notes found, share in its key, A/B mixes
 
@@ -1394,9 +1358,9 @@ The address is shown on the `pages` job and under Settings ▸ Pages.
 
 | Path | |
 |---|---|
-| `Game/` | the game: `index.html`, `manifest.webmanifest`, `sw.js` (the offline copy), `icons/` (the Home Screen icons), `css/`, and `js/` — `webapp` (the Home Screen app: the worker, its updates, lasting storage), `icons` (the one SVG icon set), `pieces` (the seven tetrominoes and Lull's kicks, pentominoes, big and custom shapes, polyomino enumeration, ids that rebuild themselves), `board` (the grid and the one table of cell bits), `recipe` (the board recipe: its parts, rules and limits), `engine` (the floating-piece rules, every item and the recipe's hooks), `items` (the chain multiplier, combos, Luck, the daily gift, power-ups earned in play), `library` (the Relaxed board library: shelved and retired boards, names, caps), `puzzlegen` (seeds, wildcards, reverse construction, reachability search, forward verification), `store` (save, catalog, stats), `achievements`, `fxphysics` (the item effects' blocks, debris and dust: gravity, bounces, spirals, fixed pools), `render` (canvas: skins, frames, effects, item animations, rotated views), `hints` (control hints: the struggle signals, their limits and retirement), `touch` (the touch gestures: a pure reader of fingers, and the page's touch helpers), `webapp` (the Home Screen web app: the offline copy's registration and updates), `collapse` (the window rolled up into its title bar, and the parade of pieces along it), `modes`, `retiredview` (a retired board in full view), `ui`, `app` |
+| `Game/` | the game: `index.html`, `manifest.webmanifest`, `sw.js` (the offline copy), `icons/` (the Home Screen icons), `css/`, and `js/` — `webapp` (the Home Screen app: the worker, its updates, lasting storage), `icons` (the one SVG icon set), `pieces` (the seven tetrominoes and Lull's kicks, pentominoes, big and custom shapes, polyomino enumeration, ids that rebuild themselves), `board` (the grid and the one table of cell bits), `recipe` (the board recipe: its parts, rules and limits), `engine` (the floating-piece rules, every item and the recipe's hooks), `items` (the chain multiplier, combos, Luck, the daily gift, power-ups earned in play), `library` (one game a mode, Custom's presets, the migration of older saves; sizes and what a line is worth), `puzzlegen` (seeds, wildcards, reverse construction, reachability search, forward verification), `store` (save, catalog, stats), `achievements`, `fxphysics` (the item effects' blocks, debris and dust: gravity, bounces, spirals, fixed pools), `render` (canvas: skins, frames, effects, item animations, rotated views), `hints` (control hints: the struggle signals, their limits and retirement), `touch` (the touch gestures: a pure reader of fingers, and the page's touch helpers), `webapp` (the Home Screen web app: the offline copy's registration and updates), `collapse` (the window rolled up into its title bar, and the parade of pieces along it), `modes`, `ui`, `app` |
 | `Sources/Lull/` | the macOS shell: a borderless `NSPanel` (floating, all Spaces, edge-resizable, draggable by the page's title bar) around a transparent `WKWebView`, a blur for the Glass background, the save file, the ⌥⌘L hot key, and a self-test CI runs |
-| `scripts/` | `make-app.sh`, `icon.swift`, `line-glyph.py` (builds the line glyph's font into `lull.css`), `test.cjs`, `browser-test.cjs`, `audio-render.cjs` (renders and measures the synthesized audio offline), `pitch.cjs` (finds the notes in a render, to check sound effects are in the music's key), `voice-clips.cjs` (embeds the announcer's clips with where her speech is and their loudness trims; `voice-measure.cjs` is its measuring tape, shared with `voice-test.cjs`, her checks, run by browser-test), `web-build.cjs` (the site as deployed), `web-icons.cjs` (the Home Screen icons), `web-test.cjs` and `web-browser-test.cjs` (the web app's tests, run by the two above), `touch-test.cjs` (an emulated phone played with gestures, run by browser-test), `device-test.cjs` (what each device is offered in Settings and the bar, and live changes; run by browser-test), `econ-test.cjs` (the economy against models of play: placement bots on the real engine, a puzzle model, a career that spends what it earns; every assumption about players in its one MODEL block; run by test.cjs), `golden.cjs` and `golden.json` (the golden identity run, and its record), `sizes-test.cjs` (board sizes: the New board window, every extreme size, pay by width, layout; run by browser-test), `undo-test.cjs` (every way of buying an Undo, and the cards that offer it at every size; run by browser-test), `retired-test.cjs` (a retired board in full view at every size, by keys and by touch; run by browser-test), `tabbar-test.cjs` (the tab bar at the bottom of a narrow window: every place fits above it, the menu and toasts, wider and rolled up; run by browser-test), `recipe-test.cjs` and `recipe-pixels.json` (the board recipe in the page: the New board window, labels, the controller, and the board drawn pixel for pixel as recorded; run by browser-test) |
+| `scripts/` | `make-app.sh`, `icon.swift`, `line-glyph.py` (builds the line glyph's font into `lull.css`), `test.cjs`, `browser-test.cjs`, `audio-render.cjs` (renders and measures the synthesized audio offline), `pitch.cjs` (finds the notes in a render, to check sound effects are in the music's key), `voice-clips.cjs` (embeds the announcer's clips with where her speech is and their loudness trims; `voice-measure.cjs` is its measuring tape, shared with `voice-test.cjs`, her checks, run by browser-test), `web-build.cjs` (the site as deployed), `web-icons.cjs` (the Home Screen icons), `web-test.cjs` and `web-browser-test.cjs` (the web app's tests, run by the two above), `touch-test.cjs` (an emulated phone played with gestures, run by browser-test), `device-test.cjs` (what each device is offered in Settings and the bar, and live changes; run by browser-test), `econ-test.cjs` (the economy against models of play: placement bots on the real engine, a puzzle model, a career that spends what it earns; every assumption about players in its one MODEL block; run by test.cjs), `golden.cjs` and `golden.json` (the golden identity run, and its record), `sizes-test.cjs` (board sizes: the Custom window, every extreme size, pay by width, layout; run by browser-test), `undo-test.cjs` (every way of buying an Undo, and the cards that offer it at every size; run by browser-test), `tabbar-test.cjs` (the tab bar at the bottom of a narrow window: every place fits above it, the menu and toasts, wider and rolled up; run by browser-test), `recipe-test.cjs` and `recipe-pixels.json` (the board recipe in the page: the Custom window, labels, the controller, and the board drawn pixel for pixel as recorded; run by browser-test) |
 | `Shelved/` | work set aside for now, loaded, cached and deployed by nothing: `factory/` (the Factory, with what to put back where) |
 
 ## Credits

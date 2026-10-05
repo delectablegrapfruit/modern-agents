@@ -40,8 +40,11 @@ module.exports = async function undoTests({ browser, check, PAGE, OUT }) {
   const topout = (P) => P.ev(() => {
     while (Lull.UI.modalOpen()) Lull.UI.closeTopModal();
     Lull.app.setTab('play');
-    const m = Lull.app.modes.play, g = m.game;
+    const m = Lull.app.modes.play, g = m.game, book = Lull.app.store.state.combos = Lull.app.store.state.combos || {};
     m.openTray(null);
+    // Every combo already found: a first one on the way would bring a power-up (an Undo pack, at random) in the middle
+    // of the counts checked here.
+    for (const c of Lull.Combos.LIST) book[c.id] = book[c.id] || { n: 1, lines: 0, first: Date.now() };
     g.board.cells.fill(0); g.replacePiece({ id: 'O' }); g.piece.x = 3;
     g.drop();
     for (let y = 0; y < 18; y++) for (let x = 0; x < 9; x++) g.board.set(x, y, 8);
@@ -352,7 +355,7 @@ module.exports = async function undoTests({ browser, check, PAGE, OUT }) {
       await setWallet(P, 100, held);
       await P.page.waitForTimeout(350); // the card settles in
       const lay = await topLayout(P);
-      check(P.tag + ': the Board full card fits, Undo (' + label + '), Boards and Retire all in view' + (touch ? ', 44 px' : ''), t.over && lay.inside && !lay.cardScrolls && lay.page && lay.ok, JSON.stringify(lay));
+      check(P.tag + ': the Board full card fits, Undo (' + label + '), Menu and New game all in view' + (touch ? ', 44 px' : ''), t.over && lay.inside && !lay.cardScrolls && lay.page && lay.ok, JSON.stringify(lay));
       // Its numbers, when they scroll, fade at the cut edge (more below; scrolled to the end, more above), so a cut row
       // reads as going on; when they fit, no fade. Light, the tiles show on the white card.
       const fade = await P.ev(async () => {

@@ -6,8 +6,7 @@
 //               drop: hard drop, hold, ghost (booleans), next: 0–5 (Next previews), rand: 'bag' | 'retro', lock: 'modern' | 'retro',
 //               levelLock: the level stays at the start level (boolean, default off) }
 //
-// Pure rules and the engine's extension (no DOM); the controller, the New board window's panel and the library's tags
-// are js/classicview.js.
+// Pure rules and the engine's extension (no DOM); the controller and the Custom window's panel are js/classicview.js.
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
@@ -225,8 +224,6 @@
   const PART = {
     key: 'classic', order: 45, mode: 'classic', owns: ['classic'],
     options: { 'classic.rand': ['bag', 'retro'] },
-    // Edits that change only these cost nothing (Recipe.editPrice): the music is not a rule.
-    freeEdit: ['classic.music'],
     normalize(raw, out) {
       if (out.mode !== 'classic') return;
       out.classic = normalizeK(raw.classic);

@@ -38,7 +38,6 @@ const FILES = [
   "js/hints.js",
   "js/ui.js",
   "js/modes.js",
-  "js/retiredview.js",
   "css/menu.css",
   "js/menu.js",
   "js/collapse.js",

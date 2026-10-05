@@ -4,10 +4,10 @@
 // and it can be changed as it plays), Pause and Take over; at the end, Play again. Take over hands the game to you
 // where it stands: the bot lets go, and the game stays as it was, uncounted.
 //
-// A watched game is nobody's: it is never saved, never shelved in the library, and it counts toward nothing (bests,
+// A watched game is nobody's: it is never saved, never kept as Classic's game, and it counts toward nothing (bests,
 // Stats, the day's log, achievements, lines banked). The board you were playing waits, saved as it was, and comes back
-// when the watching ends (Done, the Menu, the library). Your keys, taps and the mouse do nothing to the bot's game
-// but pause it, until Take over. It pauses as Classic does when Lull is left (another window, tab or app), but not when
+// when the watching ends (Done, or Continue, New game or Custom in the Menu). Your keys, taps and the mouse do nothing
+// to the bot's game but pause it, until Take over. It pauses as Classic does when Lull is left (another window, tab or app), but not when
 // the pointer only wanders off: there is nothing for it to do there.
 (function (root) {
   'use strict';
@@ -27,6 +27,8 @@
   function start(play, recipe, size) {
     const R = L.Recipe, r = R.normalize(recipe);
     if (!Classic.on(r)) return false;
+    // A Custom game ends here (it is never kept): the mode's game comes back first, and is the one set aside.
+    play.endCustom();
     // The board you were playing, saved now and kept (a second Watch keeps the first one's).
     const saved = play.watch ? play.watch.saved : (play.syncCounters(), play.save(), play.app.store.state.free);
     play.app.store.save();
@@ -43,8 +45,7 @@
     play.watch = null;
     let game = null;
     try { if (w.saved) game = new L.Game({ saved: w.saved, previewCount: play.settings.preview }); } catch (e) { game = null; }
-    if (!game) { const B = play.app.store.state.boards; game = new L.Game({ w: B.size.w, h: B.size.h, recipe: B.recipe, previewCount: play.settings.preview }); }
-    play.setGame(game);
+    if (game) play.setGame(game); else play.freshGame();
     play.save();
     return true;
   }

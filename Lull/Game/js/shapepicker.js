@@ -1,7 +1,7 @@
-// Lull — Shapes in the page (js/shapes.js is the rules): the Shapes tab of the New board window (its chips and the
+// Lull — Shapes in the page (js/shapes.js is the rules): the Shapes tab of the Custom window (its chips and the
 // Custom line), the Custom shapes window (a row for each group of 1 to 12 blocks, Clusters and Big; a group's view to
 // pick shapes by page, by shuffle or by drawing one), and the view half (the turn the trays draw a piece in, a longer
-// first Next slot for a long piece, a few of the set's pieces on the floor of the New board preview).
+// first Next slot for a long piece, a few of the set's pieces on the floor of the Custom window's preview).
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
@@ -81,9 +81,9 @@
       const t2 = g && lay && lay.next && g.queue[1] && Pieces.get(g.queue[1].id);
       return t2 && trayCell(t2, trayTurn(t2, view, 1), view, 1) < 3 ? 1 : null;
     },
-    // The New board preview: the set's first pieces, faint, on the floor of the well (what the shapes are, to the board's scale).
+    // The Custom window's preview: the set's first pieces, faint, on the floor of the well (what the shapes are, to the board's scale).
     preview(ctx, geom, recipe, theme) {
-      if (geom.style !== 'well' || !recipe || !recipe.shapes || recipe.shapes.preset === 'normal' || recipe.mode === 'mural') return;
+      if (!recipe || !recipe.shapes || recipe.shapes.preset === 'normal' || recipe.mode === 'mural') return;
       const cells = sampleFloor(recipe.shapes, geom.w, geom.h), c = geom.c;
       if (!cells.length || c < 2) return;
       ctx.fillStyle = theme.accent;
@@ -93,7 +93,7 @@
     },
   });
 
-  // ---- the New board window: the Shapes tab ---------------------------------------------------------------------------
+  // ---- the Custom window: the Shapes tab ---------------------------------------------------------------------------
 
   /** A sample piece drawn fitted in a square canvas of px (cell: its blocks' size, px/4 by default). */
   function drawSample(ctx, px, look, id, cell) {
@@ -148,7 +148,7 @@
   const perRow = () => (narrow() ? 5 : 6);
 
   /**
-   * The Custom shapes window, over New board: a row for each group of 1 to 12 blocks (on or off; All or how many are
+   * The Custom shapes window, over the Custom window: a row for each group of 1 to 12 blocks (on or off; All or how many are
    * picked), Clusters (from–to blocks) and Big (Less, Even, More or All). A row's button opens its view: the weight
    * (Less, Even, More: 7, 14 or 28 of a round) and, for a group, its shapes to pick (Shapes, every shape a page at a
    * time; Picked; Shuffle, a random page, for a group of more than 60; Draw, for 6 blocks and more). The last source

@@ -1,5 +1,5 @@
 // Lull — the board recipe: what a Relaxed board is made of, beyond its size. Its shapes, its modifiers (Mirror)
-// and its mode (Plain, Classic, Descent, Race, Battle), chosen in the New board window and fixed for the board's life. Pure data and
+// and its mode (Plain, Classic, Descent, Race, Battle), chosen in the Custom window and fixed for the board's life. Pure data and
 // rules, no DOM; the parts that give each option its behaviour register here (Recipe.part) and are always run in
 // ascending `order`, never in script load order.
 //
@@ -9,7 +9,7 @@
 // The default recipe is today's board exactly: the seven in a 7-bag, no modifier, plain play. A part:
 //   { key, order, owns: [paths it writes], mod?: 'mirror' (a modifier it brings: its switch, modName its name),
 //     mode?: 'descent' (a mode it brings),
-//     options?: { path: [values] } (what the New board window offers, for resolve),
+//     options?: { path: [values] } (what the Custom window offers, for resolve),
 //     normalize(raw, out) (writes its own keys of the recipe from raw), label(r, short), thin(r), valid(g, r),
 //     rules(r, R, w), limits(r, lim), clampSize(size, r, lim, asked), conflicts(r, out),
 //     engine(game, saved, o) -> ext | null (game.recipe, rules, rng and seed are set, o the Game's options; the hooks
@@ -96,7 +96,7 @@
   }
   /** The view half of a part (render.js reads these): painters, overlays, previews. */
   function viewPart(def) { const i = VIEWS.findIndex((p) => p.key === def.key); if (i >= 0) VIEWS.splice(i, 1, def); else VIEWS.push(def); VIEWS.sort(byOrder); return def; }
-  /** The UI half of a part (the New board window and the library read these). */
+  /** The UI half of a part (the Custom window and the menu read these). */
   function uiPart(def) { const i = UIS.findIndex((p) => p.key === def.key); if (i >= 0) UIS.splice(i, 1, def); else UIS.push(def); UIS.sort(byOrder); return def; }
   const parts = () => PARTS.slice();
   const get = (key) => PARTS.find((p) => p.key === key) || null;
@@ -117,7 +117,7 @@
 
   /**
    * What a board is, in words: '' for the default. Each part adds its own ("Frantic", "Mirror", "Descent Easy · Stage 3"),
-   * in order; short is the library row's form.
+   * in order; short is the menu's form.
    */
   function label(r, short) {
     r = normalize(r);
@@ -127,7 +127,7 @@
     return segs.sort((a, b) => a.at - b.at).map((x) => x.text).filter(Boolean).join(' \u00b7 ');
   }
 
-  /** A copy to keep with a retired board: small (a part turns long lists into counts), and never read back as a recipe to play. */
+  /** A copy to keep with a past board (Stats ▸ Past boards): small (a part turns long lists into counts), and never read back as a recipe to play. */
   function thin(r) {
     const out = clone(normalize(r));
     for (const p of PARTS) if (p.thin) p.thin(out);
@@ -356,63 +356,8 @@
     return out;
   }
 
-  // ---- editing a board's rules ----------------------------------------------------------------------------------------
-
-  /** What an edit of a board's rules costs, in lines, for each section of the New board window that changed. */
-  const EDIT_PRICE = 20;
-  const SECTIONS = ['size', 'shapes', 'mods', 'mode'];
-  /**
-   * The sections an edit from recipe a at size sa to recipe b at size sb changes, and its price: EDIT_PRICE for each
-   * (Size, Shapes, Modifiers, Mode; a mode's own settings are its section), nothing when nothing changed. A path a part
-   * lists in freeEdit (Classic's music) changes for nothing. { sections: [...], cost }.
-   */
-  function editPrice(a, b, sa, sb) {
-    a = normalize(a); b = normalize(b);
-    const out = [];
-    if (sa && sb && (sa.w !== sb.w || sa.h !== sb.h)) out.push('size');
-    if (canon(a.shapes) !== canon(b.shapes)) out.push('shapes');
-    if (canon(a.mods) !== canon(b.mods)) out.push('mods');
-    const rest = (r) => { const o = clone(r); delete o.shapes; delete o.mods; return o; };
-    const ra = rest(a), rb = rest(b);
-    for (const p of PARTS) for (const path of p.freeEdit || []) {
-      const va = getPath(ra, path);
-      if (va !== undefined && getPath(rb, path) !== undefined) setPath(rb, path, clone(va));
-    }
-    if (canon(ra) !== canon(rb)) out.push('mode');
-    return { sections: SECTIONS.filter((k) => out.includes(k)), cost: out.length * EDIT_PRICE };
-  }
-  /**
-   * The options an edit of a board made as `from` may not choose, beyond the recipe's own conflicts: a mode a part
-   * keeps for the board's life (editFixed: Descent) is neither entered nor left, nor are its settings changed; a
-   * modifier kept so (editFixed: Physics) is neither switched on nor off.
-   * { 'path=value': reason }.
-   */
-  function editConflicts(from, r) {
-    from = normalize(from); r = normalize(r);
-    const out = {};
-    for (const p of PARTS) {
-      // A modifier kept for the board's life (Physics): never switched on or off by an edit.
-      if (p.editFixed && p.mod) {
-        const name = p.modName || p.mod.charAt(0).toUpperCase() + p.mod.slice(1);
-        if (from.mods && from.mods[p.mod]) out[idOf('mods.' + p.mod, false)] = 'A ' + name + ' board stays ' + name;
-        else out[idOf('mods.' + p.mod, true)] = name + ' starts on a new board';
-        continue;
-      }
-      if (!p.editFixed || !p.mode) continue;
-      const name = p.name || p.mode.charAt(0).toUpperCase() + p.mode.slice(1);
-      if (from.mode === p.mode) {
-        for (const m of modes()) if (m !== p.mode) out[idOf('mode', m)] = 'A ' + name + ' board stays ' + name;
-        for (const [path, values] of Object.entries(p.options || {})) {
-          const keep = getPath(from, path);
-          for (const v of values) if (canon(v) !== canon(keep)) out[idOf(path, v)] = 'Set when the board was made';
-        }
-      } else out[idOf('mode', p.mode)] = name + ' starts on a new board';
-    }
-    return out;
-  }
-
   const Recipe = {
-    DEFAULT: null, MODS, BASE, EDIT_PRICE, editPrice, editConflicts,
+    DEFAULT: null, MODS, BASE,
     part, unpart, viewPart, uiPart, parts, get, views: () => VIEWS.slice(), uis: () => UIS.slice(),
     normalize, equal, key, isDefault, label, thin, limits, clampSize, sizeOk, conflicts, options, resolve, rules, valid,
     engine, controller, controllers, compose, stats, summary, canon, getPath, setPath,

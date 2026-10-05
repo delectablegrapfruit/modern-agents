@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// Physics in the page (js/physics.js, js/physicsview.js): a Physics board made from the New board window (Modifiers ▸
+// Physics in the page (js/physics.js, js/physicsview.js): a Physics board made from the Custom window (Modifiers ▸
 // Physics, its Material; Mirror off beside it), the power-ups it refuses shown off with the reason and Undo reading
 // Rewind 5 s; the simulation running in real time while the piece in play stays where it is; ↓ resting it and ↓ again
 // (or held, or a drag down) letting it go; a move shoving a body, refused when the body is pinned; a hard drop knocking
 // a resting piece and a soft drop setting down gently; a band clearing whole minos and paying at once; Rewind 5 s; the
-// Board full card (Rewind 5 s, Boards, Retire); reduced motion (the stiller material); a phone (390 × 844 and
+// Board full card (Rewind 5 s, Menu, New game); reduced motion (the stiller material); a phone (390 × 844 and
 // 320 × 568, touch); the cost of a full 20 × 40 board all awake; no console errors; screenshots (light and dark: a hard
 // drop into a stack, a bar draped over a gap).
 // Run by browser-test.cjs: require('./physics-browser-test.cjs')({ browser, check, PAGE, OUT }); or on its own:
@@ -77,12 +77,12 @@ module.exports = async function physicsTests({ browser, check, PAGE, OUT }) {
       const descent = document.querySelector('.nb-mode[data-value="descent"]');
       const descentOff = descent && descent.getAttribute('aria-disabled');
       const modeNames = [...document.querySelectorAll('.nb-mode')].map((b) => b.textContent.trim());
-      [...document.querySelectorAll('.modal .btn')].find((b) => b.textContent.trim() === 'Create').click();
+      [...document.querySelectorAll('.modal .btn')].find((b) => b.textContent.trim() === 'Start').click();
       await new Promise((r) => setTimeout(r, 150));
       const g = m.game;
       return { name, before, after, noMaterial, mat, mirrorOff, descentOff, modeNames, modes, on: !!g.recipe.mods.physics, ext: g.ext.map((e) => e.key).join(), parts: m.view.parts.map((p) => p.key).join(), label: Lull.Recipe.label(g.recipe) };
     });
-    check('New board ▸ Modifiers: a Physics switch; on, its Material (Jelly); Create makes a Physics board', made.name === 'Physics' && made.before === 'false' && made.after === 'true' && made.noMaterial && made.mat.join() === 'Jelly' && made.on && made.ext === 'physics' && made.parts === 'physics' && made.label === 'Physics', JSON.stringify(made));
+    check('Custom ▸ Modifiers: a Physics switch; on, its Material (Jelly); Start plays a Physics board', made.name === 'Physics' && made.before === 'false' && made.after === 'true' && made.noMaterial && made.mat.join() === 'Jelly' && made.on && made.ext === 'physics' && made.parts === 'physics' && made.label === 'Physics', JSON.stringify(made));
     check('with Physics on, Mirror and Descent are off (aria-disabled); the modes stay Plain, Classic, Descent, Race, Battle', made.mirrorOff === 'true' && made.descentOff === 'true' && !made.modeNames.includes('Physics') && made.modeNames.includes('Classic'), JSON.stringify(made));
     const bar = await ev(() => {
       const m = Lull.app.modes.play, out = {};
@@ -210,7 +210,7 @@ module.exports = async function physicsTests({ browser, check, PAGE, OUT }) {
     const card = await ev(() => ({ state: window.__state(), h: (document.querySelector('#play-overlay h2') || {}).textContent, btns: [...document.querySelectorAll('#play-overlay .row .btn')].map((b) => (b.querySelector('.lbl') || b).textContent.trim()), tiles: [...document.querySelectorAll('#play-overlay .bs .l')].map((l) => l.textContent) }));
     await shot('physics-full-' + theme);
     if (theme === 'light') {
-      check('a board that cannot take its next piece is full: the Physics card has Rewind 5 s, Boards and Retire', card.state.over && card.h === 'Board full' && card.btns.join('|') === 'Rewind 5 s|Boards|Retire', JSON.stringify(card));
+      check('a board that cannot take its next piece is full: the Physics card has Rewind 5 s, Menu and New game', card.state.over && card.h === 'Board full' && card.btns.join('|') === 'Rewind 5 s|Menu|New game', JSON.stringify(card));
       check('its summary leaves out quads, twists, combos and chains, and counts the blocks cleared', !card.tiles.includes('Quads') && !card.tiles.includes('Best chain') && card.tiles.includes('Blocks cleared'), JSON.stringify(card.tiles));
     }
     await ctx.close();

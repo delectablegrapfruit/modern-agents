@@ -605,10 +605,6 @@
 
   const PART = {
     key: 'race', order: 50, mode: 'race', name: 'Race', owns: ['race'], options: { 'race.level': IDS.slice() },
-    // Fixed for the board's life: an edit never makes a board Race or another, and Edit rules is not offered at all
-    // (noEdit: its size names its rows, under the buffer).
-    editFixed: true,
-    noEdit: (r) => (on(r) ? 'A Race board keeps its rules' : null),
     normalize(raw, out) {
       if (out.mode !== 'race') return;
       const lv = isObj(raw.race) && raw.race.level;
