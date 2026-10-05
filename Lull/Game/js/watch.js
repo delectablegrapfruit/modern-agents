@@ -1,8 +1,9 @@
 // Lull — Watch: a Classic game played by the bot (js/bot.js) on the Play tab, from the Classic setup's Watch button.
 // It plays on the setup's rules, through the same actions a player's keys send (no piece is ever put in place by
-// hand), at a player's pace. Under the board: a quiet "Watching", Mistakes (Off, Rare, Some, Often: Settings keeps it,
-// and it can be changed as it plays), Pause and Take over; at the end, Play again. Take over hands the game to you
-// where it stands: the bot lets go, and the game stays as it was, uncounted.
+// hand). Under the board: a quiet "Watching", how it plays (Human: a top player's hands, pace and reach; Unrestrained:
+// near perfect at no human pace), Mistakes (Off, Rare, Some, Often; Human only); Settings keeps both, and both can be
+// changed as it plays; Pause and Take over; at the end, Play again. Take over hands the game to you where it stands:
+// the bot lets go, and the game stays as it was, uncounted.
 //
 // A watched game is nobody's: it is never saved, never kept as Classic's game, and it counts toward nothing (bests,
 // Stats, the day's log, achievements, lines banked). The board you were playing waits, saved as it was, and comes back
@@ -19,6 +20,10 @@
 
   /** The Mistakes setting as saved (Settings: watchMistakes), or Off. */
   const mistakesOf = (st) => (Bot.MISTAKES[st && st.watchMistakes] ? st.watchMistakes : 'off');
+  /** How it plays, as saved (Settings: watchStyle): 'human' or 'unrestrained'; Human when unset. */
+  const styleOf = (st) => (Bot.STYLES[st && st.watchStyle] ? st.watchStyle : 'human');
+  /** What each style is, in a few words (the buttons' tips). */
+  const STYLE_TIPS = { human: 'A top player: human pace and reach', unrestrained: 'Near perfect, at no human pace' };
 
   /**
    * Starts watching: the board in play is saved as it is and set aside, and a new Classic game of `recipe` (the
@@ -82,7 +87,7 @@
       attach(game) {
         const w = W();
         if (!w || game.over) return;
-        w.bot = new Bot.Driver(host, { mistakes: mistakesOf(app.settings), budget: 1.5 });
+        w.bot = new Bot.Driver(host, { style: styleOf(app.settings), mistakes: mistakesOf(app.settings) });
         // It starts at once (no Start card): watching is what was asked for.
         this.go();
       },
@@ -151,7 +156,7 @@
           const ctl = pm.ctl, g = pm.game, c = Classic.of(g), w = pm.watch, cleared = kind === 'cleared';
           return [
             h('h2', null, cleared ? 'Cleared' : 'Game over'),
-            h('p', { class: 'cl-sub' }, w && w.free ? 'Taken over · not counted' : 'Watched · not counted'),
+            h('p', { class: 'cl-sub' }, w && w.free ? 'Taken over · not counted' : styleOf(pm.app.settings) === 'unrestrained' ? 'Watched · Unrestrained, not human · not counted' : 'Watched · not counted'),
             h('p', null, h('span', { class: 'big' }, fmtInt(g.s.score)), ' points'),
             h('p', null, 'Level ' + Classic.levelOf(g.recipe.classic, c.lines) + ' · ' + c.lines + ' lines'),
             h('div', { class: 'row' },
@@ -170,7 +175,7 @@
         const lbl = L.Recipe.label(g.recipe) || 'Classic';
         play.showCard([
           h('h2', null, 'Paused'),
-          h('p', { class: 'cl-sub' }, (w.free ? 'Your game · ' : 'Watching · ') + lbl.replace(/^Classic · /, '').replace(/^Classic /, 'Game ')),
+          h('p', { class: 'cl-sub' }, (w.free ? 'Your game · ' : styleOf(app.settings) === 'unrestrained' ? 'Watching · Unrestrained · ' : 'Watching · ') + lbl.replace(/^Classic · /, '').replace(/^Classic /, 'Game ')),
           h('div', { class: 'row' },
             h('button', { class: 'btn', id: 'wt-done', onclick: () => stop(play) }, ico('chevLeft'), 'Done'),
             w.free ? null : h('button', { class: 'btn', id: 'wt-take', onclick: () => takeOver(play) }, ico('takeOver'), 'Take over'),
@@ -188,23 +193,30 @@
         ];
       },
 
-      /** The bar under the board: "Watching", Mistakes, Pause and Take over (after Take over: "Your game", Pause, Done). */
+      /**
+       * The bar under the board: "Watching", Human or Unrestrained, Mistakes (Human only), Pause and Take over (after
+       * Take over: "Your game", Pause, Done).
+       */
       bar(el) {
         const w = W(), g = G(), c = C();
         if (!w) return this.base.bar(el);
-        const cur = mistakesOf(app.settings);
+        const cur = mistakesOf(app.settings), style = styleOf(app.settings);
         const pauseBtn = h('button', { class: 'btn sm wt-pause', disabled: !c.started || g.over || !!this.pile, 'aria-label': this.paused ? 'Resume' : 'Pause', 'data-tip': this.paused ? 'Resume' : 'Pause', 'data-tip-foot': 'P', onclick: () => (this.paused ? this.go() : this.setPause(true)) },
           ico(this.paused ? 'playIcon' : 'pause'), h('span', { class: 'lbl' }, this.paused ? 'Resume' : 'Pause'));
         const kids = w.free
           ? [h('span', { class: 'wt-label' }, ico('takeOver'), h('span', null, 'Your game · not counted')), h('div', { class: 'wt-acts' }, pauseBtn,
             h('button', { class: 'btn sm', id: 'wt-bar-done', 'data-tip': 'Back to your board', onclick: () => stop(play) }, ico('chevLeft'), h('span', { class: 'lbl' }, 'Done')))]
           : [h('span', { class: 'wt-label', role: 'status' }, ico('watch'), h('span', null, 'Watching')),
-            h('div', { class: 'seg wt-seg', role: 'group', 'aria-label': 'Mistakes' }, h('span', { class: 'wt-nm', 'aria-hidden': 'true' }, 'Mistakes'),
+            h('div', { class: 'seg wt-seg wt-style', role: 'group', 'aria-label': 'How it plays' },
+              Bot.STYLE_IDS.map((id) => h('button', { type: 'button', class: 'nb-level', 'data-style': id, 'aria-pressed': String(id === style), 'data-tip': STYLE_TIPS[id],
+                onclick: () => setStyle(play, id) }, Bot.STYLE_NAMES[id]))),
+            // (Unrestrained makes no mistakes: the choice is not there.)
+            style === 'unrestrained' ? null : h('div', { class: 'seg wt-seg', role: 'group', 'aria-label': 'Mistakes' }, h('span', { class: 'wt-nm', 'aria-hidden': 'true' }, 'Mistakes'),
               Bot.MISTAKE_IDS.map((id) => h('button', { type: 'button', class: 'nb-level', 'data-mistakes': id, 'aria-pressed': String(id === cur), 'aria-label': 'Mistakes ' + Bot.MISTAKE_NAMES[id],
                 onclick: () => setMistakes(play, id) }, Bot.MISTAKE_NAMES[id]))),
             h('div', { class: 'wt-acts' }, pauseBtn,
               h('button', { class: 'btn sm wt-take', id: 'wt-bar-take', disabled: g.over, 'data-tip': 'Play on from here yourself', onclick: () => takeOver(play) }, ico('takeOver'), h('span', { class: 'lbl' }, 'Take over')))];
-        el.replaceChildren(...kids);
+        el.replaceChildren(...kids.filter(Boolean));
         el.classList.add('cl-bar', 'wt-bar');
         return true;
       },
@@ -222,6 +234,16 @@
     play.renderItems();
   }
 
+  /** How it plays, as set under the board (kept in Settings; the bot plays so from its next piece). */
+  function setStyle(play, id) {
+    if (!Bot.STYLES[id]) return;
+    play.app.settings.watchStyle = id;
+    play.app.store.touch();
+    const w = play.watch;
+    if (w && w.bot) w.bot.setStyle(id);
+    play.renderItems();
+  }
+
   /** Take over: the bot lets go, and the game is yours from where it stands (still not counted). */
   function takeOver(play) {
     const w = play.watch;
@@ -236,5 +258,5 @@
     return true;
   }
 
-  L.Watch = { start, stop, controller, takeOver, setMistakes, mistakesOf };
+  L.Watch = { start, stop, controller, takeOver, setMistakes, mistakesOf, setStyle, styleOf };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

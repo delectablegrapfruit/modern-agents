@@ -189,6 +189,7 @@
         // tap turns ('sides': right clockwise, left counter-clockwise; 'cw': always clockwise), haptics where there are any.
         touch: true, touchSens: 5, touchFlick: 1, tapTurn: 'sides', haptics: true,
         watchMistakes: 'off', // Watch (Classic, js/watch.js): how often the bot errs: 'off', 'rare', 'some', 'often'
+        watchStyle: 'human', // and how it plays: 'human' (a top player's pace and reach) or 'unrestrained' (no human limit)
       },
       tab: 'play',
       free: null, // the game in play (Game.toJSON), of the mode boards.cur

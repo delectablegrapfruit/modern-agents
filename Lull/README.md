@@ -768,12 +768,28 @@ board size, the shape sets (unrated ones pay without a streak), Mirror and Physi
 
 *Watch* — the Classic setup (Menu ▸ Solo ▸ Classic) has Watch beside Start: the computer plays a game on those rules
 (`js/watch.js`; the player itself is `js/bot.js`). It plays through the board's own actions, a press each, as your keys
-would (no piece is ever put in place for it), at a hand's pace: a think before each piece (log-normal, quicker for an
-obvious one, longer for an awkward one, now and then a pause), taps and held keys with a delay and a quick repeat, a
-little jitter, now and then a slide one column too far and back, all of it quicker as the pieces fall faster. Under the
-board: a quiet *Watching*, Mistakes (Off, Rare, Some, Often: the chance a piece goes otherwise than its best, a lesser
-placement or a lapse such as a hold or a tuck forgotten, at random and never into danger; kept in Settings, changed as
-it plays), Pause and Take over, which hands you the game where it stands (the bot lets go). At the end, Play again (and
+would (no piece is ever put in place for it). It plays in one of two ways, chosen under the board (Settings keeps it):
+
+- *Human* (the first choice): a top player's hands, by a model of a hand rather than waits drawn at random. Each piece
+  takes a look (a reaction of at least 150 ms to a piece it did not see coming, a glance at one it planned from the
+  Next), a decision (next to none when one placement is far ahead of the rest, up to about 300 ms for a close call,
+  shorter the less time the piece has), then the keys themselves: taps at a finesse cadence (one hand never more than 15
+  a second, the two a chord apart, never more than 15 presses in any second), a long slide held (150 ms, then a repeat
+  every 40 ms; on Retro lock, with nothing to lean on, all of it tapped at up to 15 a second), a held soft drop for tucks
+  and spins, a beat on the spot, the drop. Its tempo drifts slowly, as a player settles into a rhythm and out of it
+  (slower over its first pieces), with a little jitter a piece and a key; there is no pause drawn at random. It never
+  goes past a top player: at most 3 pieces a second over any 20 sets and 3.5 over any 5. At speed it searches only the
+  spots those hands can get to before the piece falls past (the rows gravity takes before the first key and between
+  keys, fractions adding up), and on Retro lock it keeps the stack under the rows a piece falls on its way to a far
+  wall; so at the fastest falls it plays worse and tops out where people do. Now and then, with Mistakes off and time to
+  spare, a slide goes one column too far and back.
+- *Unrestrained*: near perfect, and not a human: a wider search (a beam of twenty), a key a frame, each piece set no
+  sooner than a short beat (100 ms) after it appears so it can still be followed, no mistakes.
+
+Under the board: a quiet *Watching*, Human or Unrestrained, Mistakes (Human only: Off, Rare, Some, Often: the chance a
+piece goes otherwise than its best, a lesser placement or a lapse such as a hold or a tuck forgotten or a slow decision,
+at random and never into danger; kept in Settings, changed as it plays), Pause and Take over, which hands you the game
+where it stands (the bot lets go). At the end, Play again (and
 Space) or Done. A watched game is nobody's: never saved or kept as Classic's game, and it counts toward nothing (bests, Stats, the
 day's log and time, achievements, lines banked); the board you were playing is saved as it was and comes back with
 Done, or the menu's Continue, New game or Custom. Your keys, taps and the mouse do nothing to it but pause it, until
@@ -781,29 +797,47 @@ Take over; it pauses when Lull is left, not when the pointer only wanders off.
 
 How it plays: every spot a piece can reach by the engine's own moves (a search over turn, column and row with the real
 kicks and Classic's turn at the ceiling, soft-drop tucks under ledges, the half turn, Hold only when the rules have it),
-each Twist and Mini counted as the lock counts it; at speed, the rows gravity takes between two keys are part of the
-search, so it only aims where a hand could still get. A stack is worth its holes, the blocks over them, row and column
+each Twist and Mini counted as the lock counts it; at speed, the rows gravity takes before the first key and between
+two keys are part of the search, so it only aims where its hands could still get (the route itself is the shortest,
+found again at every key). A stack is worth its holes, the blocks over them, row and column
 changes, bumps, the height (feared sooner the faster pieces fall), one well kept for Quads and its ready rows, and a slot
 a T could twist into; a set adds its Quad, Twist, Streak kept or broken, Spotless and combo, and small clears cost while
 the stack is low. It looks ahead over the piece in play, Hold and the Next pieces the rules show (a beam of ten, three
 deep), thinks about the next piece while it places this one, and with nothing in sight scores a placement by what each
-of the seven could make of it. It thinks in slices of a millisecond and a half a frame.
+of the seven could make of it. It thinks in slices of a millisecond and a half a frame (Unrestrained: five).
 
-Measured (`scripts/bot-soak.cjs`, 200 seeded games headless, each to 300 lines or the top out, played frame by frame
-with gravity, the lock and its hands):
+The same eye is there for a page that judges a player's sets: `Bot.rank(view)` gives every placement of the piece in
+play (and of the one Hold would bring) ranked best first, each with its value, the board it leaves and its route;
+`Bot.judge(ranked, rowsAfter)` says where the board a player left stands among them (its index and its loss against the
+best); `Bot.explain(rows, w, h, ctx)` gives a stack's worth feature by feature (holes, covered blocks, transitions,
+bumps, height, danger, the well and its ready rows, a slot), each as how many and what it adds, the parts adding up to
+the total.
 
-| Rules | Games | Lines a game | Lines by Quads | Twists a game | Topped out | Pieces a minute |
+Measured (`scripts/bot-soak.cjs`, 140 seeded games headless, each to 200 lines or the top out at one speed throughout,
+played frame by frame with gravity, the lock and its hands; Retro lock's levels past 15 by the old table: 19 is three
+frames a row, 20 two, 30 one):
+
+| Rules | Games | Lines a game | Lines by Quads | Twists a game | Topped out | Pieces a second |
 |---|---|---|---|---|---|---|
-| A, level 1 | 40 | 301.5 | 68.9% | 6.20 | 0 (0.0%) | 137 |
-| A, level 8 | 30 | 301.0 | 68.5% | 6.67 | 0 (0.0%) | 138 |
-| A, level 15 | 30 | 301.2 | 67.5% | 5.40 | 0 (0.0%) | 219 |
-| A, level 15, retro lock and random | 30 | 286.3 | 52.4% | 1.70 | 4 (13.3%) | 176 |
-| A, level 5, no Next, no Hold | 20 | 300.4 | 3.5% | 0.10 | 0 (0.0%) | 145 |
-| A, level 5, mistakes Some | 25 | 301.4 | 62.6% | 6.44 | 0 (0.0%) | 135 |
-| A, level 5, mistakes Often | 25 | 301.0 | 56.5% | 6.84 | 0 (0.0%) | 134 |
+| Human, level 1 | 14 | 201.2 | 70.3% | 4.50 | 0 (0.0%) | 2.15 |
+| Human, level 8 | 14 | 201.2 | 71.4% | 4.71 | 0 (0.0%) | 2.10 |
+| Human, level 15 | 14 | 201.3 | 67.1% | 2.79 | 0 (0.0%) | 2.25 |
+| Human, level 18 (the fall of 15 and up) | 11 | 201.0 | 64.2% | 3.91 | 0 (0.0%) | 2.24 |
+| Human, Retro lock, level 15 (4 frames a row) | 11 | 177.0 | 36.4% | 0.00 | 2 (18.2%) | 2.33 |
+| Human, Retro lock, level 19 (3 frames a row) | 11 | 167.4 | 28.9% | 0.00 | 3 (27.3%) | 2.40 |
+| Human, Retro lock, level 20 (2 frames a row) | 11 | 39.4 | 2.8% | 0.00 | 11 (100.0%) | 2.65 |
+| Human, Retro lock, level 30 (1 frame a row) | 8 | 0.0 | 0.0% | 0.00 | 8 (100.0%) | 4.66 |
+| Human, level 5, no Next, no Hold | 8 | 200.1 | 2.5% | 0.25 | 0 (0.0%) | 1.45 |
+| Human, level 5, mistakes Often | 8 | 200.8 | 61.5% | 3.25 | 0 (0.0%) | 2.04 |
+| Unrestrained, level 15 | 8 | 201.0 | 68.4% | 8.13 | 0 (0.0%) | 5.45 |
+| Unrestrained, Retro lock, level 20 | 8 | 200.9 | 47.0% | 3.38 | 0 (0.0%) | 5.29 |
+| Unrestrained, Retro lock, level 30 | 14 | 187.4 | 54.1% | 0.00 | 1 (7.1%) | 5.47 |
 
-Of the four retro games that topped out, two reached level 29 (a row a frame, the old consoles' kill screen) and two
-were lost at levels 15 and 16, where Retro lock gives no time at all once a piece lands; nothing else topped out.
+Human keeps up wherever a top player's hands do: on the modern lock (a piece can still slide along the stack while it
+rests) it plays on at every speed; on Retro lock and the retro random it loses a game now and then from three and four
+frames a row, and from two frames a row (where a hand tapping 15 a second gets a piece only a few columns before it
+lands) it soon tops out, as people mostly do. A row a frame sets each piece faster than any hand moves it (the pieces a
+second there are the fall's, not its own). Unrestrained plays on to the kill screen.
 
 ### Descent
 A mode (`js/descent.js`, its controller, look and window `js/descentview.js`): a second stack hangs upside down from
@@ -1297,7 +1331,7 @@ open Lull/Game/index.html     # any browser, any OS (saves to localStorage)
 node Lull/scripts/test.cjs            # game logic: 750 puzzles replayed through the engine, turns, items, one game a mode and presets, save, economy
 node Lull/scripts/econ-test.cjs       # the economy against models of play: bots on the engine, puzzles, a career (test.cjs runs it)
 node Lull/scripts/golden.cjs          # the golden identity run: a default board plays lock for lock as recorded (--write records it)
-node Lull/scripts/bot-soak.cjs 200 300   # Watch's bot: 200 seeded Classic games to 300 lines on four processes: lines, Quads, Twists, top outs
+node Lull/scripts/bot-soak.cjs 140 200   # Watch's bot: 140 seeded Classic games to 200 lines on four processes, Human and Unrestrained: lines, Quads, Twists, top outs, pieces a second
 node Lull/scripts/browser-test.cjs    # the page played in headless Chromium (needs Playwright), then touch-, device-, undo-, menu- and tabbar-test
 node Lull/scripts/touch-test.cjs      # an emulated phone played with real touches: gestures, layout, 44 px targets
 node Lull/scripts/device-test.cjs     # what a phone, a desktop browser, the app and a tablet with a trackpad are offered

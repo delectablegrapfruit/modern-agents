@@ -1,10 +1,11 @@
 // Watch (js/watch.js, js/bot.js), in the page: the Classic setup's Watch beside Start; a watched game on the setup's
 // rules, played through the board's own actions (every move the bot makes is a press of play.action), at a hand's
-// pace; your keys and the mouse do nothing to it but pause it; Mistakes kept in Settings and changed as it plays; the
-// pause card; Take over (the bot lets go, your keys play on); the end card's Play again and Done; and nothing of it
+// pace (never quicker than a top player: no five sets at over 3.5 a second); your keys and the mouse do nothing to it
+// but pause it; Mistakes, and Human or Unrestrained (quicker, Mistakes gone), kept in Settings and changed as it plays,
+// kept over a reload; the pause card; Take over (the bot lets go, your keys play on); the end card's Play again and Done; and nothing of it
 // counted or kept: Stats, bests, the day's log, achievements, the wallet, the games kept and the board you were playing
-// are exactly as they were. Then the four sizes in both themes (reduced motion too): the bar clear of the phones' tab
-// bar, nothing sideways; frames of each (OUT, or the scratch folder in WATCH_SHOTS).
+// are exactly as they were. Then the four sizes in both themes (reduced motion too), Human and Unrestrained: the bar
+// clear of the phones' tab bar, nothing sideways; frames of each (OUT, or the scratch folder in WATCH_SHOTS).
 // Run by browser-test.cjs: require('./watch-test.cjs')({ browser, check, PAGE, OUT }).
 'use strict';
 const path = require('path');
@@ -92,6 +93,9 @@ module.exports = async function watchTests({ browser, check, PAGE, OUT }) {
   check('the bot plays pieces through the board\'s actions (moves, turns, drops: a press each)', played.pieces >= 4 && played.acts === played.bot && played.bot >= played.pieces && (played.kinds.drop || 0) >= 3 && played.moves + played.rotations > 0, JSON.stringify(played));
   const pace = await ev(() => { const L = window.__locks; const d = L.slice(1).map((t, i) => t - L[i]); const mean = d.reduce((a, b) => a + b, 0) / d.length, sd = Math.sqrt(d.reduce((a, b) => a + (b - mean) * (b - mean), 0) / d.length); return { n: d.length, mean: Math.round(mean), sd: Math.round(sd) }; });
   check('at a hand\'s pace: pieces some hundreds of ms apart, never on a fixed beat', pace.n >= 3 && pace.mean > 200 && pace.mean < 3000 && pace.sd > 20, JSON.stringify(pace));
+  // Never quicker than a top player: no five sets in a row at over 3.5 a second (a frame's leeway: the page's clock).
+  const burst = await ev(() => { const L = window.__locks; let b = 0; for (let i = 4; i < L.length; i++) b = Math.max(b, 4000 / (L[i] - L[i - 4])); return b; });
+  check('Human: never five sets at over 3.5 a second', burst <= 3.6, burst.toFixed(2));
 
   // Your keys and the mouse: nothing but pause.
   const keys = await ev(() => { window.__acts.length = 0; return Lull.app.modes.play.game.s.pieces; });
@@ -117,6 +121,20 @@ module.exports = async function watchTests({ browser, check, PAGE, OUT }) {
   const mk = await ev(() => { const m = Lull.app.modes.play; return { set: Lull.app.settings.watchMistakes, bot: m.watch.bot.mistakes, pressed: document.querySelector('#itembar [data-mistakes="some"]').getAttribute('aria-pressed'), off: document.querySelector('#itembar [data-mistakes="off"]').getAttribute('aria-pressed') }; });
   check('Mistakes: Some, kept in Settings and the bot\'s at once', mk.set === 'some' && mk.bot === 'some' && mk.pressed === 'true' && mk.off === 'false', JSON.stringify(mk));
   await page.click('#itembar [data-mistakes="off"]');
+
+  // Human or Unrestrained: kept in Settings, the bot's from its next piece; Mistakes gone while Unrestrained, which is quicker.
+  const st0 = await ev(() => ({ set: Lull.app.settings.watchStyle, bot: Lull.app.modes.play.watch.bot.style, pressed: document.querySelector('#itembar [data-style="human"]').getAttribute('aria-pressed'), names: [...document.querySelectorAll('#itembar [data-style]')].map((b) => b.textContent) }));
+  check('Watch plays as Human to begin with: Human and Unrestrained under the board', st0.set === 'human' && st0.bot === 'human' && st0.pressed === 'true' && st0.names.join('|') === 'Human|Unrestrained', JSON.stringify(st0));
+  await page.click('#itembar [data-style="unrestrained"]');
+  await ev(() => { window.__locks.length = 0; });
+  const st1 = await ev(() => ({ set: Lull.app.settings.watchStyle, bot: Lull.app.modes.play.watch.bot.style, pressed: document.querySelector('#itembar [data-style="unrestrained"]').getAttribute('aria-pressed'), mistakes: !!document.querySelector('#itembar [data-mistakes]') }));
+  check('Unrestrained: kept in Settings, the bot\'s at once, no Mistakes to set', st1.set === 'unrestrained' && st1.bot === 'unrestrained' && st1.pressed === 'true' && !st1.mistakes, JSON.stringify(st1));
+  await page.waitForTimeout(2500);
+  const fast = await ev(() => { const L = window.__locks; const d = L.slice(1).map((t, i) => t - L[i]); return { n: d.length, mean: Math.round(d.reduce((a, b) => a + b, 0) / Math.max(1, d.length)) }; });
+  check('Unrestrained is quicker than Human, still a piece at a time', fast.n >= 4 && fast.mean < pace.mean && fast.mean >= 90, JSON.stringify([fast, pace]));
+  await page.click('#itembar [data-style="human"]');
+  const st2 = await ev(() => ({ set: Lull.app.settings.watchStyle, bot: Lull.app.modes.play.watch.bot.style, mistakes: document.querySelectorAll('#itembar [data-mistakes]').length }));
+  check('back to Human: Mistakes there again', st2.set === 'human' && st2.bot === 'human' && st2.mistakes === 4, JSON.stringify(st2));
 
   // Pause from the bar, then Take over from it.
   await page.click('#itembar .wt-pause');
@@ -203,11 +221,17 @@ module.exports = async function watchTests({ browser, check, PAGE, OUT }) {
   await ev(() => { Lull.app.modes.play.openMenu('classic'); });
   await page.click('.mn-foot .mn-watch');
   await page.waitForTimeout(600);
+  await page.click('#itembar [data-style="unrestrained"]');
+  await page.click('#itembar [data-style="human"]');
+  await page.click('#itembar [data-mistakes="rare"]');
+  await page.click('#itembar [data-style="unrestrained"]');
   await ev(() => Lull.app.saveNow());
   await page.reload();
   await page.waitForTimeout(700);
-  const reloaded = await ev(() => { const m = Lull.app.modes.play; return { watch: !!m.watch, json: JSON.stringify(m.game.toJSON()) }; });
+  const reloaded = await ev(() => { const m = Lull.app.modes.play; return { watch: !!m.watch, json: JSON.stringify(m.game.toJSON()), style: Lull.app.settings.watchStyle, mistakes: Lull.app.settings.watchMistakes }; });
   check('saved mid-watch and reloaded: your own board, as it was', !reloaded.watch && reloaded.json === mine.json);
+  check('Unrestrained and Mistakes (Rare) kept over the reload', reloaded.style === 'unrestrained' && reloaded.mistakes === 'rare', JSON.stringify([reloaded.style, reloaded.mistakes]));
+  await ev(() => { Lull.app.settings.watchStyle = 'human'; Lull.app.settings.watchMistakes = 'off'; Lull.app.store.touch(); Lull.app.saveNow(); });
   const last = await ledger(ev);
   check('and the ledger as it was', last === before, diff(before, last));
   // A Custom game started over a watched game ends the watching first: the game set aside for it is your board.
@@ -234,6 +258,8 @@ module.exports = async function watchTests({ browser, check, PAGE, OUT }) {
       await tap('.mn-foot .mn-watch');
       await P.page.waitForTimeout(1500);
       await P.page.waitForFunction(() => Lull.app.modes.play.game.s.pieces >= 1, null, { timeout: 8000 }).catch(() => {});
+      for (const style of ['human', 'unrestrained']) {
+      if (style === 'unrestrained') { await tap('#itembar [data-style="unrestrained"]'); await P.page.waitForTimeout(400); }
       const lay = await P.ev(() => {
         const R = (e) => e.getBoundingClientRect(), bar = R(document.getElementById('itembar')), tabs = R(document.getElementById('tabs'));
         const kids = [...document.querySelectorAll('#itembar button, #itembar .wt-label')].map(R);
@@ -244,9 +270,12 @@ module.exports = async function watchTests({ browser, check, PAGE, OUT }) {
           sideways: document.documentElement.scrollWidth > innerWidth, minH: Math.round(Math.min(...[...document.querySelectorAll('#itembar button')].map((b) => R(b).height))),
         };
       });
-      check('Watch at ' + w + ' × ' + hh + ' ' + theme + (reduced ? ' (reduced motion)' : '') + ': playing, its bar whole, clear of the tab bar, nothing sideways' + (touch ? ', 40 px+ targets' : ''),
+      check('Watch (' + style + ') at ' + w + ' × ' + hh + ' ' + theme + (reduced ? ' (reduced motion)' : '') + ': playing, its bar whole, clear of the tab bar, nothing sideways' + (touch ? ', 40 px+ targets' : ''),
         lay.watching && lay.pieces >= 1 && lay.clear && lay.inside && !lay.sideways && (!touch || lay.minH >= 40), JSON.stringify(lay));
-      if (SHOTS) await P.page.screenshot({ path: path.join(SHOTS, 'watch-' + w + 'x' + hh + '-' + theme + '.png') });
+      if (SHOTS) await P.page.screenshot({ path: path.join(SHOTS, 'watch-' + (style === 'human' ? '' : 'unrestrained-') + w + 'x' + hh + '-' + theme + '.png') });
+      }
+      // (The setting goes back to Human for the next page.)
+      await tap('#itembar [data-style="human"]');
       // The pause card at the smallest size: its buttons in the board.
       if (w === 320) {
         await tap('#itembar .wt-pause');

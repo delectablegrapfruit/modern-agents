@@ -14,11 +14,17 @@
 //
 // The choice (think): a beam over the pieces in sight (the piece in play, Hold, the Next pieces the rules show), each
 // first move ranked by the best it leads to. A generator: the page runs it in slices of a millisecond or two a frame.
+// rank, judge and explain are the same eye for a page that teaches: every placement ranked, where a player's set stands
+// among them, and a stack's worth feature by feature.
 //
-// Its hands (Driver): a think before each piece, longer for an awkward one and short for an obvious one, now and then
-// a pause; taps and held keys (a delay, then a quick repeat) with a little jitter, a slip past the column and back now
-// and then; all of it quicker as the pieces fall faster. Mistakes (Off, Rare, Some, Often): now and then, at random, a
-// lesser placement or a lapse, never one that would end the game; then it plays on from the board it made.
+// Its hands (Driver), in two styles. Human: a top player's, by a model of a hand rather than waits drawn at random: a
+// look at each piece (a reaction to one not seen coming, a glance at one planned from the Next), a decision as long as
+// the call is close, then the keys at a hand's cadence (taps, a long slide held, a held soft drop, the drop), its tempo
+// drifting slowly as a player's does; never quicker than a top player (about three pieces a second, fifteen presses),
+// and only ever aiming where those hands can get to before the piece falls past, so at the fastest speeds it plays
+// worse and tops out where people do. Unrestrained: near perfect, a wider search, a key a frame and a short beat a
+// piece, no human limit. Mistakes (Off, Rare, Some, Often; Human only): now and then, at random, a lesser placement or a
+// lapse, never one that would end the game; then it plays on from the board it made.
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
@@ -101,7 +107,7 @@
   function buffers(N, H) {
     if (BUF.N < N || BUF.H !== H) {
       Object.assign(BUF, { N, H, par: new Int32Array(N), mv: new Int8Array(N), q: new Int32Array(N), par1: new Int32Array(N), mv1: new Int8Array(N), q1: new Int32Array(N),
-        spin: new Int32Array(N), spinMv: new Int8Array(N), spinKick: new Int8Array(N), simple: new Int32Array(N), kick: new Int8Array(N), kick1: new Int8Array(N), F: [0, 1, 2, 3].map(() => new Int32Array(H)) });
+        spin: new Int32Array(N), spinMv: new Int8Array(N), spinKick: new Int8Array(N), simple: new Int32Array(N), kick: new Int8Array(N), kick1: new Int8Array(N), dep: new Float32Array(N), dep1: new Float32Array(N), F: [0, 1, 2, 3].map(() => new Int32Array(H)) });
     }
     return BUF;
   }
@@ -109,10 +115,13 @@
   /**
    * Every spot a piece can get to from `start` ({ rot, x, y }), on a board of W × H (`rows`), as the engine moves it:
    *   o: { r180 (the half turn is there), ceiling (Classic: a turn touching the ceiling stays touching it, as
-   *        Game.rotate does), twist (find the T's spins), fall (rows the piece falls by itself between two keys:
-   *        gravity, so a spot a slow hand could reach but a fast fall would not is left out), startFall (rows it falls
-   *        before the first key), sticky (Retro lock at speed: a piece that comes to rest sets on the next tick, so
-   *        nothing moves on from a resting spot) }
+   *        Game.rotate does), twist (find the T's spins), rate (rows the piece falls by itself between two keys, a
+   *        fraction or more: gravity at the hand's pace, so a spot a hand could not get to before the piece falls past
+   *        it is left out; the rows add up over the moves, so 0.4 is a row every two or three keys), start (rows it
+   *        falls before the first key, a fraction too), sticky (Retro lock at speed: a piece that comes to rest sets on
+   *        the next tick, so nothing moves on from a resting spot), turn (what a turn counts for, as moves go: 1, or
+   *        less for a hand that turns with one hand while the other slides); fall and startFall: rate and start as
+   *        whole rows }
    * Two searches: one with no step down (turns and slides at the height it is: then a drop is all it takes, `simple`),
    * and one with every move (tucks under ledges, spins into slots). Returns { places: [...], route(place) } where a
    * place is { r, x, y, px, py, simple, twist: 0 | 1 (Mini) | 2, kick, spinFrom } and route gives its moves ('L', 'R',
@@ -144,18 +153,25 @@
     let spy = start.y + s0.minY;
     const out = { places: [], count: 0 };
     if (!fits(start.rot, spx, spy)) return Object.assign(out, { route: () => null });
-    // Gravity between keys: after each move it falls up to `fall` rows (none at an easy pace).
-    const fall = Math.max(0, o.fall | 0);
-    const settle = (j) => {
-      if (!fall || j < 0) return j;
+    // Gravity between keys: by its d-th move it has fallen floor(f0 + d × rate) rows since the first key (f0: the part
+    // of a row it had fallen before it), so the rows come as they would at that pace (none at an easy one).
+    // (A turn counts as o.turn of a move: a hand presses it with the other's slide, all but together.)
+    const tc = o.turn != null ? o.turn : 1;
+    const rate = Math.max(0, o.rate != null ? +o.rate || 0 : o.fall | 0), sf = Math.max(0, o.start != null ? +o.start || 0 : o.startFall | 0);
+    const f0 = sf - Math.floor(sf);
+    const rowsBy = (d) => Math.floor(f0 + d * rate + 1e-9);
+    const settle = (j, d0, d) => {
+      if (!rate || j < 0) return j;
       const px = j % W, r = (j / (W * H)) | 0;
-      let py = ((j / W) | 0) % H, n = fall;
+      let py = ((j / W) | 0) % H, n = rowsBy(d) - rowsBy(d0);
       while (n-- > 0 && py > 0 && fits(r, px, py - 1)) py--;
       return idx(r, px, py);
     };
-    for (let n = Math.max(0, o.startFall | 0); n > 0 && spy > 0 && fits(start.rot, spx, spy - 1); n--) spy--;
+    for (let n = Math.floor(sf); n > 0 && spy > 0 && fits(start.rot, spx, spy - 1); n--) spy--;
     const sticky = !!o.sticky;
     const par = B.par, mv = B.mv, q = B.q, par1 = B.par1, mv1 = B.mv1, q1 = B.q1, spin = B.spin, spinMv = B.spinMv, spinKick = B.spinKick, simple = B.simple, kick = B.kick, kick1 = B.kick1;
+    // (dep, dep1: the moves it took to get to a spot, for the rows fallen on the way.)
+    const dep = B.dep, dep1 = B.dep1;
     par.fill(-2, 0, N); par1.fill(-2, 0, N); spin.fill(-2, 0, N); simple.fill(-2, 0, N);
     const rests = (r, px, py) => py === 0 || !fits(r, px, py - 1);
     const dropTo = (r, px, py) => { while (py > 0 && fits(r, px, py - 1)) py--; return idx(r, px, py); };
@@ -164,20 +180,20 @@
     let qh = 0, qt = 0;
     const i0 = idx(start.rot, spx, spy);
     out.start = i0;
-    par1[i0] = -1; q1[qt++] = i0;
+    par1[i0] = -1; dep1[i0] = 0; q1[qt++] = i0;
     while (qh < qt) {
-      const i = q1[qh++], px = i % W, py = ((i / W) | 0) % H, r = (i / (W * H)) | 0;
+      const i = q1[qh++], px = i % W, py = ((i / W) | 0) % H, r = (i / (W * H)) | 0, d0 = dep1[i], dn = d0 + 1, dt = d0 + tc;
       if (sticky && qh > 1 && (py === 0 || !fits(r, px, py - 1))) continue;
       for (let d = 0; d < turns; d++) {
         let j = turn(r, px, py, d);
         if (j < 0) continue;
         // (A turn that fell on afterwards is no spin: its kick is kept as -1.)
         const j0 = j, k1 = kickOut[0];
-        j = settle(j);
-        if (par1[j] === -2) { par1[j] = i; mv1[j] = 4 + d; kick1[j] = j === j0 ? k1 : -1; q1[qt++] = j; }
+        j = settle(j, d0, dt);
+        if (par1[j] === -2) { par1[j] = i; mv1[j] = 4 + d; kick1[j] = j === j0 ? k1 : -1; dep1[j] = dt; q1[qt++] = j; }
       }
-      if (fits(r, px - 1, py)) { const j = settle(i - 1); if (par1[j] === -2) { par1[j] = i; mv1[j] = 1; q1[qt++] = j; } }
-      if (fits(r, px + 1, py)) { const j = settle(i + 1); if (par1[j] === -2) { par1[j] = i; mv1[j] = 2; q1[qt++] = j; } }
+      if (fits(r, px - 1, py)) { const j = settle(i - 1, d0, dn); if (par1[j] === -2) { par1[j] = i; mv1[j] = 1; dep1[j] = dn; q1[qt++] = j; } }
+      if (fits(r, px + 1, py)) { const j = settle(i + 1, d0, dn); if (par1[j] === -2) { par1[j] = i; mv1[j] = 2; dep1[j] = dn; q1[qt++] = j; } }
     }
     for (let k = 0; k < qt; k++) {
       const i = q1[k], px = i % W, py = ((i / W) | 0) % H, r = (i / (W * H)) | 0, j = dropTo(r, px, py);
@@ -185,24 +201,24 @@
     }
     // 2. Every move: down a row too (the soft drop), so under ledges and into slots.
     qh = 0; qt = 0;
-    par[i0] = -1; q[qt++] = i0;
+    par[i0] = -1; dep[i0] = 0; q[qt++] = i0;
     while (qh < qt) {
-      const i = q[qh++], px = i % W, py = ((i / W) | 0) % H, r = (i / (W * H)) | 0;
+      const i = q[qh++], px = i % W, py = ((i / W) | 0) % H, r = (i / (W * H)) | 0, d0 = dep[i], dn = d0 + 1, dt = d0 + tc;
       if (sticky && qh > 1 && (py === 0 || !fits(r, px, py - 1))) continue;
       for (let d = 0; d < turns; d++) {
         const j0 = turn(r, px, py, d);
         if (j0 < 0) continue;
-        const k0 = kickOut[0], j = settle(j0);
-        if (par[j] === -2) { par[j] = i; mv[j] = 4 + d; kick[j] = j === j0 ? k0 : -1; q[qt++] = j; }
+        const k0 = kickOut[0], j = settle(j0, d0, dt);
+        if (par[j] === -2) { par[j] = i; mv[j] = 4 + d; kick[j] = j === j0 ? k0 : -1; dep[j] = dt; q[qt++] = j; }
         // A T turned into a spot where it rests: set right there, a spin (the far kick, the fifth, makes any one full).
         if (isT && j === j0) {
           const jx = j % W, jy = ((j / W) | 0) % H, jr = (j / (W * H)) | 0;
           if (rests(jr, jx, jy) && (spin[j] === -2 || (k0 === 4 && spinKick[j] !== 4))) { spin[j] = i; spinMv[j] = 4 + d; spinKick[j] = k0; }
         }
       }
-      if (fits(r, px - 1, py)) { const j = settle(i - 1); if (par[j] === -2) { par[j] = i; mv[j] = 1; q[qt++] = j; } }
-      if (fits(r, px + 1, py)) { const j = settle(i + 1); if (par[j] === -2) { par[j] = i; mv[j] = 2; q[qt++] = j; } }
-      if (py > 0 && fits(r, px, py - 1)) { const j = settle(i - W); if (par[j] === -2) { par[j] = i; mv[j] = 3; q[qt++] = j; } }
+      if (fits(r, px - 1, py)) { const j = settle(i - 1, d0, dn); if (par[j] === -2) { par[j] = i; mv[j] = 1; dep[j] = dn; q[qt++] = j; } }
+      if (fits(r, px + 1, py)) { const j = settle(i + 1, d0, dn); if (par[j] === -2) { par[j] = i; mv[j] = 2; dep[j] = dn; q[qt++] = j; } }
+      if (py > 0 && fits(r, px, py - 1)) { const j = settle(i - W, d0, dn); if (par[j] === -2) { par[j] = i; mv[j] = 3; dep[j] = dn; q[qt++] = j; } }
     }
     out.count = qt;
     // The resting spots, each set of cells once (the plain one); a T's spun ones besides, as their own places. A plain
@@ -266,7 +282,7 @@
   const W8 = {
     hole: 5.5, holeRow: 3.2, land: 0.25, covered: 0.55, rowT: 0.42, colT: 0.6, bump: 0.32, bump2: 0.07, height: 0.04,
     well: 0.85, wellEdge: 0.5, wellMax: 5, ready: 0.75, otherWell: 1.6,
-    danger: 1.1, dangerFrom: 0.42, slot2: 4.2, slot1: 1.2, slot3: 6,
+    danger: 1.1, dangerFrom: 0.42, reach: 1.5, reachDeep: 6, wellFast: 3, slot2: 4.2, slot1: 1.2, slot3: 6,
     clear: [0, -2.4, -1.8, -1.0, 9.5], twist: [1.2, 4.5, 11, 15], mini: [0.4, 1.6, 2.5],
     streak: 2.5, streakBreak: 4.0, spotless: 45, combo: 0.35,
   };
@@ -274,9 +290,10 @@
   const SCRATCH = { hgt: new Int32Array(32) };
   /**
    * What a stack is worth (higher is better), with danger from the height: ctx.urgency (0, slow; 1, the fastest
-   * gravity) brings the height it starts to fear down; ctx.tsoon: a T in sight (its slots count for more).
+   * gravity) brings the height it starts to fear down; ctx.tsoon: a T in sight (its slots count for more). parts
+   * (optional): filled with each feature, as { n (how many), v (what it adds to the worth) } (see explain).
    */
-  function worth(rows, W, H, ctx) {
+  function worth(rows, W, H, ctx, parts) {
     const full = (1 << W) - 1, hgt = SCRATCH.hgt, E = W8;
     let top = 0, seen = 0;
     for (let x = 0; x < W; x++) hgt[x] = 0;
@@ -326,15 +343,42 @@
     if (top >= H - 1) { const mid = ((1 << 4) - 1) << ((W >> 1) - 2); blocked = popcount(rows[H - 1] & mid) + popcount(rows[H - 2] & mid); }
     const u = ctx ? ctx.urgency || 0 : 0;
     const from = H * (E.dangerFrom - 0.17 * u), over = Math.max(0, top - from);
+    // On Retro lock a piece that comes to rest sets: the stack must stay under the rows a piece falls on its way to the
+    // far wall (ctx.reach), or the wall is out of reach.
+    const reachOver = ctx && ctx.reach ? Math.max(0, top - (H - 4 - ctx.reach)) : 0;
     let v = -E.hole * holes - E.holeRow * holeRows - E.covered * covered - E.rowT * rowT - E.colT * colT - E.bump * bump - E.bump2 * bump2 - E.height * sum
-      - E.otherWell * otherWells - E.danger * over * over - 1000 * blocked;
+      - E.otherWell * otherWells - E.danger * over * over - E.reach * reachOver * reachOver - 1000 * blocked;
     // A well and its ready rows are worth keeping while the stack is safe; once it is high, only getting down counts.
     // (intent: how far it may build for Quads, by what it can see coming: none with no Next and no Hold.)
     const safe = Math.max(0, 1 - over / 4) * (ctx && ctx.intent != null ? ctx.intent : 1);
-    if (depth > 0) v += safe * (E.well * Math.min(depth, E.wellMax) + (wc === 0 || wc === W - 1 ? E.wellEdge : 0) + E.ready * ready) - (depth > E.wellMax ? (depth - E.wellMax) * 1.2 : 0);
+    // (A deep well is for a hand that can get a piece to it in time: on Retro lock at speed, a shallow one.)
+    const wm = ctx && ctx.reach > E.reachDeep ? E.wellFast : E.wellMax;
+    const wellV = depth > 0 ? safe * (E.well * Math.min(depth, wm) + (wc === 0 || wc === W - 1 ? E.wellEdge : 0) + E.ready * ready) - (depth > wm ? (depth - wm) * 1.2 : 0) : 0;
     // A slot a T could twist into: its worth, and its roof's hole forgiven (that hole is the slot).
-    if (safe > 0.5 && top < H * 0.6) { const sw = slots(rows, W, top, hgt); if (sw) v += (sw + E.hole + E.holeRow + E.covered) * (ctx && ctx.tsoon ? 1 : 0.6); }
+    let slotV = 0, sw = 0;
+    if (safe > 0.5 && top < H * 0.6) { sw = slots(rows, W, top, hgt); if (sw) slotV = (sw + E.hole + E.holeRow + E.covered) * (ctx && ctx.tsoon ? 1 : 0.6); }
+    v += wellV + slotV;
+    if (parts) {
+      const f = (n, v) => ({ n, v });
+      Object.assign(parts, {
+        holes: f(holes, -E.hole * holes), holeRows: f(holeRows, -E.holeRow * holeRows), covered: f(covered, -E.covered * covered),
+        rowTransitions: f(rowT, -E.rowT * rowT), colTransitions: f(colT, -E.colT * colT), bumps: f(bump, -E.bump * bump - E.bump2 * bump2),
+        height: f(sum, -E.height * sum), otherWells: f(otherWells, -E.otherWell * otherWells), danger: f(over, -E.danger * over * over), reach: f(reachOver, -E.reach * reachOver * reachOver),
+        blocked: f(blocked, -1000 * blocked), well: f(depth, wellV), ready: f(ready, 0), slot: f(sw ? 1 : 0, slotV),
+      });
+    }
     return v;
+  }
+
+  /**
+   * What a stack is worth, feature by feature (for a page that teaches from it): { total (worth's own number), parts:
+   * { holes, holeRows, covered, rowTransitions, colTransitions, bumps, height, otherWells, danger, reach, blocked, well (its
+   * depth; its ready rows are in its v), ready, slot } each { n, v } } where n is how many (cells, rows, columns or
+   * steps) and v what it adds to the total (a cost is below 0). The parts' v add up to the total.
+   */
+  function explain(rows, W, H, ctx) {
+    const parts = {}, total = worth(rows, W, H, ctx, parts);
+    return { total, parts };
   }
 
   /**
@@ -416,12 +460,15 @@
     const tIn = (n) => n.hold === 'T' || v.queue.slice(n.qi, n.qi + 3).includes('T');
     // How far to build for Quads and Twists: by the pieces it can see coming (no Next and no Hold: survival only).
     const intent = Math.min(1, (v.queue.length + (v.holdRule ? 2 : 0)) / 3);
-    const ctxOf = (n) => ({ urgency: v.urgency, tsoon: tIn(n), intent });
-    // Each piece falls `fall` rows between keys and `startFall` before the first (v: the Driver's reading of the pace).
-    const opts = { r180: v.r180, ceiling: v.ceiling, twist: true, fall: v.fall || 0, startFall: v.startFall || 0, sticky: !!v.sticky };
+    const ctxOf = (n) => ({ urgency: v.urgency, tsoon: tIn(n), intent, reach: v.reach || 0 });
+    // Each piece falls `rate` rows a key and `start` before the first; a later one (seen coming, so planned already)
+    // startNext (v: the Driver's reading of the pace; fall and startFall, whole rows, are the same).
+    const rate = v.rate != null ? v.rate : v.fall || 0, st = v.start != null ? v.start : v.startFall || 0;
+    const opts = { r180: v.r180, ceiling: v.ceiling, twist: true, rate, start: st, sticky: !!v.sticky, turn: v.turn != null ? v.turn : 1 };
+    const optsNext = Object.assign({}, opts, { start: v.startNext != null ? v.startNext : st });
     /** One piece set every way it can go, from a node: its children. */
     const expand = (n, id, start, holdNext, qiNext, first) => {
-      const type = Pieces.get(id), res = reach(n.rows, W, H, type, start, opts), kids = [];
+      const type = Pieces.get(id), res = reach(n.rows, W, H, type, start, first ? opts : optsNext), kids = [];
       const high = Math.min(1, Math.max(0, (heightOf(n.rows, H) - H * 0.45) / (H * 0.25)));
       for (const pl of res.places) {
         const sc = setAndClear(n.rows, W, H, shapeOf(type)[pl.r], pl.px, pl.py);
@@ -493,6 +540,30 @@
     return roots;
   }
 
+  /**
+   * Every placement of the piece in play (and, with Hold, of the one Hold would bring), ranked best first, at once
+   * (think run to its end): the API a page that judges a player's sets uses. v: view(game, rules, urgency), with
+   * v.rate and v.start for the rows a piece falls on the way (left out: none, every spot it could rest on). o: think's
+   * { beam, depth }. Each entry: { hold, id, r, x, y, twist, simple, lines, value (the best line of play it leads to),
+   * own (what this set alone is worth), rows (the board after it, cleared rows taken away), route }.
+   */
+  function rank(v, o) {
+    const it = think(v, o);
+    let r = it.next();
+    while (!r.done) r = it.next();
+    return r.value;
+  }
+
+  /**
+   * Where a set the player made stands among the ranked ones (rank's): matched by the board it left (rowsOf the board
+   * after the lock). Returns { index (0: the best; -1: not among them), entry, best, loss (best.value - entry.value:
+   * 0 for the best) }.
+   */
+  function judge(ranked, rowsAfter) {
+    const index = ranked.findIndex((e) => sameRows(e.rows, rowsAfter)), entry = index >= 0 ? ranked[index] : null, best = ranked[0] || null;
+    return { index, entry, best, loss: entry && best ? best.value - entry.value : null };
+  }
+
   function heightOf(rows, H) { for (let y = H - 1; y >= 0; y--) if (rows[y]) return y + 1; return 0; }
 
   // ---- mistakes ------------------------------------------------------------------------------------------------------
@@ -543,55 +614,112 @@
   function lognorm(rng, median, sigma) { return median * Math.exp(sigma * gauss(rng)); }
 
   /**
-   * How a skilled hand is timed at its ease (ms): the think before a piece (a median, longer for an awkward one), the
-   * tap between keys, a held key's delay and repeat, a held soft drop's row, the beat before the drop, a rare pause.
+   * The two ways it plays (Watch's Human and Unrestrained). Times in ms.
+   *
+   * human: a top player's hands, as a model of what a hand does (no wait is drawn at random on its own). A piece takes
+   * a look (a reaction to one it did not see coming, never under react; a glance at one it planned from the Next), a
+   * decision (decide at most, for a close call; next to none when one placement is far ahead of the rest), then the
+   * keys themselves: separate presses at its cadence (tap; one hand never quicker than tapMin, 15 a second, the two
+   * hands a chord apart, a turn with the first slide; never more than taps presses in any second), a long slide held
+   * (das, then a repeat every arr; on Retro lock, with no repeat to lean on, taps at retroTap, 15 a second at best), a
+   * held soft drop (soft a row), a beat on the spot, the drop. Its tempo drifts slowly (drift: the spread of its log;
+   * rho: how much of it a piece keeps), as a player settles into a rhythm and out of it, slower while it warms up (warm,
+   * over its first pieces); each piece and key jitters a little. Never faster than a top player: pps pieces a second
+   * over any ppsOver sets, burst over any burstOver. It searches what its hands can get to before the piece falls past.
+   * unrestrained: near perfect, at no human pace: a wider search, a key a frame, each piece set no sooner than a short
+   * fixed beat after it appears (so it can still be seen), never a mistake.
+   * beam, depth: its search (think's). budget: ms of thinking a frame in the page; steps: a headless run's stand-in.
    */
-  const HAND = { think: 240, tap: 82, das: 135, arr: 30, soft: 34, drop: 65, react: 170, pause: 0.022 };
+  const STYLES = {
+    human: {
+      human: true, look: 185, react: 150, glance: 65, decide: 300, tap: 86, tapMin: 1000 / 15, taps: 15, chord: 25, retroTap: 67, das: 150, arr: 40, soft: 12, beat: 55,
+      drift: 0.3, rho: 0.95, jitter: 0.07, warm: 0.2, pps: 3, ppsOver: 20, burst: 3.5, burstOver: 5, beam: 10, depth: 3, budget: 1.5, steps: 6,
+    },
+    unrestrained: { human: false, key: 16, beat: 100, beam: 20, depth: 4, budget: 5, steps: 14 },
+  };
+  const STYLE_IDS = ['human', 'unrestrained'];
+  const STYLE_NAMES = { human: 'Human', unrestrained: 'Unrestrained' };
+
+  /** The hand each action is pressed with: slides, the soft drop and the drop one (0), turns and Hold the other (1). */
+  const HAND_OF = { moveL: 0, moveR: 0, lower: 0, drop: 0, cw: 1, ccw: 1, r180: 1, hold: 1 };
+
+  /** Pushes x onto a log, keeping its last few thousand (a watched game can go on for hours). */
+  function keep(a, x) { a.push(x); if (a.length > 6000) a.splice(0, 3000); }
 
   /**
    * The bot at the keys of one game. host: { game() (the game in play), send(action, rep) -> ok (as a key would:
    * through the board's own input), gravity() (seconds a row now), retro (Retro lock), rules() ({ hold, drop, r180,
-   * next }) }. o: { seed, mistakes ('off' … 'often'), budget (ms of thinking a frame), steps (instead of a budget: so
-   * many pieces looked at a frame, a headless run's stand-in for the clock) }. update(ms) moves it on by that much
-   * time: it thinks (in slices), waits as a hand would, and presses the keys that are due. While a piece is being
-   * placed it already thinks about the next one on the board it will leave (ponder), as a player reads the Next.
+   * next }) }. o: { seed, style ('human', 'unrestrained'), mistakes ('off' … 'often'), budget (ms of thinking a frame;
+   * the style's when left out), steps (instead of a budget: so many pieces looked at a frame, a headless run's
+   * stand-in for the clock) }. update(ms) moves it on by that much time: it thinks (in slices), waits as a hand would,
+   * and presses the keys that are due. While a piece is being placed it already thinks about the next one on the board
+   * it will leave (ponder), as a player reads the Next.
    */
   class Driver {
     constructor(host, o) {
       o = o || {};
       this.host = host;
+      this.style = STYLES[o.style] ? o.style : 'human';
       this.mistakes = MISTAKES[o.mistakes] ? o.mistakes : 'off';
       const seed = o.seed == null ? (Math.random() * 4294967296) >>> 0 : o.seed;
       // Separate streams: what it chooses, and how its hands move (so a change of pace never changes a choice).
       this.rngMind = new RNG('bot:mind:' + seed);
       this.rngHand = new RNG('bot:hand:' + seed);
-      this.budget = o.budget == null ? 1.5 : o.budget;
+      this.budgetO = o.budget;
       this.steps = o.steps || 0;
       this.t = 0;
       this.piece = null;
       this.plan = null;
       this.gen = null;
       this.ponder = null;
-      this.log = { pieces: 0, mistakes: 0, kinds: {}, slips: 0, replans: 0, commits: 0, pondered: 0, spawnAt: [], thinkMs: [] };
+      // The tempo's drift (its log), the pieces so far, the last separate press, the sets (for the caps).
+      this.z = 0;
+      this.n = 0;
+      this.lastPress = -1e9;
+      this.lastKey = -1e9;
+      this.lastHand = [-1e9, -1e9];
+      this.recent = [];
+      this.locks = [];
+      this.dropT = null;
+      this.log = { pieces: 0, mistakes: 0, kinds: {}, slips: 0, replans: 0, commits: 0, pondered: 0, spawnAt: [], thinkMs: [], keys: [], firstKey: [], tempo: [] };
     }
 
+    /** Its style's numbers. */
+    get S() { return STYLES[this.style]; }
+    get budget() { return this.budgetO != null ? this.budgetO : this.S.budget; }
+    /** The mistakes it makes: the setting's, none when Unrestrained. */
+    get errs() { return this.S.human ? this.mistakes : 'off'; }
     setMistakes(id) { if (MISTAKES[id]) this.mistakes = id; }
+    /** Human or Unrestrained, from the next piece on (the keys of this one go on at the new pace). */
+    setStyle(id) { if (STYLES[id]) { this.style = id; if (this.piece) this.paceNow = this.pace(this.host.game()); } }
 
     /**
-     * The pace: scale (1 at ease, down to 0.1: every wait is scaled by it), urgency (1 - scale: the height it fears
-     * comes down), and the rows a piece falls between two keys and while it is read (for the search).
+     * The pace, for this piece: urgency (0 at ease, toward 1 when a piece meets the stack almost at once: the height it
+     * fears comes down), the hand's tempo and a key's time, the longest a decision may take, and the rows the piece
+     * falls between two keys (rate) and before the first (start: a piece not seen coming; startNext: one planned from
+     * the Next), so the search keeps to the spots the hands can get to.
      */
     pace(G) {
-      const iv = Math.max(0.001, this.host.gravity()), H = G.h;
+      const S = this.S, iv = Math.max(1, this.host.gravity() * 1000), H = G.h, retro = !!this.host.retro;
       const room = Math.max(1, H - G.board.stackHeight() - 2);
       // The time a piece has before it meets the stack, with the rest the modern lock gives on top of it.
-      const time = iv * room + (this.host.retro ? 0 : 0.35);
-      const scale = Math.max(0.1, Math.min(1, time / 1.6));
-      // A key's wait at this pace (a tap and a held key's repeat, between them) and the look before the first one: the
-      // rows gravity takes meanwhile, rounded up (a spot is only worth aiming at if it can still be reached).
-      const key = Math.max(16, (HAND.tap + HAND.arr) / 2 * scale), look = Math.max(16, HAND.think * scale);
-      const rows = (ms) => (ms < iv * 1000 * 0.5 ? 0 : Math.ceil(ms / (iv * 1000)));
-      return { scale, urgency: 1 - scale, fall: rows(key), startFall: rows(look), sticky: !!this.host.retro && rows(key) > 0 };
+      const time = iv * room + (retro ? 0 : 350);
+      const urgency = Math.max(0, Math.min(0.9, 1 - time / 1600));
+      const rows = (ms) => ms / iv;
+      // (Retro lock: the rows a piece falls on its way from where it appears to a far wall: five slides, a turn with them.)
+      const reachOf = (start, rate) => (retro ? start + 5 * rate : 0);
+      if (!S.human) return { urgency, tempo: 1, key: S.key, rate: rows(S.key) * 1.05, start: rows(S.key), startNext: rows(S.key), sticky: retro && rows(S.key) >= 0.5, decMax: 0, beam: S.beam, depth: S.depth, turn: 1, reach: reachOf(rows(S.key), rows(S.key)) };
+      // Its tempo: the slow drift, slower while it warms up, and a little more relaxed while there is time.
+      const tempo = Math.exp(this.z) * (1 + S.warm * Math.exp(-this.n / 8)) * (1 + 0.1 * (1 - urgency / 0.9));
+      const key = Math.max(S.tapMin, (retro ? S.retroTap : S.tap) * tempo);
+      // A hurried player decides quicker: at most a share of the time the piece has.
+      const decMax = Math.max(50, Math.min(S.decide * 1.15, 0.3 * time));
+      // (The rows are reckoned a little long: a spot only just in reach is one a hand would miss.)
+      const rate = rows(key * 1.1), startNext = rows(S.glance * tempo * 1.12 + decMax * 0.35);
+      return {
+        urgency, tempo, key, decMax, rate, sticky: retro && rate >= 0.5, start: rows(Math.max(S.react, S.look * tempo) * 1.12 + decMax), startNext,
+        beam: urgency > 0.65 ? 7 : S.beam, depth: urgency > 0.65 ? 2 : S.depth, reach: reachOf(startNext, rate), turn: 0.5,
+      };
     }
 
     /** Moves time on by ms: think, then press what is due (several in one frame when a held key repeats that fast). */
@@ -604,13 +732,13 @@
       for (let guard = 0; guard < 24 && this.plan && this.plan.target !== undefined && this.t >= this.plan.at && !G.over && G.piece === this.piece; guard++) this.step(G);
     }
 
-    /** What the bot sees of the game now (view), at the pace. */
-    look(G, rules) {
-      const v = view(G, rules, this.paceNow.urgency);
-      v.fall = this.paceNow.fall; v.startFall = this.paceNow.startFall; v.sticky = this.paceNow.sticky;
+    /** What the bot sees of the game now (view), at the pace; planned: the piece was seen coming. */
+    look(G, rules, planned) {
+      const pc = this.paceNow, v = view(G, rules, pc.urgency);
+      v.rate = pc.rate; v.start = planned ? pc.startNext : pc.start; v.startNext = pc.startNext; v.sticky = pc.sticky; v.reach = pc.reach; v.turn = pc.turn;
       return v;
     }
-    search(v) { return think(v, { depth: this.paceNow.scale < 0.35 ? 2 : 3, beam: this.paceNow.scale < 0.35 ? 7 : 10 }); }
+    search(v) { return think(v, { depth: this.paceNow.depth, beam: this.paceNow.beam }); }
 
     /** A piece came into play: a new one (its choice, pondered already or thought now), or the one Hold brought in. */
     newPiece(G, noHold) {
@@ -618,9 +746,19 @@
       if (G.piece === prev) return;
       this.piece = G.piece;
       if (!G.piece) return;
-      if (this.plan && this.plan.holding && this.plan.holding === prev) { this.plan.holding = null; this.plan.at = Math.max(this.plan.at, this.t + this.wait('tap')); return; }
-      if (!noHold) { this.log.pieces++; this.log.spawnAt.push(this.t); }
+      if (this.plan && this.plan.holding && this.plan.holding === prev) { this.plan.holding = null; this.plan.at = Math.max(this.plan.at, this.t + this.gap('tap')); return; }
+      if (!noHold) {
+        this.log.pieces++; keep(this.log.spawnAt, this.t);
+        // The last piece set (when its drop was pressed, else now: it set by itself this frame).
+        if (prev) { this.locks.push(this.dropT != null ? this.dropT : this.t); if (this.locks.length > 40) this.locks.splice(0, 20); }
+        this.n++;
+        // The tempo drifts: most of it kept from piece to piece, a little new.
+        const S = this.S;
+        if (S.human) { this.z = Math.max(-0.45, Math.min(0.5, S.rho * this.z + Math.sqrt(1 - S.rho * S.rho) * S.drift * gauss(this.rngHand))); keep(this.log.tempo, this.z); }
+      }
+      this.dropT = null;
       this.spawnT = this.t;
+      this.first = false;
       this.seen = new Map();
       this.paceNow = this.pace(G);
       const rules = this.host.rules();
@@ -629,20 +767,22 @@
       const P = this.ponder;
       this.ponder = null;
       this.gen = null;
+      this.planned = false;
       // Thought about already, while the last piece was placed: if the board, the piece and Hold are as foreseen.
       if (P && P.done && !noHold && P.id === G.piece.type.id && P.hold === (this.rules.hold && G.hold ? G.hold.id : null) && sameRows(P.rows, rowsOf(G.board))) {
         this.log.pondered++;
+        this.planned = true;
         this.decide(G, P.value);
         return;
       }
-      this.gen = this.search(this.look(G, this.rules));
+      this.gen = this.search(this.look(G, this.rules, false));
     }
 
     /** Thinks for this frame's share: the piece in play first, then the next one (ponder). */
     thinkSome(G) {
-      const t0 = now();
+      const t0 = now(), budget = this.budget;
       let n = 0;
-      const more = () => (this.steps ? n++ < this.steps : now() - t0 < this.budget);
+      const more = () => (this.steps ? n++ < this.steps : now() - t0 < budget);
       while (this.gen && more()) {
         const r = this.gen.next();
         if (r.done) { this.gen = null; this.decide(G, r.value); }
@@ -654,25 +794,33 @@
       }
     }
 
-    /** The thinking is done: the choice (with the mistakes asked for), how long a hand would take to see it, and the ponder. */
+    /**
+     * The thinking is done: the choice (with the mistakes asked for), when the first key comes (the look and the
+     * decision), and the ponder.
+     */
     decide(G, ranked) {
       if (!ranked.length) { this.plan = { target: null, at: this.t, moves: ['drop'] }; return; }
-      const c = choose(ranked, this.mistakes, this.rngMind, G.h);
+      const c = choose(ranked, this.errs, this.rngMind, G.h);
       if (c.kind) { this.log.mistakes++; this.log.kinds[c.kind] = (this.log.kinds[c.kind] || 0) + 1; }
-      const pick = c.pick, rk = this.rngHand, sc = this.paceNow.scale;
-      // An obvious piece (far ahead of the next best) is seen at once; an awkward one (close, a tuck or a spin, a hold) takes longer.
-      const gap = ranked[1] ? ranked[0].value - ranked[1].value : 20;
-      let f = gap > 8 ? 0.65 : gap > 3 ? 0.95 : 1.25;
-      if (pick.spun || !pick.simple) f *= 1.35;
-      if (pick.hold) f *= 1.1;
-      let think = lognorm(rk, HAND.think * f, 0.42);
-      if (c.kind === 'late') think += 250 + rk.next() * 450;
-      if (sc > 0.8 && rk.next() < HAND.pause) think += 450 + rk.next() * 900;
-      think = Math.min(think, 2600) * sc;
-      this.log.thinkMs.push(think);
-      // (At speed a slip is rarer, and with mistakes off there is none: no time to take it back.)
-      const slip = rk.next() < MISTAKES[this.mistakes].slip * (this.mistakes === 'off' ? (sc > 0.8 ? 1 : 0) : sc > 0.5 ? 1 : 0.3);
-      this.plan = { target: pick, at: Math.max(this.t, this.spawnT + think), holding: null, kind: c.kind, slip, slipped: false, run: null, wantHold: !!pick.hold };
+      const pick = c.pick, S = this.S, pc = this.paceNow, rk = this.rngHand;
+      let at = this.t, slip = false;
+      if (S.human) {
+        // The look: a reaction to a piece not seen coming (never quicker than react), a glance at one planned already.
+        const look = this.planned ? S.glance * pc.tempo * lognorm(rk, 1, S.jitter) : Math.max(S.react, S.look * pc.tempo * lognorm(rk, 1, S.jitter));
+        // The decision: next to none when one placement is far ahead of the next, up to decide for a close call, a
+        // little more for a tuck, a spin or a Hold; a piece planned from the Next was mostly decided then.
+        const gap = ranked[1] ? Math.max(0, ranked[0].value - ranked[1].value) : 20;
+        let dec = (S.decide * Math.exp(-gap / 4) + (pick.spun || !pick.simple ? 45 : 0) + (pick.hold ? 25 : 0)) * (this.planned ? 0.3 : 1) * pc.tempo * lognorm(rk, 1, S.jitter * 2);
+        const cap = this.planned ? pc.decMax * 0.35 : pc.decMax;
+        // (A lapse, with Mistakes on: the decision as slow as it may be.)
+        if (c.kind === 'late') dec = cap;
+        dec = Math.min(dec, cap);
+        at = this.spawnT + look + dec;
+        keep(this.log.thinkMs, look + dec);
+        // A slip past the column (taken back): only while there is time for it, and with Mistakes off only at ease.
+        slip = rk.next() < MISTAKES[this.errs].slip * (pc.urgency < 0.25 ? 1 : this.errs === 'off' ? 0 : 0.3);
+      }
+      this.plan = { target: pick, at: Math.max(this.t, at), holding: null, kind: c.kind, slip, slipped: false, run: null, wantHold: !!pick.hold };
       this.startPonder(G, pick);
     }
 
@@ -684,29 +832,81 @@
       const hold = pick.hold ? cur : held, rest = pick.hold && !held ? vis.slice(1) : vis;
       const id = rest[0];
       if (!id) { this.ponder = null; return; }
-      const v = this.look(G, rules);
+      const v = this.look(G, rules, true);
       Object.assign(v, { rows: pick.rows, cur: Object.assign({ id }, spawnOf(G, Pieces.get(id))), hold: rules.hold ? hold : null, holdOk: v.holdRule, queue: rest.slice(1) });
       this.ponder = { id, hold: v.hold, rows: pick.rows, gen: this.search(v), done: false, value: null };
     }
 
-    /** A wait of a kind, at this pace, with a little jitter. */
-    wait(kind) {
-      const sc = this.paceNow ? this.paceNow.scale : 1, rk = this.rngHand, quick = kind === 'arr' || kind === 'soft';
-      const ms = lognorm(rk, HAND[kind] || HAND.tap, quick ? 0.12 : 0.25);
-      return Math.max(quick ? 8 : 16, ms * (quick ? Math.max(0.5, sc) : sc));
+    /**
+     * The time to the next key, by kind: a separate press (tap), a held key's delay (das) and repeat (arr) and a held
+     * soft drop's row (soft: the three are the game's handling, so they do not vary), the beat on the spot before the
+     * drop, a slip seen (react). Unrestrained: a frame.
+     */
+    gap(kind) {
+      const S = this.S, pc = this.paceNow;
+      if (!S.human) return S.key;
+      if (kind === 'das' || kind === 'arr' || kind === 'soft') return S[kind];
+      const j = lognorm(this.rngHand, 1, S.jitter), tempo = pc ? pc.tempo : 1;
+      if (kind === 'beat') return S.beat * tempo * j;
+      if (kind === 'react') return Math.max(S.react, S.look * tempo * j);
+      return Math.max(S.tapMin, (pc ? pc.key : S.tap) * j);
+    }
+    /**
+     * The soonest a separate press of action a can come: the same hand's fastest after its last press (15 a second),
+     * a chord after the other hand's, and no more than taps presses in any second.
+     */
+    pressAt(a) {
+      const S = this.S;
+      if (!S.human) return -Infinity;
+      const K = this.recent;
+      let at = Math.max(this.lastHand[HAND_OF[a] || 0] + S.tapMin, this.lastPress + S.chord);
+      if (K.length >= S.taps) at = Math.max(at, K[K.length - S.taps] + 1000);
+      return at;
+    }
+    /** The soonest this piece may be set: a top player's most (pps over the last ppsOver sets, burst over burstOver). */
+    capAt() {
+      const S = this.S, L = this.locks, n = L.length;
+      if (!S.human) return -Infinity;
+      let at = -Infinity;
+      if (n >= S.burstOver - 1) at = Math.max(at, L[n - (S.burstOver - 1)] + (S.burstOver - 1) * 1000 / S.burst);
+      if (n >= S.ppsOver - 1) at = Math.max(at, L[n - (S.ppsOver - 1)] + (S.ppsOver - 1) * 1000 / S.pps);
+      return at;
+    }
+    /** A key, sent; a separate press (not a held key's repeat) is noted. */
+    press(a, rep) {
+      this.lastKey = this.t;
+      if (!rep) {
+        this.lastPress = this.t;
+        this.lastHand[HAND_OF[a] || 0] = this.t;
+        this.recent.push(this.t);
+        if (this.recent.length > 32) this.recent.splice(0, 16);
+        keep(this.log.keys, this.t);
+        if (!this.first) { this.first = true; keep(this.log.firstKey, [this.t - this.spawnT, this.planned]); }
+      }
+      return this.host.send(a, rep);
     }
 
     /**
      * The moves from where the piece is now to the plan's target (searched again each key: gravity moves it too). Out
      * of reach now (it fell past the way in), the best spot it can still get to becomes the target; going round in
      * circles (a turn that kicks it up, a fall that brings it back), it settles for a spot with no turn on the way.
+     * The route itself is the shortest with no fall reckoned (gravity is met as it comes, a key at a time); which spots
+     * it may still aim for is the hands' search, with the fall (so a spot only a quicker hand could get to is not one).
      */
     routeNow(G) {
       const P = this.plan, t = P.target, p = G.piece;
       if (!t || !p) return ['drop'];
-      const pc = this.paceNow, rows = rowsOf(G.board);
-      const res = reach(rows, G.w, G.h, p.type, { rot: p.rot, x: p.x, y: p.y }, { r180: this.rules.r180 !== false, ceiling: !!G.ceiling, twist: true, fall: pc.fall, sticky: pc.sticky });
+      const pc = this.paceNow, rows = rowsOf(G.board), from = { rot: p.rot, x: p.x, y: p.y };
+      const o = { r180: this.rules.r180 !== false, ceiling: !!G.ceiling, twist: true, sticky: pc.sticky };
       const sh = shapeOf(p.type), want = sh.dOf[t.r];
+      // The spots in the hands' reach (read now: the searches share their buffers).
+      let inReach = null;
+      if (pc.rate > 0) {
+        const g = reach(rows, G.w, G.h, p.type, from, Object.assign({ rate: pc.rate, turn: pc.turn }, o));
+        inReach = new Set(g.places.map((q) => sh.dOf[q.r] + ':' + q.px + ':' + q.py + ':' + (q.spun ? 1 : 0)));
+      }
+      const all = reach(rows, G.w, G.h, p.type, from, o);
+      const res = inReach ? { places: all.places.filter((q) => inReach.has(sh.dOf[q.r] + ':' + q.px + ':' + q.py + ':' + (q.spun ? 1 : 0))), route: all.route } : all;
       // (A drop held back a moment after a set, pressed again, is not going round in circles: only moves count.)
       const key = p.rot + ',' + p.x + ',' + p.y, seen = (this.seen.get(key) || 0) + (P.aimed ? 0 : 1);
       this.seen.set(key, seen);
@@ -724,7 +924,7 @@
           const route = res.route(q);
           if (P.commit && route.some((m) => m === 'CW' || m === 'CCW' || m === 'R180')) continue;
           const sc = setAndClear(v.rows, G.w, G.h, sh[q.r], q.px, q.py);
-          const val = clearWorth(sc.lines, q.twist, v, sc.lines > 0 && sc.rows[0] === 0, 0).v + worth(sc.rows, G.w, G.h, { urgency: v.urgency });
+          const val = clearWorth(sc.lines, q.twist, v, sc.lines > 0 && sc.rows[0] === 0, 0).v + worth(sc.rows, G.w, G.h, { urgency: v.urgency, reach: pc.reach });
           if (!best || val > best.val) best = { q, val, route, rows: sc.rows };
         }
         if (!best) return ['drop'];
@@ -738,15 +938,20 @@
       return res.route(pl);
     }
 
-    /** Presses the next key the plan calls for, and sets when the one after it is due. */
+    /**
+     * Presses the next key the plan calls for, and sets when the one after it is due. A separate press waits for the
+     * hand (pressAt); the drop waits for the caps (capAt), on the spot.
+     */
     step(G) {
-      const P = this.plan, host = this.host;
+      const P = this.plan, S = this.S;
+      const ready = (a) => { const at = this.pressAt(a); if (this.t >= at) return true; P.at = at; return false; };
       if (P.wantHold) {
+        if (!ready('hold')) return;
         P.wantHold = false;
         P.holding = G.piece;
-        if (!host.send('hold', false)) { this.piece = null; this.plan = null; this.newPiece(G, true); return; }
+        if (!this.press('hold', false)) { this.piece = null; this.plan = null; this.newPiece(G, true); return; }
         this.newPiece(G);
-        P.at = this.t + this.wait('tap');
+        P.at = this.t + this.gap('tap');
         return;
       }
       const moves = this.routeNow(G), m = moves[0];
@@ -754,38 +959,63 @@
       // A slip: the last step of a slide taken one column too far, seen and taken back a moment later.
       if (P.slip && !P.slipped && (m === 'L' || m === 'R') && moves[1] !== m && P.run && P.run.m === m) {
         P.slipped = true;
-        if (host.send(ACTION[m], true) && host.send(ACTION[m], true)) { this.log.slips++; P.at = this.t + this.wait('react'); P.run = null; return; }
-        P.at = this.t + this.wait('arr');
+        if (this.press(ACTION[m], true) && this.press(ACTION[m], true)) { this.log.slips++; P.at = this.t + this.gap('react'); P.run = null; return; }
+        P.at = this.t + this.gap('arr');
         return;
       }
+      const same = !!P.run && P.run.m === (m === 'drop' ? 'D' : m);
       if (m === 'drop') {
-        if (!this.rules.drop) {
-          // No hard drop on these rules: a held ↓ to the stack, then a fresh press sets it.
-          const p = G.piece, down = !!p && G.fitsAt(p, p.rot, p.x, p.y - 1);
-          host.send('lower', down);
-          P.at = this.t + this.wait(down ? 'soft' : 'tap');
+        // No hard drop on these rules: a held ↓ to the stack, then a fresh press sets it.
+        const p = G.piece, down = !this.rules.drop && !!p && G.fitsAt(p, p.rot, p.x, p.y - 1);
+        if (down) {
+          if (!same && !ready('lower')) return;
+          P.run = { m: 'D', n: same ? P.run.n + 1 : 1 };
+          this.press('lower', same);
+          P.at = this.t + this.gap('soft');
           return;
         }
-        // A beat before the drop (the eye on the spot), then the drop; held back a moment after a set, so again soon.
-        if (!P.aimed) { P.aimed = true; P.at = this.t + this.wait('drop') * 0.5; return; }
-        if (host.send('drop', false)) { this.plan = null; return; }
+        // A beat before the drop (the eye on the spot), then the drop, no sooner than the caps allow; held back a
+        // moment after a set, so again soon.
+        if (!P.aimed) { P.aimed = true; P.at = Math.max(this.t, this.lastKey + this.gap('beat')); if (this.t < P.at) return; }
+        // (Unrestrained: no sooner than its beat after the piece appeared, so each one can be seen.)
+        const cap = S.human ? this.capAt() : this.spawnT + S.beat;
+        if (this.t < cap) { if (!P.capped) { P.capped = true; this.log.capped = (this.log.capped || 0) + 1; } P.at = cap; return; }
+        if (!ready('drop')) return;
+        if (this.press(this.rules.drop ? 'drop' : 'lower', false)) { this.dropT = this.t; this.plan = null; return; }
         P.at = this.t + 16;
         return;
       }
       P.aimed = false;
-      const same = !!P.run && P.run.m === m;
       if (m === 'L' || m === 'R') {
-        // A slide: the first press, then (with more to go) the key held: its delay, then its quick repeat.
+        // A slide: a long one held (its delay, then its repeat), a short one tapped; on Retro lock, all tapped.
+        if (same && P.run.held) {
+          P.run.n++;
+          if (!this.press(ACTION[m], true)) { P.run = null; P.at = this.t + this.gap('tap') * 0.5; return; }
+          P.at = this.t + this.gap('arr');
+          return;
+        }
+        if (!ready(ACTION[m])) return;
         let left = 1;
         while (left < moves.length && moves[left] === m) left++;
-        P.run = { m, n: same ? P.run.n + 1 : 1 };
-        if (!host.send(ACTION[m], same)) { P.run = null; P.at = this.t + this.wait('tap') * 0.5; return; }
-        P.at = this.t + (left > 1 ? this.wait(same ? 'arr' : left >= 3 ? 'das' : 'tap') : this.wait('tap'));
+        const held = !same && S.human && !this.host.retro && left >= 4;
+        P.run = { m, n: same ? P.run.n + 1 : 1, held };
+        if (!this.press(ACTION[m], false)) { P.run = null; P.at = this.t + this.gap('tap') * 0.5; return; }
+        P.at = this.t + this.gap(held ? 'das' : 'tap');
         return;
       }
-      P.run = m === 'D' ? { m, n: same ? P.run.n + 1 : 1 } : null;
-      host.send(ACTION[m], m === 'D' ? same : false);
-      P.at = this.t + this.wait(m === 'D' ? 'soft' : 'tap');
+      if (m === 'D') {
+        // The soft drop: pressed, then held (a row each soft).
+        if (!same && !ready('lower')) return;
+        P.run = { m, n: same ? P.run.n + 1 : 1 };
+        this.press('lower', same);
+        P.at = this.t + this.gap('soft');
+        return;
+      }
+      // A turn: the other hand's next press (a slide, the drop) can follow at once, all but together with it.
+      if (!ready(ACTION[m])) return;
+      P.run = null;
+      this.press(ACTION[m], false);
+      P.at = this.t + (S.human ? S.chord : this.gap('tap'));
     }
   }
 
@@ -797,7 +1027,8 @@
    * Plays a Classic game to its end (or to o.pieces) as the page would, a frame at a time: the gravity and the lock
    * (Classic.fall), the soft drop, the reset a move buys, the moment after a set when a drop is held back (180 ms),
    * and the bot at the keys through the same actions a hand sends. o: { classic (the rules), w, h, seed, botSeed,
-   * mistakes, pieces (at most), lines (at most), fps, steps }. Returns what it did: pieces, lines, quads, twists, the
+   * style, mistakes, pieces (at most), lines (at most), fps, steps, speed (a level the pieces fall at whatever the
+   * lines: past the setup's 15, for the long runs) }. Returns what it did: pieces, lines, quads, twists, the
    * clears by size, topout, the moments each piece set (locksAt, seconds), the actions sent by name (acts), its log.
    */
   function simulate(o) {
@@ -820,7 +1051,7 @@
     const MOVE = /^(moveL|moveR|rotate|rotateInv|cw|ccw|r180)$/;
     const host = {
       game: () => game, retro,
-      gravity: () => C.gravity(C.levelOf(k, C.of(game).lines), retro),
+      gravity: () => C.gravity(o.speed || C.levelOf(k, C.of(game).lines), retro),
       rules: () => ({ hold: k.hold, drop: k.drop, r180: true, next: k.next }),
       send(a, rep) {
         let ok = false;
@@ -840,7 +1071,8 @@
       },
     };
     // Thinking a few pieces a frame, as the page's slices would (o.steps; 0 thinks at once).
-    const bot = new Driver(host, { seed: o.botSeed == null ? 7 : o.botSeed, mistakes: o.mistakes, steps: o.steps == null ? 6 : o.steps, budget: Infinity });
+    const style = STYLES[o.style] ? o.style : 'human';
+    const bot = new Driver(host, { seed: o.botSeed == null ? 7 : o.botSeed, style, mistakes: o.mistakes, steps: o.steps == null ? STYLES[style].steps : o.steps, budget: Infinity });
     const maxP = o.pieces || 1000, maxL = o.lines || Infinity;
     while (!game.over && out.pieces < maxP && C.of(game).lines < maxL && out.frames < maxP * 600) {
       out.frames++;
@@ -855,5 +1087,7 @@
     return out;
   }
 
-  L.Bot = { popcount, shapeOf, rowsOf, fitMap, setAndClear, reach, spawnOf, worth, slots, clearWorth, view, think, heightOf, MISTAKES, MISTAKE_IDS, MISTAKE_NAMES, RANKS, choose, HAND, lognorm, Driver, simulate, W8, MOVES, ACTION };
+  L.Bot = { popcount, shapeOf, rowsOf, fitMap, setAndClear, reach, spawnOf, worth, slots, clearWorth, view, think, heightOf, MISTAKES, MISTAKE_IDS, MISTAKE_NAMES, RANKS, choose, STYLES, STYLE_IDS, STYLE_NAMES, lognorm, Driver, simulate, W8, MOVES, ACTION,
+    // (For a page that judges a player's sets by the same eye: every placement ranked, and a stack's worth in parts.)
+    rank, judge, explain };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
