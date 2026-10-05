@@ -184,6 +184,7 @@
         // Touch (js/touch.js): gestures on, drag sensitivity 1–10, hard-drop swipe (0 Light, 1 Medium, 2 Firm), what a
         // tap turns ('sides': right clockwise, left counter-clockwise; 'cw': always clockwise), haptics where there are any.
         touch: true, touchSens: 5, touchFlick: 1, tapTurn: 'sides', haptics: true,
+        watchMistakes: 'off', // Watch (Classic, js/watch.js): how often the bot errs: 'off', 'rare', 'some', 'often'
       },
       tab: 'play',
       free: null, // the Relaxed board in play (Game.toJSON)

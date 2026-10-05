@@ -13,6 +13,8 @@ const L = load([
   'physics.js',
   'descent.js',
   'classic.js',
+  // The Watch bot (js/bot.js): its search, worth, choice, mistakes and hands, headless.
+  'bot.js',
   'versus.js',
   'race.js',
   'battle.js',
@@ -4964,6 +4966,10 @@ require('./descent-unit.cjs')({ L, test });
 
 // Classic, a board mode, and editing a board's rules (scripts/classic-unit.cjs).
 require('./classic-unit.cjs')({ L, test });
+
+// Watch: the bot that plays Classic, headless (scripts/bot-unit.cjs; the long soak is scripts/bot-soak.cjs).
+console.log('watch bot');
+require('./bot-unit.cjs')({ L, test });
 
 // Race, a board mode, and its AI (scripts/race-unit.cjs).
 console.log('race');

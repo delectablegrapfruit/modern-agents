@@ -91,11 +91,11 @@
       this.view.attach(game, view);
       this.view.setLook(this.app.look());
       this.view.resize();
-      game.on('lock', (r) => { if (r.special !== 'settle') { this.setAt = this.now(); if (this.app.hints) this.app.hints.lock(); } this.onLock(r); });
+      game.on('lock', (r) => { if (r.special !== 'settle') { this.setAt = this.now(); if (this.app.hints && !this.watch) this.app.hints.lock(); } this.onLock(r); });
       game.on('blocked', () => { if (this.quiet) return; this.app.sound.play('blocked'); this.view.bump(this.reduced); });
       game.on('spawn', () => {
         // A new piece meets the pointer where it is.
-        if (this.pointer && this.settings.mouse && this.lastInput === 'mouse') setTimeout(() => this.follow(), 0);
+        if (this.pointer && this.settings.mouse && this.lastInput === 'mouse') setTimeout(() => { if (!this.blocked()) this.follow(); }, 0);
       });
       game.on('topout', () => this.onTopout && this.onTopout());
       // A hold swap refused: the held piece has no room anywhere above the stack (nothing changed).
@@ -153,7 +153,8 @@
       this.view.dirty = true;
       // Keys are in charge until the mouse moves again (so arrows work with the pointer resting on the board).
       if (!this.mouseActing && !this.touchActing) { this.lastInput = 'key'; this.view.pointerCol = null; this.rawCol = null; }
-      if (this.app.hints && prevPiece) this.app.hints.action(this, { act, a: asked, ok, rep: !!rep, mouse: !!this.mouseActing, touch: !!this.touchActing, piece: prevPiece, set: (a === 'drop' || a === 'lower') && g.piece !== prevPiece });
+      // (A watched game's keys are the bot's: never the player's habits, js/watch.js.)
+      if (this.app.hints && prevPiece && !this.watch) this.app.hints.action(this, { act, a: asked, ok, rep: !!rep, mouse: !!this.mouseActing, touch: !!this.touchActing, piece: prevPiece, set: (a === 'drop' || a === 'lower') && g.piece !== prevPiece });
       if (this.afterAction) this.afterAction(a);
       return ok;
     }
@@ -511,6 +512,8 @@
     snapshot() { this.lastS = { holds: this.game.s.holds, rotations: this.game.s.rotations, moves: this.game.s.moves, lowers: this.game.s.lowers, drops: this.game.s.drops }; }
 
     syncCounters() {
+      // A watched game's moves are nobody's (js/watch.js).
+      if (this.watch) { this.snapshot(); return; }
       const F = this.app.store.state.stats.free;
       for (const k of Object.keys(this.lastS)) {
         const d = this.game.s[k] - this.lastS[k];
@@ -536,6 +539,8 @@
     makeController(game) {
       const base = plainController(this);
       const own = L.Recipe && game && game.recipe ? L.Recipe.controllers(this, game) : [];
+      // A watched game (js/watch.js): its controller over Classic's.
+      if (this.watch && L.Watch && own.length) own.push(L.Watch.controller(this));
       return own.length ? L.Recipe.compose(base, own) : base;
     }
 
@@ -853,6 +858,7 @@
      * its own seed, nothing of the old one's piece, queue or random stream. Saved at once.
      */
     newBoard(reason) {
+      this.unwatch();
       const st = this.app.store, now = Date.now();
       Library.ensure(st.state, now);
       this.syncCounters();
@@ -895,7 +901,13 @@
     sameRecipe(r) { return !L.Recipe || L.Recipe.equal(r || L.Recipe.DEFAULT, this.game.recipe || L.Recipe.DEFAULT); }
 
     /** The board in play as saved, marked when it is full (for the library's list). */
-    boardJSON() { const j = this.game.toJSON(); if (this.game.over) j.over = true; return j; }
+    boardJSON() {
+      if (this.watch && this.watch.saved) return JSON.parse(JSON.stringify(this.watch.saved));
+      const j = this.game.toJSON(); if (this.game.over) j.over = true; return j;
+    }
+
+    /** Watching ends (js/watch.js) before anything changes the library: the board set aside for it comes back first. */
+    unwatch() { if (this.watch && L.Watch) L.Watch.stop(this); }
 
     /** A different board comes into play: a new game object, everything about the old one's piece in hand let go. */
     setGame(game) {
@@ -920,6 +932,7 @@
      * own record. False when the library is full, or when an untouched board would be made again as it is.
      */
     shelveAndNew(size, recipe) {
+      this.unwatch();
       const st = this.app.store, now = Date.now(), r = recipe || st.state.boards.recipe || (L.Recipe && L.Recipe.DEFAULT), z = Library.clampSize(size || st.state.boards.size, r);
       if (this.untouched()) {
         // An untouched board of another recipe is made again with it, as one of another size is.
@@ -976,6 +989,7 @@
      * entered nor left (Recipe.editConflicts). Apply spends the lines and changes the board (applyEdit).
      */
     openNewBoard(done, edit) {
+      this.unwatch();
       const st = this.app.store, B = st.state.boards, R = L.Recipe;
       const clone = (v) => JSON.parse(JSON.stringify(v));
       let recipe = R.normalize(edit ? edit.recipe : B.recipe), memo = {}, tab = 'size';
@@ -1230,6 +1244,7 @@
      * A board that ended keeps its rules (the action is not offered).
      */
     openEditRules(id, done) {
+      this.unwatch();
       const B = this.app.store.state.boards, rec = Library.find(B, id);
       if (!rec) return null;
       const cur = id === B.cur, json = cur ? this.boardJSON() : rec.game;
@@ -1281,6 +1296,7 @@
 
     /** Resumes a shelved board exactly as it was left; the one in play is shelved as it stands. */
     switchTo(id) {
+      this.unwatch();
       const st = this.app.store;
       const json = Library.open(st.state, id, this.boardJSON(), Date.now());
       if (!json) return false;
@@ -1389,6 +1405,7 @@
      * One at a time: asked again, the open one stays.
      */
     openLibrary(sideAt) {
+      this.unwatch();
       if (this.libHandle && this.libHandle.el.isConnected) return this.libHandle;
       const st = this.app.store;
       Library.ensure(st.state, Date.now());
@@ -1586,7 +1603,7 @@
       return this.fullView;
     }
 
-    blocked() { return this.cardOpen || !!this.fullView; }
+    blocked() { return this.cardOpen || !!this.fullView || !!(this.ctl && typeof this.ctl.handsOff === 'function' && this.ctl.handsOff()); }
 
     renderStatus() {
       const s = this.game.s;
@@ -1659,7 +1676,7 @@
      */
     renderItems() {
       // A controller with a bar of its own (Race: Send, Start over, Pause; Battle: Throw, Pause) draws it instead of the power-ups.
-      this.itembar.classList.remove('cl-bar');
+      this.itembar.classList.remove('cl-bar', 'wt-bar');
       if (this.ctl.bar(this.itembar) === true) { this.tray = null; this.renderTray(); return; }
       const inv = this.app.store.state.inventory;
       const armedId = this.armed && this.armed.piece === this.game.piece ? this.armed.id : null;
@@ -1862,7 +1879,8 @@
       }
     }
 
-    save() { this.app.store.state.free = this.game.toJSON(); }
+    /** The board in play, saved (while a game is watched: the board set aside for it, as it was: js/watch.js). */
+    save() { this.app.store.state.free = this.watch ? this.watch.saved : this.game.toJSON(); }
   }
 
   // ---- puzzles ------------------------------------------------------------------------------------------------------

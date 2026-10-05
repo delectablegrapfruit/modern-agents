@@ -56,6 +56,9 @@
     trash: svg('<path d="M2.75 4.25h10.5M6.25 4.25v-1.5h3.5v1.5M4 4.25l.7 9a1 1 0 0 0 1 .9h4.6a1 1 0 0 0 1-.9l.7-9M6.75 7v4.25M9.25 7v4.25"/>'),
     playIcon: svg('<path d="M5 3.1v9.8c0 .5.55.8.95.5l7.1-4.9a.6.6 0 0 0 0-1L5.95 2.6C5.55 2.3 5 2.6 5 3.1z" fill="currentColor" stroke="none"/>'),
     pause: svg('<path d="M5.5 3.5v9M10.5 3.5v9"/>'),
+    // Watch (Classic): an eye; Take over: a hand on the keys (a key with a chevron into it).
+    watch: svg('<path d="M1.75 8s2.3-4.25 6.25-4.25S14.25 8 14.25 8 11.95 12.25 8 12.25 1.75 8 1.75 8z"/><circle cx="8" cy="8" r="1.9"/>'),
+    takeOver: svg('<rect x="1.75" y="5.25" width="12.5" height="7.5" rx="1.75"/><path d="M4.5 9h.01M7 9h.01M9.5 9h2M8 1.75v2.1M6.6 2.55 8 3.95l1.4-1.4"/>'),
     music: svg('<path d="M6 12V3.4l7-1.4v8.4"/><circle cx="4.25" cy="12" r="1.75"/><circle cx="11.25" cy="10.4" r="1.75"/>'),
     musicOff: svg('<path d="M6 8.5V3.4l7-1.4v5"/><circle cx="4.25" cy="12" r="1.75"/><path d="M2.25 2.25l11.5 11.5"/>'),
     copy: svg('<rect x="5.5" y="5.5" width="8.25" height="8.25" rx="1.75"/><path d="M10.5 3.2a1.2 1.2 0 0 0-1.15-.95H3.45a1.2 1.2 0 0 0-1.2 1.2v5.9a1.2 1.2 0 0 0 .95 1.15"/>'),

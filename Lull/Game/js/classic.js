@@ -46,6 +46,52 @@
     const l = Math.max(1, Math.min(level, 20));
     return Math.max(0.012, Math.pow(0.8 - (l - 1) * 0.007, l - 1));
   }
+  // ---- falling: one frame of gravity and the lock, the soft drop, a move's reset (the controller's, and Watch's own runs) --
+
+  /**
+   * One frame of a Classic piece falling, on t = { acc, lockT } (the controller itself, or a headless run's own): the
+   * gravity ticks due in dt seconds at iv seconds a row, then the lock. Retro: no lock timer at all; each tick tries to
+   * move the piece down a row, and the tick that cannot sets it, there and then (so a piece that comes to rest sets one
+   * gravity interval later, a slide off a ledge just falls on, and moving or turning buys nothing). Modern: half a
+   * second of rest (LOCK.delay), renewed by moving or turning (rested). Returns 'lock' (it set), 'fell' (it came down a
+   * row or more) or null.
+   */
+  function fall(t, G, dt, iv, retro) {
+    const p = G.piece;
+    if (!p) return null;
+    let fell = false;
+    t.acc += dt;
+    while (t.acc >= iv) {
+      t.acc -= iv;
+      if (G.fitsAt(p, p.rot, p.x, p.y - 1)) { p.y--; p.lastRot = false; t.lockT = 0; fell = true; }
+      else if (retro) { t.acc = 0; G.lock(); return 'lock'; }
+      else { t.acc = 0; break; }
+    }
+    if (!retro && G.piece === p && !G.fitsAt(p, p.rot, p.x, p.y - 1)) {
+      t.lockT += dt;
+      if (t.lockT >= LOCK.delay) { t.lockT = 0; G.lock(); return 'lock'; }
+    }
+    return fell ? 'fell' : null;
+  }
+  /**
+   * Soft drop: a row a press (one point a row: true); ↓ on the stack sets the piece. A held ↓ (rep) sets it too on
+   * Retro lock (as the old consoles did: the soft drop's next step down that cannot, sets), never on modern lock (false).
+   */
+  function softDrop(t, G, rep, retro) {
+    const p = G.piece;
+    if (!p) return false;
+    if (G.fitsAt(p, p.rot, p.x, p.y - 1)) { p.y--; p.lastRot = false; G.s.score += 1; t.acc = 0; return true; }
+    if (rep && !retro) return false;
+    G.lock();
+    return true;
+  }
+  /** A move or a turn of a resting piece buys it more time (modern lock: up to LOCK.resets times). t: { lockT, resets }. */
+  function rested(t, G, retro) {
+    const p = G.piece;
+    if (!p || retro) return;
+    if (!G.fitsAt(p, p.rot, p.x, p.y - 1) && t.resets < LOCK.resets) { t.lockT = 0; t.resets++; }
+  }
+
   /** The garbage rows B type starts with, on a board hh tall. */
   function garbageRows(height, hh) { return Math.round((B_ROWS[height] || 0) * hh / 20); }
 
@@ -215,5 +261,5 @@
   };
   Recipe.part(PART);
 
-  L.Classic = { DEFAULTS, LEVELS, HEIGHTS, NEXT, B_LINES, B_ROWS, MUSIC, MUSIC_NAMES, LOCK, on, gravity, retroFrames, RETRO_FPS, garbageRows, levelOf, featLevel, normalize: normalizeK, retroDealer, of, addLines, PART };
+  L.Classic = { DEFAULTS, LEVELS, HEIGHTS, NEXT, B_LINES, B_ROWS, MUSIC, MUSIC_NAMES, LOCK, on, gravity, retroFrames, RETRO_FPS, fall, softDrop, rested, garbageRows, levelOf, featLevel, normalize: normalizeK, retroDealer, of, addLines, PART };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

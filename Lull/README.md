@@ -859,6 +859,45 @@ its records and achievements keep meaning what they did), DAS and ARE timing (mo
 the touch gestures, as everywhere in Lull), and B type's "height" variants beyond the six. It composes with the
 board size, the shape sets (unrated ones pay without a streak), Mirror and Physics; Descent is another mode.
 
+*Watch* — the Classic setup (Menu ▸ Solo ▸ Classic) has Watch beside Start: the computer plays a game on those rules
+(`js/watch.js`; the player itself is `js/bot.js`). It plays through the board's own actions, a press each, as your keys
+would (no piece is ever put in place for it), at a hand's pace: a think before each piece (log-normal, quicker for an
+obvious one, longer for an awkward one, now and then a pause), taps and held keys with a delay and a quick repeat, a
+little jitter, now and then a slide one column too far and back, all of it quicker as the pieces fall faster. Under the
+board: a quiet *Watching*, Mistakes (Off, Rare, Some, Often: the chance a piece goes otherwise than its best, a lesser
+placement or a lapse such as a hold or a tuck forgotten, at random and never into danger; kept in Settings, changed as
+it plays), Pause and Take over, which hands you the game where it stands (the bot lets go). At the end, Play again (and
+Space) or Done. A watched game is nobody's: never saved or shelved, and it counts toward nothing (bests, Stats, the
+day's log and time, achievements, lines banked); the board you were playing is saved as it was and comes back with
+Done, the menu's Start or Resume, or the library. Your keys, taps and the mouse do nothing to it but pause it, until
+Take over; it pauses when Lull is left, not when the pointer only wanders off.
+
+How it plays: every spot a piece can reach by the engine's own moves (a search over turn, column and row with the real
+kicks and Classic's turn at the ceiling, soft-drop tucks under ledges, the half turn, Hold only when the rules have it),
+each Twist and Mini counted as the lock counts it; at speed, the rows gravity takes between two keys are part of the
+search, so it only aims where a hand could still get. A stack is worth its holes, the blocks over them, row and column
+changes, bumps, the height (feared sooner the faster pieces fall), one well kept for Quads and its ready rows, and a slot
+a T could twist into; a set adds its Quad, Twist, Streak kept or broken, Spotless and combo, and small clears cost while
+the stack is low. It looks ahead over the piece in play, Hold and the Next pieces the rules show (a beam of ten, three
+deep), thinks about the next piece while it places this one, and with nothing in sight scores a placement by what each
+of the seven could make of it. It thinks in slices of a millisecond and a half a frame.
+
+Measured (`scripts/bot-soak.cjs`, 200 seeded games headless, each to 300 lines or the top out, played frame by frame
+with gravity, the lock and its hands):
+
+| Rules | Games | Lines a game | Lines by Quads | Twists a game | Topped out | Pieces a minute |
+|---|---|---|---|---|---|---|
+| A, level 1 | 40 | 301.5 | 68.9% | 6.20 | 0 (0.0%) | 137 |
+| A, level 8 | 30 | 301.0 | 68.5% | 6.67 | 0 (0.0%) | 138 |
+| A, level 15 | 30 | 301.2 | 67.5% | 5.40 | 0 (0.0%) | 219 |
+| A, level 15, retro lock and random | 30 | 286.3 | 52.4% | 1.70 | 4 (13.3%) | 176 |
+| A, level 5, no Next, no Hold | 20 | 300.4 | 3.5% | 0.10 | 0 (0.0%) | 145 |
+| A, level 5, mistakes Some | 25 | 301.4 | 62.6% | 6.44 | 0 (0.0%) | 135 |
+| A, level 5, mistakes Often | 25 | 301.0 | 56.5% | 6.84 | 0 (0.0%) | 134 |
+
+Of the four retro games that topped out, two reached level 29 (a row a frame, the old consoles' kill screen) and two
+were lost at levels 15 and 16, where Retro lock gives no time at all once a piece lands; nothing else topped out.
+
 ### Descent
 A mode (`js/descent.js`, its controller, look and window `js/descentview.js`): a second stack hangs upside down from
 the top of the well and lowers, lane by lane (each column is a lane). Your line clears are the weapon: every cell of a
@@ -1348,6 +1387,7 @@ open Lull/Game/index.html     # any browser, any OS (saves to localStorage)
 node Lull/scripts/test.cjs            # game logic: 750 puzzles replayed through the engine, turns, items, factory, board library, save, economy
 node Lull/scripts/econ-test.cjs       # the economy against models of play: bots on the engine, puzzles, the factory, a career (test.cjs runs it)
 node Lull/scripts/golden.cjs          # the golden identity run: a default board plays lock for lock as recorded (--write records it)
+node Lull/scripts/bot-soak.cjs 200 300   # Watch's bot: 200 seeded Classic games to 300 lines on four processes: lines, Quads, Twists, top outs
 node Lull/scripts/browser-test.cjs    # the page played in headless Chromium (needs Playwright), then touch-, device-, undo-, retired- and tabbar-test
 node Lull/scripts/touch-test.cjs      # an emulated phone played with real touches: gestures, layout, 44 px targets
 node Lull/scripts/device-test.cjs     # what a phone, a desktop browser, the app and a tablet with a trackpad are offered

@@ -137,23 +137,9 @@
         else if (this.running() && p) {
           c.ms += dt * 1000; // running time only, never paused time
           if (c.ms >= 60000) this.countGame();
-          this.acc += dt;
-          // (gravityFor: a test's own seconds a row.)
+          // (gravityFor: a test's own seconds a row.) The fall and the lock: Classic.fall (retro or modern lock).
           const iv = typeof this.gravityFor === 'function' ? this.gravityFor() : Classic.gravity(level(), K().lock === 'retro');
-          // Retro: no lock timer at all. Each gravity tick tries to move the piece down a row; the tick that cannot sets it,
-          // there and then (so a piece that comes to rest sets one gravity interval later, a slide off a ledge just falls
-          // on, and moving or turning buys nothing). Modern: half a second of rest, renewed by moving or turning.
-          const retro = K().lock === 'retro';
-          while (this.acc >= iv) {
-            this.acc -= iv;
-            if (G.fitsAt(p, p.rot, p.x, p.y - 1)) { p.y--; p.lastRot = false; this.lockT = 0; play.view.dirty = true; }
-            else if (retro) { this.acc = 0; G.lock(); break; }
-            else { this.acc = 0; break; }
-          }
-          if (!retro && G.piece === p && !G.fitsAt(p, p.rot, p.x, p.y - 1)) {
-            this.lockT += dt;
-            if (this.lockT >= Classic.LOCK.delay) { this.lockT = 0; G.lock(); }
-          }
+          if (Classic.fall(this, G, dt, iv, K().lock === 'retro') === 'fell') play.view.dirty = true;
         }
         this.syncMusic();
       },
@@ -176,22 +162,20 @@
 
       /** Moving or turning a resting piece buys it more time (modern lock: up to 15 times). */
       afterAction(a) {
-        const G = g(), p = G.piece;
-        if (!p || !MOVES.test(a) || K().lock === 'retro') return;
-        if (!G.fitsAt(p, p.rot, p.x, p.y - 1) && this.resets < Classic.LOCK.resets) { this.lockT = 0; this.resets++; }
+        if (MOVES.test(a)) Classic.rested(this, g(), K().lock === 'retro');
       },
 
       /**
        * Soft drop: a row a press (one point a row); ↓ on the stack sets the piece. A held ↓ sets it too on Retro lock (as
-       * the old consoles did: the soft drop's next step down that cannot, sets), never on modern lock.
+       * the old consoles did: the soft drop's next step down that cannot, sets), never on modern lock (Classic.softDrop).
        */
       softDrop(rep) {
         const G = g(), p = G.piece;
         if (!p) return false;
-        if (G.fitsAt(p, p.rot, p.x, p.y - 1)) { p.y--; p.lastRot = false; G.s.score += 1; this.acc = 0; play.renderStatus(); return true; }
-        if (rep && K().lock !== 'retro') return false;
-        G.lock();
-        return true;
+        const moved = p && G.fitsAt(p, p.rot, p.x, p.y - 1);
+        const ok = Classic.softDrop(this, G, rep, K().lock === 'retro');
+        if (moved) play.renderStatus();
+        return ok;
       },
 
       /** A game counts as played once it has run a minute or cleared ten lines. */

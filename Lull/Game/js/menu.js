@@ -6,7 +6,7 @@
 // The X at the top right (or Esc) closes it: back to the board in play, as it was. Solo and Multiplayer are pages of
 // big tiles too, one a mode, with Back beside the X.
 // A mode opens a short setup with only that mode's settings (the parts' own controls, from Recipe.uiPart: a level row,
-// a panel, presets, chips), then Start. Resume by rules: when a saved board still to be played has exactly these rules
+// a panel, presets, chips), then Start (Classic has Watch beside it: the computer plays, js/watch.js). Resume by rules: when a saved board still to be played has exactly these rules
 // (Library.match), the setup offers "Resume: <name> (<progress>)" above Start new, and Enter resumes it; a new board is
 // made only by Start (no match), Start new, or Custom. Each mode's last setup is kept (state.boards.menu).
 (function (root) {
@@ -166,8 +166,15 @@
 
     const resume = (rec) => {
       if (!rec) return;
+      // (The board in play while a game is watched is the one set aside for it: back to it.)
+      if (rec.id === B().cur) play.unwatch();
       if (rec.id !== B().cur && !play.switchTo(rec.id)) return;
       close();
+    };
+    /** Watch (Classic): the bot plays these rules; the board in play waits (js/watch.js). */
+    const watch = () => {
+      remember();
+      if (L.Watch && L.Watch.start(play, R.normalize(setup.recipe), setup.size)) close();
     };
     const start = () => {
       remember();
@@ -205,7 +212,9 @@
           title: (info(m) || { name: m }).name, back: Library.side(setup.recipe) === 'multi' ? 'multi' : 'solo',
           body: [h('div', { class: 'nb-body mn-setup', 'data-mode': m }, ...setupControls().filter(Boolean), why)],
           foot: [h('div', { class: 'mn-btns' }, resumeBtn,
-            h('button', { type: 'button', class: 'btn mn-start' + (hit ? '' : ' primary'), onclick: start }, hit ? 'Start new' : 'Start'))],
+            h('div', { class: 'mn-pair' },
+              m === 'classic' && L.Watch ? h('button', { type: 'button', class: 'btn mn-watch', 'data-tip': 'The computer plays; take over any time', onclick: watch }, L.UI.icon('watch'), 'Watch') : null,
+              h('button', { type: 'button', class: 'btn mn-start' + (hit ? '' : ' primary'), onclick: start }, hit ? 'Start new' : 'Start')))],
         };
       },
     };

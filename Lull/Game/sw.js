@@ -55,6 +55,8 @@ const FILES = [
   "js/physicsview.js",
   "js/classic.js",
   "js/classicview.js",
+  "js/bot.js",
+  "js/watch.js",
   "css/descent.css",
   "js/descent.js",
   "js/descentview.js",

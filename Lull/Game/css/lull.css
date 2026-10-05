@@ -1404,6 +1404,23 @@ kbd.big { font-size: var(--fs-sm); height: 22px; padding: 0 7px; }
 .itembar.cl-bar .btn .ico { width: 14px; height: 14px; }
 .itembar.cl-bar .btn[aria-disabled="true"] { opacity: 0.5; }
 .card .cl-sub { color: var(--muted); }
+/* Watch (js/watch.js): the bar under a watched game: a quiet "Watching", Mistakes, Pause and Take over; on two rows
+   when the plate is narrow. */
+.itembar.wt-bar { flex-wrap: wrap; column-gap: 8px; row-gap: 4px; padding: 4px 6px; }
+.wt-label { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 4px; color: var(--muted); font-size: var(--fs-sm); font-weight: 600; white-space: nowrap; }
+.wt-label .ico { width: 15px; height: 15px; display: grid; }
+.wt-seg { align-items: center; }
+.wt-seg .wt-nm { padding: 0 6px 0 5px; color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; }
+.wt-seg button { height: 26px; padding: 0 9px; justify-content: center; }
+.wt-acts { display: flex; gap: 6px; }
+.itembar.wt-bar .btn[disabled] { opacity: 0.5; }
+@media (max-width: 420px) {
+  .wt-seg .wt-nm { display: none; }
+  .wt-seg button { padding: 0 8px; }
+  .itembar.wt-bar { column-gap: 6px; }
+}
+@media (max-width: 340px) { .wt-acts .btn .ico { display: none; } .wt-label .ico { display: none; } }
+.card.wt-wait .row { flex-wrap: wrap; justify-content: center; }
 /* Classic's settings in the New board window's Mode tab: a row a setting, its name then its choices. */
 .cl-set { display: flex; flex-direction: column; gap: 6px; }
 .cl-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; min-height: 34px; }
@@ -1593,6 +1610,7 @@ body.browser.away #app { opacity: 0.6; }
   .item-btn { height: 66px; }
   .itembar.cl-bar .btn, .puz-actions .btn, .overlay .card .btn, .modal footer .btn { height: 44px; border-radius: 12px; }
   .cl-seg button { height: 44px; }
+  .wt-seg button { height: 40px; min-width: 44px; }
   .puz-actions { height: 58px; }
   .puz-bar { height: 54px; }
   .puz-bar .seg button { height: 44px; min-width: 44px; justify-content: center; }

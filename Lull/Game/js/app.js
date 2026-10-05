@@ -294,6 +294,9 @@
      * Classic board pauses at its card; the plain one does nothing).
      */
     onAway(why) {
+      // (A game being watched plays on when the pointer goes: there is nothing for it to do; js/watch.js.)
+      const w = this.modes.play && this.modes.play.watch;
+      if (why === 'pointer' && w && !w.free) return;
       if (why === 'blur' || this.settings.pauseAway !== false) this.pausePlay(why);
     },
 
@@ -384,7 +387,9 @@
       this.modes.factory.tick();
       // Time with Lull: counted while the window is in front and was used in the last two minutes.
       const focused = !document.hidden && document.hasFocus();
-      if (focused && !L.Collapse.on && performance.now() - (this.lastActivity || 0) < 120000) {
+      // (Watching the bot play is not time played: no day, no clock, js/watch.js.)
+      const watching = this.tab === 'play' && !!this.modes.play.watch;
+      if (focused && !watching && !L.Collapse.on && performance.now() - (this.lastActivity || 0) < 120000) {
         const S = this.state.stats.timeMs;
         S.total += 1000;
         // (A retired board in full view is not play: the board in play's time waits.)

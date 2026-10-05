@@ -56,11 +56,14 @@
 .mn-setup .nb-why:empty { display: none; }
 .mn-setup .nb-why { margin: 0 !important; }
 
-/* The footer: Resume (when these rules have a board) above Start. */
+/* The footer: Resume (when these rules have a board) above Start (Classic: Watch beside it). */
 .modal footer.mn-foot { justify-content: center; }
 .modal footer.mn-foot[hidden] { display: none; }
 .mn-btns { width: min(100%, 440px); display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
 .mn-btns .btn { min-height: 40px; justify-content: center; }
+/* Classic: Watch (the computer plays) beside Start. */
+.mn-pair { display: flex; gap: 8px; }
+.mn-pair .btn { flex: 1 1 0; min-width: 0; }
 .mn-resume { width: 100%; min-width: 0; }
 .mn-resume .lbl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 

@@ -3851,6 +3851,8 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await require('./undo-test.cjs')({ browser, check, PAGE, OUT });
   // ---- the Play menu: never by itself, Solo, Multiplayer, Recent, Escape, setups, resume by rules, Manage (menu-test.cjs)
   await require('./menu-test.cjs')({ browser, check, PAGE, OUT });
+  // ---- Watch: the bot plays Classic through the board's actions; your keys kept off it; Take over; nothing counted (watch-test.cjs)
+  await require('./watch-test.cjs')({ browser, check, PAGE, OUT });
   // ---- a retired board in full view: at play size, read-only, stepping, back exactly (retired-test.cjs) ----------------
   await require('./retired-test.cjs')({ browser, check, PAGE, OUT });
   // ---- Shapes: the chips, Custom and its picker, a board of picks, the trays and the fit on a phone (shapes-browser-test.cjs)
