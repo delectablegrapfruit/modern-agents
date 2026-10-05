@@ -98,7 +98,7 @@ module.exports = async function undoTests({ browser, check, PAGE, OUT }) {
   const puzLayout = (P) => P.ev((touch) => {
     const o = document.getElementById('puz-overlay'), c = o.querySelector('.card');
     const q = o.getBoundingClientRect(), k = c.getBoundingClientRect();
-    const btns = [...c.querySelectorAll('.row .btn')].map((b) => { const r = b.getBoundingClientRect(), hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return { t: b.textContent, h: Math.round(r.height), in: r.top >= k.top - 0.5 && r.bottom <= k.bottom + 0.5 && r.bottom <= q.bottom + 0.5, hit: !!hit && (hit === b || b.contains(hit)) }; });
+    const btns = [...c.querySelectorAll('.row .btn')].map((b) => { const r = b.getBoundingClientRect(), hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return { t: b.textContent, h: Math.round(r.height), in: r.top >= k.top - 0.5 && r.bottom <= k.bottom + 0.5 && r.bottom <= q.bottom + 0.5, hit: !!hit && (hit === b || b.contains(hit)), over: hit && !(hit === b || b.contains(hit)) ? (hit.className || hit.tagName) + '' : undefined }; });
     return { card: [Math.round(k.top), Math.round(k.bottom)], overlay: [Math.round(q.top), Math.round(q.bottom)], inside: k.top >= q.top - 0.5 && k.bottom <= q.bottom + 0.5, scrolls: c.scrollHeight > c.clientHeight + 1, btns, ok: btns.length >= 2 && btns.every((b) => b.in && b.hit && (!touch || b.h >= 44)) };
   }, P.touch);
 
@@ -385,8 +385,12 @@ module.exports = async function undoTests({ browser, check, PAGE, OUT }) {
     // The puzzle's not-yet card: fits, buttons in view; its Undo and the bar's, tapped: 5 each.
     const up = await failCard(P);
     await setWallet(P, 100, 0);
+    // The pointer off the board first: left where the last click was, it would hover the card and raise a tooltip.
+    if (!touch) await P.page.mouse.move(1, 1);
     await P.page.waitForTimeout(350);
-    const pl = await puzLayout(P);
+    let pl = await puzLayout(P);
+    // Something passing over a button (a toast on its way out) is not the layout: looked at once more, and said.
+    if (!pl.ok && pl.btns.some((b) => b.over)) { console.log('       covered for a moment: ' + JSON.stringify(pl.btns.map((b) => b.over))); await P.page.waitForTimeout(1200); pl = await puzLayout(P); }
     check(P.tag + ': the puzzle\'s not-yet card fits in the board, Undo and Retry in view' + (touch ? ', 44 px' : ''), up && pl.inside && !pl.scrolls && pl.ok, JSON.stringify(pl));
     if (w === 320 && hgt === 568) await P.shot('undo-puzzle-failed-' + name);
     a = await P.ev(money);

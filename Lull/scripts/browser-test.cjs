@@ -2100,9 +2100,9 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   const d0 = await ev(() => ({ start: document.querySelector('.modal-menu .mn-start').textContent, cont: !!document.querySelector('.modal-menu .mn-continue') }));
   check('a mode with no game kept: Start, no Continue', d0.start === 'Start' && !d0.cont, JSON.stringify(d0));
   await page.click('.modal-menu .mn-start');
-  await page.waitForTimeout(80);
+  await page.waitForFunction(() => Lull.app.store.state.boards.cur === 'descent', null, { timeout: 3000 }).catch(() => {});
   const libB = await ev(() => { const m = Lull.app.modes.play, B = Lull.app.store.state.boards; return { cur: B.cur, games: Object.keys(B.games), mode: m.game.recipe.mode, kept: JSON.stringify(B.games.plain && B.games.plain.game) }; });
-  check('Start makes the Descent game; Relaxed\'s is kept exactly as it was', libB.cur === 'descent' && libB.mode === 'descent' && libB.games.join() === 'plain' && libB.kept === libA.json, JSON.stringify(libB.games));
+  check('Start makes the Descent game; Relaxed\'s is kept exactly as it was', libB.cur === 'descent' && libB.mode === 'descent' && libB.games.join() === 'plain' && libB.kept === libA.json, JSON.stringify({ games: libB.games, cur: libB.cur, mode: libB.mode, kept: libB.kept === libA.json }));
   await ev(() => { const m = Lull.app.modes.play; m.hideCard(); m.game.drop(); m.persist(); });
   // Back to Relaxed: Continue, exactly where it was left.
   await viaMenu('plain');
