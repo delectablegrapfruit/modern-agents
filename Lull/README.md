@@ -811,7 +811,13 @@ play (and of the one Hold would bring) ranked best first, each with its value, t
 `Bot.judge(ranked, rowsAfter)` says where the board a player left stands among them (its index and its loss against the
 best); `Bot.explain(rows, w, h, ctx)` gives a stack's worth feature by feature (holes, covered blocks, transitions,
 bumps, height, danger, the well and its ready rows, a slot), each as how many and what it adds, the parts adding up to
-the total.
+the total. `Bot.weigh(view, o)` (a generator; `Bot.weighAll` at once) is the coach's own look (Training): every
+placement of the piece in play and of the one Hold would bring (tucks and spins too), each weighed by the best line it
+leads to over every piece in sight and no further (the piece in play, each Next piece shown, the one held: every line
+sets them all, so all are as long), a beam of its own for each; the later pieces only where a hand at the view's pace
+gets them; each first placement marked `hand` when a hand gets to it too. The best few a hand gets to are looked at
+first (`best` is the best of them), any other the same way when asked (`deepen`), so a player's set and the best are
+weighed alike.
 
 Measured (`scripts/bot-soak.cjs`, 140 seeded games headless, each to 200 lines or the top out at one speed throughout,
 played frame by frame with gravity, the lock and its hands; Retro lock's levels past 15 by the old table: 19 is three
@@ -843,22 +849,54 @@ second there are the fall's, not its own). Unrestrained plays on to the kill scr
 A mode (`js/training.js`, its controller, setup and drawing `js/trainingview.js`): Classic with a coach. It plays by
 Classic's rules exactly (its setup is Classic's: type, start level, Next, randomizer, lock timing, music, drop, hold,
 shadow, level lock; pieces fall by the level's gravity), and after each piece you set it judges the placement with the
-Watch bot's eye (`Bot.rank` over the board, the piece, Hold and the Next pieces the setup shows, as they were when the
-piece appeared; a beam of ten, three deep, every spot a piece can rest on in reach), thought out a couple of
-milliseconds a frame while the piece falls, so it is ready when the piece is set. Where the board you left stands
-among the ranked ones gives its *loss*: how far its value falls short of the best's (the bot's units: a hole costs
-about six to nine). A placement that loses more than Strictness allows is taken back:
+Watch bot's eye (`Bot.weigh` over the board, the piece, Hold and the Next pieces the setup shows, as they were when
+the piece appeared): every placement there is, each weighed by the best line of play it leads to over every piece in
+sight, and no further (a beam of four lines a piece for each, three with four or five Next; the best eight a hand gets
+to looked at first). The value is the long game's: Quads, Twists, the Streak and Spotless kept for, a clean well and
+stack to score from next, and the height feared more the faster the pieces fall, not only the lines cleared now. It is
+thought out three milliseconds a frame while the piece falls (about 55 ms in all with three Next, 70 with five), and if
+the piece is set before it is done, finished there and then: a set is never judged on half a search. The placement is
+found among them by its piece and the cells it was set on, and its *loss* is how far its value falls short of the
+best's (the bot's units, over the whole line). A placement that loses more than Strictness allows is taken back:
 
-| Strictness | Taken back from a loss of | What that catches (measured over 720 bot-played positions, every placement of each piece) |
+| Strictness | Taken back from a loss of | What that catches (measured over 120 coach-played positions, Next 3 and Hold, every placement of each piece) |
 |---|---|---|
-| Gentle | 12 | clear blunders: nearly every new hole (5% of those lose under 14.5, the median 35) and the clearly needless height (a placement two rows or more higher than the best, no new hole: its median is 17) |
-| Standard (the default) | 7 | any new hole, most needless height, a rough top or a well filled early (half of the placements with neither a hole nor height lose 5.7 or more) |
-| Strict | 3 | anything notably below the best; a near equal stays (the best and the second best are a median 1.4 apart) |
+| Gentle | 15 | three sealed holes in four (a sealed hole: 10% of those lose under 9.8, the median 24.6) and most needless height (two rows or more higher than the best: the median 18.3) |
+| Standard (the default) | 9 | nine sealed holes in ten, four needless heights in five, a poor top or a well filled early (the rest's median is 13) |
+| Strict | 4 | nearly anything below the best; a near equal stays (the best and the second best are a median 0.5 apart) |
 
-*Taken back* — the piece goes back up to where it appeared, drawn moving there for 300 ms (the keys, the mouse and touch
-wait meanwhile), and the game is exactly as it was when it appeared: the board, score, lines and level, Hold, Next, the
-bag and the random stream (so the same pieces come after), Classic's lock and gravity timers afresh; then you try the
-same piece again. With reduced motion it is back at once, under a brief soft flash. A placement kept plays on as in
+*The best* the coach holds up is always a placement a hand gets to at the level's speed: a key every 100 ms, the first
+400 ms after the piece appears (`Training.HAND`), the rows it falls between keys reckoned as the level falls (on Retro
+lock at speed, a piece that comes to rest sets). Its own cells, set there any way (a Twist's cells set without the turn
+included), are always kept. So the spot shown is always one you can get to and is always kept, and there is always a
+placement that is kept: the coach never asks for what cannot be done. (Before, the bot matched a set by the board it
+left and by its Twist, so a T set on the very cells shown, without the last turn, was judged as the lesser plain set
+and taken back by the Twist's worth; and every spot a piece could rest on counted, so at speed the best, and the hint,
+could be out of a hand's reach, with everything a hand could reach taken back against it.) The ranking is thought out
+once a turn and kept with it, so each try at a piece, and its hint, go by the very same list.
+
+Following the coach scores well over a one-piece look (the same eye, with no look ahead), in headless runs of 150 pieces
+(three seeds, Next 3 and Hold, the level held):
+
+| Level | Coach: score, lines, share of lines in Quads | One-piece look | Top outs |
+|---|---|---|---|
+| 1 | 15,267 · 58.7 · 70% | 11,367 · 55.3 · 55% | none |
+| 8 | 122,000 · 59.3 · 67% | 90,933 · 55.3 · 55% | none |
+| 15 | 188,750 · 55.3 · 51% | 150,250 · 57.3 · 40% | none |
+
+*Hold* is a move too, judged as it is pressed: the best line through Hold against the best of all. A Hold that loses
+more than Strictness allows goes back at once (the piece in play and Hold as they were: a try, as a poor set is), and
+with Explanation on the Hold box is marked, "No hold". A set made without Hold when Hold was clearly better is taken
+back as any poor set, "Use Hold" first among its words; when the best is through Hold, the hint frames the Hold box
+too and says "Hold" by the outline.
+
+*Taken back* — the rows it cleared are back at once, and the piece retraces its own way back to where it appeared:
+the path it came by is kept as it goes (each slide, turn, soft drop row and fall, and a Hold), and is undone in turn
+from where it was set, a fall in one glide, a turn or Hold's swap a step of its own, the whole in 0.4 to 0.9 s however
+long the path (each step at least 45 ms; a long path's slides glide too, and steps are left out evenly). The keys, the
+mouse and touch wait meanwhile, and the game is exactly as it was when the piece appeared: the board, score, lines and
+level, Hold, Next, the bag and the random stream (so the same pieces come after), Classic's lock and gravity timers
+afresh; then you try the same piece again. With reduced motion it is back at once, under a brief soft flash. A placement kept plays on as in
 Classic (its sound, its clears, the level's callout). A placement that tops out is taken back too when it was a poor
 one; only a kept one ends the game.
 
@@ -867,11 +905,26 @@ outlined on the board (a calm outline in the accent with a faint fill, apart fro
 when the best is the piece Hold brings in), until the piece is placed well. A good placement or a new piece clears the
 count.
 
-*Explanation* (off by default) — after a piece is taken back, the board shows why the best spot is better, in pictures
-and at most two words (`Bot.explain`'s features of both boards): where yours went (a faint dashed outline), the holes it
-covered (small rings), the rows the best one clears (a soft band), the well it keeps open (a soft column), how much higher
-yours stands (two short ticks at the side), and the words: "2 holes", "Clears 4", "Keep well", "+3 high" (or "Flatter"
-when it is only a bumpier top). They stay until the piece is placed.
+*Explanation* (off by default) — when a piece is taken back, why is shown right where it was set, for a moment, so the
+eye is there already: the piece waits there a beat (350 ms) while a small ring rises from each of its cells and fades
+(about a second, one after another), the holes it made pulse twice in rose, what the word is about shows as a soft band
+(the well's column, the rows the best clears), and a few words sit in a small pill just over it, naming what and how
+much from `Bot.explain`'s features of both boards, the heaviest first: "Covers 2 holes", "Best clears 2 rows", "Blocks
+the well", "+3 rows high"; with none of those, "No spot for next Z" when the difference is in the pieces ahead, else
+"Top +3 bumps"; "Hold I fits better" first when the best was through Hold. Then it goes back. A Hold taken back is
+marked at the Hold box ("T fits better now"). With reduced motion nothing moves: the cells, the holes and the words fade
+out together, still. Nothing is drawn anywhere else.
+
+A good move gets its words too, smaller and calmer (0.8 s, fainter rings rising less, in the accent), but only when
+there is something to say, so it does not chatter on every piece: a clear by its kind ("Twist clears 2", "Quad: 4
+rows", "Board cleared", "Streak kept", "Clears 2 rows"), and the best's own spot by the heaviest thing it does: "Quad
+ready: well 4 deep" or "Well kept, 3 deep" (its column banded), "Sets up Twist slot", "Fills the 2-wide gap", "Next S
+fits after" (best for what comes, not on its own), else what it leads the second best by most ("No new holes", "Flattest
+top", "Stack stays low", ...). A Hold that was the best move: "Saves I for the well" or "S fits better now" at the Hold
+box. A set kept that is neither a clear nor the best's spot gets no words.
+
+*The music* plays straight on through the way back: nothing restarts, stops, seeks or ducks it, and its tempo (which
+quickens as the stack nears the top) eases on from where it was once the piece is in play again.
 
 The coach's three settings are in the Training setup (Menu ▸ Solo ▸ Training, under the rules) and kept in Settings
 (`trainStrict`, `trainHint`, `trainExplain`), so they apply at once, to the game kept too ("The rules apply to a new game;
@@ -882,7 +935,9 @@ not counted, with the counters, and Play again.
 A Training game is kept as Training's one game (Continue, New game; its turn, tries and counters with it: `x.training`
 in the save), and counts toward nothing: no Stats (time included), bests, past boards, achievements, the day's log or
 control hints, no lines banked, never Classic's game. It is made from the menu only, never in the Custom window. Tests:
-`scripts/training-unit.cjs` (run by test.cjs) and `scripts/training-test.cjs` (run by browser-test.cjs).
+`scripts/training-unit.cjs` (run by test.cjs: the coach's promises over seeded games of every setup, a hand at its pace
+setting each piece through the engine, Hold, the look ahead, the long game against a one-piece look) and
+`scripts/training-test.cjs` (run by browser-test.cjs).
 
 ### Descent
 A mode (`js/descent.js`, its controller, look and window `js/descentview.js`): a second stack hangs upside down from

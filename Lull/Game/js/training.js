@@ -1,10 +1,17 @@
 // Lull — Training, a board mode (js/recipe.js) on Classic's rules (js/classic.js: its setup, gravity, lock and score):
 // a coach watches each placement and asks for another try when it was a poor one. After each set, the placement is
-// judged by the Watch bot's eye (js/bot.js: rank, then where the board left stands among every placement of that
-// piece, with the same board, Next and Hold) against the best it finds. A placement that loses more than Strictness
-// allows is taken back: the board, the score, the lines and level, Next, Hold and the random stream all as they were
-// when the piece appeared, and the same piece comes again. After a few tries in a row on the same piece (Hint after),
-// the best spot is shown as an outline until the piece is placed well; Explanation draws why on the board.
+// judged by the Watch bot's eye (js/bot.js: weigh, every placement of that piece and of the one Hold brings, each by
+// its best line over the board, the Next shown and Hold, no further) against the best a hand gets to at the level's
+// speed, found by the piece and the cells it was set on. A placement that loses more than Strictness allows is taken
+// back: the board, the score, the lines and level, Next, Hold and the random stream all as they were when the piece
+// appeared, and the same piece comes again. Hold is a move too, judged as it is pressed. After a few tries in a row on
+// the same piece (Hint after), the best spot is shown as an outline until the piece is placed well; Explanation shows
+// why where the piece was set.
+//
+// What the coach promises (scripts/training-unit.cjs holds it to them): the spot it shows, set there, is always kept
+// (however it got there: a Twist's cells set plainly too); the best is one a hand gets to before the piece falls past
+// (HAND), so there is always a placement that is kept; judging and the hint go by one ranking of the turn, thought out
+// once and kept with it for every try.
 //
 // The coach's settings are the player's (Settings: trainStrict, trainHint, trainExplain), set in the Training setup and
 // read at each placement, so a change applies at once. The recipe is Classic's (`classic`, its own setup); Training
@@ -13,7 +20,8 @@
 //
 // What the coach keeps with the game (its engine extension's save, x.training): { v, turn (the game as the piece in
 // play appeared: snap), tries (poor placements of it in a row), best (the best spot for it, once judged), why (what the
-// last poor one did, for Explanation), placed, first (placed well at the first try), rewinds }.
+// last poor one did, for Explanation), placed, first (placed well at the first try), rewinds }; and, not saved, the
+// turn's ranking (ranked, for rankedFor: the turn it was thought out for).
 //
 // Pure rules, no DOM; the controller, the setup's settings and the drawing are js/trainingview.js.
 (function (root) {
@@ -26,26 +34,36 @@
   const clone = (v) => (v == null ? v : JSON.parse(JSON.stringify(v)));
 
   /**
-   * Strictness: the most a placement may fall short of the best (the bot's units, where a hole costs about six to nine)
-   * before it is taken back. Measured over bot-played boards (720 positions, every placement of each piece):
-   *   a placement that leaves a hole the best does not: 5% lose under 14.5, the median 35
-   *   one with no new hole but two rows or more higher: 25% under 10.4, the median 17
-   *   the rest (a bumpier top, a well filled early): the median 5.7, 75% under 10.7
-   *   the best and the second best: the median 1.4 apart
-   * Gentle (12) takes back nearly every new hole and the clearly needless height, little else; Standard (7) any new hole,
-   * most needless height and a rough top; Strict (3) anything notably below the best, while a near equal stays.
+   * Strictness: the most a placement may fall short of the best (the bot's units, over the whole line in sight: a hole
+   * that stays costs about six to nine a piece) before it is taken back. Measured over coach-played boards (120
+   * positions, Next 3 and Hold, every placement of each piece):
+   *   a placement that seals a hole the best does not: 10% lose under 9.8, the median 24.6
+   *   one with no sealed hole but two rows or more higher: 25% under 10.2, the median 18.3
+   *   the rest (a bumpier top, a well filled early, an overhang): the median 13, 25% under 5.9
+   *   the best and the second best: the median 0.5 apart
+   * Gentle (15) takes back three sealed holes in four and most needless height; Standard (9) nine sealed holes in ten,
+   * most needless height and a poor top; Strict (4) nearly anything below the best, while a near equal stays.
    */
-  const STRICT = Object.freeze({ gentle: 12, standard: 7, strict: 3 });
+  const STRICT = Object.freeze({ gentle: 15, standard: 9, strict: 4 });
   const STRICT_IDS = ['gentle', 'standard', 'strict'];
   const STRICT_NAMES = { gentle: 'Gentle', standard: 'Standard', strict: 'Strict' };
   /** Hint after: the poor placements of one piece in a row before its best spot is shown. */
   const HINT = [1, 5];
   const DEFAULTS = Object.freeze({ strict: 'standard', hint: 3, explain: false });
   /**
-   * The search that judges: the Watch bot's own (a beam of ten, three pieces deep); with nothing in sight (no Next, no
-   * Hold) every placement is weighed by what the seven could make of it (the bot weighs only its best few so).
+   * The search that judges (Bot.weigh): every placement of the piece (and of the one Hold brings) weighed by its best
+   * line over every piece in sight, the Next the setup shows and Hold, no further; a beam of four lines a piece for
+   * each, the best eight a hand gets to looked at first (the best is the best of them), any other the same way once a
+   * player's set is judged by it. With four or five Next a beam of three keeps the thinking within the fall of a piece.
    */
-  const SEARCH = { beam: 10, depth: 3, guessTop: 99 };
+  const SEARCH = Object.freeze({ beam: 4, deep: 8 });
+  const searchOf = (q) => (q >= 4 ? Object.assign({}, SEARCH, { beam: 3 }) : SEARCH);
+  /**
+   * A player's hands, as the coach reckons them (ms): a key every `key` (a steady hand, not a top player's), the first
+   * after `look` for the piece in play and after `glance` for one planned from the Next. The best spot the coach holds
+   * up (and shows) is always one these hands get to before the piece falls past, at the level's gravity.
+   */
+  const HAND = { key: 100, look: 400, glance: 250 };
 
   const on = (r) => !!r && r.mode === 'training';
 
@@ -97,12 +115,12 @@
   // ---- judging a placement -------------------------------------------------------------------------------------------
 
   const rowsOfCells = (cells, w, h) => Bot.rowsOf({ w, h, cells });
-  function sameRows(a, b) { if (a.length !== b.length) return false; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true; }
 
   /**
    * What the bot sees of the game as the piece appeared (Bot.view, from a snap): the board, the piece where it
-   * appeared, Hold (usable: it was not used yet), the Next pieces the setup shows, the Streak and combo, and the height
-   * it fears by the level's speed. Every spot a piece can rest on is in reach (no hand's pace).
+   * appeared, Hold (usable: it was not used yet), the Next pieces the setup shows, the Streak and combo, the height it
+   * fears by the level's speed, and the hands' pace there (HAND: the rows a piece falls between two keys and before
+   * the first), so the spots a hand gets to are known.
    */
   function viewOf(game, sn) {
     const k = game.recipe.classic, W = game.w, H = game.h, rows = rowsOfCells(sn.cells, W, H), p = sn.piece;
@@ -110,30 +128,73 @@
     const iv = Classic.gravity(Classic.levelOf(k, lines), retro) * 1000, room = Math.max(1, H - Bot.heightOf(rows, H) - 2);
     const urgency = Math.max(0, Math.min(0.9, 1 - (iv * room + (retro ? 0 : 350)) / 1600));
     const holdRule = !!k.hold && !game.mods.noHold;
+    const rate = HAND.key / iv, start = HAND.look / iv, startNext = HAND.glance / iv;
     return {
       W, H, rows, ceiling: !!game.ceiling, cur: p ? { id: p.entry.id, rot: p.rot, x: p.x, y: p.y } : null,
       hold: holdRule && sn.hold ? sn.hold.id : null, holdRule, holdOk: holdRule && !sn.holdLocked,
       queue: sn.queue.slice(0, Math.max(0, k.next | 0)).map((e) => e.id), b2b: sn.s.b2b, combo: sn.s.combo, r180: true, urgency,
+      // (Retro lock: a piece that comes to rest sets, so nothing moves on from a resting spot once the fall is quick.)
+      rate, start, startNext, sticky: retro && rate >= 0.5, turn: 1, reach: retro ? startNext + 5 * rate : 0,
       spawn: (id) => Bot.spawnOf(game, Pieces.get(id)),
     };
   }
-  /** The bot's thinking over a snap, as a generator (the page runs it a slice a frame): every placement, best first. */
-  function think(game, sn) { return Bot.think(viewOf(game, sn), SEARCH); }
-  /** The same, at once (Bot.rank). */
-  function rank(game, sn) { return Bot.rank(viewOf(game, sn), SEARCH); }
+  /** The coach's thinking over a snap, as a generator (the page runs it a slice a frame): every placement, best first. */
+  function think(game, sn) { const v = viewOf(game, sn); return Bot.weigh(v, searchOf(v.queue.length)); }
+  /** The same, at once (Bot.weighAll); all: every placement looked at in full now (else as a set is judged by it). */
+  function rank(game, sn, all) { const v = viewOf(game, sn); return Bot.weighAll(v, Object.assign({ all: !!all }, searchOf(v.queue.length))); }
+  /**
+   * The ranking of the turn in play, kept with the turn once thought out (or handed in: ranked), so every try at a
+   * piece, and its hint, are judged by the very same list.
+   */
+  function rankingOf(game, ranked) {
+    const T = of(game);
+    if (!T || !T.turn) return ranked || [];
+    if (ranked) { T.ranked = ranked; T.rankedFor = T.turn; }
+    else if (T.rankedFor !== T.turn || !T.ranked) { T.ranked = rank(game, T.turn); T.rankedFor = T.turn; }
+    return T.ranked;
+  }
+  /** The best the coach holds up (Bot.weigh's best: always a placement a hand gets to, when there is one). */
+  const bestOf = (ranked) => (ranked ? ranked.best || ranked[0] || null : null);
+
+  /** A placement's cells as one key. */
+  const cellKey = (cells) => cells.map((c) => c[0] + ',' + c[1]).sort().join(';');
 
   /**
-   * A placement judged: the board it left (rowsAfter, its full rows gone) found among the ranked ones (a Twist and a
-   * plain set that leave the same board are told apart by r's twist), and how far it falls short of the best (loss, in
-   * the bot's units). good: it loses less than Strictness allows, or it is not among them (nothing to judge it by).
+   * A placement judged: the player's set (placed: { id, cells (where it was set), twist (0, 1 a Mini, 2), hold (Hold
+   * used) }) found among the ranked ones by its piece and its cells (with the same Hold and Twist where there is one),
+   * and how far it falls short of the best a hand gets to (loss, in the bot's units). The best's own cells are never
+   * taken back, however they were reached (a Twist missed included), so the spot shown is always a good one. good: it
+   * loses less than Strictness allows, or it is not among them (nothing to judge it by).
    */
-  function assess(ranked, rowsAfter, r, strict) {
-    const best = ranked && ranked[0] || null, tw = r && r.twist ? 2 : r && r.mini ? 1 : 0;
-    let entry = null, index = -1;
-    (ranked || []).forEach((e, i) => { if (sameRows(e.rows, rowsAfter) && (!entry || (e.twist === tw && entry.twist !== tw))) { entry = e; index = i; } });
-    const loss = entry && best ? Math.max(0, best.value - entry.value) : null;
+  function assess(ranked, placed, strict) {
+    const best = bestOf(ranked), key = cellKey(placed.cells), tw = placed.twist || 0;
+    let entry = null, index = -1, fit = -1;
+    (ranked || []).forEach((e, i) => {
+      if (e.id !== placed.id || cellKey(e.cells) !== key) return;
+      const f = (!!e.hold === !!placed.hold ? 2 : 0) + (e.twist === tw ? 1 : 0);
+      if (f > fit) { entry = e; index = i; fit = f; }
+    });
     const limit = STRICT[strict] != null ? STRICT[strict] : STRICT[DEFAULTS.strict];
+    const atBest = !!best && best.id === placed.id && cellKey(best.cells) === key;
+    // (The set looked at in full first, as the best was: the same search, the same footing.)
+    if (entry && !entry.deep && ranked.deepen) ranked.deepen(entry);
+    if (entry) index = ranked.indexOf(entry);
+    const loss = atBest ? 0 : entry && best && entry.value != null ? Math.max(0, best.value - entry.value) : null;
     return { good: loss == null || loss < limit, loss, limit, index, entry, best };
+  }
+
+  /**
+   * Hold pressed, judged as a move of its own (the turn's first: Hold is free again only once a piece is set): the
+   * best line through Hold (the best of the placements Hold brings that were looked at in full) against the best of
+   * all. good: it loses less than Strictness allows, Hold is the best, or nothing was weighed with Hold (Hold brings a
+   * piece not in sight, or the same piece). Returns { good, loss, limit, best, held (the best with Hold) }.
+   */
+  function assessHold(ranked, strict) {
+    const best = bestOf(ranked), limit = STRICT[strict] != null ? STRICT[strict] : STRICT[DEFAULTS.strict];
+    let held = null;
+    for (const e of ranked || []) if (e.hold && e.deep && (!held || e.value > held.value)) held = e;
+    const loss = !best || !held ? null : best.hold ? 0 : Math.max(0, best.value - held.value);
+    return { good: loss == null || loss < limit, loss, limit, best, held };
   }
 
   // ---- why the best spot is better (Explanation) ---------------------------------------------------------------------
@@ -167,10 +228,13 @@
    * show: { mine (its cells), best: { id, r, x, y, hold, cells }, holes (cells the played piece covers that the best
    * leaves open: [[x, y]]), lines ({ n, rows } the best clears and the played one does not), well ({ x } the best keeps
    * open and the played one fills), height ({ mine, best } after each, when the played one is two rows or more higher),
-   * rough (only a bumpier top: the bumps of each), words: at most two, the first the most telling ("2 holes",
-   * "Clears 2", "Keep well", "+3 high", "Flatter") }. The cells are where they are now, on the board as it was.
+   * rough (only a bumpier top: the bumps of each), words: at most two, each naming what and how much, the heaviest
+   * first ("Covers 2 holes", "Best clears 2 rows", "Blocks the well", "+3 rows high"; with none of those, "No spot for
+   * next Z" when the difference is in the pieces ahead, else "Top +3 bumps"; "Hold I fits better" first when the best
+   * was through Hold and the set was not) }; held: Hold was used for the set. The cells are where they are now, on the
+   * board as it was.
    */
-  function reasons(game, sn, entry, best, mine) {
+  function reasons(game, sn, entry, best, mine, held) {
     const W = game.w, H = game.h, before = rowsOfCells(sn.cells, W, H), bestCells = cellsOf(best);
     const out = { mine: mine.map((c) => c.slice()), best: { id: best.id, r: best.r, x: best.x, y: best.y, hold: !!best.hold, cells: bestCells }, holes: [], lines: null, well: null, height: null, rough: null, words: [] };
     const h0 = holeSet(before, W, H), hm = holeSet(withCells(before, mine), W, H), hb = holeSet(withCells(before, bestCells), W, H);
@@ -190,13 +254,72 @@
       const a = Bot.heightOf(entry.rows, H), b = Bot.heightOf(best.rows, H);
       if (a - b >= 2) out.height = { mine: a, best: b };
     }
-    if (out.holes.length) out.words.push(out.holes.length === 1 ? '1 hole' : out.holes.length + ' holes');
-    if (out.lines) out.words.push('Clears ' + out.lines.n);
-    if (out.well) out.words.push('Keep well');
-    if (out.height) out.words.push('+' + (out.height.mine - out.height.best) + ' high');
-    if (!out.words.length && pm && pm.bumps.n > pb.bumps.n) { out.rough = { mine: pm.bumps.n, best: pb.bumps.n }; out.words.push('Flatter'); }
+    // Each reason with what it weighs (about the bot's units), the heaviest said first.
+    const said = [];
+    const rows = (n) => n + (n === 1 ? ' row' : ' rows');
+    if (out.holes.length) said.push([6 * out.holes.length, out.holes.length === 1 ? 'Covers a hole' : 'Covers ' + out.holes.length + ' holes']);
+    if (out.lines) said.push([out.lines.n >= 4 ? 12 : 3 * out.lines.n, 'Best clears ' + rows(out.lines.n)]);
+    if (out.well) said.push([5 + pb.well.n, 'Blocks the well']);
+    if (out.height) said.push([2 * (out.height.mine - out.height.best), '+' + rows(out.height.mine - out.height.best) + ' high']);
+    said.sort((a, b) => b[0] - a[0]);
+    out.words = said.map((x) => x[1]);
+    if (!out.words.length && entry) {
+      // Nothing to see on the board now: the difference is in the pieces ahead (the next has no good spot), or the top.
+      const next = sn.queue[0] && sn.queue[0].id, q = game.recipe.classic ? game.recipe.classic.next : 0;
+      if (q && next && best.own - entry.own < 1.5) out.words.push('No spot for next ' + next);
+      else if (pm && pm.bumps.n > pb.bumps.n) { out.rough = { mine: pm.bumps.n, best: pb.bumps.n }; out.words.push('Top +' + (pm.bumps.n - pb.bumps.n) + ' bumps'); }
+    }
+    // Hold was the better move, and it was not used: said first.
+    if (best.hold && !held) out.words.unshift('Hold ' + best.id + ' fits better');
     out.words = out.words.slice(0, 2);
     return out;
+  }
+
+  /**
+   * What made a kept set good, for Explanation: { word (at most four words, naming what and how much), col (a column
+   * to point at: the well) }, or null when there is nothing worth a word (a set kept that is neither a clear nor the
+   * best's own spot: most are, and a word on each would only be noise). A clear by its kind ("Twist clears 2", "Quad:
+   * 4 rows", "Board cleared", "Streak kept", "Clears 2 rows"); the best's own spot by the heaviest thing it does: the
+   * well kept for a Quad ("Quad ready: well 4 deep", "Well kept, 3 deep"), a Twist slot made ("Sets up Twist slot"), a
+   * gap filled ("Fills the 3-wide gap"), the next piece's spot (it is the best for what comes: "Next S fits after"),
+   * else the feature it leads the second best by most ("No new holes", "Stack stays low", "Flattest top", ...).
+   */
+  function praise(game, sn, r, verdict) {
+    if (!r || !verdict) return null;
+    const rows = (n) => n + (n === 1 ? ' row' : ' rows');
+    if (r.lines && (r.twist || r.mini)) return { word: 'Twist clears ' + r.lines };
+    if (r.lines >= 4) return { word: 'Quad: ' + rows(r.lines) };
+    if (r.perfect) return { word: 'Board cleared' };
+    if (r.b2b) return { word: 'Streak kept' };
+    if (r.lines) return { word: 'Clears ' + rows(r.lines) };
+    if (verdict.loss !== 0 || !verdict.best) return null;
+    const W = game.w, H = game.h, before = rowsOfCells(sn.cells, W, H), after = Bot.rowsOf(game.board), cells = r.cells || [];
+    const ex = (rows) => Bot.explain(rows, W, H, {}).parts;
+    const pa = ex(after), p0 = ex(before);
+    const wb = wellOf(before, W, H), wa = wellOf(after, W, H);
+    if (wb.depth >= 3 && !cells.some(([x]) => x === wb.x) && wa.x === wb.x) return { word: (pa.ready.n >= 3 ? 'Quad ready: well ' : 'Well kept, ') + wa.depth + ' deep', col: wa.x };
+    if (pa.slot.n && !p0.slot.n) return { word: 'Sets up Twist slot' };
+    // A gap filled: the columns it rests in, side by side, lower than the stack on both sides (or a wall).
+    const hg = []; for (let x = 0; x < W; x++) { let t = 0; for (let y = H - 1; y >= 0; y--) if ((before[y] >>> x) & 1) { t = y + 1; break; } hg.push(t); }
+    const rest = [...new Set(cells.filter(([x, y]) => y === hg[x]).map(([x]) => x))].sort((a, b) => a - b);
+    if (rest.length >= 2 && rest[rest.length - 1] - rest[0] === rest.length - 1) {
+      const lo = rest[0], hi = rest[rest.length - 1], top = Math.max(...rest.map((x) => hg[x]));
+      if ((lo === 0 || hg[lo - 1] > top) && (hi === W - 1 || hg[hi + 1] > top) && rest.every((x) => hg[x] === hg[lo])) return { word: 'Fills the ' + rest.length + '-wide gap' };
+    }
+    // The best for what comes: not the best on its own.
+    const ranked = verdict.ranked, next = sn.queue[0] && sn.queue[0].id, q = game.recipe.classic ? game.recipe.classic.next : 0;
+    if (ranked && q && next) { let top = -Infinity; for (const e of ranked) if (e.hand) top = Math.max(top, e.own); if (top - verdict.best.own > 1) return { word: 'Next ' + next + ' fits after' }; }
+    // Else what it leads the second best by most.
+    const second = ranked && ranked.find((e) => e.deep && e !== verdict.best && cellKey(e.cells) !== cellKey(verdict.best.cells));
+    if (second) {
+      const ps = ex(second.rows), pb = ex(verdict.best.rows);
+      const NAMES = { holes: 'No new holes', covered: 'Nothing buried', bumps: 'Flattest top', height: 'Stack stays low', danger: 'Stack stays low', well: 'Keeps the well', rowTransitions: 'Rows kept clean', colTransitions: 'Rows kept clean', otherWells: 'No second well', slot: 'Sets up Twist slot', holeRows: 'No new holes' };
+      let bestK = null, by = 0.5;
+      for (const k of Object.keys(NAMES)) { const d = pb[k].v - ps[k].v; if (d > by) { by = d; bestK = k; } }
+      if (bestK) return { word: NAMES[bestK] };
+    }
+    const dh = Bot.heightOf(before, H) - Bot.heightOf(after, H);
+    return { word: dh > 0 ? 'Stack −' + dh : 'Stack stays low' };
   }
 
   // ---- the coach's record --------------------------------------------------------------------------------------------
@@ -216,28 +339,61 @@
   function whyOf(T, o) { return T && T.why && T.tries > 0 && settingsOf(o).explain ? T.why : null; }
 
   /**
-   * A piece was set (the lock's result r, the board now after it): judged against the turn's ranked placements
-   * (ranked, or ranked now), and recorded. Placed well: counted (and at the first try, when it was), the turn's hint
-   * and explanation gone. Placed poorly: one more try, the best spot and the why kept, and the turn marked to go back
+   * A piece was set (the lock's result r, the board now after it): judged against the turn's ranking (rankingOf:
+   * ranked when handed in, else the one kept with the turn, else thought now), and recorded. Placed well: counted (and
+   * at the first try, when it was), the turn's hint and explanation gone. Placed poorly: one more try, the best spot
+   * and the why kept, and the turn marked to go back
    * (T.back: the next piece's appearing does not start a new turn; rewind() takes the game back). o: the settings
-   * (settingsOf's, or Settings). Returns { act: 'keep' | 'rewind', verdict }.
+   * (settingsOf's, or Settings). Returns { act: 'keep' | 'rewind', verdict, praise (kept: praise's word, or null), col
+   * (the column it points at, or null) }.
    */
   function place(game, r, o, ranked) {
     const T = of(game);
     if (!T || !T.turn) return { act: 'keep', verdict: null };
     o = settingsOf(o);
-    const list = ranked || rank(game, T.turn);
-    const v = assess(list, Bot.rowsOf(game.board), r, o.strict);
+    const list = rankingOf(game, ranked);
+    // (Hold was used for this set when the game's count of holds went up since the piece appeared.)
+    const placed = { id: r.type, cells: r.cells || [], twist: r.twist ? 2 : r.mini ? 1 : 0, hold: (game.s.holds || 0) > (T.turn.s.holds || 0) };
+    const v = assess(list, placed, o.strict);
     if (v.good) {
       T.placed++;
       if (!T.tries) T.first++;
       T.tries = 0; T.best = null; T.why = null;
-      return { act: 'keep', verdict: v };
+      const pr = praise(game, T.turn, r, Object.assign({ ranked: list }, v));
+      return { act: 'keep', verdict: v, praise: pr ? pr.word : null, col: pr && pr.col != null ? pr.col : null };
     }
     T.tries++;
     T.rewinds++;
     T.best = v.best ? { id: v.best.id, r: v.best.r, x: v.best.x, y: v.best.y, hold: !!v.best.hold, cells: cellsOf(v.best) } : null;
-    T.why = v.best && r && r.cells ? reasons(game, T.turn, v.entry, v.best, r.cells) : null;
+    T.why = v.best && r && r.cells ? reasons(game, T.turn, v.entry, v.best, r.cells, placed.hold) : null;
+    T.back = true;
+    return { act: 'rewind', verdict: v };
+  }
+
+  /**
+   * Hold was pressed (the piece in play went to Hold): judged at once (assessHold, by the turn's ranking). Kept, the
+   * set that follows is judged as any. Poor (the piece was better set as it was): one more try, as a poor set is (the
+   * best spot kept for Hint after, the why: { hold: true, words: ['T fits better now'] }: the piece Hold put away), and the turn marked to go back (rewind
+   * puts the piece and Hold as they were). Returns { act: 'keep' | 'rewind', verdict, praise (when Hold was the best
+   * move, what it did: "Saves I for the well", "S fits better now") }.
+   */
+  function holdPress(game, o, ranked) {
+    const T = of(game);
+    if (!T || !T.turn || T.back) return { act: 'keep', verdict: null };
+    o = settingsOf(o);
+    const v = assessHold(rankingOf(game, ranked), o.strict);
+    // (Kept: a word for it when Hold was the best move.)
+    if (v.good) {
+      if (!v.best || !v.best.hold) return { act: 'keep', verdict: v, praise: null };
+      // What Hold did: kept an I for a well three deep or more, else brought in the piece that fits.
+      const sn = T.turn, before = rowsOfCells(sn.cells, game.w, game.h), wb = wellOf(before, game.w, game.h), cur = sn.piece ? sn.piece.entry.id : '';
+      return { act: 'keep', verdict: v, praise: cur === 'I' && wb.depth >= 3 ? 'Saves I for the well' : v.best.id + ' fits better now' };
+    }
+    T.tries++;
+    T.rewinds++;
+    T.best = { id: v.best.id, r: v.best.r, x: v.best.x, y: v.best.y, hold: !!v.best.hold, cells: cellsOf(v.best) };
+    const cur = T.turn.piece ? T.turn.piece.entry.id : '';
+    T.why = { hold: true, mine: [], best: T.best, holes: [], lines: null, well: null, height: null, rough: null, words: [cur + ' fits better now'] };
     T.back = true;
     return { act: 'rewind', verdict: v };
   }
@@ -263,11 +419,11 @@
    */
   function extension(game, saved) {
     const T = validState(saved) ? Object.assign(fresh(), clone(saved)) : fresh();
-    T.back = false;
+    T.back = false; T.ranked = null; T.rankedFor = null;
     game.on('spawn', () => { if (!game.holdLocked && !T.back) newTurn(T, snap(game)); });
     return {
       T,
-      save() { const o = Object.assign({}, T); delete o.back; return clone(o); },
+      save() { const o = Object.assign({}, T); delete o.back; delete o.ranked; delete o.rankedFor; return clone(o); },
       summary() { return { placed: T.placed, first: T.first, rewinds: T.rewinds }; },
     };
   }
@@ -300,5 +456,5 @@
   };
   Recipe.part(PART);
 
-  L.Training = { STRICT, STRICT_IDS, STRICT_NAMES, HINT, DEFAULTS, SEARCH, on, settingsOf, snap, restore, viewOf, think, rank, assess, reasons, cellsOf, holeSet, wellOf, newTurn, hintOf, whyOf, place, rewind, firstPct, of, fresh, validState, PART };
+  L.Training = { STRICT, STRICT_IDS, STRICT_NAMES, HINT, DEFAULTS, SEARCH, HAND, on, settingsOf, snap, restore, viewOf, think, rank, rankingOf, bestOf, cellKey, assess, assessHold, holdPress, praise, reasons, cellsOf, holeSet, wellOf, newTurn, hintOf, whyOf, place, rewind, firstPct, of, fresh, validState, PART };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

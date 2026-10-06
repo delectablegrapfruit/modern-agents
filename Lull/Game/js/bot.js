@@ -555,6 +555,144 @@
   }
 
   /**
+   * The coach's eye (a page that teaches: Training), as a generator (it yields after each piece it looks at): every
+   * placement of the piece in play, and of the one Hold would bring, each weighed by the best line of play it leads to
+   * over the pieces in sight and no further. A line sets every piece in sight, in turn or through Hold: the piece in
+   * play, each Next piece the rules show (v.queue) and the one held (at the end it may come in for the one not yet
+   * seen), so every line is as long and none looks past what is shown. The first placements are every spot a piece can
+   * rest on (tucks and spins too), each marked hand when a hand at v's pace (v.rate, v.start) gets there as well (every
+   * one, with no v.rate); the later pieces go only where a hand could take them (v.rate, v.startNext). Each line has a
+   * beam of its own (o.beam lines kept a piece): the best few first placements a hand gets to (o.deep, by their own
+   * worth, and the best o.each with Hold and without) are looked at so, and the best of them is the best (best); any other is looked at the very same way when
+   * asked (deepen(entry), at once; o.all: all of them now), so a player's set and the best are weighed alike.
+   * Returns [{ hold, id, r, x, y, px, py, cells, twist, simple, spun, lines, rows, route, own (the set alone), value
+   * (its line's; null until it is looked at), deep (it has been), hand }], those looked at first by value, then the
+   * rest by own, with best, depth (the pieces a line looks ahead: the Next shown) and deepen.
+   */
+  function* weigh(v, o) {
+    o = o || {};
+    const W = v.W, H = v.H, Q = v.queue.length, cur = v.cur;
+    if (!cur) return Object.assign([], { depth: Q });
+    const beamW = o.beam || 4;
+    const intent = Math.min(1, (Q + (v.holdRule ? 2 : 0)) / 3);
+    const tIn = (n) => n.hold === 'T' || v.queue.slice(n.qi, n.qi + 3).includes('T');
+    const ctxOf = (n) => ({ urgency: v.urgency, tsoon: tIn(n), intent, reach: v.reach || 0 });
+    const every = { r180: v.r180, ceiling: v.ceiling, twist: true };
+    const paced = v.rate != null ? Object.assign({}, every, { rate: v.rate, start: v.start || 0, sticky: !!v.sticky, turn: v.turn != null ? v.turn : 1 }) : null;
+    const later = paced ? Object.assign({}, paced, { start: v.startNext != null ? v.startNext : paced.start }) : every;
+    /** One piece set every way it can go from a node (as think's expand); first: the first placements, kept as entries. */
+    const kidsOf = (n, id, start, holdNext, qiNext, opts, first) => {
+      const type = Pieces.get(id), sh = shapeOf(type), res = reach(n.rows, W, H, type, start, opts), kids = [];
+      const high = Math.min(1, Math.max(0, (heightOf(n.rows, H) - H * 0.45) / (H * 0.25)));
+      // (Every kid has the same Hold and Next ahead: one context for them all.)
+      const ctx = ctxOf({ hold: holdNext, qi: qiNext });
+      for (const pl of res.places) {
+        const sc = setAndClear(n.rows, W, H, sh[pl.r], pl.px, pl.py);
+        const cw = clearWorth(sc.lines, pl.twist, n, sc.lines > 0 && sc.rows[0] === 0, high, intent);
+        const kid = { rows: sc.rows, hold: holdNext, qi: qiNext, b2b: cw.b2b, combo: cw.combo, acc: n.acc + cw.v - W8.land * (pl.py + sh[pl.r].bh / 2) };
+        kid.value = kid.acc + worth(sc.rows, W, H, ctx);
+        if (first) {
+          kid.e = { hold: first.hold, id, r: pl.r, x: pl.x, y: pl.y, px: pl.px, py: pl.py, cells: type.rots[pl.r].map(([cx, cy]) => [pl.x + cx, pl.y + cy]),
+            twist: pl.twist, simple: pl.simple, spun: !!pl.spun, lines: sc.lines, rows: sc.rows, route: res.route(pl), own: kid.value, value: kid.value, hand: true };
+          kid.dk = sh.dOf[pl.r] + ':' + pl.px + ':' + pl.py;
+        }
+        kids.push(kid);
+      }
+      return kids;
+    };
+    /** The spots a hand gets to (paced), as dOf:px:py. */
+    const handSet = (id, start) => {
+      const type = Pieces.get(id), sh = shapeOf(type), res = reach(v.rows, W, H, type, start, paced);
+      return new Set(res.places.map((q) => sh.dOf[q.r] + ':' + q.px + ':' + q.py));
+    };
+    /**
+     * A later piece, from a node: the one in play (queue[qi]) set; or, with Hold, the held one set and the one in play
+     * held, or (none held) the one in play held and the one after it set. Past the Next (nothing known in play) only
+     * the held piece can come in.
+     */
+    const onward = (n) => {
+      const id = n.qi < Q ? v.queue[n.qi] : null, ways = [];
+      if (id) ways.push([id, n.hold, n.qi + 1]);
+      if (v.holdRule) {
+        if (n.hold && n.hold !== '?' && n.hold !== id) ways.push([n.hold, id || '?', n.qi + 1]);
+        else if (!n.hold && id && n.qi + 1 < Q && v.queue[n.qi + 1] !== id) ways.push([v.queue[n.qi + 1], id, n.qi + 2]);
+      }
+      // (null: every piece in sight is set, the line is done; [] would be a piece with nowhere to appear.)
+      if (!ways.length) return null;
+      const out = [];
+      for (const [pid, hold, qi] of ways) for (const k of kidsOf(n, pid, v.spawn(pid), hold, qi, later)) out.push(k);
+      return out;
+    };
+    // 1. The first placements: the piece in play from where it is; with Hold, the one it brings from where it appears.
+    const root = { rows: v.rows, hold: v.hold, qi: 0, b2b: v.b2b, combo: v.combo, acc: 0 };
+    let firsts = kidsOf(root, cur.id, cur, v.hold, 0, every, { hold: false });
+    if (paced) { const hs = handSet(cur.id, cur); for (const k of firsts) k.e.hand = hs.has(k.dk); }
+    yield;
+    if (v.holdOk) {
+      const other = v.hold || v.queue[0];
+      if (other && other !== cur.id) {
+        const sp = v.spawn(other), held = kidsOf(root, other, sp, cur.id, v.hold ? 0 : 1, every, { hold: true });
+        // (Hold is a key: the piece it brings has fallen that much more before the next.)
+        if (paced) { const hs = handSet(other, sp); for (const k of held) k.e.hand = hs.has(k.dk); }
+        firsts = firsts.concat(held);
+        yield;
+      }
+    }
+    // 2. The lines over the Next, in full (the beam), for the best few a hand gets to by their own worth (o.deep of
+    // them): the best is the best of these. Any other placement is looked at the same way when a player's set is
+    // judged by it (deepen), so the best and a player's set are always weighed alike; until then its value is null.
+    const lines = new Map();
+    /** A first placement's line (a generator): the best its beam finds over every piece in sight, less its own acc. */
+    function* line(f) {
+      // (Two first placements that leave the same game, a Twist and a plain set of the same cells, share the line on.)
+      const key = f.rows.join(',') + '|' + f.hold + '|' + f.qi + '|' + f.b2b + '|' + f.combo;
+      if (lines.has(key)) return lines.get(key);
+      // (Every line sets every piece in sight, so they all end together.)
+      let level = [f], top = f.value;
+      for (;;) {
+        let next = null;
+        for (const n of level) { const ks = onward(n); if (ks) { next = next || []; for (const k of ks) next.push(k); } }
+        if (!next) break;
+        yield;
+        // A line where the next piece has nowhere to appear: the game would be over.
+        if (!next.length) { top -= 1e4; break; }
+        next.sort((a, b) => b.value - a.value);
+        level = next.slice(0, beamW);
+        top = level[0].value;
+      }
+      lines.set(key, top - f.acc);
+      return top - f.acc;
+    }
+    const full = function* (f) { f.e.value = f.acc + (yield* line(f)); f.e.deep = true; };
+    for (const k of firsts) { k.e.value = null; k.e.deep = false; }
+    const byOwn = firsts.slice().sort((a, b) => b.value - a.value);
+    const deepN = o.deep || 8;
+    let n = 0;
+    for (const f of byOwn) if (f.e.hand && n < deepN) { n++; yield* full(f); }
+    // (Hold is a choice too: the best few each way, with it and without, are always among them.)
+    for (const h of [false, true]) { let m = 0; for (const f of byOwn) if (f.e.hand && !!f.e.hold === h && m++ < (o.each || 3) && !f.e.deep) yield* full(f); }
+    // (No hand gets anywhere, a piece with nowhere to go but where it is: the best few of all.)
+    if (!n) for (const f of byOwn.slice(0, deepN)) yield* full(f);
+    if (o.all) for (const f of byOwn) if (!f.e.deep) yield* full(f);
+    const out = firsts.map((k) => k.e), byE = new Map(firsts.map((k) => [k.e, k]));
+    /** Best first: the ones looked at in full by value, then the rest by their own worth. */
+    const order = () => out.sort((a, b) => (b.deep - a.deep) || (a.deep ? b.value - a.value : 0) || b.own - a.own);
+    order();
+    out.best = out.find((e) => e.deep && e.hand) || out[0] || null;
+    out.depth = Q;
+    /** A placement looked at in full now (a player's set judged by it), at once: its value, on the same footing as the best's. */
+    out.deepen = (e) => { const f = byE.get(e); if (f && !e.deep) { const it = full(f); while (!it.next().done); order(); } return e ? e.value : null; };
+    return out;
+  }
+  /** weigh, at once. */
+  function weighAll(v, o) {
+    const it = weigh(v, o);
+    let r = it.next();
+    while (!r.done) r = it.next();
+    return r.value;
+  }
+
+  /**
    * Where a set the player made stands among the ranked ones (rank's): matched by the board it left (rowsOf the board
    * after the lock). Returns { index (0: the best; -1: not among them), entry, best, loss (best.value - entry.value:
    * 0 for the best) }.
@@ -1089,5 +1227,5 @@
 
   L.Bot = { popcount, shapeOf, rowsOf, fitMap, setAndClear, reach, spawnOf, worth, slots, clearWorth, view, think, heightOf, MISTAKES, MISTAKE_IDS, MISTAKE_NAMES, RANKS, choose, STYLES, STYLE_IDS, STYLE_NAMES, lognorm, Driver, simulate, W8, MOVES, ACTION,
     // (For a page that judges a player's sets by the same eye: every placement ranked, and a stack's worth in parts.)
-    rank, judge, explain };
+    rank, judge, explain, weigh, weighAll };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
