@@ -162,6 +162,10 @@ const YFFUI = (() => {
       title: `Player stuck: ${f.rate} stream requests in 10 s, no picture`,
       advice: 'Nothing is being blocked, so YouTube’s server is holding the video back — an ad-block penalty or a check on this VPN server. Try another server, or pause uBlock on youtube.com once to compare.',
     }),
+    restarted: (f) => ({
+      title: `Restarted the page ${f.count}× because the player was stuck`,
+      advice: 'Instant restart did that. If it keeps happening, copy the report: “previousPage” shows what the stuck load was waiting on.',
+    }),
     stuck: () => ({
       title: 'Player stuck with no picture',
       advice: 'No failing request seen. Copy the report, and compare with uBlock paused on youtube.com.',

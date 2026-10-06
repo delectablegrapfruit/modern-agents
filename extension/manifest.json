@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Focus & Fix for YouTube",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Hide YouTube's distractions, filter videos by keyword, channel or length, and fix ad-blocker playback hiccups.",
   "minimum_chrome_version": "111",
   "permissions": ["storage", "contextMenus", "webRequest"],

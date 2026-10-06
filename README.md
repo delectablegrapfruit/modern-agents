@@ -43,11 +43,13 @@ These run whether hiding is on or off.
 
 | Hiccup | Fix |
 | --- | --- |
-| Wait before playback: YouTube's server-enforced "SABR backoff", about 80% of the skipped ad's length | Player requests (`/youtubei/v1/player`, `get_watch`, `playlist/watch`, through fetch or XHR) get `playbackContext.contentPlaybackContext.isInlinePlaybackNoAd = true`, so the video comes with no ads and no backoff. A page opened directly gets the no-picture reload below |
+| Wait before playback: YouTube's server-enforced "SABR backoff", about 80% of the skipped ad's length | Player requests (`/youtubei/v1/player`, `get_watch`, `playlist/watch`, through fetch or XHR) get `playbackContext.contentPlaybackContext.isInlinePlaybackNoAd = true`, so the video comes with no ads and no backoff. A page opened directly gets a fresh request through the restart below |
 | Spinner that keeps restarting on a black frame, **only on a VPN**. On distrusted IPs YouTube sends no video until the page passes its BotGuard check, whose requests go to `jnn-pa.googleapis.com`. uBlock lists, VPN ad/tracker blockers and DNS filters often block that host, so the player retries forever | A failed request to `jnn-pa.googleapis.com/$rpc/google.internal.waa.v1.Waa/<method>` is retried at YouTube's own copy, `www.youtube.com/api/jnn/v1/<method>` (the pair LuanRT's BgUtils uses), and later requests go there directly |
 | ~5 s black player | The single `setTimeout(…resolve(1)…, 5000)` startup gate is cut to 5 ms, at most once per 30 s |
 | Black or frozen "ad" slot | Muted, 16× speed, Skip pressed. Mute state and chosen speed come back afterwards |
-| No picture, or frozen playback | Detected even when the video element was never told to play: the player's buffering state or a visible spinner counts. No picture for 2.5 s → player reload; 8 s later still none → one page reload (at most once per video per 10 min). Frozen 4 s mid-video → re-seek → pause/play → reload |
+| Spinner on a black frame that nothing in the page fixes, but a reload does | **Instant restart**: once the stream has answered twice with still no picture (0.8 s after the first answer), or after 2.5 s with no picture at all, the page reloads behind a "Restarting the player…" cover. At most twice per video per 5 min |
+| The same, every time on this connection | **Restart before it starts**: after a stuck video has been seen (remembered 12 h), a freshly loaded watch page doesn't play out the broken first load. Its first video restarts at the first stream answer (≤ 1.5 s). Healthy pages also get that one restart while it's armed; switch it off when the VPN is off for good |
+| Frozen playback mid-video, or restarts used up | Re-seek → pause/play → reload through the player. With no picture, straight to the player reload. Stuck state is read from the player's buffering state or a visible spinner, so a video element that was never told to play still counts |
 | "Ad blockers are not allowed" dialog | Closed, and playback resumes |
 
 Not fixable from the browser: server-side throttling of VPN IPs, "Sign in to confirm you're not a bot", and the hard

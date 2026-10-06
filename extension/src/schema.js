@@ -217,9 +217,19 @@ const YFF = (() => {
     { id: 'timerBoost', label: 'Startup gate', hint: 'Cut the player’s 5 s ad-wait timer' },
     { id: 'adFastForward', label: 'Ad-slot dead time', hint: 'Black/frozen ad slots at 16×, muted, auto-skip' },
     {
+      id: 'instantRestart',
+      label: 'Instant restart',
+      hint: 'Spinner on a black frame (stream answered, no picture) → reload the page within ~1 s, at most twice per video',
+    },
+    {
+      id: 'preemptiveRestart',
+      label: 'Restart before it starts',
+      hint: 'Once a stuck video was seen (12 h), a fresh watch page restarts at the first stream answer instead of trying the broken first load',
+    },
+    {
       id: 'stallRecovery',
       label: 'Stalls',
-      hint: 'No picture 2.5 s → player reload, 8 s more → page reload (once); frozen 4 s → re-seek → pause/play → reload',
+      hint: 'No picture → reload through the player; frozen 4 s mid-video → re-seek → pause/play → reload',
     },
     { id: 'dismissEnforcement', label: 'Anti-adblock dialog', hint: 'Close it and resume playback' },
   ];

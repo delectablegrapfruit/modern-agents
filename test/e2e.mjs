@@ -85,9 +85,10 @@ const YOUTUBE_PAGE = `<!doctype html><html><head><title>stand-in</title></head><
   });
   document.getElementById('pick-me').addEventListener('click', () => __log.push('page-click'));
 
-  // ?v=stuck: the VPN case. Spinner on a black frame, element never told to play, stream requests in a loop.
-  if (new URLSearchParams(location.search).get('v') === 'stuck') {
-    player.getVideoData = () => ({ video_id: 'stuck' });
+  // ?v=stuck…: the VPN case. Spinner on a black frame, element never told to play, stream requests in a loop.
+  const v = new URLSearchParams(location.search).get('v') ?? '';
+  if (v.startsWith('stuck')) {
+    player.getVideoData = () => ({ video_id: v });
     player.getPlayerState = () => 3; // buffering
     player.append(Object.assign(document.createElement('div'), { className: 'ytp-spinner', textContent: 'spinner' }));
     setInterval(() => fetch('https://rr1---sn-test.googlevideo.com/videoplayback?id=stuck', { method: 'POST', mode: 'no-cors', body: 'x' }).catch(() => {}), 400);
@@ -248,8 +249,9 @@ try {
     assert.equal((await log()).filter((entry) => entry === 'close').length, 1);
   });
 
-  await test('a stream with no picture yet is reloaded through the player API', async () => {
+  await test('restarts used up: a stream with no picture yet is reloaded through the player API instead', async () => {
     await page.evaluate(() => {
+      sessionStorage.setItem('yff:restarts:test', JSON.stringify([Date.now(), Date.now()]));
       const video = document.querySelector('video');
       video.src = '/stall.mp4';
       video.play().catch(() => {});
@@ -358,6 +360,7 @@ try {
         { id: 'media-extension', level: 'error', count: 1 },
         { id: 'media-network', level: 'error', count: 2, error: 'net::ERR_CONNECTION_RESET' },
         { id: 'media-loop', level: 'warn', rate: 9 },
+        { id: 'restarted', level: 'info', count: 2 },
         { id: 'stuck', level: 'warn' },
       ].map((f) => YFFUI.finding(f)),
     );
@@ -573,28 +576,108 @@ try {
     await expectVisible(['#comments', '#pick-me span']);
   });
 
-  await test('stuck on a black frame with the element paused: player reload, then one page reload, never two', async () => {
-    const stuck = await context.newPage();
-    stuck.on('pageerror', (e) => pageErrors.push(`stuck: ${e.message}`));
-    await stuck.goto('https://www.youtube.com/watch?v=stuck');
-    await stuck.waitForFunction(() => window.__log.includes('loadVideoById'), null, { timeout: 4000 });
-    await stuck.waitForEvent('load', { timeout: 12000 }); // the one page reload
-    const stuckTabId = await popup.evaluate(async () => {
+  const tabIdOf = (needle) =>
+    popup.evaluate(async (n) => {
       for (const tab of await chrome.tabs.query({})) {
         const stats = await chrome.tabs.sendMessage(tab.id, { type: 'yff:stats' }, { frameId: 0 }).catch(() => null);
-        if (stats?.href.includes('v=stuck')) return tab.id;
+        if (stats?.href.includes(n)) return tab.id;
       }
+    }, needle);
+  const restartReasons = (tab) => {
+    const reasons = [];
+    tab.on('console', (m) => {
+      const match = /no picture \((.+?)\); reloading/.exec(m.text());
+      if (match) reasons.push(match[1]);
     });
-    await stuck.waitForTimeout(3500);
+    return reasons;
+  };
+
+  await test('stuck on a black frame: page restarts within ~1.5 s, at most twice, then the player-API reload', async () => {
+    const stuck = await context.newPage();
+    stuck.on('pageerror', (e) => pageErrors.push(`stuck: ${e.message}`));
+    const reasons = restartReasons(stuck);
+    await stuck.goto('https://www.youtube.com/watch?v=stuck');
+    const start = Date.now();
+    await stuck.waitForEvent('load', { timeout: 4000 });
+    assert.ok(Date.now() - start < 2500, `first restart took ${Date.now() - start} ms`);
+    await stuck.waitForEvent('load', { timeout: 4000 });
+    assert.deepEqual(reasons, ['loop', 'loop']);
+    await stuck.waitForFunction(() => window.__log.includes('loadVideoById'), null, { timeout: 4000 });
+    const stuckTabId = await tabIdOf('v=stuck');
     const check = await diagnose(stuckTabId);
     assert.equal(check.stuck, true);
     assert.equal(check.findings.find((f) => f.id === 'media-loop')?.level, 'warn', JSON.stringify(check.findings));
+    assert.equal(check.findings.find((f) => f.id === 'restarted')?.count, 2);
     assert.equal(await popup.evaluate((tabId) => chrome.action.getBadgeText({ tabId }), stuckTabId), '!');
+    const report = await popup.evaluate((tabId) => chrome.runtime.sendMessage({ type: 'yff:report', tabId }), stuckTabId);
+    assert.ok(report.previousPage.some((e) => e.kind === 'media'), 'report lost the log of the page before the restart');
+    assert.ok(report.events.every((e) => !('search' in e) && !e.path.includes('?')));
     let reloadedAgain = false;
     stuck.once('load', () => (reloadedAgain = true));
-    await stuck.waitForTimeout(9000);
-    assert.equal(reloadedAgain, false, 'reloaded the page a second time');
+    await stuck.waitForTimeout(5000);
+    assert.equal(reloadedAgain, false, 'restarted a third time');
     await stuck.close();
+  });
+
+  await test('after a stuck video, a fresh watch page restarts at its first stream answer, before the loop', async () => {
+    const fresh = await context.newPage();
+    fresh.on('pageerror', (e) => pageErrors.push(`fresh: ${e.message}`));
+    const reasons = restartReasons(fresh);
+    await fresh.goto('https://www.youtube.com/watch?v=stuck-fresh');
+    const start = Date.now();
+    await fresh.waitForEvent('load', { timeout: 3000 });
+    assert.ok(Date.now() - start < 1500, `early restart took ${Date.now() - start} ms`);
+    assert.equal(reasons[0], 'early');
+    // Restarted once already, so the reloaded page gets no early restart, only loop detection.
+    await fresh.waitForEvent('load', { timeout: 4000 });
+    assert.deepEqual(reasons, ['early', 'loop']);
+    await fresh.close();
+  });
+
+  await test('a healthy start (spinner, stream answers, first frame soon after) is not restarted', async () => {
+    const fix = await popup.evaluate(() => YFF.DEFAULTS.fix);
+    await store({ fix: { ...fix, preemptiveRestart: false } }); // armed, that one restarts every fresh page by design
+    const healthy = await context.newPage();
+    let loads = 0;
+    healthy.on('load', () => (loads += 1));
+    await healthy.goto('https://www.youtube.com/watch?v=healthy');
+    await healthy.evaluate(async () => {
+      // Media ready first, so the picture can follow the first stream answer the way it does on a healthy load.
+      const canvas = Object.assign(document.createElement('canvas'), { width: 64, height: 64 });
+      const g = canvas.getContext('2d');
+      let hue = 0;
+      const paint = setInterval(() => ((g.fillStyle = `hsl(${(hue += 20)},80%,50%)`), g.fillRect(0, 0, 64, 64)), 30);
+      const recorder = new MediaRecorder(canvas.captureStream(30), { mimeType: 'video/webm;codecs=vp8' });
+      const chunks = [];
+      recorder.ondataavailable = (e) => chunks.push(e.data);
+      recorder.start();
+      await new Promise((r) => setTimeout(r, 1000));
+      recorder.stop();
+      await new Promise((r) => (recorder.onstop = r));
+      clearInterval(paint);
+
+      const player = document.getElementById('movie_player');
+      let state = 3;
+      player.getPlayerState = () => state;
+      player.getVideoData = () => ({ video_id: 'healthy' });
+      const spinner = Object.assign(document.createElement('div'), { className: 'ytp-spinner', textContent: 'spinner' });
+      player.append(spinner);
+      setInterval(() => fetch('https://rr1---sn-test.googlevideo.com/videoplayback?id=healthy', { method: 'POST', mode: 'no-cors', body: 'x' }).catch(() => {}), 300);
+      const video = document.querySelector('video');
+      const source = new MediaSource();
+      video.src = URL.createObjectURL(source);
+      await new Promise((r) => source.addEventListener('sourceopen', r, { once: true }));
+      const buffer = source.addSourceBuffer('video/webm;codecs=vp8');
+      buffer.appendBuffer(await new Blob(chunks).arrayBuffer());
+      await new Promise((r) => buffer.addEventListener('updateend', r, { once: true }));
+      await video.play();
+      spinner.remove();
+      state = 1;
+    });
+    await healthy.waitForTimeout(3500);
+    assert.equal(loads, 1, 'restarted a healthy page');
+    await healthy.close();
+    await store({ fix });
   });
 
   // Redirects reload the page, so they come last.

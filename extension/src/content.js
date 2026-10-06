@@ -34,7 +34,7 @@
     stuck: 0,
   };
   // Forwarded to background.js, which matches them against the tab's network log for the playback check.
-  const PLAYBACK_EVENTS = new Set(['stuck', 'unstuck', 'attestationRerouted']);
+  const PLAYBACK_EVENTS = new Set(['stuck', 'unstuck', 'attestationRerouted', 'pageReloads']);
   let settings = null;
   let pausedUntil = 0;
   let active = false;

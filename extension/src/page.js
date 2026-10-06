@@ -13,6 +13,8 @@
     timerBoost: true,
     adFastForward: true,
     stallRecovery: true,
+    instantRestart: true,
+    preemptiveRestart: true,
     dismissEnforcement: true,
   };
   const adopt = (next) => {
@@ -41,13 +43,15 @@
     prefix: '/$rpc/google.internal.waa.v1.Waa/',
     alternative: 'https://www.youtube.com/api/jnn/v1/',
   };
-  const STALL = {
-    noFrameMs: 2500,
-    afterMs: 4000,
-    maxAttempts: 3,
-    resetAfterMs: 60000,
-    pageReloadMs: 8000,
-    pageReloadEveryMs: 10 * 60000,
+  const STALL = { noFrameMs: 2500, afterMs: 4000, maxAttempts: 3, resetAfterMs: 60000 };
+  const RESTART = {
+    loopAnswers: 2, // stream answers with still no picture that make the loop…
+    afterAnswerMs: 800, // …this long after the first of them
+    hardMs: 2500, // or no picture at all this long
+    earlyMs: 1500, // armed fresh page: at its first stream answer, or this long
+    maxPerVideo: 2,
+    windowMs: 5 * 60000,
+    learnMs: 12 * 3600000,
   };
   const ENFORCEMENT = {
     message: 'ytd-enforcement-message-view-model',
@@ -70,7 +74,7 @@
   // length, and the player spins, re-requesting, until that lapses. A player request carrying
   // playbackContext.contentPlaybackContext.isInlinePlaybackNoAd = true comes back with no ads, so no backoff.
   // In-app navigation sends that request from this page and is rewritten here. A watch page opened directly has
-  // its player response baked into the HTML; the no-picture reload in section 5 re-requests it.
+  // its player response baked into the HTML; the restart or player reload in section 5 re-requests it.
 
   const isNoAdTarget = (url) => {
     try {
@@ -289,33 +293,101 @@
     }
   };
 
-  // 5. Stalls --------------------------------------------------------------------------------------------------
-  // Playback that should be running but whose clock hasn't moved gets a nudge, each heavier than the last:
-  // re-seek in place, pause/play, reload at the same second. With no picture at all yet (the backoff above, on a
-  // directly opened page) nudges can't help and a reload can, as it sends a fresh, patched player request: that
-  // case reloads once, straight away, and if there is still no picture STALL.pageReloadMs later, reloads the page
-  // (once per video per STALL.pageReloadEveryMs). At most STALL.maxAttempts nudges per video, refilled after a
-  // minute without one. Each stuck episode is reported ('stuck' / 'unstuck') for the playback check.
+  // 5. Stuck on a black frame ---------------------------------------------------------------------------------
+  // The VPN case: the spinner keeps restarting on a black frame, nothing inside the page brings it back, and a page
+  // reload does. So reload at once (instant restart): when the stream has answered twice with still no picture
+  // RESTART.afterAnswerMs after the first answer, or after RESTART.hardMs without a picture. Once that has happened
+  // (remembered for RESTART.learnMs), a freshly loaded watch page doesn't wait for it: its first video is restarted
+  // at the first stream answer, behind a "Restarting" cover. At most RESTART.maxPerVideo reloads per video per
+  // RESTART.windowMs, counted in sessionStorage; past that, or with instant restart off, the nudges take over:
+  // re-seek in place, pause/play, reload the video through the player (straight to that with no picture). At most
+  // STALL.maxAttempts per video, refilled after a minute without one. Each stuck episode is reported ('stuck' /
+  // 'unstuck') for the playback check.
 
   const STEPS = ['seek', 'pausePlay', 'reload'];
-  const stallState = new WeakMap(); // video -> { id, time, stuckSince, attempts, lastAttempt }
+  const stallState = new WeakMap(); // video -> per-video stall state, see handleStall
+  let coldStart = true; // no video has been seen yet in this document
+
+  // Answered stream requests (responseEnd), from resource timing: works whether or not fetch is wrapped.
+  const streamAnswers = [];
+  try {
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        if (!entry.name.includes('.googlevideo.com/videoplayback')) continue;
+        streamAnswers.push(entry.responseEnd || performance.now());
+        if (streamAnswers.length > 100) streamAnswers.shift();
+      }
+    }).observe({ type: 'resource', buffered: true });
+  } catch {
+    // No resource timing: only the RESTART.hardMs rule applies.
+  }
 
   // The spinner on a black frame: the element may not have been told to play yet, so ask the player as well.
   const buffering = (player) =>
     (typeof player.getPlayerState === 'function' && player.getPlayerState() === 3) ||
     Boolean(player.querySelector('.ytp-spinner')?.checkVisibility());
 
-  const reloadPageOnce = (id) => {
-    const key = `yff:reloaded:${id}`;
+  const mainPlayer = (player) =>
+    (player.id === 'movie_player' || player.id === 'shorts-player') && /^\/(watch|shorts\/|embed\/)/.test(location.pathname);
+
+  const restartsOf = (id) => {
     try {
-      if (Date.now() - (Number(sessionStorage.getItem(key)) || 0) < STALL.pageReloadEveryMs) return;
-      sessionStorage.setItem(key, String(Date.now()));
+      return JSON.parse(sessionStorage.getItem(`yff:restarts:${id}`) || '[]').filter((t) => Date.now() - t < RESTART.windowMs);
     } catch {
-      return; // without storage there's no guard against a reload loop
+      return null; // no storage means no guard against a reload loop, so no restarts
     }
+  };
+
+  const loopSeenRecently = () => {
+    try {
+      return Date.now() - (Number(localStorage.getItem('yff:loop-seen')) || 0) < RESTART.learnMs;
+    } catch {
+      return false;
+    }
+  };
+
+  const cover = (player) => {
+    if (player.querySelector(':scope > .yff-restart')) return;
+    const el = document.createElement('div');
+    el.className = 'yff-restart';
+    el.textContent = 'Restarting the player…';
+    el.style.cssText =
+      'position:absolute;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;' +
+      'background:#000;color:#eee;font:500 15px/1.4 Roboto,Arial,sans-serif;pointer-events:none';
+    player.append(el);
+  };
+
+  const restartPage = (player, s, reason) => {
+    const times = restartsOf(s.id);
+    if (!times || times.length >= RESTART.maxPerVideo || (reason === 'early' && times.length)) return false;
+    try {
+      sessionStorage.setItem(`yff:restarts:${s.id}`, JSON.stringify([...times, Date.now()]));
+      if (reason !== 'early') localStorage.setItem('yff:loop-seen', String(Date.now()));
+    } catch {
+      return false;
+    }
+    s.restarting = true;
+    cover(player);
     stat('pageReloads');
-    log('still no picture after a player reload; reloading the page once');
+    log(`no picture (${reason}); reloading the page`);
     location.reload();
+    return true;
+  };
+
+  // True while the page is being restarted: nothing else to do for this video.
+  const instantRestart = (player, s, now) => {
+    if (s.restarting) return true;
+    if (s.early) cover(player);
+    const answers = streamAnswers.filter((t) => t >= s.stuckSince);
+    let reason = null;
+    if (s.early && (answers.length || now - s.stuckSince >= RESTART.earlyMs)) reason = 'early';
+    else if (answers.length >= RESTART.loopAnswers && now - answers[0] >= RESTART.afterAnswerMs) reason = 'loop';
+    else if (now - s.stuckSince >= RESTART.hardMs) reason = 'no picture';
+    if (!reason) return false;
+    if (restartPage(player, s, reason)) return true;
+    s.early = false; // guard said no: let the nudges have it
+    player.querySelector(':scope > .yff-restart')?.remove();
+    return false;
   };
 
   const recover = (player, video, step) => {
@@ -334,10 +406,22 @@
   };
 
   const handleStall = (player, video, now) => {
-    const id = videoId(player) || video.currentSrc;
+    const id = videoId(player);
     let s = stallState.get(video);
-    if (!s || s.id !== id) {
-      s = { id, time: video.currentTime, stuckSince: now, attempts: 0, lastAttempt: 0, reported: false, pageReload: false };
+    if (!s || s.id !== (id || video.currentSrc)) {
+      const restartable = Boolean(id) && settings.instantRestart && mainPlayer(player);
+      s = {
+        id: id || video.currentSrc,
+        time: video.currentTime,
+        stuckSince: now,
+        attempts: 0,
+        lastAttempt: 0,
+        reported: false,
+        restartable,
+        restarting: false,
+        early: restartable && coldStart && settings.preemptiveRestart && loopSeenRecently() && restartsOf(id)?.length === 0,
+      };
+      if (id) coldStart = false;
       stallState.set(video, s);
     }
     const shouldBePlaying =
@@ -353,19 +437,14 @@
       return;
     }
     const noFrame = video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA;
+    if (noFrame && s.restartable && settings.instantRestart && instantRestart(player, s, now)) return;
     const stuckFor = now - s.stuckSince;
     if (stuckFor < (noFrame ? STALL.noFrameMs : STALL.afterMs)) return;
     if (!s.reported) {
       s.reported = true;
       stat('stuck');
     }
-    if (s.attempts >= STALL.maxAttempts) {
-      if (noFrame && !s.pageReload && stuckFor >= STALL.pageReloadMs) {
-        s.pageReload = true;
-        reloadPageOnce(s.id);
-      }
-      return;
-    }
+    if (!settings.stallRecovery || s.attempts >= STALL.maxAttempts) return;
     const step = noFrame && s.attempts === 0 ? 'reload' : STEPS[s.attempts];
     s.attempts = step === 'reload' ? STALL.maxAttempts : s.attempts + 1;
     s.lastAttempt = now;
@@ -408,7 +487,7 @@
         new MutationObserver(() => handleAd(player)).observe(player, { attributes: true, attributeFilter: ['class'] });
       }
       handleAd(player);
-      if (settings.stallRecovery) handleStall(player, video, now);
+      if (settings.stallRecovery || settings.instantRestart) handleStall(player, video, now);
     }
     if (settings.dismissEnforcement) dismissEnforcement();
   };

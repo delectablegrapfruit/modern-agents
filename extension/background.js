@@ -49,11 +49,22 @@ const BLOCKED_BY_EXTENSION = 'net::ERR_BLOCKED_BY_CLIENT';
 const IGNORED_ERRORS = new Set(['net::ERR_ABORTED']); // the player cancelling its own requests
 const MAX_EVENTS = 300;
 
-const tabs = new Map(); // tabId -> { events, count, stuckAt, rerouted }; lost when the worker sleeps, rebuilt as it goes
+// tabId -> { events, count, stuckAt, rerouted, restarts, previous }; lost when the worker sleeps, rebuilt as it goes.
+// `previous` is the log of the page before the last load, so a report still shows what led to a restart.
+const tabs = new Map();
+
+const freshState = (before) => ({
+  events: [],
+  count: 0,
+  stuckAt: 0,
+  rerouted: false,
+  restarts: before?.restarts ?? 0,
+  previous: before?.events.length ? before.events : (before?.previous ?? []),
+});
 
 const tabState = (tabId) => {
   let state = tabs.get(tabId);
-  if (!state) tabs.set(tabId, (state = { events: [], count: 0, stuckAt: 0, rerouted: false }));
+  if (!state) tabs.set(tabId, (state = freshState()));
   return state;
 };
 
@@ -106,6 +117,7 @@ const diagnose = (tabId) => {
   const stuck = Boolean(state.stuckAt);
   const rate = of('media', now - 10000).length;
   if (stuck && !findings.some((f) => f.level === 'error')) findings.push({ id: rate >= 5 ? 'media-loop' : 'stuck', level: 'warn', rate });
+  if (state.restarts) findings.push({ id: 'restarted', level: 'info', count: state.restarts });
 
   return { stuck, findings, counts: { media: media.length, attest: attest.length, player: of('player').length } };
 };
@@ -113,19 +125,24 @@ const diagnose = (tabId) => {
 // What the popup's "Copy report" puts on the clipboard: no query strings (they carry signed stream URLs).
 const report = (tabId) => {
   const now = Date.now();
-  return {
-    extension: chrome.runtime.getManifest().version,
-    browser: navigator.userAgent,
-    at: new Date(now).toISOString(),
-    ...diagnose(tabId),
-    events: (tabs.get(tabId)?.events ?? []).slice(-100).map((e) => ({
+  const state = tabs.get(tabId);
+  const list = (events = []) =>
+    events.slice(-100).map((e) => ({
       secondsAgo: Math.round((now - e.t) / 1000),
       kind: e.kind,
       host: e.host,
       path: e.path,
       ...(e.status ? { status: e.status } : {}),
       ...(e.error ? { error: e.error } : {}),
-    })),
+    }));
+  return {
+    extension: chrome.runtime.getManifest().version,
+    browser: navigator.userAgent,
+    at: new Date(now).toISOString(),
+    ...diagnose(tabId),
+    restarts: state?.restarts ?? 0,
+    events: list(state?.events),
+    previousPage: list(state?.previous),
   };
 };
 
@@ -151,7 +168,7 @@ chrome.webRequest.onErrorOccurred.addListener((d) => record(d, { error: d.error 
 // A new YouTube page starts a new log.
 chrome.webRequest.onBeforeRequest.addListener(
   (d) => {
-    if (d.tabId >= 0) tabs.set(d.tabId, { events: [], count: 0, stuckAt: 0, rerouted: false });
+    if (d.tabId >= 0) tabs.set(d.tabId, freshState(tabs.get(d.tabId)));
   },
   { urls: ['*://*.youtube.com/*'], types: ['main_frame'] },
 );
@@ -167,6 +184,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
     if (message.event === 'stuck') state.stuckAt = Date.now();
     else if (message.event === 'unstuck') state.stuckAt = 0;
     else if (message.event === 'attestationRerouted') state.rerouted = true;
+    else if (message.event === 'pageReloads') state.restarts += 1;
     paintBadge(tabId);
   } else if (message?.type === 'yff:diagnose') {
     reply(diagnose(message.tabId));
