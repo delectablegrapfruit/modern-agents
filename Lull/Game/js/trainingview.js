@@ -10,6 +10,8 @@
   'use strict';
   const L = (root.Lull = root.Lull || {});
   const { Recipe, Classic, Training, UI, Render, fmtInt } = L;
+  // (Patterns, the second style: js/patterns.js and js/patternsview.js; absent, Per move is all there is.)
+  const Pat = () => L.Patterns, PV = () => L.PatternsView;
   if (!Recipe || !Classic || !Training || !UI) return;
   const { h } = UI;
   const ico = UI.icon;
@@ -79,13 +81,15 @@
     const T = () => Training.of(play.game);
     const K = () => play.game.recipe.classic;
     const C = () => Classic.of(play.game);
+    /** The style in play: Patterns (no judging, no way back: the fit strip and the notes), or Per move. */
+    const pat = () => !!Pat() && !!PV() && Pat().settingsOf(app.settings).style === 'patterns';
 
     return {
       id: 'training', timeKey: null, uncounted: true,
       back: null, spark: null, gen: null, ranked: null, forTurn: null,
 
       attach(game) {
-        Object.assign(this, { back: null, spark: null, gen: null, ranked: null, forTurn: null });
+        Object.assign(this, { back: null, spark: null, gen: null, ranked: null, forTurn: null, note: null, noteCard: null, fit: null, showFit: null, fitSticky: 0, keys: 0, sinceI: 0, lastNote: null });
         play.view.training = this;
         // Hold is a move too: judged as it is pressed.
         for (const off of this.offs || []) off();
@@ -103,7 +107,24 @@
       /** The mouse and touch wait on the way back too. */
       handsOff() { return !!this.back; },
       /** On the way back, the keys wait (it is over in a moment); otherwise Classic's. */
-      gate(act, rep) { return this.back && !G().over ? false : this.base.gate(act, rep); },
+      gate(act, rep) {
+        if (this.back && !G().over) return false;
+        // (A key pressed for the piece in play, a held one once: Fewest keys counts them.)
+        if (!rep && /^(moveL|moveR|cw|ccw|r180)$/.test(act)) this.keys = (this.keys || 0) + 1;
+        return this.base.gate(act, rep);
+      },
+      /** G: the Guide (both styles). */
+      onKey(e) {
+        if (e.code !== 'KeyG' || e.altKey || e.metaKey || e.ctrlKey || e.shiftKey) return false;
+        if (!e.repeat) this.openGuide();
+        return true;
+      },
+      /** The Guide over the board: the game holds while it is open (a window), and goes on when it closes. */
+      openGuide() {
+        if (!PV()) return null;
+        const t = T();
+        return PV().openGuide(app, this.noteCard, { gid: t && t.gid });
+      },
       countGame() {},
       counts() { return this.running(); },
 
@@ -111,6 +132,9 @@
         if (this.back) this.backFrame(dt);
         else this.track();
         if (this.spark) { this.spark.t += dt; play.view.dirty = true; if (this.spark.t >= this.spark.dur) this.spark = null; }
+        // Patterns: the note's moment, and a tapped piece's spots for a few seconds.
+        if (this.note) { this.note.t += dt; play.view.dirty = true; if (this.note.t >= this.note.dur) this.note = null; }
+        if (this.fitSticky > 0) { this.fitSticky -= dt; if (this.fitSticky <= 0) { this.fitSticky = 0; this.showFit = null; play.view.dirty = true; play.renderItems(); } }
         this.ponder();
       },
       /**
@@ -127,7 +151,7 @@
        */
       ponder(all) {
         const t = T(), g = G();
-        if (!t || !t.turn || g.over || (this.back && !all)) return;
+        if (!t || !t.turn || g.over || (this.back && !all) || pat()) return;
         if (this.forTurn !== t.turn) { this.forTurn = t.turn; this.ranked = t.rankedFor === t.turn ? t.ranked : null; this.gen = this.ranked ? null : Training.think(g, t.turn); }
         const t0 = performance.now();
         while (this.gen && (all || performance.now() - t0 < SLICE)) {
@@ -141,6 +165,15 @@
         const g = G(), t = T();
         this.resets = 0; this.lockT = 0; this.acc = 0;
         g.s.mult = 1;
+        // Patterns: every set kept, looked at for its note; nothing judged.
+        if (pat()) {
+          PV().onLock(this, play, r);
+          this.kept(r);
+          if (this.fitSticky) { this.fitSticky = 0; this.showFit = null; }
+          play.renderStatus();
+          play.renderItems();
+          return;
+        }
         // (Not thought out yet, a piece set at once: the rest now, never a judgement on half a search.)
         if (t && this.forTurn === t.turn && this.gen) this.ponder(true);
         const ranked = t && this.forTurn === t.turn ? this.ranked : null;
@@ -156,7 +189,7 @@
        */
       onHold() {
         const g = G(), t = T();
-        if (!t || !t.turn || this.back) return;
+        if (!t || !t.turn || this.back || pat()) return;
         if (this.forTurn === t.turn && this.gen) this.ponder(true);
         const res = Training.holdPress(g, app.settings, t && this.forTurn === t.turn && this.ranked ? this.ranked : undefined);
         if (res.act !== 'rewind') { this.praised(res.praise, [], true); return; }
@@ -217,7 +250,10 @@
         const reduced = play.reduced, why = Training.whyOf(T(), app.settings);
         // With Explanation on, why, at the cells it was set (a Hold: at the Hold box): the piece waits there a beat
         // first (not with reduced motion).
-        this.spark = why ? { t: 0, dur: reduced ? SPARK_STILL : SPARK, hold: !!hold, cells: r.cells.map((c) => c.slice()), holes: why.holes.map((c) => c.slice()), word: why.words[0] || null, bad: true, col: why.well ? why.well.x : null, rows: why.lines ? why.lines.rows.slice() : null, reduced } : null;
+        // (The band shows what the word says, and only that: the well's column with "Blocks the well", the rows with
+        // "Best clears"; never one for a reason not said.)
+        const said = why ? why.words[0] || null : null;
+        this.spark = why ? { t: 0, dur: reduced ? SPARK_STILL : SPARK, hold: !!hold, cells: r.cells.map((c) => c.slice()), holes: why.holes.map((c) => c.slice()), word: said, bad: true, col: why.well && said === 'Blocks the well' ? why.well.x : null, rows: why.lines && /^Best clears/.test(said || '') ? why.lines.rows.slice() : null, reduced } : null;
         const steps = reduced ? [] : backSteps(this.path, r.cells, r.color);
         this.back = { due: true, t: 0, wait: why && !reduced ? BEAT : 0, steps, total: steps.reduce((a, k) => a + k.dur, 0), reduced };
         app.sound.play('item');
@@ -258,6 +294,9 @@
       /** The end: only a placement kept ends it (one taken back never does). The classic pile, then the card. */
       onEnd(kind, silent) {
         if (this.back) return;
+        // Patterns' record: this game topped out.
+        const t = T();
+        if (pat() && kind === 'full' && !silent && t && t.gid) { Pat().logLine(PV().memOf(app), t.gid, Date.now()).topout = true; app.store.touch(); }
         play.renderItems();
         if (kind === 'full' && !silent && G().piece && !G().rules.physics) { this.startPile(); return; }
         this.showEnd(kind);
@@ -270,7 +309,8 @@
             h('p', { class: 'cl-sub' }, 'Training · not counted'),
             h('p', null, h('span', { class: 'big' }, fmtInt(g.s.score)), ' points'),
             h('p', null, 'Level ' + Classic.levelOf(g.recipe.classic, c.lines) + ' · ' + c.lines + ' lines'),
-            t ? h('p', { class: 'tr-sum' }, fmtInt(t.placed) + ' placed · ' + (t.placed ? Training.firstPct(t) + ' first try · ' : '') + fmtInt(t.rewinds) + (t.rewinds === 1 ? ' rewind' : ' rewinds')) : null,
+            t && ctl.isPatterns() ? h('div', { class: 'tr-sum pt-end' }, L.PatternsView.recordRows(pm.app, t.gid)) : null,
+            t && !ctl.isPatterns() ? h('p', { class: 'tr-sum' }, fmtInt(t.placed) + ' placed · ' + (t.placed ? Training.firstPct(t) + ' first try · ' : '') + fmtInt(t.rewinds) + (t.rewinds === 1 ? ' rewind' : ' rewinds')) : null,
             h('div', { class: 'row' },
               pm.menuButton(),
               h('button', { class: 'btn primary', id: 'cl-again', onclick: () => ctl.again(cleared ? 'cleared' : 'full') }, ico('newBoard'), 'Play again')),
@@ -278,6 +318,7 @@
         },
       },
 
+      isPatterns: () => pat(),
       /** The card it waits at: Training before the first piece falls, then Paused. The Menu from either. */
       showWait() {
         const c = C(), first = !c.started, o = Training.settingsOf(app.settings);
@@ -285,7 +326,7 @@
         play.showCard([
           h('h2', null, first ? 'Training' : 'Paused'),
           h('p', { class: 'cl-sub' }, lbl.replace(/^Training /, 'Game ')),
-          first ? h('p', { class: 'tr-sub' }, Training.STRICT_NAMES[o.strict] + ' · hint after ' + o.hint + (o.hint === 1 ? ' try' : ' tries')) : null,
+          first ? h('p', { class: 'tr-sub' }, pat() ? 'Patterns · notes ' + Pat().settingsOf(app.settings).notes + ' · Guide: G' : Training.STRICT_NAMES[o.strict] + ' · hint after ' + o.hint + (o.hint === 1 ? ' try' : ' tries')) : null,
           h('div', { class: 'row' },
             play.menuButton(),
             h('button', { class: 'btn primary', id: 'cl-go', onclick: () => this.go() }, first ? 'Start ' : 'Resume ', h('kbd', null, 'Space'))),
@@ -306,12 +347,21 @@
       bar(el) {
         const g = G(), c = C(), t = T() || Training.fresh();
         const n = (v, label, cls) => h('span', { class: 'tr-n' + (cls ? ' ' + cls : '') }, h('b', null, v), ' ' + label);
+        const guide = PV() ? h('button', { class: 'btn sm tr-guide', 'aria-label': 'Guide', 'data-tip': 'Guide', 'data-tip-foot': 'G', onclick: () => this.openGuide() }, ico('guide'), h('span', { class: 'lbl' }, 'Guide')) : null;
+        const pause = h('button', { class: 'btn sm tr-pause', disabled: !c.started || g.over || !!this.pile, 'aria-label': this.paused ? 'Resume' : 'Pause', 'data-tip': this.paused ? 'Resume' : 'Pause', 'data-tip-foot': 'P', onclick: () => (this.paused ? this.go() : this.setPause(true)) },
+          ico(this.paused ? 'playIcon' : 'pause'), h('span', { class: 'lbl' }, this.paused ? 'Resume' : 'Pause'));
+        el.classList.toggle('pt-bar', pat());
+        if (pat()) {
+          // Patterns: the fit strip where the counters were, then the Guide and Pause.
+          el.replaceChildren(h('span', { class: 'pt-fits-l', 'aria-hidden': 'true' }, 'Fits'), PV().strip(this, play), guide, pause);
+          el.classList.add('cl-bar', 'tr-bar');
+          return true;
+        }
         el.replaceChildren(
           h('span', { class: 'tr-label', role: 'status', 'aria-label': 'Training: ' + t.placed + ' placed, ' + (t.placed ? Training.firstPct(t) + ' first try, ' : '') + t.rewinds + ' rewinds' },
             ico('training'), h('span', { class: 'tr-nm' }, 'Training'),
             h('span', { class: 'tr-ns', 'aria-hidden': 'true' }, n(fmtInt(t.placed), 'placed', 'tr-placed'), t.placed ? n(Training.firstPct(t), 'first try', 'tr-first') : null, n(fmtInt(t.rewinds), t.rewinds === 1 ? 'rewind' : 'rewinds', 'tr-rewinds'))),
-          h('button', { class: 'btn sm tr-pause', disabled: !c.started || g.over || !!this.pile, 'aria-label': this.paused ? 'Resume' : 'Pause', 'data-tip': this.paused ? 'Resume' : 'Pause', 'data-tip-foot': 'P', onclick: () => (this.paused ? this.go() : this.setPause(true)) },
-            ico(this.paused ? 'playIcon' : 'pause'), h('span', { class: 'lbl' }, this.paused ? 'Resume' : 'Pause')));
+          guide, pause);
         el.classList.add('cl-bar', 'tr-bar');
         return true;
       },
@@ -321,16 +371,30 @@
 
   // ---- the setup: Classic's rules, then the coach --------------------------------------------------------------------
 
-  /** The coach's settings (Settings, so they apply at once and stay): Strictness, Hint after, Explanation. */
+  /**
+   * The coach's settings (Settings, so they apply at once and stay): Style (Per move, Patterns), then Per move's
+   * (Strictness, Hint after, Explanation) or Patterns' (Notes, Detail, Advanced notes).
+   */
   function coach(api) {
-    const app = api.app || L.app, st = app.settings, o = Training.settingsOf(st);
+    const app = api.app || L.app, st = app.settings, o = Training.settingsOf(st), po = Pat() ? Pat().settingsOf(st) : null;
     const set = (k, v) => { st[k] = v; app.store.touch(); if (app.modes && app.modes.play) app.modes.play.view.dirty = true; api.refresh(); };
     const btn = (k, v, label, on, tip) => h('button', { type: 'button', class: 'nb-level', 'data-focus': k + '=' + v, 'aria-pressed': String(on), 'data-tip': tip || null, onclick: () => set(k, v) }, label);
     const row = (label, kids) => h('div', { class: 'cl-row' }, h('span', { class: 'cl-nm' }, label), h('div', { class: 'seg cl-seg', role: 'group', 'aria-label': label }, kids));
     const TIPS = { gentle: 'Only clear mistakes: a new hole, needless height', standard: 'Any new hole, needless height, a rough top', strict: 'Anything notably below the best' };
+    const P = Pat();
+    const style = P ? row('Style', P.STYLE_IDS.map((id) => btn('trainStyle', id, P.STYLE_NAMES[id], po.style === id, id === 'move' ? 'Each piece judged; a poor one goes back' : 'Play on; notes on shapes as they form'))) : null;
+    if (po && po.style === 'patterns') {
+      return h('div', { class: 'mn-field tr-coach' },
+        h('span', { class: 'mn-lab' }, 'Coach'),
+        h('div', { class: 'cl-set' }, style,
+          row('Notes', P.NOTE_IDS.map((id) => btn('trainNotes', id, P.NOTE_NAMES[id], po.notes === id, 'At most one every ' + P.NOTES[id] + ' pieces'))),
+          row('Detail', P.DETAIL_IDS.map((id) => btn('trainDetail', id, P.DETAIL_NAMES[id], po.detail === id, id === 'full' ? 'Words and the pieces that fit' : 'A word or two'))),
+          h('button', { type: 'button', class: 'nb-switch cl-sw tr-explain pt-adv', role: 'switch', 'data-focus': 'trainAdvanced', 'aria-checked': String(po.advanced), onclick: () => set('trainAdvanced', !po.advanced) },
+            h('span', { class: 'nm' }, 'Advanced notes'), h('span', { class: 'sw', 'aria-hidden': 'true' }))));
+    }
     return h('div', { class: 'mn-field tr-coach' },
       h('span', { class: 'mn-lab' }, 'Coach'),
-      h('div', { class: 'cl-set' },
+      h('div', { class: 'cl-set' }, style,
         row('Strictness', Training.STRICT_IDS.map((id) => btn('trainStrict', id, Training.STRICT_NAMES[id], o.strict === id, TIPS[id]))),
         row('Hint after', Array.from({ length: Training.HINT[1] - Training.HINT[0] + 1 }, (_, i) => Training.HINT[0] + i).map((n) => btn('trainHint', n, String(n), o.hint === n, n === 1 ? 'Show the best spot after one try' : 'Show the best spot after ' + n + ' tries'))),
         h('button', { type: 'button', class: 'nb-switch cl-sw tr-explain', role: 'switch', 'data-focus': 'trainExplain', 'aria-checked': String(o.explain), onclick: () => set('trainExplain', !o.explain) },
@@ -387,7 +451,11 @@
     if (sp.hold) { holdSpark(ctx, view, sp, rose, p); return; }
     // What it points at: the well's column, the rows the best clears, as soft bands fading out.
     const band = (sp.reduced ? 0.12 : 0.16) * (1 - p);
-    if (sp.col != null) { const [sx] = view.toScreen(sp.col, 0); ctx.fillStyle = Render.rgba(sp.good ? theme.accent : rose, band); ctx.fillRect(sx, board.y, s, board.h); }
+    if (sp.col != null) {
+      // The well's column from the floor to a row over the stack, never up where the pieces appear.
+      const g = view.game, top = Math.min(g.h - 2, g.board.stackHeight() + 1), [sx, y0] = view.toScreen(sp.col, 0), [, y1] = view.toScreen(sp.col, top - 1);
+      ctx.fillStyle = Render.rgba(sp.good ? theme.accent : rose, band); ctx.fillRect(sx, Math.min(y0, y1), s, Math.abs(y0 - y1) + s);
+    }
     for (const y of sp.rows || []) { const [, sy] = view.toScreen(0, y); ctx.fillStyle = Render.rgba(theme.accent, band); ctx.fillRect(board.x, sy, board.w, s); }
     const cells = inside(view, sp.cells);
     if (!cells.length) return;
@@ -464,13 +532,15 @@
 
   Recipe.viewPart({
     key: 'training', order: 46,
-    busy: (view) => !!(view.training && (view.training.back || view.training.spark)),
+    busy: (view) => !!(view.training && (view.training.back || view.training.spark || view.training.note || view.training.fitSticky)),
     /** On the way back the piece in play is drawn by overPiece, moving: its own cells wait. */
     pieceAlpha: (view) => (view.training && view.training.back && !view.training.back.reduced ? 0 : 1),
     /** Under the piece: the best spot's outline (Hint after). */
     overStack(ctx, view) {
       const g = view.game, t = Training.of(g), ctl = view.training, st = L.app && L.app.settings;
       if (!t || !view.lay || g.over || (ctl && ctl.back && !ctl.back.reduced)) return;
+      // Patterns: the spots of the piece pointed at in the fit strip.
+      if (ctl && PV() && ctl.showFit) { ctx.save(); PV().drawFits(ctx, view, ctl); ctx.restore(); }
       const { s } = view.lay, theme = view.look.theme, light = theme.name === 'light', acc = theme.accent;
       const best = Training.hintOf(t, st);
       if (best) {
@@ -496,6 +566,7 @@
       const ctl = view.training, b = ctl && ctl.back;
       if (!view.lay) return;
       if (ctl && ctl.spark && !view.game.over) { ctx.save(); drawSpark(ctx, view, ctl.spark); ctx.restore(); }
+      if (ctl && ctl.note && PV() && !view.game.over) PV().drawNote(ctx, view, ctl);
       // The hint, when the best move is Hold: the Hold box framed in the accent until it is used.
       const t = Training.of(view.game), best = t && !(b && !b.reduced) ? Training.hintOf(t, L.app && L.app.settings) : null;
       if (best && best.hold && !view.game.holdLocked && !view.game.mods.noHold && !view.game.over) {

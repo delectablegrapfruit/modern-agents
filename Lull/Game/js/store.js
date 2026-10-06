@@ -193,6 +193,10 @@
         // Training's coach (js/training.js): how poor a placement it takes back ('gentle', 'standard', 'strict'), the tries
         // on one piece before its best spot is shown (1–5), and whether it draws why (Explanation).
         trainStrict: 'standard', trainHint: 3, trainExplain: false,
+        // Training's style ('move': Per move, the coach above; 'patterns': play on, with notes on the shapes as they form,
+        // js/patterns.js), and Patterns' notes: how often ('often', 'sometimes', 'rare'), how much ('full', 'brief'), and
+        // whether the Advanced shapes get notes too.
+        trainStyle: 'move', trainNotes: 'sometimes', trainDetail: 'full', trainAdvanced: false,
       },
       tab: 'play',
       free: null, // the game in play (Game.toJSON), of the mode boards.cur
@@ -201,6 +205,9 @@
       // Control hints (js/hints.js): pieces and board time toward retiring them all, times each was shown, good uses
       // of each control, the ones retired for good.
       hints: { pieces: 0, ms: 0, over: false, shown: {}, skill: {}, retired: {} },
+      // Patterns (js/patterns.js): the notes shown of each shape (its learning curve), the shapes met in play, and a line a
+      // game of the player's own record (pieces, holes made, heights). Practice: it counts toward nothing else.
+      patterns: { seen: {}, met: {}, log: [] },
       combos: {}, // Free Play combos found: id → { n: times, lines: paid, first: when }
       gift: { at: null, n: 0, log: [] }, // the daily gift: when it was last opened (ms), how many, the last few
       earn: { board: null, paid: 0 }, // power-ups earned by lines on the game in play (js/items.js, Earn): which game, how many paid

@@ -17,6 +17,8 @@ const L = load([
   'bot.js',
   // Training: Classic with a coach that takes a poor set back (js/training.js), headless.
   'training.js',
+  // Patterns, Training's second style: the shape detector, the Guide's cards, the notes' pace (js/patterns.js), headless.
+  'patterns.js', 'patterncards.js',
   'versus.js',
   'race.js',
   'battle.js',
@@ -4339,6 +4341,10 @@ require('./bot-unit.cjs')({ L, test });
 // Training: the coach's judgement, the way back, Hint after, the explanation, nothing counted (scripts/training-unit.cjs).
 console.log('training');
 require('./training-unit.cjs')({ L, test });
+
+// Patterns: Training's second style, its shape detector, the Guide's cards, the notes' pace and the measured costs (scripts/patterns-unit.cjs).
+console.log('patterns');
+require('./patterns-unit.cjs')({ L, test });
 
 // Race, a board mode, and its AI (scripts/race-unit.cjs).
 console.log('race');

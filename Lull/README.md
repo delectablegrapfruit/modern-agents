@@ -908,7 +908,8 @@ count.
 *Explanation* (off by default) — when a piece is taken back, why is shown right where it was set, for a moment, so the
 eye is there already: the piece waits there a beat (350 ms) while a small ring rises from each of its cells and fades
 (about a second, one after another), the holes it made pulse twice in rose, what the word is about shows as a soft band
-(the well's column, the rows the best clears), and a few words sit in a small pill just over it, naming what and how
+(the well's column, from the floor to a row over the stack, with "Blocks the well"; the rows the best clears, with "Best
+clears"; never a band for a reason not said), and a few words sit in a small pill just over it, naming what and how
 much from `Bot.explain`'s features of both boards, the heaviest first: "Covers 2 holes", "Best clears 2 rows", "Blocks
 the well", "+3 rows high"; with none of those, "No spot for next Z" when the difference is in the pieces ahead, else
 "Top +3 bumps"; "Hold I fits better" first when the best was through Hold. Then it goes back. A Hold taken back is
@@ -926,10 +927,11 @@ box. A set kept that is neither a clear nor the best's spot gets no words.
 *The music* plays straight on through the way back: nothing restarts, stops, seeks or ducks it, and its tempo (which
 quickens as the stack nears the top) eases on from where it was once the piece is in play again.
 
-The coach's three settings are in the Training setup (Menu ▸ Solo ▸ Training, under the rules) and kept in Settings
-(`trainStrict`, `trainHint`, `trainExplain`), so they apply at once, to the game kept too ("The rules apply to a new game;
-the coach at once."). Under the board: a quiet *Training*, the counters (placed, first try once something is placed: the
-share placed well at the first try, rewinds) and Pause; the status bar shows Score, Level and Lines. The end card says
+The coach's three settings are in the Training setup (Menu ▸ Solo ▸ Training, under the rules, after *Style*: Per move or
+Patterns, see Patterns) and kept in Settings (`trainStrict`, `trainHint`, `trainExplain`), so they apply at once, to the
+game kept too ("The rules apply to a new game; the coach at once."). Under the board: a quiet *Training*, the counters
+(placed, first try once something is placed: the share placed well at the first try, rewinds), the Guide (G; see
+Patterns) and Pause; the status bar shows Score, Level and Lines. The end card says
 not counted, with the counters, and Play again.
 
 A Training game is kept as Training's one game (Continue, New game; its turn, tries and counters with it: `x.training`
@@ -938,6 +940,107 @@ control hints, no lines banked, never Classic's game. It is made from the menu o
 `scripts/training-unit.cjs` (run by test.cjs: the coach's promises over seeded games of every setup, a hand at its pace
 setting each piece through the engine, Hold, the look ahead, the long game against a one-piece look) and
 `scripts/training-test.cjs` (run by browser-test.cjs).
+
+#### Patterns
+Training has two styles, chosen first in its setup (*Style*, kept in Settings as `trainStyle`): **Per move**, the coach
+above (each set judged, a poor one taken back), and **Patterns**, for seeing how placements leave room for the pieces
+to come and which shapes and combinations cost you later. Patterns never stops play or takes a set back (only the
+Guide, opened by hand, holds the game). Like Per move it counts toward nothing.
+
+*The fit strip* (`js/patternsview.js`) — the seven pieces in the bar under the board, where Per move keeps its
+counters: lit when the piece has a clean spot on the board now (a spot it can be dropped onto with nothing left open
+under it), dimmed and struck through when it has none, brought up to date as each piece is set. Point at a piece, focus
+it or tap it, and its clean spots are outlined on the board (a tap keeps them for a few seconds). The strip is in the
+bar rather than beside the board so the board keeps exactly the size it has in Per move at every width (the phones'
+bar holds the strip, Guide and Pause as icons, in one row).
+
+*Notes* — when a placement forms or clears a shape, a few words (four at most) sit in a small pill by the cells it is
+about, with the pieces that fit (✓) or not (✗), the cells ringed (rose for a risk, green for a good shape or a
+recovery), and for a piece left with no clean spot the place it would have to go, dashed, with what it would leave
+crossed: "No spot for Z", "Only I fits", "Two pits, one I", "Room for S", "Hole opened", "Stack back down". In quickly,
+gone in about two seconds; with reduced motion nothing moves, it fades. At most one note every few pieces (*Notes*:
+Often 2, Sometimes 4, the default, Rare 8), a risk before a good shape. Each shape is on a learning curve: shown in full
+its first three times, then only marked (the cells ringed, no words) five times, then silent once learned (kept in the
+save, `state.patterns.seen`; the Guide's "Show every note again" starts it over). *Detail* Full (the words and the
+pieces) or Brief (a word or two); *Advanced notes* off by default.
+
+*The detector* (`js/patterns.js`, pure) reads the board as the bot does and is shared by the notes, the Guide's
+diagrams and the measuring games: holes (empty cells nothing can reach from above) apart from overhangs (a piece can
+still slide in); pits (one column three or more below both sides, a wall counting as high) and the main well among
+them (the lowest); steps; and each piece's clean spots. Its shapes:
+
+| Group | Shapes |
+|---|---|
+| Risky | hole, overhang, deep pit (not the well), two pits, cliff (a step of three), rough top, no home for S or Z, covered well, high stack (the top third), a piece with no spot, the Next piece with no spot |
+| Good | flat top, gentle slope, matching steps (S and Z fit), two-wide flat (O fits), clean well (Quad ready), Twist slot, well at the side, lines burned when high, every piece within 12 (the 7-bag: an I comes within 13 pieces of the last), Hold to keep clean, digging, Streak, combo, Spotless |
+| Combinations | S/Z flat on flat ground, L/J into a pit, O on uneven ground, filling the well with another piece than I, holding with no plan (the held piece fitted) |
+| Advanced (notes off by default) | checkerboard (the filled cells on the two colours three or more apart: only a T tips it), fewest keys (two or more presses beyond the fewest), survive at speed (building a well high up at level 13 and over) |
+
+*The proof* (`scripts/patterns-sim.cjs`, not run by the tests: some minutes on four processes; `patterns-unit.cjs`
+runs a short one) — headless games placed by the Watch bot's eye (the piece, Hold and three Next, one piece ahead), each
+seed played twice: at most once every ten pieces, where the bot has, besides its own first choice, both a placement that
+makes the shape and one that does not, the forced game takes the best that makes it and the avoided game the best that
+does not; otherwise both play the bot's own best. Both leave the bot's plan as often, so the two differ by the shape
+alone. 16 seeds at level 1 and level 15 (a hand's reach at that
+speed), 250 pieces or the top out. A shape with no clear effect (a 95% interval clear of 0 on a third of a line a 100
+pieces, a fifth of a row of height, 5% of the score, or three more top outs) is merged into its nearest card or dropped.
+The results are written into `js/patterns.js` (COSTS) and shown on the cards:
+
+| Shape | Group | Score | Height, rows | Lines a 100 pieces | Chosen a game | Top outs (made / not) | Verdict |
+|---|---|---|---|---|---|---|---|
+| Hole | Risky | +23.4%* | −0.1 | +0.1 | 25.0 | 0 / 0 | keep |
+| Overhang | Risky | +18.3%* | +0.6* | +0.2 | 25.0 | 0 / 0 | keep |
+| Deep pit | Risky | +37.3%* | +3.0* | +4.3* | 18.4 | 5 / 0 | keep |
+| Two pits | Risky | +41.3%* | +2.9* | +3.8* | 18.2 | 6 / 0 | keep |
+| Cliff | Risky | +7.6% | +0.8* | +0.4* | 25.0 | 0 / 0 | keep |
+| Rough top | Risky | +12.5%* | +1.8* | +0.4* | 21.7 | 0 / 0 | keep |
+| No home for S/Z | Risky | +18.3%* | +0.8* | +0.4 | 17.1 | 0 / 0 | keep |
+| Covered well | Risky | +31.2%* | +0.9* | +0.3 | 24.9 | 0 / 0 | keep |
+| High stack | Risky | +0.4% | +0.2* | +0.2* | 0.9 | 0 / 0 | keep |
+| Piece with no spot | Risky | +18.0%* | +1.0* | +0.3 | 23.9 | 0 / 0 | keep |
+| Next has no spot | Risky | +12.1%* | +0.7* | −0.2 | 18.0 | 0 / 0 | keep |
+| Flat top | Good | −8.8%* | +0.1 | −0.1 | 10.3 | 0 / 0 | drop |
+| Gentle slope | Good | −7.8%* | −0.1 | −0.1 | 9.0 | 0 / 0 | drop |
+| Matching steps | Good | +20.5%* | +0.6* | +0.7 | 23.6 | 1 / 0 | keep |
+| Two-wide flat | Good | +5.9% | +0.1* | +0.1 | 4.5 | 0 / 0 | drop |
+| Clean well | Good | +9.3%* | −0.2* | −0.1 | 9.0 | 0 / 0 | keep |
+| Twist slot | Good | −7.1% | −0.1 | +0.0 | 12.1 | 0 / 0 | drop |
+| Well at the side | Good | −3.8% | −0.6* | −0.3* | 20.6 | 0 / 0 | drop |
+| Burn lines when high | Good | +2.0% | +0.0 | 0.0 | 0.2 | 0 / 0 | merged into High stack |
+| Every piece within 12 | Good | +10.6%* | −0.7* | −0.1 | 14.4 | 0 / 0 | keep |
+| Hold to keep clean | Good | +3.0% | −0.0 | −0.2 | 3.2 | 0 / 0 | merged into Hold with no plan |
+| Digging | Good | +2.4% | +0.0 | 0.0 | 0.6 | 0 / 0 | merged into Hole |
+| Streak | Good | −0.1% | −0.0 | −0.0 | 0.3 | 0 / 0 | drop |
+| Combo | Good | −1.1% | +0.2* | +0.2 | 1.1 | 0 / 0 | drop |
+| Spotless | Good | 0.0% | 0.0 | 0.0 | 0.0 | 0 / 0 | drop |
+| S/Z on flat | Combination | +20.4%* | +0.3* | −0.1 | 22.4 | 0 / 0 | keep |
+| L/J into a pit | Combination | +28.2%* | 0.0 | −0.1 | 18.8 | 0 / 0 | keep |
+| O on uneven ground | Combination | +21.8%* | −0.1 | +0.2 | 19.1 | 0 / 0 | keep |
+| Filling the well | Combination | +21.1%* | +1.0* | +0.5* | 20.5 | 0 / 0 | keep |
+| Hold with no plan | Combination | +21.0%* | +0.1 | +0.0 | 25.0 | 0 / 0 | keep |
+| Checkerboard | Advanced | +19.8%* | +0.2* | −0.0 | 15.0 | 0 / 0 | keep |
+| Fewest keys | Advanced | +0.0% | −0.0 | −0.1 | 250.0 | 0 / 0 | drop |
+| Survive at speed | Advanced | +15.0%* | +0.5* | +0.3* | 5.5 | 0 / 0 | keep |
+
+(Each figure is the effect of making the shape where the choice came up, against not: for a risk positive is worse, for a good
+shape positive is better; * its 95% interval leaves out 0. Chosen a game: how often the choice came up in 250 pieces.)
+
+*The Guide* (the bar's Guide, or G; in both styles) — a window over the board: the game holds while it is open and goes
+on when it closes. Opened from play it goes straight to the card of the last note. Its index lists the cards by group
+(Risky, Good, Combinations, Advanced), a shape met in play dotted, each with its measured effect, and the player's own
+record. A card is four small boards drawn by the board's own cell painter, with what the detector finds on them marked:
+What it is, How it happens, How to avoid, How to recover (a good shape: What it is, How to make it, What spoils it, How
+to get it back), a caption of four words at most under each, and the measured effect ("Score −22% · stack +0.8 rows").
+Arrows (and a swipe) go from card to card; on a phone the four boards are two by two, one card a screen.
+(`js/patterncards.js` holds the pictures; the tests hold each to its caption through the detector.)
+
+*Your play* — Patterns keeps a line a game, apart from everything else (`state.patterns.log`, the last forty): its
+pieces, the holes it made and the heights it left, and whether it topped out. The Guide's index and the end card show
+holes a 100 pieces, the average height and top outs, this game against the ones before.
+
+Tests: `scripts/patterns-unit.cjs` (run by test.cjs: the detector on built boards, every card's diagrams against their
+captions, the fit strip's spots against every drop, the pace and the learning curve, the record, the costs' verdicts,
+a short measuring run) and `scripts/patterns-test.cjs` (run by browser-test.cjs).
 
 ### Descent
 A mode (`js/descent.js`, its controller, look and window `js/descentview.js`): a second stack hangs upside down from
@@ -1313,6 +1416,7 @@ murals finished, pieces placed, by level, from photos.
 | P | pause a Classic, Race or Battle board (Space or P starts and resumes it) |
 | S, Shift+S | Race: send the piece in play, or the first Next piece (a Race board holds with Shift when it is let go alone) |
 | T | Battle: aim the piece in play at the opponent's board (arrows and turns move the shadow, Space or Enter throws, Esc or T cancels) |
+| G | Training: the Guide (the shapes a stack makes, each a card), over the board; the game holds while it is open |
 | M | mute everything, on any tab (again to unmute) |
 | Esc | the Play menu, in a browser when nothing else takes Esc (again, or its X, to close it; in the Mac app Esc tucks the window away, and closes the menu when it is open) |
 | mouse: point | slide the piece left and right (at its height; slightly sticky at column edges: the pointer goes 0.15 of a cell past one before the piece follows; mirrored under Inverted Controls; keys keep working while the pointer rests there) |

@@ -117,6 +117,8 @@
     // ---- puzzle wildcards and goals -----------------------------------------------------------------------------------------
     'mod-big': svg('<rect x="2.25" y="2.25" width="11.5" height="11.5" rx="1.75"/><path d="M8 2.25v11.5M2.25 8h11.5"/>'),
     'mod-odd': svg('<path d="M6 2.25h4V6h3.75v4H10v3.75H6V10H2.25V6H6z"/>'),
+    // The Guide (Training's index of shapes): an open book.
+    guide: svg('<path d="M8 4.25C6.6 3.1 4.6 2.75 2.25 3v9.75c2.35-.25 4.35.1 5.75 1.25 1.4-1.15 3.4-1.5 5.75-1.25V3c-2.35-.25-4.35.1-5.75 1.25zM8 4.25V14"/>'),
     'mod-wrap': svg('<path d="M2 2.75v10.5M14 2.75v10.5M4.5 8h7M9.5 6l2 2-2 2"/>'),
     'mod-rigid': svg('<rect x="3.5" y="7" width="9" height="6.75" rx="1.6"/><path d="M5.5 7V5.25a2.5 2.5 0 0 1 5 0V7"/>'),
     'mod-heavy': svg('<path d="M8 2.25v8M4.75 7.25 8 10.5l3.25-3.25M2.75 13.75h10.5"/>'),

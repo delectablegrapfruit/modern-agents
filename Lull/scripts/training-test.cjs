@@ -208,7 +208,8 @@ module.exports = async function trainingTests({ browser, check, PAGE, OUT }) {
       const elsewhere = [[view.lay.board.x, view.toScreen(0, view.game.h - 1)[1], view.lay.board.w, s * 2]];
       const keep = m.ctl.spark;
       keep.t = 0.25; const early = window.__tr.diffIn(boxes, () => { m.ctl.spark = null; }); m.ctl.spark = keep;
-      keep.t = 0.95; const late = window.__tr.diffIn(boxes, () => { m.ctl.spark = null; }); m.ctl.spark = keep;
+      // (Late: near its end, by the spark's own clock, so the word's last fade is as faint whatever its length.)
+      keep.t = keep.dur * 0.97; const late = window.__tr.diffIn(boxes, () => { m.ctl.spark = null; }); m.ctl.spark = keep;
       keep.t = 0.25; const top = window.__tr.diffIn(elsewhere.filter(() => !sp.cells.some(([, y]) => y >= view.game.h - 3)), () => { m.ctl.spark = null; }); m.ctl.spark = keep;
       const same = Lull.Training.cellKey(sp.cells) === Lull.Training.cellKey(window.__tr.cells);
       return { same, word: sp.word, holes: sp.holes.length, early, late, top, dur: sp.dur, wait: m.ctl.back && m.ctl.back.wait };
@@ -291,17 +292,19 @@ module.exports = async function trainingTests({ browser, check, PAGE, OUT }) {
       window.__tr.set('poor');
       const seen = [];
       const tick = () => {
-        seen.push({ playing: M.playing, tempo: M.tempo, back: !!m.ctl.back });
+        seen.push({ playing: M.playing, tempo: M.tempo, back: !!m.ctl.back, at: performance.now() });
         if (m.ctl.back || seen.length < 5) { requestAnimationFrame(tick); return; }
         for (const [k, f] of spy) M[k] = f;
         M.playing = false; Lull.app.settings.music = false;
         let jump = 0;
         for (let i = 1; i < seen.length; i++) jump = Math.max(jump, Math.abs(seen[i].tempo - seen[i - 1].tempo));
-        done({ calls, frames: seen.length, backFrames: seen.filter((x) => x.back).length, playing: seen.every((x) => x.playing), jump: +jump.toFixed(4), was });
+        // (Watched over the whole way back by time, not by a count of frames: a slow machine draws fewer.)
+        const back = seen.filter((x) => x.back), span = back.length ? back[back.length - 1].at - back[0].at : 0;
+        done({ calls, frames: seen.length, backFrames: back.length, span: Math.round(span), playing: seen.every((x) => x.playing), jump: +jump.toFixed(4), was });
       };
       requestAnimationFrame(tick);
     }));
-    check('the music through the way back: still playing, never stopped, restarted or rewound, its tempo with no jump', mu.calls.length === 0 && mu.playing && mu.backFrames >= 10 && mu.jump < 0.02, JSON.stringify(mu));
+    check('the music through the way back: still playing, never stopped, restarted or rewound, its tempo with no jump', mu.calls.length === 0 && mu.playing && mu.backFrames >= 3 && mu.span >= 250 && mu.jump < 0.02, JSON.stringify(mu));
     const kept2 = await ev(() => { const m = Lull.app.modes.play; window.__tr.set('best'); const T = Lull.Training.of(m.game); return { back: !!m.ctl.back, tries: T.tries, hint: !!Lull.Training.hintOf(T, Lull.app.settings), placed: T.placed, first: T.first, bar: document.getElementById('itembar').textContent }; });
     check('the best spot set: kept, the hint gone, placed (not at the first try)', !kept2.back && kept2.tries === 0 && !kept2.hint && kept2.placed === 3 && kept2.first === 2 && /67% first try/.test(kept2.bar), JSON.stringify(kept2));
 
@@ -364,7 +367,7 @@ module.exports = async function trainingTests({ browser, check, PAGE, OUT }) {
         const btns = [...document.querySelectorAll('.tr-coach button')].map(R);
         return { sideways: document.documentElement.scrollWidth > innerWidth || btns.some((r) => r.left < menu.left - 0.5 || r.right > menu.right + 0.5), minH: Math.round(Math.min(...btns.map((r) => r.height))), n: btns.length };
       });
-      check('Training setup at ' + w + ' × ' + hh + ' ' + theme + ': the coach whole, nothing sideways' + (touch ? ', 44 px targets' : ''), su.n === 9 && !su.sideways && (!touch || su.minH >= 44), JSON.stringify(su));
+      check('Training setup at ' + w + ' × ' + hh + ' ' + theme + ': the coach whole, nothing sideways' + (touch ? ', 44 px targets' : ''), su.n === 11 && !su.sideways && (!touch || su.minH >= 44), JSON.stringify(su));
       // (The coach in sight: the setup scrolled down to it where it does not all fit.)
       await P.ev(() => document.querySelector('.tr-coach').scrollIntoView({ block: 'end' }));
       await shot(P, 'training-setup-' + tag + '.png');

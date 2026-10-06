@@ -3332,6 +3332,8 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await require('./watch-test.cjs')({ browser, check, PAGE, OUT });
   // ---- Training: Classic with a coach; a poor set taken back, Hint after, Explanation, nothing counted (training-test.cjs)
   await require('./training-test.cjs')({ browser, check, PAGE, OUT });
+  // ---- Patterns: Training's second style, the fit strip, the notes, the Guide, the record (patterns-test.cjs)
+  await require('./patterns-test.cjs')({ browser, check, PAGE, OUT });
   // ---- Shapes: the chips, Custom and its picker, a board of picks, the trays and the fit on a phone (shapes-browser-test.cjs)
   await require('./shapes-browser-test.cjs')({ browser, check, PAGE, OUT });
   // ---- Physics: the window, live bodies, knocks, a clear, Rewind 5 s, the full card, a phone (physics-browser-test.cjs)
