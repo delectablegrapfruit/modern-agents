@@ -119,5 +119,55 @@ const YFFUI = (() => {
     }
   };
 
-  return { esc, groups, presets, fill, bind, search, statusText, time };
+  // Playback-check findings (background.js) as text: what failed, and what to do about it.
+  const RESCUED = 'Worked around: sent through youtube.com instead, and that went through.';
+  const FINDINGS = {
+    'attest-extension': (f) => ({
+      title: `An extension blocks YouTube’s bot check (${f.hosts.join(', ')})`,
+      advice:
+        f.level === 'info'
+          ? `${RESCUED} To fix it at the source, add this to uBlock Origin → My filters:`
+          : 'On VPN IPs YouTube sends no video until this check passes, so the player retries forever. Add this to uBlock Origin → My filters, then reload:',
+      code: '@@||jnn-pa.googleapis.com^',
+    }),
+    'attest-network': (f) => ({
+      title: `Your network can’t reach YouTube’s bot check (${f.error.replace('net::', '')})`,
+      advice: `${f.level === 'info' ? `${RESCUED} The cause is usually` : 'Usually'} the VPN’s own ad/tracker blocking (NordVPN Threat Protection, Proton NetShield, Surfshark CleanWeb, Mullvad DNS blocking) or a DNS filter (NextDNS, Pi-hole, AdGuard DNS): allow jnn-pa.googleapis.com there, or turn that feature off.`,
+    }),
+    'attest-http': (f) => ({
+      title: `YouTube’s bot check answered HTTP ${f.status}`,
+      advice: 'The check ran but was refused from this IP. Try another VPN server.',
+    }),
+    'attest-rerouted': (f) =>
+      f.level === 'info'
+        ? null
+        : {
+            title: 'Rerouting the bot check didn’t work either',
+            advice: 'www.youtube.com/api/jnn failed too. Allow jnn-pa.googleapis.com in your blocker, or try another VPN server.',
+          },
+    'media-403': (f) => ({
+      title: `The video server refused ${f.count} stream request${f.count === 1 ? '' : 's'} (HTTP 403)`,
+      advice: 'YouTube rejects this IP for video, or the bot check never passed. Try another VPN server or location; being signed in helps.',
+    }),
+    'media-extension': (f) => ({
+      title: `An extension blocks ${f.count} video stream request${f.count === 1 ? '' : 's'} (googlevideo.com)`,
+      advice: 'Allow the video servers in your blocker:',
+      code: '@@||googlevideo.com^',
+    }),
+    'media-network': (f) => ({
+      title: `Video stream requests fail (${f.error.replace('net::', '')})`,
+      advice: 'The VPN or DNS can’t reach googlevideo.com. Try another server.',
+    }),
+    'media-loop': (f) => ({
+      title: `Player stuck: ${f.rate} stream requests in 10 s, no picture`,
+      advice: 'Nothing is being blocked, so YouTube’s server is holding the video back — an ad-block penalty or a check on this VPN server. Try another server, or pause uBlock on youtube.com once to compare.',
+    }),
+    stuck: () => ({
+      title: 'Player stuck with no picture',
+      advice: 'No failing request seen. Copy the report, and compare with uBlock paused on youtube.com.',
+    }),
+  };
+  const finding = (f) => FINDINGS[f.id]?.(f) ?? null;
+
+  return { esc, groups, presets, fill, bind, search, statusText, time, finding };
 })();

@@ -1,11 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Focus & Fix for YouTube",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Hide YouTube's distractions, filter videos by keyword, channel or length, and fix ad-blocker playback hiccups.",
   "minimum_chrome_version": "111",
-  "permissions": ["storage", "contextMenus"],
-  "background": { "service_worker": "background.js" },
+  "permissions": ["storage", "contextMenus", "webRequest"],
+  "host_permissions": ["*://*.youtube.com/*", "*://*.googlevideo.com/*", "*://jnn-pa.googleapis.com/*", "*://www.google.com/js/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
   "action": {
     "default_title": "Focus & Fix for YouTube",
     "default_popup": "popup/popup.html"
@@ -13,11 +16,15 @@
   "options_page": "options/options.html",
   "commands": {
     "toggle-hiding": {
-      "suggested_key": { "default": "Alt+Shift+U" },
+      "suggested_key": {
+        "default": "Alt+Shift+U"
+      },
       "description": "Turn hiding on or off"
     },
     "pick-element": {
-      "suggested_key": { "default": "Alt+Shift+H" },
+      "suggested_key": {
+        "default": "Alt+Shift+H"
+      },
       "description": "Pick an element to hide"
     },
     "pause-15": {

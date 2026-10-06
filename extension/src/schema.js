@@ -208,10 +208,19 @@ const YFF = (() => {
 
   // Playback fixes run in the page's own JS world (page.js) and keep their own settings object.
   const FIXES = [
-    { id: 'noAdRequests', label: 'Ad backoff', hint: 'Ask for the no-ad stream, so no forced wait / restarting spinner' },
+    { id: 'noAdRequests', label: 'Ad backoff', hint: 'Ask for the no-ad stream, so no forced wait before playback' },
+    {
+      id: 'attestationFallback',
+      label: 'Bot-check reroute',
+      hint: 'If jnn-pa.googleapis.com is blocked (uBlock, VPN or DNS blocker), send YouTube’s bot check via youtube.com',
+    },
     { id: 'timerBoost', label: 'Startup gate', hint: 'Cut the player’s 5 s ad-wait timer' },
     { id: 'adFastForward', label: 'Ad-slot dead time', hint: 'Black/frozen ad slots at 16×, muted, auto-skip' },
-    { id: 'stallRecovery', label: 'Stalls', hint: 'No picture 2.5 s → reload; frozen 4 s → re-seek → pause/play → reload' },
+    {
+      id: 'stallRecovery',
+      label: 'Stalls',
+      hint: 'No picture 2.5 s → player reload, 8 s more → page reload (once); frozen 4 s → re-seek → pause/play → reload',
+    },
     { id: 'dismissEnforcement', label: 'Anti-adblock dialog', hint: 'Close it and resume playback' },
   ];
 

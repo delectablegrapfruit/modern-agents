@@ -85,6 +85,14 @@ const YOUTUBE_PAGE = `<!doctype html><html><head><title>stand-in</title></head><
   });
   document.getElementById('pick-me').addEventListener('click', () => __log.push('page-click'));
 
+  // ?v=stuck: the VPN case. Spinner on a black frame, element never told to play, stream requests in a loop.
+  if (new URLSearchParams(location.search).get('v') === 'stuck') {
+    player.getVideoData = () => ({ video_id: 'stuck' });
+    player.getPlayerState = () => 3; // buffering
+    player.append(Object.assign(document.createElement('div'), { className: 'ytp-spinner', textContent: 'spinner' }));
+    setInterval(() => fetch('https://rr1---sn-test.googlevideo.com/videoplayback?id=stuck', { method: 'POST', mode: 'no-cors', body: 'x' }).catch(() => {}), 400);
+  }
+
   const t0 = performance.now();
   const done = (name) => ({ resolve() { __timers[name] = performance.now() - t0; } });
   const gate = done('gate'), retry = done('retry'), other = done('other');
@@ -124,8 +132,22 @@ try {
     const url = route.request().url();
     if (url.endsWith('/stall.mp4')) return; // never answered: a stream that stops delivering
     if (url.includes('/youtubei/v1/')) return route.fulfill({ contentType: 'application/json', body: route.request().postData() }); // echo
+    if (url.includes('/api/jnn/v1/')) {
+      const request = route.request();
+      const echo = { path: new URL(url).pathname, body: request.postData(), key: request.headers()['x-goog-api-key'] };
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify(echo) });
+    }
     return route.fulfill({ contentType: 'text/html', body: YOUTUBE_PAGE });
   });
+
+  // The bot-check host as uBlock (blockedbyclient) or a VPN's DNS blocker (namenotresolved) leaves it.
+  let jnnMode = 'blockedbyclient';
+  let jnnHits = 0;
+  await context.route('https://jnn-pa.googleapis.com/**', (route) => {
+    jnnHits += 1;
+    return route.abort(jnnMode);
+  });
+  await context.route(/googlevideo\.com/, (route) => route.fulfill({ status: 200, body: 'x' }));
 
   const page = await context.newPage();
   const pageErrors = [];
@@ -292,6 +314,56 @@ try {
     assert.match(await popup.textContent('#status'), /on/i);
   });
 
+  const diagnose = (tabId) => popup.evaluate((id) => chrome.runtime.sendMessage({ type: 'yff:diagnose', tabId: id }), tabId);
+
+  await test('blocked bot check is retried through youtube.com; later ones, Request objects too, go there directly', async () => {
+    const waa = 'https://jnn-pa.googleapis.com/$rpc/google.internal.waa.v1.Waa/';
+    const init = { method: 'POST', headers: { 'content-type': 'application/json+protobuf', 'x-goog-api-key': 'key' }, body: '[["challenge"]]' };
+    const first = await page.evaluate(([u, i]) => fetch(u, i).then((r) => r.json()), [`${waa}Create`, init]);
+    assert.deepEqual(first, { path: '/api/jnn/v1/Create', body: '[["challenge"]]', key: 'key' });
+    assert.ok(jnnHits >= 1, 'the original host was never tried');
+    const hits = jnnHits;
+    const [second, third] = await page.evaluate(
+      ([u, i]) => Promise.all([fetch(u, i).then((r) => r.json()), fetch(new Request(u, i)).then((r) => r.json())]),
+      [`${waa}GenerateIT`, init],
+    );
+    assert.deepEqual([second.path, third.path, third.body, third.key], ['/api/jnn/v1/GenerateIT', '/api/jnn/v1/GenerateIT', '[["challenge"]]', 'key']);
+    assert.equal(jnnHits, hits, 'tried the blocked host again');
+  });
+
+  await test('playback check: names the extension block and the successful reroute', async () => {
+    await page.waitForTimeout(300);
+    const { findings } = await diagnose(ytTabId);
+    const byId = Object.fromEntries(findings.map((f) => [f.id, f]));
+    assert.deepEqual(byId['attest-extension'], { id: 'attest-extension', level: 'info', hosts: ['jnn-pa.googleapis.com'] });
+    assert.equal(byId['attest-rerouted']?.level, 'info');
+  });
+
+  await test('playback check: a DNS-blocked bot-check host is told apart from an extension block', async () => {
+    jnnMode = 'namenotresolved';
+    await page.evaluate(() => fetch('https://jnn-pa.googleapis.com/other', { mode: 'no-cors' }).catch(() => {}));
+    await page.waitForTimeout(300);
+    const network = (await diagnose(ytTabId)).findings.find((f) => f.id === 'attest-network');
+    assert.equal(network?.error, 'net::ERR_NAME_NOT_RESOLVED');
+  });
+
+  await test('every finding has popup text', async () => {
+    const texts = await popup.evaluate(() =>
+      [
+        { id: 'attest-extension', level: 'error', hosts: ['jnn-pa.googleapis.com'] },
+        { id: 'attest-network', level: 'error', hosts: ['jnn-pa.googleapis.com'], error: 'net::ERR_NAME_NOT_RESOLVED' },
+        { id: 'attest-http', level: 'error', status: 403 },
+        { id: 'attest-rerouted', level: 'error' },
+        { id: 'media-403', level: 'error', count: 3 },
+        { id: 'media-extension', level: 'error', count: 1 },
+        { id: 'media-network', level: 'error', count: 2, error: 'net::ERR_CONNECTION_RESET' },
+        { id: 'media-loop', level: 'warn', rate: 9 },
+        { id: 'stuck', level: 'warn' },
+      ].map((f) => YFFUI.finding(f)),
+    );
+    for (const text of texts) assert.ok(text?.title && text.advice, JSON.stringify(text));
+  });
+
   await test('Clean (default) hides Shorts, Mixes, merch and end-screen cards, keeps the feed', async () => {
     await expectHidden(['#v-short', '#v-mix', '#merch', '#guide-shorts', '#endscreen-card', '#search-shelf']);
     await expectVisible(['#home-grid', '#v-cats', '#comments', '#related', '#bell']);
@@ -420,7 +492,9 @@ try {
   });
 
   await test('toolbar badge counts filtered videos on the tab', async () => {
-    await page.waitForTimeout(400);
+    // The mid-video stall test left the player stuck, which turns the badge into "!"; pausing ends that.
+    await page.evaluate(() => document.querySelector('video').pause());
+    await page.waitForTimeout(600);
     const badge = await popup.evaluate((tabId) => chrome.action.getBadgeText({ tabId }), ytTabId);
     assert.equal(badge, '1');
     await setFilters({});
@@ -497,6 +571,30 @@ try {
     await options.waitForFunction(() => /Reset/.test(document.querySelector('#backup-note').textContent), null, { timeout: 2000 });
     assert.deepEqual(await read(), {});
     await expectVisible(['#comments', '#pick-me span']);
+  });
+
+  await test('stuck on a black frame with the element paused: player reload, then one page reload, never two', async () => {
+    const stuck = await context.newPage();
+    stuck.on('pageerror', (e) => pageErrors.push(`stuck: ${e.message}`));
+    await stuck.goto('https://www.youtube.com/watch?v=stuck');
+    await stuck.waitForFunction(() => window.__log.includes('loadVideoById'), null, { timeout: 4000 });
+    await stuck.waitForEvent('load', { timeout: 12000 }); // the one page reload
+    const stuckTabId = await popup.evaluate(async () => {
+      for (const tab of await chrome.tabs.query({})) {
+        const stats = await chrome.tabs.sendMessage(tab.id, { type: 'yff:stats' }, { frameId: 0 }).catch(() => null);
+        if (stats?.href.includes('v=stuck')) return tab.id;
+      }
+    });
+    await stuck.waitForTimeout(3500);
+    const check = await diagnose(stuckTabId);
+    assert.equal(check.stuck, true);
+    assert.equal(check.findings.find((f) => f.id === 'media-loop')?.level, 'warn', JSON.stringify(check.findings));
+    assert.equal(await popup.evaluate((tabId) => chrome.action.getBadgeText({ tabId }), stuckTabId), '!');
+    let reloadedAgain = false;
+    stuck.once('load', () => (reloadedAgain = true));
+    await stuck.waitForTimeout(9000);
+    assert.equal(reloadedAgain, false, 'reloaded the page a second time');
+    await stuck.close();
   });
 
   // Redirects reload the page, so they come last.

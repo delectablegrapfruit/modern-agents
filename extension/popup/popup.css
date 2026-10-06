@@ -53,3 +53,37 @@ body.inactive .status {
   letter-spacing: 0.04em;
   margin-bottom: 6px;
 }
+.findings {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.findings li {
+  margin: 0 0 8px;
+  padding: 6px 0 6px 10px;
+  border-left: 3px solid var(--muted);
+}
+.findings li.error {
+  border-color: var(--accent);
+}
+.findings li.warn {
+  border-color: #e8a317;
+}
+.findings li.ok {
+  border-color: #2e9e5b;
+}
+.findings b {
+  display: block;
+}
+.findings code {
+  display: block;
+  margin-top: 4px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: var(--surface);
+  font: 12px ui-monospace, monospace;
+  user-select: all;
+}
+.counts {
+  font-size: 12px;
+}

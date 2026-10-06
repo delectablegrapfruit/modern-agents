@@ -23,7 +23,18 @@
   const isTop = window === window.top;
   const root = document.documentElement;
 
-  const fixStats = { requestsPatched: 0, timersBoosted: 0, adsFastForwarded: 0, stallsRecovered: 0, dialogsDismissed: 0 };
+  const fixStats = {
+    requestsPatched: 0,
+    attestationRerouted: 0,
+    timersBoosted: 0,
+    adsFastForwarded: 0,
+    stallsRecovered: 0,
+    pageReloads: 0,
+    dialogsDismissed: 0,
+    stuck: 0,
+  };
+  // Forwarded to background.js, which matches them against the tab's network log for the playback check.
+  const PLAYBACK_EVENTS = new Set(['stuck', 'unstuck', 'attestationRerouted']);
   let settings = null;
   let pausedUntil = 0;
   let active = false;
@@ -43,13 +54,29 @@
 
   // Playback fixes (page.js) -----------------------------------------------------------------------------------
 
+  const send = (message) => {
+    try {
+      chrome.runtime.sendMessage(message).catch(() => {});
+    } catch {
+      // Extension reloaded under this page.
+    }
+  };
+
   const pushFix = () => {
-    if (settings) document.dispatchEvent(new CustomEvent(EVENTS.config, { detail: JSON.stringify(settings.fix) }));
+    if (!settings) return;
+    const fix = JSON.stringify(settings.fix);
+    document.dispatchEvent(new CustomEvent(EVENTS.config, { detail: fix }));
+    try {
+      localStorage.setItem('yff:fix', fix); // read synchronously by page.js on the next load
+    } catch {
+      // Storage blocked in this frame.
+    }
   };
   document.addEventListener(EVENTS.ready, pushFix);
-  // Only counted, never trusted with anything else: page scripts can fire this too.
+  // Only counted and forwarded, never trusted with anything else: page scripts can fire this too.
   document.addEventListener(EVENTS.stat, (event) => {
     if (Object.hasOwn(fixStats, event.detail)) fixStats[event.detail] += 1;
+    if (PLAYBACK_EVENTS.has(event.detail)) send({ type: 'yff:playback', event: event.detail });
   });
 
   // Custom rules -----------------------------------------------------------------------------------------------
@@ -198,11 +225,7 @@
   const report = (count) => {
     if (!isTop || count === filteredCount) return;
     filteredCount = count;
-    try {
-      chrome.runtime.sendMessage({ type: 'yff:count', count }).catch(() => {});
-    } catch {
-      // Extension reloaded under this page.
-    }
+    send({ type: 'yff:count', count });
   };
 
   const scan = () => {
@@ -300,7 +323,7 @@
 
   chrome.runtime.onMessage.addListener((message, _sender, reply) => {
     if (message?.type === 'yff:stats') {
-      reply({ ...fixStats, filtered: Math.max(filteredCount, 0), page: root.dataset.yffPage });
+      reply({ ...fixStats, filtered: Math.max(filteredCount, 0), page: root.dataset.yffPage, href: location.href });
     } else if (message?.type === 'yff:pick') {
       YFFPicker.start({
         initial: message.fromContext ? contextTarget : null,

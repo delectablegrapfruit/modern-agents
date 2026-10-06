@@ -43,18 +43,40 @@ These run whether hiding is on or off.
 
 | Hiccup | Fix |
 | --- | --- |
-| Spinner that keeps restarting before playback: YouTube's server-enforced "SABR backoff", about 80% of the skipped ad's length | Player requests (`/youtubei/v1/player`, `get_watch`, `playlist/watch`, through fetch or XHR) get `playbackContext.contentPlaybackContext.isInlinePlaybackNoAd = true`, so the video comes with no ads and no backoff. A page opened directly gets the no-picture reload below |
+| Wait before playback: YouTube's server-enforced "SABR backoff", about 80% of the skipped ad's length | Player requests (`/youtubei/v1/player`, `get_watch`, `playlist/watch`, through fetch or XHR) get `playbackContext.contentPlaybackContext.isInlinePlaybackNoAd = true`, so the video comes with no ads and no backoff. A page opened directly gets the no-picture reload below |
+| Spinner that keeps restarting on a black frame, **only on a VPN**. On distrusted IPs YouTube sends no video until the page passes its BotGuard check, whose requests go to `jnn-pa.googleapis.com`. uBlock lists, VPN ad/tracker blockers and DNS filters often block that host, so the player retries forever | A failed request to `jnn-pa.googleapis.com/$rpc/google.internal.waa.v1.Waa/<method>` is retried at YouTube's own copy, `www.youtube.com/api/jnn/v1/<method>` (the pair LuanRT's BgUtils uses), and later requests go there directly |
 | ~5 s black player | The single `setTimeout(…resolve(1)…, 5000)` startup gate is cut to 5 ms, at most once per 30 s |
 | Black or frozen "ad" slot | Muted, 16× speed, Skip pressed. Mute state and chosen speed come back afterwards |
-| No picture, or frozen playback | No picture for 2.5 s → reload at the same second. Frozen 4 s mid-video → re-seek → pause/play → reload. At most 3 per video |
+| No picture, or frozen playback | Detected even when the video element was never told to play: the player's buffering state or a visible spinner counts. No picture for 2.5 s → player reload; 8 s later still none → one page reload (at most once per video per 10 min). Frozen 4 s mid-video → re-seek → pause/play → reload |
 | "Ad blockers are not allowed" dialog | Closed, and playback resumes |
 
 Not fixable from the browser: server-side throttling of VPN IPs, "Sign in to confirm you're not a bot", and the hard
 block that replaces the player with an error screen.
 
+With both network fixes switched off, the extension doesn't wrap `fetch`/XHR at all from the next page load on, so
+you can rule it out completely.
+
+### Playback check
+
+The popup's **Playback check** shows what a stuck video is waiting on. It logs the tab's stream (`googlevideo.com`),
+bot-check and player requests. When the player reports it is stuck, the toolbar badge turns into a red **!** and the
+check names the cause:
+
+| Finding | Meaning → fix |
+| --- | --- |
+| An extension blocks YouTube's bot check | `net::ERR_BLOCKED_BY_CLIENT` on `jnn-pa.googleapis.com`. The reroute normally covers it; at the source, add `@@\|\|jnn-pa.googleapis.com^` to uBlock Origin → My filters |
+| Your network can't reach the bot check | DNS/connection error: usually the VPN's own blocker (NordVPN Threat Protection, Proton NetShield, Surfshark CleanWeb, Mullvad DNS blocking) or NextDNS / Pi-hole / AdGuard DNS. Allow the host there |
+| Bot check answered HTTP 4xx/5xx | The check ran but was refused from this IP. Try another server |
+| Video server refused stream requests (403) | This IP is rejected for video, or the check never passed. Try another server or location; signing in helps |
+| An extension blocks video stream requests | Allow `googlevideo.com` in the blocker |
+| Player stuck: N stream requests in 10 s | Nothing is blocked; the server is holding video back (ad-block penalty or IP check). Try another server, or pause uBlock on youtube.com once to compare |
+
+**Copy report** puts the log on the clipboard (hosts, paths, status codes, errors; no query strings).
+
 ## Limits
 
-- The selectors are written against YouTube's current element and class names, and tested against a stand-in page.
+- Developed without access to youtube.com: the selectors and YouTube's internals (player API, endpoints) are
+  written from YouTube's known names and public research, and tested against a stand-in page in a real Chromium.
   When YouTube renames something, update it in `extension/src/schema.js`, or hide it with the picker meanwhile.
 - The Shorts menu entry and channel tab are matched by their English title.
 
@@ -63,7 +85,7 @@ block that replaces the player with an error screen.
 ```
 extension/
   manifest.json
-  background.js       context menu, shortcuts, badge
+  background.js       context menu, shortcuts, badge, playback check (webRequest log)
   src/schema.js       every option: label, group, selectors, presets, defaults, schedule logic
   src/store.js        chrome.storage access
   src/content.js      isolated world: hide tokens on <html>, filters, redirects, Autoplay, custom rules

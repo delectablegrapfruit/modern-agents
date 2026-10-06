@@ -32,14 +32,23 @@
       <button type="button" id="options">All settings</button>
     </div>
 
+    <section class="tab" id="check" hidden>
+      <h2>Playback check</h2>
+      <ul class="findings" id="findings"></ul>
+      <p class="counts" id="check-counts"></p>
+      <button type="button" id="copy-report">Copy report</button>
+    </section>
+
     <section class="tab">
       <h2>This tab</h2>
       <dl class="stats">
         <dt>Feed items filtered</dt><dd data-stat="filtered">–</dd>
         <dt>Player requests patched</dt><dd data-stat="requestsPatched">–</dd>
+        <dt>Bot checks rerouted</dt><dd data-stat="attestationRerouted">–</dd>
         <dt>Timers shortened</dt><dd data-stat="timersBoosted">–</dd>
         <dt>Ad slots fast-forwarded</dt><dd data-stat="adsFastForwarded">–</dd>
         <dt>Stalls recovered</dt><dd data-stat="stallsRecovered">–</dd>
+        <dt>Page reloads</dt><dd data-stat="pageReloads">–</dd>
         <dt>Dialogs dismissed</dt><dd data-stat="dialogsDismissed">–</dd>
       </dl>
       <p id="note" hidden>Open a YouTube tab to see its counts and pick elements.</p>

@@ -69,7 +69,30 @@ $('#pick').addEventListener('click', async () => {
 try {
   const stats = await chrome.tabs.sendMessage(tab.id, { type: 'yff:stats' }, { frameId: 0 });
   for (const dd of document.querySelectorAll('[data-stat]')) dd.textContent = stats[dd.dataset.stat] ?? 0;
+  await renderCheck();
 } catch {
   // Not a YouTube tab, or opened before the extension was installed.
   $('#note').hidden = false;
 }
+
+async function renderCheck() {
+  const { findings, counts, stuck } = await chrome.runtime.sendMessage({ type: 'yff:diagnose', tabId: tab.id });
+  const items = findings.map((f) => ({ ...f, text: YFFUI.finding(f) })).filter((f) => f.text);
+  $('#findings').innerHTML = items.length
+    ? items
+        .map(
+          (f) => `<li class="${f.level}"><b>${YFFUI.esc(f.text.title)}</b>${YFFUI.esc(f.text.advice)}${
+            f.text.code ? `<code>${YFFUI.esc(f.text.code)}</code>` : ''
+          }</li>`,
+        )
+        .join('')
+    : `<li class="ok">${stuck ? 'Player stuck, cause not seen yet' : 'No playback problems seen on this tab'}</li>`;
+  $('#check-counts').textContent = `Last minute: ${counts.media} stream requests · page: ${counts.attest} bot-check, ${counts.player} player requests`;
+  $('#check').hidden = false;
+}
+
+$('#copy-report').addEventListener('click', async () => {
+  const data = await chrome.runtime.sendMessage({ type: 'yff:report', tabId: tab.id });
+  await navigator.clipboard.writeText(JSON.stringify(data, null, 2));
+  $('#copy-report').textContent = 'Copied';
+});
